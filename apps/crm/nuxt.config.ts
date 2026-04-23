@@ -17,7 +17,19 @@ export default defineNuxtConfig({
       config.server.hmr = false
     },
   },
-  modules: ['@nuxtjs/supabase'],
+  modules: ['@nuxt/ui', '@nuxtjs/supabase'],
+  css: ['~/assets/css/main.css'],
+  ui: {
+    fonts: false,
+    theme: {
+      colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error'],
+      transitions: true,
+      defaultVariants: {
+        color: 'neutral',
+        size: 'sm',
+      },
+    },
+  },
   runtimeConfig: {
     public: {
       openexpert: {
@@ -33,10 +45,11 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/login', '/confirm'],
+      exclude: ['/login', '/confirm', '/design'],
     },
   },
   app: {
+    pageTransition: { name: 'oe-page', mode: 'out-in' },
     head: {
       htmlAttrs: { lang: 'pl' },
       title: 'OpenExpert CRM',

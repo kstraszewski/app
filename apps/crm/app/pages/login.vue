@@ -1,11 +1,17 @@
 <script setup lang="ts">
-const supabase = useSupabaseClient()
+const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
+const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 const email = ref('')
 const sent = ref(false)
 const error = ref<string | null>(null)
 
 async function signIn() {
   error.value = null
+  if (!supabase) {
+    error.value = 'Brakuje konfiguracji Supabase — uzupełnij plik .env.'
+    return
+  }
   const { error: err } = await supabase.auth.signInWithOtp({ email: email.value })
   if (err) {
     error.value = err.message
@@ -18,7 +24,10 @@ async function signIn() {
 <template>
   <main>
     <h1>Zaloguj się</h1>
-    <form v-if="!sent" @submit.prevent="signIn">
+    <p v-if="!hasSupabaseConfig" role="alert">
+      Brakuje konfiguracji Supabase — uzupełnij plik .env.
+    </p>
+    <form v-else-if="!sent" @submit.prevent="signIn">
       <label>
         Email
         <input v-model="email" type="email" required>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 useHead({ title: 'Dołącz do waitlisty — OpenExpert' })
 
-const supabase = useSupabaseClient()
+const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
+const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 
 interface SurveyStep {
   id: string
@@ -122,6 +124,10 @@ async function handleEmailSubmit() {
     emailErr.value = true
     return
   }
+  if (!supabase) {
+    submitErr.value = 'Brakuje konfiguracji Supabase — uzupełnij plik .env.'
+    return
+  }
   emailErr.value  = false
   loading.value   = true
   submitErr.value = null
@@ -197,6 +203,12 @@ function skipSurvey() {
 }
 
 async function submitSurvey() {
+  if (!supabase) {
+    localStorage.removeItem('oe-waitlist')
+    step.value = TOTAL_STEPS - 1
+    return
+  }
+
   loading.value = true
   const a = answers.value
 
@@ -402,7 +414,7 @@ const filledAnswers = computed(() =>
               <p>OpenExpert jest open-source. Możesz eksplorować kod, zgłaszać pomysły i budować pierwsze moduły.</p>
             </div>
             <a
-              href="https://github.com/OpenExpertApp/app"
+              href="https://github.com/OpenExpertApp/OpenExpert"
               target="_blank"
               rel="noopener"
               class="wl-btn-primary wl-btn-gh"

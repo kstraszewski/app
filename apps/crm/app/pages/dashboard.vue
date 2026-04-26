@@ -1,266 +1,376 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
-const user = useSupabaseUser()
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-
 useHead({ title: 'Dashboard — OpenExpert CRM' })
 
-const metrics = [
-  { label: 'Aktywne sprawy', value: '24', icon: 'i-lucide-briefcase-business' },
-  { label: 'Follow-up dziś', value: '8', icon: 'i-lucide-calendar-check' },
-  { label: 'Dokumenty', value: '13', icon: 'i-lucide-file-check-2' },
-]
+type DashboardMetric = {
+  label: string
+  value: number
+  currency?: string
+  icon: string
+}
 
-async function signOut() {
-  if (supabase) await supabase.auth.signOut()
-  await navigateTo('/login')
+type DashboardPayload = {
+  metrics: DashboardMetric[]
+  cases: Array<Record<string, any>>
+  items: Array<Record<string, any>>
+  tasks: Array<Record<string, any>>
+  clients: Array<Record<string, any>>
+  submissions: { accepted: number; total: number }
+}
+
+const fallbackDashboard: DashboardPayload = {
+  metrics: [],
+  cases: [],
+  items: [],
+  tasks: [],
+  clients: [],
+  submissions: { accepted: 0, total: 0 },
+}
+
+const { data: dashboard, pending, error, refresh } = await useFetch<DashboardPayload>('/api/crm/dashboard', {
+  default: () => fallbackDashboard,
+})
+
+function formatMetric(metric: DashboardMetric) {
+  if (metric.currency) {
+    return new Intl.NumberFormat('pl-PL', {
+      style: 'currency',
+      currency: metric.currency,
+      maximumFractionDigits: 0,
+    }).format(metric.value)
+  }
+  return new Intl.NumberFormat('pl-PL').format(metric.value)
 }
 </script>
 
 <template>
-  <main class="dashboard-page">
-    <aside class="dashboard-nav">
-      <NuxtLink to="/dashboard" class="dashboard-brand">
-        <img src="/assets/logo-light.svg" alt="" class="dashboard-brand__mark">
-        <span>OpenExpert</span>
-      </NuxtLink>
-      <nav class="dashboard-links" aria-label="CRM navigation">
-        <a class="dashboard-link dashboard-link--active" href="#">
-          <UIcon name="i-lucide-layout-dashboard" />
-          Dashboard
-        </a>
-        <NuxtLink class="dashboard-link" to="/design">
-          <UIcon name="i-lucide-component" />
-          Design
-        </NuxtLink>
-      </nav>
-    </aside>
+  <CrmShell title="Dashboard" eyebrow="Operacje">
+    <template #actions>
+      <UButton to="/clients" icon="i-lucide-user-plus" variant="solid">
+        Dodaj klienta
+      </UButton>
+      <UButton to="/cases" icon="i-lucide-plus" variant="outline">
+        Nowa sprawa
+      </UButton>
+    </template>
 
-    <section class="dashboard-content">
-      <header class="dashboard-header">
-        <div>
-          <UBadge color="neutral" variant="outline" icon="i-lucide-user">
-            {{ user?.email }}
-          </UBadge>
-          <h1>Dashboard</h1>
-        </div>
-        <UButton icon="i-lucide-log-out" variant="outline" @click="signOut">
-          Wyloguj
+    <UAlert
+      v-if="error"
+      class="dashboard-block"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-database"
+      title="CRM API nie zwrocilo danych"
+      description="Po zastosowaniu migracji i konfiguracji Supabase pulpit pokaze realne sprawy."
+    >
+      <template #actions>
+        <UButton icon="i-lucide-refresh-cw" variant="ghost" @click="refresh()">
+          Odśwież
         </UButton>
-      </header>
+      </template>
+    </UAlert>
 
-      <UAlert
-        v-if="!hasSupabaseConfig"
-        role="alert"
-        class="dashboard-alert"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-alert-triangle"
-        title="Brakuje konfiguracji Supabase"
-        description="Uzupełnij plik .env, żeby połączyć CRM z projektem."
-      />
+    <div class="metric-grid dashboard-block">
+      <UCard v-for="metric in dashboard.metrics" :key="metric.label" class="oe-hover-lift">
+        <div class="metric-top">
+          <UIcon :name="metric.icon" />
+          <UBadge color="neutral" variant="outline">live</UBadge>
+        </div>
+        <strong>{{ formatMetric(metric) }}</strong>
+        <span>{{ metric.label }}</span>
+      </UCard>
+      <UCard v-if="!dashboard.metrics.length" v-for="index in 4" :key="index">
+        <USkeleton class="h-4 w-24" />
+        <USkeleton class="mt-4 h-8 w-20" />
+        <USkeleton class="mt-2 h-3 w-32" />
+      </UCard>
+    </div>
 
-      <div class="dashboard-metrics">
-        <UCard v-for="metric in metrics" :key="metric.label" class="oe-hover-lift">
-          <div class="metric-icon">
-            <UIcon :name="metric.icon" />
+    <div class="dashboard-grid">
+      <UCard>
+        <template #header>
+          <div class="panel-header">
+            <div>
+              <h2>Sprawy wymagające uwagi</h2>
+              <p>Kontener procesu klienta z produktami i osobnymi statusami.</p>
+            </div>
+            <UButton to="/cases" icon="i-lucide-arrow-right" variant="ghost" square aria-label="Przejdź do spraw" />
           </div>
-          <strong>{{ metric.value }}</strong>
-          <span>{{ metric.label }}</span>
-        </UCard>
-      </div>
+        </template>
+
+        <div v-if="pending" class="stack">
+          <USkeleton v-for="index in 5" :key="index" class="h-11 w-full" />
+        </div>
+        <div v-else-if="dashboard.cases.length" class="case-list">
+          <NuxtLink v-for="item in dashboard.cases" :key="item.id" :to="`/cases/${item.id}`" class="case-row">
+            <div>
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.client?.display_name || 'Brak klienta' }}</span>
+            </div>
+            <CrmStatusBadge :status="item.status_code" />
+          </NuxtLink>
+        </div>
+        <div v-else class="empty-state">
+          <UIcon name="i-lucide-inbox" />
+          <h3>Brak aktywnych spraw</h3>
+          <p>Dodaj klienta i utwórz pierwszą sprawę z kredytem, ubezpieczeniem albo nieruchomością.</p>
+        </div>
+      </UCard>
 
       <UCard>
         <template #header>
           <div class="panel-header">
             <div>
-              <h2>Kolejka pracy</h2>
-              <p>Startowy widok CRM po wdrożeniu Nuxt UI.</p>
+              <h2>Follow-up dziś</h2>
+              <p>Zadania przypisane do eksperta i pilne terminy.</p>
             </div>
-            <UButton icon="i-lucide-plus" variant="solid">
-              Dodaj sprawę
-            </UButton>
           </div>
         </template>
 
-        <div class="empty-state">
-          <UIcon name="i-lucide-inbox" />
-          <h3>Gotowe na dane CRM</h3>
-          <p>Logika auth została bez zmian, a dashboard korzysta teraz z globalnego design systemu.</p>
+        <div v-if="dashboard.tasks.length" class="task-list">
+          <div v-for="task in dashboard.tasks" :key="task.id" class="task-row">
+            <UIcon name="i-lucide-circle" />
+            <div>
+              <strong>{{ task.title }}</strong>
+              <span>{{ task.due_at ? new Date(task.due_at).toLocaleString('pl-PL') : 'Bez terminu' }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state empty-state--compact">
+          <UIcon name="i-lucide-calendar-check" />
+          <h3>Brak follow-upów</h3>
+          <p>Najbliższe zadania pojawią się tu po dodaniu terminów.</p>
         </div>
       </UCard>
-    </section>
-  </main>
+    </div>
+
+    <UCard class="dashboard-block">
+      <template #header>
+        <div class="panel-header">
+          <div>
+            <h2>Ostatnie produkty i wnioski</h2>
+            <p>Kredyty, ubezpieczenia i nieruchomości prowadzone wewnątrz spraw.</p>
+          </div>
+          <UBadge color="neutral" variant="outline" icon="i-lucide-send">
+            {{ dashboard.submissions.accepted }}/{{ dashboard.submissions.total }} zaakceptowane
+          </UBadge>
+        </div>
+      </template>
+
+      <div class="item-table">
+        <div class="item-row item-row--head">
+          <span>Produkt</span>
+          <span>Status</span>
+          <span>Wartość</span>
+          <span>Aktualizacja</span>
+        </div>
+        <div v-for="item in dashboard.items" :key="item.id" class="item-row">
+          <strong>{{ item.title }}</strong>
+          <CrmStatusBadge :status="item.status_code" />
+          <span>{{ item.amount_value ? `${Number(item.amount_value).toLocaleString('pl-PL')} ${item.currency}` : '—' }}</span>
+          <span>{{ new Date(item.updated_at).toLocaleDateString('pl-PL') }}</span>
+        </div>
+        <div v-if="!dashboard.items.length" class="empty-line">Brak produktów w sprawach.</div>
+      </div>
+    </UCard>
+  </CrmShell>
 </template>
 
 <style scoped>
-.dashboard-page {
+.dashboard-block {
+  margin-bottom: 24px;
+}
+
+.metric-grid {
   display: grid;
-  grid-template-columns: 240px 1fr;
-  min-height: 100vh;
-  background: var(--ui-bg-muted);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.dashboard-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding: 24px;
-  background: var(--ui-bg-inverted);
-  color: var(--ui-text-inverted);
-}
-
-.dashboard-brand,
-.dashboard-link {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-}
-
-.dashboard-brand {
-  color: var(--ui-text-inverted);
-  font-weight: 600;
-}
-
-.dashboard-brand__mark {
-  height: 20px;
-  filter: invert(1);
-}
-
-.dashboard-links {
-  display: grid;
-  gap: 6px;
-}
-
-.dashboard-link {
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius);
-  color: color-mix(in srgb, var(--ui-text-inverted) 64%, transparent);
-  font-size: 14px;
-}
-
-.dashboard-link--active,
-.dashboard-link:hover {
-  border-color: color-mix(in srgb, var(--ui-text-inverted) 16%, transparent);
-  color: var(--ui-text-inverted);
-}
-
-.dashboard-content {
-  width: min(100%, 1160px);
-  padding: 32px;
-}
-
-.dashboard-header,
+.metric-top,
 .panel-header {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
 }
 
-.dashboard-header h1 {
-  margin-top: 12px;
+.metric-top {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.metric-top .iconify {
+  color: var(--ui-text-muted);
+  font-size: 20px;
+}
+
+.metric-grid strong {
+  display: block;
   color: var(--ui-text-highlighted);
-  font-size: 44px;
-  font-weight: 300;
+  font-size: 28px;
+  font-weight: 600;
   line-height: 1.1;
 }
 
-.dashboard-alert {
-  margin-top: 24px;
-}
-
-.dashboard-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  margin: 28px 0;
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
-  background: var(--ui-border);
-}
-
-.dashboard-metrics :deep(.rounded-sm) {
-  border-radius: 0;
-}
-
-.metric-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
+.metric-grid span {
   color: var(--ui-text-muted);
+  font-size: 13px;
 }
 
-.dashboard-metrics strong {
-  display: block;
-  margin-top: 22px;
-  color: var(--ui-text-highlighted);
-  font-size: 34px;
-  font-weight: 300;
-}
-
-.dashboard-metrics span,
-.panel-header p,
-.empty-state p {
-  color: var(--ui-text-muted);
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 24px;
+  margin-bottom: 24px;
 }
 
 .panel-header h2 {
+  margin: 0;
   color: var(--ui-text-highlighted);
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.panel-header p {
+  margin: 4px 0 0;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+.stack,
+.case-list,
+.task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.case-row,
+.task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 54px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ui-border);
+  text-decoration: none;
+}
+
+.case-row:last-child,
+.task-row:last-child {
+  border-bottom: 0;
+}
+
+.case-row strong,
+.task-row strong {
+  display: block;
+  color: var(--ui-text-highlighted);
+  font-size: 14px;
+}
+
+.case-row span,
+.task-row span {
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+.task-row {
+  justify-content: flex-start;
+}
+
+.task-row .iconify {
+  color: var(--ui-text-muted);
+  font-size: 12px;
 }
 
 .empty-state {
   display: grid;
   justify-items: center;
-  gap: 12px;
-  padding: 56px 20px;
+  gap: 8px;
+  padding: 44px 20px;
+  color: var(--ui-text-muted);
   text-align: center;
 }
 
-.empty-state svg {
-  width: 34px;
-  height: 34px;
-  color: var(--ui-text-muted);
+.empty-state--compact {
+  padding: 32px 16px;
+}
+
+.empty-state .iconify {
+  font-size: 28px;
 }
 
 .empty-state h3 {
+  margin: 0;
   color: var(--ui-text-highlighted);
-  font-size: 22px;
-  font-weight: 500;
+  font-size: 16px;
 }
 
-@media (max-width: 800px) {
-  .dashboard-page {
+.empty-state p {
+  max-width: 360px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.item-table {
+  display: grid;
+}
+
+.item-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) 160px 140px 120px;
+  gap: 16px;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px solid var(--ui-border);
+  font-size: 13px;
+}
+
+.item-row:last-child {
+  border-bottom: 0;
+}
+
+.item-row strong {
+  color: var(--ui-text-highlighted);
+}
+
+.item-row--head {
+  min-height: 32px;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.empty-line {
+  padding: 28px 0;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .metric-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .metric-grid,
+  .dashboard-grid {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-nav {
+  .item-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px 0;
+  }
+
+  .item-row--head {
     display: none;
-  }
-
-  .dashboard-content {
-    padding: 20px;
-  }
-
-  .dashboard-header,
-  .panel-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .dashboard-metrics {
-    grid-template-columns: 1fr;
   }
 }
 </style>

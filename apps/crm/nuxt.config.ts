@@ -13,8 +13,9 @@ export default defineNuxtConfig({
   },
   hooks: {
     'vite:extendConfig'(config) {
-      config.server ||= {}
-      config.server.hmr = false
+      const mutableConfig = config as typeof config & { server?: { hmr?: boolean } }
+      mutableConfig.server ||= {}
+      mutableConfig.server.hmr = false
     },
   },
   modules: ['@nuxt/ui', '@nuxtjs/supabase'],

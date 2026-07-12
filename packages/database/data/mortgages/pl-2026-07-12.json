@@ -1,0 +1,84 @@
+{
+  "asOf": "2026-07-12",
+  "retrievedAt": "2026-07-12T12:30:00.000Z",
+  "disclaimer": "Publiczne przykłady reprezentatywne i warunki informacyjne. Dane nie są ofertą banku ani oceną zdolności kredytowej.",
+  "sources": [
+    { "sourceKey": "pko-fixed-5y-2026-07-12", "bankSlug": "pko-bp", "title": "Kredyt lub pożyczka hipoteczna ze stałą stopą przez 5 lat", "url": "https://www.pkobp.pl/klient-indywidualny/kredyty-pozyczki/kredyt-lub-pozyczka-ze-stala-stopa-procentowa-przez-5-lat", "kind": "product_page", "publishedAt": "2026-04-16", "fileName": "pko-bp-fixed-5y.html" },
+    { "sourceKey": "ing-mortgage-2026-07-12", "bankSlug": "ing", "title": "Kredyt hipoteczny ING", "url": "https://www.ing.pl/indywidualni/kredyty-i-pozyczki/kredyt-hipoteczny", "kind": "product_page", "publishedAt": "2026-07-06", "fileName": "ing-mortgage.html" },
+    { "sourceKey": "erste-general-mortgage-2026-07-12", "bankSlug": "erste", "title": "Informacja ogólna o zasadach udzielania kredytów hipotecznych", "url": "https://www.santander.pl/regulation_file_server/time20260407095733/download?id=150220&lang=pl_PL", "kind": "general_information", "publishedAt": "2026-04-01", "fileName": "erste-general-mortgage.pdf" },
+    { "sourceKey": "mbank-standard-mortgage-2026-07-12", "bankSlug": "mbank", "title": "Kredyt hipoteczny w ofercie standardowej", "url": "https://www.mbank.pl/indywidualny/kredyty/kredyty-hipoteczne/kredyt-hipoteczny-standard", "kind": "product_page", "publishedAt": "2026-06-25", "fileName": "mbank-standard-mortgage.html" },
+    { "sourceKey": "pekao-housing-mortgage-2026-07-12", "bankSlug": "pekao", "title": "Kredyt hipoteczny na mieszkanie lub dom", "url": "https://www.pekao.com.pl/klient-indywidualny/wlasne-mieszkanie-lub-dom/kredyt-hipoteczny.html", "kind": "product_page", "publishedAt": "2026-07-02", "fileName": "pekao-housing-mortgage.html" }
+  ],
+  "products": [
+    {
+      "bank": { "slug": "pko-bp", "name": "PKO Bank Polski / PKO Bank Hipoteczny", "websiteUrl": "https://www.pkobp.pl" },
+      "product": { "slug": "wlasny-kat-fixed-5y", "name": "Własny Kąt — stała stopa 5 lat", "category": "housing" },
+      "sourceKey": "pko-fixed-5y-2026-07-12",
+      "version": {
+        "versionKey": "pko-wlasny-kat-fixed-2026-04-16", "effectiveFrom": "2026-04-16", "effectiveTo": "2026-09-02", "calculationDate": "2026-04-16", "dataStatus": "confirmed", "completenessScore": 78,
+        "interestType": "fixed_periodic", "fixedRatePct": 6.26, "fixedPeriodMonths": 60, "marginPct": 2.02, "referenceRateCode": "WIBOR 6M", "referenceRatePct": 4.64, "referenceRateAsOf": "2026-04-16", "representativeAprPct": 7.26, "isEco": false,
+        "costRules": { "commissionPct": 0, "appraisalFee": 400, "pccFee": 19, "courtFee": null, "accountMonthlyFee": 0, "cardMonthlyFee": null, "propertyInsuranceAnnualRatePct": 0.0562, "lifeInsuranceMonthlyRatePct": 0.02222, "lifeInsuranceMonths": 300 },
+        "requirements": ["Wpływ minimum 3 000 zł miesięcznie na Konto za Zero", "Ubezpieczenie nieruchomości", "Warunki ubezpieczenia na życie z przykładu reprezentatywnego"],
+        "representativeExample": { "loanAmount": 406000, "propertyValue": 577524.89, "termMonths": 300, "ltvPct": 70.3, "installment": 2682.49, "postFixedInstallment": 2768.33, "totalCost": 454831.57, "totalPayment": 860831.57, "interest": 419233, "propertyInsurance": 8120, "lifeInsurance": 27059.57 },
+        "assumptions": ["Stopa 6,26% uwzględnia promocyjne obniżenie o 0,4 p.p.", "Koszty ubezpieczeń przeskalowano z przykładu reprezentatywnego."],
+        "unknownFields": ["maksymalne LTV produktu", "ubezpieczenie pomostowe", "opłata za wcześniejszą spłatę", "pełna siatka marż"]
+      }
+    },
+    {
+      "bank": { "slug": "ing", "name": "ING Bank Śląski", "websiteUrl": "https://www.ing.pl" },
+      "product": { "slug": "mieszkaj-po-swojemu-latwy-start-fixed", "name": "Mieszkaj po swojemu — łatwy start", "category": "housing" },
+      "sourceKey": "ing-mortgage-2026-07-12",
+      "version": {
+        "versionKey": "ing-latwy-start-fixed-2026-07-06", "calculationDate": "2026-07-06", "dataStatus": "confirmed", "completenessScore": 86,
+        "interestType": "fixed_periodic", "fixedRatePct": 5.81, "fixedPeriodMonths": 60, "marginPct": 1.75, "referenceRateCode": "WIBOR 1M", "referenceRatePct": 3.78, "referenceRateAsOf": "2026-07-01", "representativeAprPct": 6.28, "isEco": false,
+        "costRules": { "commissionPct": 0, "appraisalFee": 560, "pccFee": 19, "courtFee": null, "accountMonthlyFee": 0, "cardMonthlyFee": 0, "propertyInsuranceAnnualRatePct": 0.0771, "lifeInsuranceMonthlyRatePct": 0.03404, "lifeInsuranceMonths": 36 },
+        "requirements": ["Konto w Planie ING Go", "Moje ING", "Ubezpieczenie spłaty kredytu w wariancie z przykładu", "Ubezpieczenie nieruchomości"],
+        "representativeExample": { "loanAmount": 340000, "propertyValue": 510000, "termMonths": 300, "ltvPct": 66.67, "installment": 2151.24, "totalCost": 319940.24, "totalPayment": 659940.24, "interest": 305370.44, "propertyInsurance": 9824.64, "lifeInsurance": 4166.16 },
+        "assumptions": ["Po 60 miesiącach model przyjmuje opublikowany WIBOR 1M plus marża 1,75%.", "Koszt ubezpieczenia życia obowiązuje przez pierwsze 36 miesięcy."],
+        "unknownFields": ["maksymalne LTV produktu", "ubezpieczenie pomostowe", "opłata za wcześniejszą spłatę", "pełna siatka marż"]
+      }
+    },
+    {
+      "bank": { "slug": "erste", "name": "Erste Bank Polska", "websiteUrl": "https://www.santander.pl" },
+      "product": { "slug": "housing-fixed-5y", "name": "Kredyt mieszkaniowy — stała stopa 5 lat", "category": "housing" },
+      "sourceKey": "erste-general-mortgage-2026-07-12",
+      "version": {
+        "versionKey": "erste-housing-fixed-2026-05-21", "calculationDate": "2026-05-21", "dataStatus": "confirmed", "completenessScore": 79,
+        "interestType": "fixed_periodic", "fixedRatePct": 6.15, "fixedPeriodMonths": 60, "marginPct": 1.95, "referenceRateCode": "WIBOR 3M", "referenceRatePct": 3.85, "referenceRateAsOf": "2026-05-21", "representativeAprPct": 6.82, "isEco": false,
+        "costRules": { "commissionPct": null, "appraisalFee": 560, "pccFee": 19, "courtFee": 200, "accountMonthlyFee": 1.24, "cardMonthlyFee": null, "propertyInsuranceAnnualRatePct": 0.1031, "lifeInsuranceMonthlyRatePct": 0.00686, "lifeInsuranceMonths": 291 },
+        "requirements": ["Konto osobiste w wariancie przykładowym", "Spokojna Hipoteka", "Locum Comfort lub równoważne ubezpieczenie nieruchomości"],
+        "representativeExample": { "loanAmount": 484781, "propertyValue": 868922, "termMonths": 291, "ltvPct": 55.79, "installment": 3209.63, "totalCost": 481765.86, "totalPayment": 966546.86, "interest": 449220.58, "propertyInsurance": 21723.05, "lifeInsurance": 9683.23 },
+        "assumptions": ["Dokument po rebrandingu wskazuje Erste Bank Polska, mimo historycznego adresu santander.pl.", "Bank w przykładzie przyjmuje po 5 latach wyższą z opublikowanej stopy stałej i zmiennej."],
+        "unknownFields": ["prowizja za udzielenie", "maksymalne LTV produktu", "ubezpieczenie pomostowe", "opłata za wcześniejszą spłatę"]
+      }
+    },
+    {
+      "bank": { "slug": "mbank", "name": "mBank", "websiteUrl": "https://www.mbank.pl" },
+      "product": { "slug": "standard-fixed-5y", "name": "Kredyt hipoteczny — oferta standardowa", "category": "housing" },
+      "sourceKey": "mbank-standard-mortgage-2026-07-12",
+      "version": {
+        "versionKey": "mbank-standard-fixed-2026-06-25", "calculationDate": "2026-06-25", "dataStatus": "confirmed", "completenessScore": 76,
+        "interestType": "fixed_periodic", "fixedRatePct": 6.09, "fixedPeriodMonths": 60, "marginPct": 1.65, "referenceRateCode": "WIBOR 3M", "referenceRatePct": 3.86, "referenceRateAsOf": "2026-06-25", "representativeAprPct": 6.31, "isEco": false,
+        "costRules": { "commissionPct": 0, "appraisalFee": 300, "pccFee": 19, "courtFee": null, "accountMonthlyFee": null, "cardMonthlyFee": null, "propertyInsuranceAnnualRatePct": 0.0201, "lifeInsuranceMonthlyRatePct": 0, "lifeInsuranceMonths": 60 },
+        "requirements": ["Hipoteka na nieruchomości mieszkalnej", "Ubezpieczenie nieruchomości"],
+        "representativeExample": { "loanAmount": 1587600, "propertyValue": 1990000, "termMonths": 262, "ltvPct": 79.78, "installment": 10968.88, "totalCost": 1295065.25, "totalPayment": 2882665.25, "interest": 1286246.25, "propertyInsuranceAnnual": 400 },
+        "assumptions": ["Po 60 miesiącach model przyjmuje opublikowany WIBOR 3M plus marża 1,65%.", "Bank wskazuje brak ubezpieczenia na życie przez pierwsze 5 lat; późniejszy koszt pozostaje nieznany."],
+        "unknownFields": ["maksymalne LTV produktu", "koszt konta i karty", "ubezpieczenie życia po 5 latach", "ubezpieczenie pomostowe", "opłata za wcześniejszą spłatę"]
+      }
+    },
+    {
+      "bank": { "slug": "pekao", "name": "Bank Pekao", "websiteUrl": "https://www.pekao.com.pl" },
+      "product": { "slug": "housing-fixed-5y", "name": "Przewygodny kredyt mieszkaniowy", "category": "housing" },
+      "sourceKey": "pekao-housing-mortgage-2026-07-12",
+      "version": {
+        "versionKey": "pekao-housing-fixed-2026-07-02", "calculationDate": "2026-07-02", "dataStatus": "confirmed", "completenessScore": 84,
+        "interestType": "fixed_periodic", "fixedRatePct": 5.96, "fixedPeriodMonths": 60, "marginPct": 1.79, "referenceRateCode": "WIBOR 1M", "referenceRatePct": 3.78, "referenceRateAsOf": "2026-07-01", "representativeAprPct": 6.42, "isEco": false,
+        "costRules": { "commissionPct": 0, "appraisalFee": 190, "pccFee": 19, "courtFee": null, "accountMonthlyFee": 0, "cardMonthlyFee": 5, "propertyInsuranceAnnualRatePct": 0.0489, "lifeInsuranceMonthlyRatePct": 0.03354, "lifeInsuranceMonths": 48 },
+        "requirements": ["ROR z wpływem minimum 3 000 zł miesięcznie", "Karta debetowa MasterCard Debit FX", "Ubezpieczenie nieruchomości", "Ubezpieczenie życia przez pierwsze 4 lata w przykładzie"],
+        "representativeExample": { "loanAmount": 401550.15, "propertyValue": 575142.01, "termMonths": 276, "ltvPct": 69.82, "installment": 2676.16, "totalCost": 334070.09, "totalPayment": 735620.24, "interest": 320452.14, "propertyInsuranceAnnual": 281.09, "lifeInsurance": 6465.07 },
+        "assumptions": ["Wartość WIBOR 1M 3,78% wynika z różnicy opublikowanego oprocentowania zmiennego 5,57% i marży 1,79%; oznaczona jako wywnioskowana.", "Koszty ubezpieczeń przeskalowano z przykładu reprezentatywnego."],
+        "unknownFields": ["maksymalne LTV produktu", "ubezpieczenie pomostowe", "opłata za wcześniejszą spłatę", "pełna siatka marż"]
+      }
+    }
+  ]
+}

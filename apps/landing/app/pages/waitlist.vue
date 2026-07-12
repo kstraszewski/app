@@ -1,10 +1,6 @@
 <script setup lang="ts">
 useHead({ title: 'Dołącz do waitlisty — OpenExpert' })
 
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-
 interface SurveyStep {
   id: string
   label: string
@@ -88,31 +84,40 @@ const loading    = ref(false)
 const submitErr  = ref<string | null>(null)
 const emailErr   = ref(false)
 const emailSaved = ref(false) // true after email saved to DB, before survey starts
+const surveyToken = ref('')
 
 // ── LocalStorage persistence ─────────────────────────────────────────────────
 onMounted(() => {
   const saved = localStorage.getItem('oe-waitlist')
   if (saved) {
     try {
-      const { step: s, email: e, answers: a, emailSaved: es } = JSON.parse(saved)
+      const {
+        step: s,
+        email: e,
+        answers: a,
+        emailSaved: es,
+        surveyToken: token,
+      } = JSON.parse(saved)
       // Don't restore completed state
       if (s < TOTAL_STEPS - 1) {
         step.value       = s
         email.value      = e
         answers.value    = a
         emailSaved.value = !!es
+        surveyToken.value = typeof token === 'string' ? token : ''
       }
     } catch { /* ignore */ }
   }
 })
 
-watch([step, email, answers, emailSaved], () => {
+watch([step, email, answers, emailSaved, surveyToken], () => {
   if (step.value < TOTAL_STEPS - 1) {
     localStorage.setItem('oe-waitlist', JSON.stringify({
       step:       step.value,
       email:      email.value,
       answers:    answers.value,
       emailSaved: emailSaved.value,
+      surveyToken: surveyToken.value,
     }))
   }
 }, { deep: true })
@@ -124,30 +129,23 @@ async function handleEmailSubmit() {
     emailErr.value = true
     return
   }
-  if (!supabase) {
-    submitErr.value = 'Brakuje konfiguracji Supabase — uzupełnij plik .env.'
-    return
-  }
   emailErr.value  = false
   loading.value   = true
   submitErr.value = null
 
-  const { error } = await supabase.from('waitlist').insert({ email: val })
-  loading.value = false
-
-  if (error) {
-    if (error.code === '23505') {
-      // Already on waitlist — still let them fill the survey
-      emailSaved.value = true
-      step.value = 1
-    } else {
-      submitErr.value = 'Coś poszło nie tak — spróbuj jeszcze raz.'
-    }
-    return
+  try {
+    const result = await $fetch<{ surveyToken: string }>('/api/waitlist', {
+      method: 'POST',
+      body: { email: val },
+    })
+    surveyToken.value = result.surveyToken
+    emailSaved.value = true
+    step.value = 1
+  } catch {
+    submitErr.value = 'Coś poszło nie tak — spróbuj jeszcze raz.'
+  } finally {
+    loading.value = false
   }
-
-  emailSaved.value = true
-  step.value = 1
 }
 
 // ── Survey steps ─────────────────────────────────────────────────────────────
@@ -203,36 +201,32 @@ function skipSurvey() {
 }
 
 async function submitSurvey() {
-  if (!supabase) {
-    localStorage.removeItem('oe-waitlist')
-    step.value = TOTAL_STEPS - 1
+  if (!surveyToken.value) {
+    submitErr.value = 'Sesja ankiety wygasła. Wróć do pierwszego kroku.'
+    step.value = 0
+    emailSaved.value = false
     return
   }
 
   loading.value = true
-  const a = answers.value
+  submitErr.value = null
 
-  const { error } = await supabase
-    .from('waitlist')
-    .update({
-      survey_domain:       (a['domain'] as string[])  || null,
-      survey_usecase:      (a['usecase'] as string[]) || null,
-      survey_priority:     (a['priority'] as string)  || null,
-      survey_contrib:      (a['contrib'] as string)   || null,
-      survey_notes:        (a['notes'] as string)     || null,
-      survey_completed_at: new Date().toISOString(),
+  try {
+    await $fetch('/api/waitlist/survey', {
+      method: 'PATCH',
+      body: {
+        email: email.value.trim(),
+        surveyToken: surveyToken.value,
+        answers: answers.value,
+      },
     })
-    .eq('email', email.value.trim())
-
-  loading.value = false
-
-  if (error) {
-    console.error('Survey update error:', error)
-    // Not critical — proceed to thank you regardless
+    localStorage.removeItem('oe-waitlist')
+    step.value = TOTAL_STEPS - 1
+  } catch {
+    submitErr.value = 'Nie udało się zapisać ankiety — spróbuj ponownie.'
+  } finally {
+    loading.value = false
   }
-
-  localStorage.removeItem('oe-waitlist')
-  step.value = TOTAL_STEPS - 1
 }
 
 // ── Progress bar ─────────────────────────────────────────────────────────────

@@ -4,15 +4,22 @@ import { createError, getRouterParam, type H3Event } from 'h3'
 
 type CrmSupabaseClient = any
 
-export interface CrmSession {
+export interface AuthenticatedSession {
   supabase: CrmSupabaseClient
   userId: string
-  organizationId: string
   email: string
+  fullName: string
+  defaultOrganizationId: string
+}
+
+export interface CrmSession extends AuthenticatedSession {
+  organizationId: string
+  organizationName: string
+  organizationSlug: string
   role: string
 }
 
-export async function requireCrmSession(event: H3Event): Promise<CrmSession> {
+export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
   const openexpertConfig = useRuntimeConfig(event).public.openexpert as { hasSupabaseConfig?: boolean }
   if (!openexpertConfig.hasSupabaseConfig) {
     throw createError({
@@ -30,7 +37,7 @@ export async function requireCrmSession(event: H3Event): Promise<CrmSession> {
   const supabase = await serverSupabaseClient(event) as CrmSupabaseClient
   const { data: profile, error } = await supabase
     .from('users')
-    .select('id, organization_id, email, role')
+    .select('id, organization_id, email, full_name')
     .eq('id', userId)
     .single()
 
@@ -44,9 +51,56 @@ export async function requireCrmSession(event: H3Event): Promise<CrmSession> {
   return {
     supabase,
     userId,
-    organizationId: String(profile.organization_id),
     email: String(profile.email ?? ''),
-    role: String(profile.role ?? 'expert'),
+    fullName: String(profile.full_name ?? ''),
+    defaultOrganizationId: String(profile.organization_id),
+  }
+}
+
+export async function requireCrmSession(
+  event: H3Event,
+  requestedOrganizationSlug?: string,
+): Promise<CrmSession> {
+  const authenticated = await requireAuthenticatedSession(event)
+  const organizationSlug = requestedOrganizationSlug ?? getRequiredParam(event, 'organizationSlug')
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(organizationSlug)) {
+    throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
+  }
+
+  const { data: organization, error: organizationError } = await authenticated.supabase
+    .from('organizations')
+    .select('id, name, slug')
+    .eq('slug', organizationSlug)
+    .maybeSingle()
+
+  if (organizationError || !organization) {
+    throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
+  }
+
+  const { data: membership, error: membershipError } = await authenticated.supabase
+    .from('organization_memberships')
+    .select('role')
+    .eq('organization_id', organization.id)
+    .eq('user_id', authenticated.userId)
+    .maybeSingle()
+
+  if (membershipError || !membership) {
+    throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
+  }
+
+  return {
+    ...authenticated,
+    organizationId: String(organization.id),
+    organizationName: String(organization.name),
+    organizationSlug: String(organization.slug),
+    role: String(membership.role ?? 'expert'),
+  }
+}
+
+export function requireOrganizationAdmin(session: CrmSession): void {
+  if (session.role !== 'admin') {
+    throw createError({ statusCode: 403, statusMessage: 'Organization admin required' })
   }
 }
 
@@ -91,10 +145,21 @@ export function stringArrayValue(input: unknown): string[] {
   return input.map(textValue).filter((value): value is string => Boolean(value))
 }
 
-export function throwDbError(error: { message?: string } | null | undefined, statusCode = 500): void {
+export function throwDbError(
+  error: { message?: string; code?: string } | null | undefined,
+  statusCode = 500,
+): void {
   if (!error) return
+  const mappedStatus = statusCode === 500
+    ? ({
+        '23505': 409,
+        '23514': 409,
+        '23503': 400,
+        '42501': 403,
+      }[String(error.code)] ?? statusCode)
+    : statusCode
   throw createError({
-    statusCode,
+    statusCode: mappedStatus,
     statusMessage: error.message || 'Database operation failed',
   })
 }
@@ -115,6 +180,7 @@ export async function resolveProductType(
   let query = session.supabase
     .from('crm_product_types')
     .select('id, domain, name')
+    .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)
     .eq('is_active', true)
     .limit(1)
 

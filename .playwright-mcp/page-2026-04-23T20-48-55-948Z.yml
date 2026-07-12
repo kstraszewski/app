@@ -1,0 +1,212 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - link "OpenExpert CRM design" [ref=e5] [cursor=pointer]:
+      - /url: /design
+      - generic [ref=e7]: OpenExpert CRM
+    - generic [ref=e8]:
+      - switch "Zmien tryb kolorystyczny" [ref=e11]
+      - link "Login" [ref=e12] [cursor=pointer]:
+        - /url: /login
+        - text: Login
+  - generic [ref=e15]:
+    - generic [ref=e16]: Design system v1
+    - heading "Nuxt UI dla CRM, z charakterem landingu." [level=1] [ref=e18]
+    - paragraph [ref=e19]: "Kompaktowy system operacyjny dla pracy eksperta: neutralna paleta, typografia DM Sans i Imbue, cienkie obrysy, male radiusy i animacje, ktore wspieraja skanowanie interfejsu."
+    - generic [ref=e20]:
+      - link "Komponenty" [ref=e21] [cursor=pointer]:
+        - /url: "#components"
+        - text: Komponenty
+      - link "CRM preview" [ref=e23] [cursor=pointer]:
+        - /url: "#crm"
+        - text: CRM preview
+  - generic [ref=e25]:
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - paragraph [ref=e28]: Tokeny
+        - heading "Paleta i rytm UI" [level=2] [ref=e29]
+      - generic [ref=e30]: radius 4-6px
+    - generic [ref=e32]:
+      - generic [ref=e36]:
+        - strong [ref=e37]: Black
+        - generic [ref=e38]: "#000000"
+        - code [ref=e39]: "--ui-primary"
+      - generic [ref=e43]:
+        - strong [ref=e44]: White
+        - generic [ref=e45]: "#ffffff"
+        - code [ref=e46]: "--ui-bg"
+      - generic [ref=e50]:
+        - strong [ref=e51]: Neutral 50
+        - generic [ref=e52]: "#fafafa"
+        - code [ref=e53]: "--color-neutral-50"
+      - generic [ref=e57]:
+        - strong [ref=e58]: Neutral 200
+        - generic [ref=e59]: "#e8e8e8"
+        - code [ref=e60]: "--color-neutral-200"
+      - generic [ref=e64]:
+        - strong [ref=e65]: Neutral 600
+        - generic [ref=e66]: "#525252"
+        - code [ref=e67]: "--color-neutral-600"
+      - generic [ref=e71]:
+        - strong [ref=e72]: Neutral 950
+        - generic [ref=e73]: "#0a0a0a"
+        - code [ref=e74]: "--color-neutral-950"
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - generic [ref=e78]: Typografia
+        - generic [ref=e81]:
+          - paragraph [ref=e82]: Ostatnie narzedzie dla eksperta
+          - paragraph [ref=e83]: Imbue jako akcent editorial
+          - paragraph [ref=e84]: "DM Sans jest baza dla aplikacji: czytelny, neutralny, szybki do skanowania."
+          - code [ref=e85]: font-sans / font-serif / font-mono
+      - generic [ref=e86]:
+        - generic [ref=e88]: Radius i spacing
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - strong [ref=e94]: XS
+            - generic [ref=e95]: 2px
+          - generic [ref=e96]:
+            - strong [ref=e98]: SM
+            - generic [ref=e99]: 4px
+          - generic [ref=e100]:
+            - strong [ref=e102]: MD
+            - generic [ref=e103]: 6px
+          - generic [ref=e104]:
+            - strong [ref=e106]: LG
+            - generic [ref=e107]: 8px
+  - generic [ref=e108]:
+    - generic [ref=e109]:
+      - generic [ref=e110]:
+        - paragraph [ref=e111]: Nuxt UI
+        - heading "Komponenty bazowe" [level=2] [ref=e112]
+      - button "Kopiuj tokeny" [ref=e113] [cursor=pointer]: Kopiuj tokeny
+    - generic [ref=e115]:
+      - generic [ref=e116]:
+        - generic [ref=e118]: Buttons i badges
+        - generic [ref=e121]:
+          - generic [ref=e122]:
+            - button "Zapisz" [ref=e123] [cursor=pointer]: Zapisz
+            - button "Filtr" [ref=e125] [cursor=pointer]: Filtr
+            - button "Wiecej" [ref=e127] [cursor=pointer]
+          - generic [ref=e129]:
+            - generic [ref=e130]: Gotowe
+            - generic [ref=e132]: W toku
+            - generic [ref=e134]: Ryzyko
+      - generic [ref=e136]:
+        - generic [ref=e138]: Formularz
+        - generic [ref=e141]:
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e145]: Priorytet
+              - paragraph [ref=e146]: Wplywa na sortowanie spraw w kolejce.
+            - generic [ref=e147]:
+              - combobox "Priorytet" [ref=e148]:
+                - generic: Normalny
+              - combobox [ref=e151]
+          - generic [ref=e152]:
+            - generic [ref=e155]: Notatka operacyjna
+            - textbox "Notatka operacyjna" [ref=e158]: Klient gotowy do weryfikacji dokumentów.
+          - generic [ref=e159]:
+            - switch "Aktywny follow-up" [checked] [ref=e161]
+            - generic [ref=e162]:
+              - generic [ref=e163]: Aktywny follow-up
+              - paragraph [ref=e164]: Pokazuj zadanie w pipeline.
+      - generic [ref=e165]:
+        - generic [ref=e167]: Alert i progress
+        - generic [ref=e170]:
+          - generic [ref=e173]:
+            - generic [ref=e174]: Nowy styl aktywny
+            - generic [ref=e175]: Nuxt UI dziedziczy tokeny OpenExpert CRM globalnie.
+          - generic [ref=e176]:
+            - generic [ref=e177]: 72%
+            - progressbar "72%" [ref=e178]
+          - generic [ref=e180]:
+            - alert "loading" [ref=e181]
+            - alert "loading" [ref=e182]
+            - alert "loading" [ref=e183]
+  - generic [ref=e184]:
+    - generic [ref=e185]:
+      - generic [ref=e186]:
+        - paragraph [ref=e187]: CRM preview
+        - heading "Operacyjny pulpit" [level=2] [ref=e188]
+      - generic [ref=e189]:
+        - tablist [ref=e190]:
+          - tab "Pipeline" [selected] [ref=e191]:
+            - generic [ref=e193]: Pipeline
+          - tab "Klienci" [ref=e194]:
+            - generic [ref=e196]: Klienci
+          - tab "Zadania" [ref=e197]:
+            - generic [ref=e199]: Zadania
+        - tabpanel "Pipeline"
+    - generic [ref=e201]:
+      - generic [ref=e202]:
+        - generic [ref=e203]:
+          - paragraph [ref=e204]: Pipeline
+          - heading "pipeline" [level=3] [ref=e205]
+        - generic [ref=e206]:
+          - textbox "Szukaj klienta" [ref=e208]
+          - button "Dodaj" [ref=e211] [cursor=pointer]: Dodaj
+      - generic [ref=e213]:
+        - generic [ref=e215]:
+          - generic [ref=e218]: +12%
+          - strong [ref=e219]: "42"
+          - text: Nowe leady
+        - generic [ref=e221]:
+          - generic [ref=e224]: +8%
+          - strong [ref=e225]: "128"
+          - text: Aktywne sprawy
+        - generic [ref=e227]:
+          - generic [ref=e230]: "-4%"
+          - strong [ref=e231]: "17"
+          - text: Dokumenty do weryfikacji
+      - generic [ref=e232]:
+        - generic [ref=e234]:
+          - generic [ref=e235]:
+            - heading "Aktywni klienci" [level=4] [ref=e236]
+            - paragraph [ref=e237]: Przyklad gestego widoku CRM z neutralnymi statusami.
+          - button "Eksport" [ref=e238] [cursor=pointer]
+        - generic [ref=e241]:
+          - generic [ref=e242]:
+            - strong [ref=e243]: Anna Kowalska
+            - generic [ref=e244]: Kredyt hipoteczny
+            - generic [ref=e245]: Scoring
+            - generic [ref=e246]: 820 000 PLN
+          - generic [ref=e247]:
+            - strong [ref=e248]: Marek Zielinski
+            - generic [ref=e249]: Refinansowanie
+            - generic [ref=e250]: Dokumenty
+            - generic [ref=e251]: 410 000 PLN
+          - generic [ref=e252]:
+            - strong [ref=e253]: Julia Nowak
+            - generic [ref=e254]: Zakup mieszkania
+            - generic [ref=e255]: Oferta
+            - generic [ref=e256]: 590 000 PLN
+  - generic [ref=e257]:
+    - generic [ref=e259]:
+      - paragraph [ref=e260]: Globalne animacje
+      - heading "Ruch jako sygnal stanu" [level=2] [ref=e261]
+    - generic [ref=e262]:
+      - generic [ref=e263]:
+        - text: "1"
+        - strong [ref=e264]: fade-up page entry
+        - paragraph [ref=e265]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+      - generic [ref=e266]:
+        - text: "2"
+        - strong [ref=e267]: hover lift
+        - paragraph [ref=e268]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+      - generic [ref=e269]:
+        - text: "3"
+        - strong [ref=e270]: press feedback
+        - paragraph [ref=e271]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+      - generic [ref=e272]:
+        - text: "4"
+        - strong [ref=e273]: reduced motion fallback
+        - paragraph [ref=e274]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+    - generic [ref=e276]:
+      - generic [ref=e277]: fade-up page entry
+      - generic [ref=e279]: hover lift
+      - generic [ref=e281]: press feedback
+      - generic [ref=e283]: reduced motion fallback
+      - generic [ref=e285]: fade-up page entry
+      - generic [ref=e287]: hover lift
+      - generic [ref=e289]: press feedback
+      - generic [ref=e291]: reduced motion fallback

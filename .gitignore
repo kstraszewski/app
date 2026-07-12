@@ -23,6 +23,9 @@ logs
 .env
 .env.*
 !.env.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
 
 # Local MCP config (contributor connects their own Supabase dev project)
 .mcp.json

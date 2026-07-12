@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="pl">
+  <body>
+    <h2>Potwierdź konto OpenExpert</h2>
+    <p>Kliknij poniżej, aby potwierdzić adres email i zalogować się do CRM.</p>
+    <p>
+      <a href="{{ .SiteURL }}/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=%2Fdashboard">
+        Potwierdź adres email
+      </a>
+    </p>
+    <p>Jeśli to nie Ty zakładałeś konto, zignoruj tę wiadomość.</p>
+  </body>
+</html>

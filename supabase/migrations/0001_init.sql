@@ -17,9 +17,20 @@ create table public.users (
 
 create index users_organization_id_idx on public.users(organization_id);
 
+-- Public waitlist is written through the landing server API using the
+-- server-only Supabase key. Anonymous browser clients have no table policy.
+create table public.waitlist (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique check (email = lower(trim(email))),
+  survey_token uuid not null default gen_random_uuid() unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- RLS
 alter table public.organizations enable row level security;
 alter table public.users enable row level security;
+alter table public.waitlist enable row level security;
 
 -- helper: zwraca organization_id aktualnego użytkownika
 create or replace function public.current_organization_id()

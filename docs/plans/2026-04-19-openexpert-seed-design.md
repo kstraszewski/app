@@ -86,7 +86,7 @@ users (id, organization_id, email, role, created_at)
 ## GitHub Organization
 
 - `OpenExpertApp` — publiczna organizacja
-- `OpenExpertApp/app` — główne repo (public, AGPL-3.0)
+- `OpenExpertApp/OpenExpert` — główne repo (public, AGPL-3.0)
 
 ## Out of Scope (świadomie pominięte)
 

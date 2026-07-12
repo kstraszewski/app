@@ -1,66 +1,93 @@
 <script setup lang="ts">
+const route = useRoute()
+const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
+const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 const user = useSupabaseUser()
-watch(user, (val) => {
-  if (val) navigateTo('/dashboard')
-}, { immediate: true })
+const redirectCookie = useSupabaseCookieRedirect()
+const { errorMessage, resolvePostAuthPath, safeRedirect, syncAuthenticatedUser } = useAuthFlow()
+
+const error = ref<string | null>(null)
+const completed = ref(false)
 
 useHead({ title: 'Potwierdzanie logowania — OpenExpert CRM' })
+
+async function finish() {
+  if (completed.value) return
+  completed.value = true
+  const savedPath = redirectCookie.pluck()
+  const destination = await resolvePostAuthPath(safeRedirect(route.query.next, safeRedirect(savedPath)))
+  await navigateTo(destination)
+}
+
+onMounted(async () => {
+  if (!supabase) return
+
+  const providerError = typeof route.query.error_description === 'string'
+    ? route.query.error_description
+    : null
+  if (providerError) {
+    error.value = providerError
+    return
+  }
+
+  const tokenHash = typeof route.query.token_hash === 'string'
+    ? route.query.token_hash
+    : null
+  if (tokenHash) {
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'email',
+    })
+    if (verifyError) {
+      error.value = errorMessage(verifyError)
+      return
+    }
+  } else {
+    const code = typeof route.query.code === 'string' ? route.query.code : null
+    if (code) {
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+      if (exchangeError) {
+        error.value = errorMessage(exchangeError)
+        return
+      }
+    } else if (!user.value) {
+      error.value = 'Link jest nieprawidłowy albo wygasł. Poproś o nowy link.'
+      return
+    }
+  }
+
+  await syncAuthenticatedUser()
+  await finish()
+})
 </script>
 
 <template>
-  <main class="confirm-page oe-grid-bg">
-    <UCard class="confirm-card oe-animate-in">
-      <div class="confirm-state">
-        <UIcon name="i-lucide-loader-circle" class="confirm-state__icon" />
-        <h1>Logowanie</h1>
-        <p>Potwierdzamy sesję i za chwilę przeniesiemy Cię do dashboardu.</p>
-      </div>
-    </UCard>
-  </main>
+  <AuthShell
+    badge="Weryfikacja"
+    icon="i-lucide-loader-circle"
+    title="Potwierdzamy konto"
+    description="Weryfikujemy link i przygotowujemy bezpieczną sesję CRM."
+  >
+    <UAlert
+      v-if="error"
+      role="alert"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      title="Nie udało się potwierdzić konta"
+      :description="error"
+    />
+
+    <div v-else class="flex items-center gap-3 text-toned">
+      <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin" />
+      <span>To potrwa tylko chwilę…</span>
+    </div>
+
+    <template #footer>
+      <NuxtLink to="/login" class="font-medium underline underline-offset-4">
+        Wróć do logowania
+      </NuxtLink>
+    </template>
+  </AuthShell>
 </template>
-
-<style scoped>
-.confirm-page {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 24px;
-}
-
-.confirm-card {
-  width: min(100%, 420px);
-}
-
-.confirm-state {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  padding: 24px 0;
-  text-align: center;
-}
-
-.confirm-state__icon {
-  width: 28px;
-  height: 28px;
-  color: var(--ui-text-muted);
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.confirm-state h1 {
-  color: var(--ui-text-highlighted);
-  font-size: 28px;
-  font-weight: 300;
-}
-
-.confirm-state p {
-  max-width: 300px;
-  color: var(--ui-text-toned);
-  line-height: 1.6;
-}
-</style>

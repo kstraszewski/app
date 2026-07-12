@@ -1,6 +1,30 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "db:reset": {
+      "cache": false
+    },
+    "db:setup": {
+      "cache": false
+    },
+    "db:start": {
+      "cache": false
+    },
+    "db:status": {
+      "cache": false
+    },
+    "db:stop": {
+      "cache": false
+    },
+    "db:types": {
+      "cache": false
+    },
+    "db:verify": {
+      "cache": false
+    },
+    "mortgage:sync": {
+      "cache": false
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".nuxt/**", ".output/**"]
@@ -11,6 +35,10 @@
     },
     "prepare": {
       "outputs": [".nuxt/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "cache": false
     },
     "dev": {
       "cache": false,

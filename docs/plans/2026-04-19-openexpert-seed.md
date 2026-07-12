@@ -531,7 +531,7 @@ Append to `README.md`:
 ```markdown
 ## Deployment (Vercel)
 
-1. Push repo to `OpenExpertApp/app`.
+1. Push repo to `OpenExpertApp/OpenExpert`.
 2. Import in Vercel → connect GitHub repo.
 3. Set environment variables in Vercel project settings:
    - `SUPABASE_URL`
@@ -563,17 +563,17 @@ Expected: JSON with org metadata.
 **Step 2: Create public repo under org**
 
 ```bash
-gh repo create OpenExpertApp/app --public \
+gh repo create OpenExpertApp/OpenExpert --public \
   --description "Modular open-source platform for experts — designed for the agentic economy" \
   --source . --push
 ```
 
-Expected: repo created at https://github.com/OpenExpertApp/app, current branch pushed.
+Expected: repo created at https://github.com/OpenExpertApp/OpenExpert, current branch pushed.
 
 **Step 3: Verify on GitHub**
 
 ```bash
-gh repo view OpenExpertApp/app --web
+gh repo view OpenExpertApp/OpenExpert --web
 ```
 
 Expected: browser opens to repo page.
@@ -585,7 +585,7 @@ Expected: browser opens to repo page.
 **Step 1: User action — via Vercel dashboard**
 
 1. Go to https://vercel.com/new
-2. Import `OpenExpertApp/app`
+2. Import `OpenExpertApp/OpenExpert`
 3. Set env vars: `SUPABASE_URL`, `SUPABASE_KEY`
 4. Deploy
 
@@ -602,7 +602,7 @@ Visit Vercel-generated URL. Landing page shows "OpenExpert" heading.
 - [ ] `pnpm dev` starts cleanly, landing page at `/`, login at `/login`
 - [ ] `POST /api/mcp` with `{"method":"tools/list"}` returns `{"tools":[]}`
 - [ ] `supabase/migrations/0001_init.sql` applied to Supabase project, RLS enabled
-- [ ] Repo pushed to `github.com/OpenExpertApp/app`
+- [ ] Repo pushed to `github.com/OpenExpertApp/OpenExpert`
 - [ ] Deployed on Vercel, landing page reachable via public URL
 
 ## Next phases (not in this plan)

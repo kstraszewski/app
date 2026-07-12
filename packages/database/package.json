@@ -1,0 +1,18 @@
+{
+  "name": "@openexpert/database",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:reset": "node ./scripts/local-supabase.mjs reset",
+    "db:setup": "node ./scripts/local-supabase.mjs setup",
+    "db:start": "node ./scripts/local-supabase.mjs start",
+    "db:status": "node ./scripts/local-supabase.mjs status",
+    "db:stop": "node ./scripts/local-supabase.mjs stop",
+    "db:types": "node ./scripts/local-supabase.mjs types",
+    "db:verify": "node ./scripts/local-supabase.mjs verify",
+    "mortgage:sync": "node ./scripts/sync-mortgage-catalog.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.104.0"
+  }
+}

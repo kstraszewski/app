@@ -45,18 +45,21 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           session.supabase
             .from('crm_clients')
             .select('id, display_name, status_code, primary_email, primary_phone, updated_at')
+            .eq('organization_id', session.organizationId)
             .or(`display_name.ilike.%${query}%,primary_email.ilike.%${query}%,primary_phone.ilike.%${query}%`)
             .order('updated_at', { ascending: false })
             .limit(limit),
           session.supabase
             .from('crm_cases')
             .select('id, client_id, title, status_code, priority, updated_at')
+            .eq('organization_id', session.organizationId)
             .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
             .order('updated_at', { ascending: false })
             .limit(limit),
           session.supabase
             .from('crm_case_items')
             .select('id, case_id, title, status_code, amount_value, currency, updated_at')
+            .eq('organization_id', session.organizationId)
             .or(`title.ilike.%${query}%,status_code.ilike.%${query}%`)
             .order('updated_at', { ascending: false })
             .limit(limit),
@@ -126,6 +129,14 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const clientId = requiredText(body.client_id, 'client_id')
         const title = requiredText(body.title, 'title')
 
+        const { data: client, error: clientError } = await session.supabase
+          .from('crm_clients')
+          .select('id')
+          .eq('organization_id', session.organizationId)
+          .eq('id', clientId)
+          .maybeSingle()
+        if (clientError || !client) throwDbError(clientError ?? { message: 'Client not found' }, 404)
+
         const { data, error } = await session.supabase
           .from('crm_cases')
           .insert({
@@ -167,6 +178,14 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const body = asRecord(input)
         const caseId = requiredText(body.case_id, 'case_id')
         const productType = await resolveProductType(session, body)
+
+        const { data: caseRow, error: caseError } = await session.supabase
+          .from('crm_cases')
+          .select('id')
+          .eq('organization_id', session.organizationId)
+          .eq('id', caseId)
+          .maybeSingle()
+        if (caseError || !caseRow) throwDbError(caseError ?? { message: 'Case not found' }, 404)
 
         const { data, error } = await session.supabase
           .from('crm_case_items')
@@ -225,6 +244,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const { data, error } = await session.supabase
           .from(table)
           .update({ status_code: statusCode })
+          .eq('organization_id', session.organizationId)
           .eq('id', id)
           .select('*')
           .single()
@@ -302,6 +322,14 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const session = await requireCrmSession(event)
         const body = asRecord(input)
         const caseItemId = requiredText(body.case_item_id, 'case_item_id')
+
+        const { data: caseItem, error: caseItemError } = await session.supabase
+          .from('crm_case_items')
+          .select('id')
+          .eq('organization_id', session.organizationId)
+          .eq('id', caseItemId)
+          .maybeSingle()
+        if (caseItemError || !caseItem) throwDbError(caseItemError ?? { message: 'Case item not found' }, 404)
 
         const payload = {
           organization_id: session.organizationId,

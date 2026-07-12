@@ -1,0 +1,215 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - status [ref=e3]: OpenExpert CRM — Design System
+    - main [ref=e4]:
+      - generic [ref=e5]:
+        - link "OpenExpert CRM design" [ref=e6] [cursor=pointer]:
+          - /url: /design
+          - generic [ref=e8]: OpenExpert CRM
+        - generic [ref=e9]:
+          - switch "Zmien tryb kolorystyczny" [checked] [ref=e12]
+          - link "Login" [ref=e13] [cursor=pointer]:
+            - /url: /login
+            - text: Login
+      - generic [ref=e16]:
+        - generic [ref=e17]: Design system v1
+        - heading "Nuxt UI dla CRM, z charakterem landingu." [level=1] [ref=e19]
+        - paragraph [ref=e20]: "Kompaktowy system operacyjny dla pracy eksperta: neutralna paleta, typografia DM Sans i Imbue, cienkie obrysy, male radiusy i animacje, ktore wspieraja skanowanie interfejsu."
+        - generic [ref=e21]:
+          - link "Komponenty" [ref=e22] [cursor=pointer]:
+            - /url: "#components"
+            - text: Komponenty
+          - link "CRM preview" [ref=e24] [cursor=pointer]:
+            - /url: "#crm"
+            - text: CRM preview
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - paragraph [ref=e29]: Tokeny
+            - heading "Paleta i rytm UI" [level=2] [ref=e30]
+          - generic [ref=e31]: radius 4-6px
+        - generic [ref=e33]:
+          - generic [ref=e37]:
+            - strong [ref=e38]: Black
+            - generic [ref=e39]: "#000000"
+            - code [ref=e40]: "--ui-primary"
+          - generic [ref=e44]:
+            - strong [ref=e45]: White
+            - generic [ref=e46]: "#ffffff"
+            - code [ref=e47]: "--ui-bg"
+          - generic [ref=e51]:
+            - strong [ref=e52]: Neutral 50
+            - generic [ref=e53]: "#fafafa"
+            - code [ref=e54]: "--color-neutral-50"
+          - generic [ref=e58]:
+            - strong [ref=e59]: Neutral 200
+            - generic [ref=e60]: "#e8e8e8"
+            - code [ref=e61]: "--color-neutral-200"
+          - generic [ref=e65]:
+            - strong [ref=e66]: Neutral 600
+            - generic [ref=e67]: "#525252"
+            - code [ref=e68]: "--color-neutral-600"
+          - generic [ref=e72]:
+            - strong [ref=e73]: Neutral 950
+            - generic [ref=e74]: "#0a0a0a"
+            - code [ref=e75]: "--color-neutral-950"
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e79]: Typografia
+            - generic [ref=e82]:
+              - paragraph [ref=e83]: Ostatnie narzedzie dla eksperta
+              - paragraph [ref=e84]: Imbue jako akcent editorial
+              - paragraph [ref=e85]: "DM Sans jest baza dla aplikacji: czytelny, neutralny, szybki do skanowania."
+              - code [ref=e86]: font-sans / font-serif / font-mono
+          - generic [ref=e87]:
+            - generic [ref=e89]: Radius i spacing
+            - generic [ref=e92]:
+              - generic [ref=e93]:
+                - strong [ref=e95]: XS
+                - generic [ref=e96]: 2px
+              - generic [ref=e97]:
+                - strong [ref=e99]: SM
+                - generic [ref=e100]: 4px
+              - generic [ref=e101]:
+                - strong [ref=e103]: MD
+                - generic [ref=e104]: 6px
+              - generic [ref=e105]:
+                - strong [ref=e107]: LG
+                - generic [ref=e108]: 8px
+      - generic [ref=e109]:
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - paragraph [ref=e112]: Nuxt UI
+            - heading "Komponenty bazowe" [level=2] [ref=e113]
+          - button "Kopiuj tokeny" [ref=e114] [cursor=pointer]: Kopiuj tokeny
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e119]: Buttons i badges
+            - generic [ref=e122]:
+              - generic [ref=e123]:
+                - button "Zapisz" [ref=e124] [cursor=pointer]: Zapisz
+                - button "Filtr" [ref=e126] [cursor=pointer]: Filtr
+                - button "Wiecej" [ref=e128] [cursor=pointer]
+              - generic [ref=e130]:
+                - generic [ref=e131]: Gotowe
+                - generic [ref=e133]: W toku
+                - generic [ref=e135]: Ryzyko
+          - generic [ref=e137]:
+            - generic [ref=e139]: Formularz
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - generic [ref=e144]:
+                  - generic [ref=e146]: Priorytet
+                  - paragraph [ref=e147]: Wplywa na sortowanie spraw w kolejce.
+                - combobox "Priorytet" [ref=e149]:
+                  - generic: Normalny
+              - generic [ref=e152]:
+                - generic [ref=e155]: Notatka operacyjna
+                - textbox "Notatka operacyjna" [ref=e158]: Klient gotowy do weryfikacji dokumentów.
+              - generic [ref=e159]:
+                - switch "Aktywny follow-up" [checked] [ref=e161]
+                - generic [ref=e162]:
+                  - generic [ref=e163]: Aktywny follow-up
+                  - paragraph [ref=e164]: Pokazuj zadanie w pipeline.
+          - generic [ref=e165]:
+            - generic [ref=e167]: Alert i progress
+            - generic [ref=e170]:
+              - generic [ref=e173]:
+                - generic [ref=e174]: Nowy styl aktywny
+                - generic [ref=e175]: Nuxt UI dziedziczy tokeny OpenExpert CRM globalnie.
+              - generic [ref=e176]:
+                - generic [ref=e177]: 72%
+                - progressbar "72%" [ref=e178]
+              - generic [ref=e180]:
+                - alert "loading" [ref=e181]
+                - alert "loading" [ref=e182]
+                - alert "loading" [ref=e183]
+      - generic [ref=e184]:
+        - generic [ref=e185]:
+          - generic [ref=e186]:
+            - paragraph [ref=e187]: CRM preview
+            - heading "Operacyjny pulpit" [level=2] [ref=e188]
+          - generic [ref=e189]:
+            - tablist [ref=e190]:
+              - tab "Pipeline" [selected] [ref=e192]:
+                - generic [ref=e194]: Pipeline
+              - tab "Klienci" [ref=e195]:
+                - generic [ref=e197]: Klienci
+              - tab "Zadania" [ref=e198]:
+                - generic [ref=e200]: Zadania
+            - tabpanel "Pipeline"
+        - generic [ref=e202]:
+          - generic [ref=e203]:
+            - generic [ref=e204]:
+              - paragraph [ref=e205]: Pipeline
+              - heading "pipeline" [level=3] [ref=e206]
+            - generic [ref=e207]:
+              - textbox "Szukaj klienta" [ref=e209]
+              - button "Dodaj" [ref=e212] [cursor=pointer]: Dodaj
+          - generic [ref=e214]:
+            - generic [ref=e216]:
+              - generic [ref=e219]: +12%
+              - strong [ref=e220]: "42"
+              - text: Nowe leady
+            - generic [ref=e222]:
+              - generic [ref=e225]: +8%
+              - strong [ref=e226]: "128"
+              - text: Aktywne sprawy
+            - generic [ref=e228]:
+              - generic [ref=e231]: "-4%"
+              - strong [ref=e232]: "17"
+              - text: Dokumenty do weryfikacji
+          - generic [ref=e233]:
+            - generic [ref=e235]:
+              - generic [ref=e236]:
+                - heading "Aktywni klienci" [level=4] [ref=e237]
+                - paragraph [ref=e238]: Przyklad gestego widoku CRM z neutralnymi statusami.
+              - button "Eksport" [ref=e239] [cursor=pointer]
+            - generic [ref=e242]:
+              - generic [ref=e243]:
+                - strong [ref=e244]: Anna Kowalska
+                - generic [ref=e245]: Kredyt hipoteczny
+                - generic [ref=e246]: Scoring
+                - generic [ref=e247]: 820 000 PLN
+              - generic [ref=e248]:
+                - strong [ref=e249]: Marek Zielinski
+                - generic [ref=e250]: Refinansowanie
+                - generic [ref=e251]: Dokumenty
+                - generic [ref=e252]: 410 000 PLN
+              - generic [ref=e253]:
+                - strong [ref=e254]: Julia Nowak
+                - generic [ref=e255]: Zakup mieszkania
+                - generic [ref=e256]: Oferta
+                - generic [ref=e257]: 590 000 PLN
+      - generic [ref=e258]:
+        - generic [ref=e260]:
+          - paragraph [ref=e261]: Globalne animacje
+          - heading "Ruch jako sygnal stanu" [level=2] [ref=e262]
+        - generic [ref=e263]:
+          - generic [ref=e264]:
+            - text: "1"
+            - strong [ref=e265]: fade-up page entry
+            - paragraph [ref=e266]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+          - generic [ref=e267]:
+            - text: "2"
+            - strong [ref=e268]: hover lift
+            - paragraph [ref=e269]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+          - generic [ref=e270]:
+            - text: "3"
+            - strong [ref=e271]: press feedback
+            - paragraph [ref=e272]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+          - generic [ref=e273]:
+            - text: "4"
+            - strong [ref=e274]: reduced motion fallback
+            - paragraph [ref=e275]: Subtelne przejscie bez zmiany wymiarow elementu i z fallbackiem dla reduced motion.
+        - generic [ref=e277]:
+          - generic [ref=e278]: fade-up page entry
+          - generic [ref=e280]: hover lift
+          - generic [ref=e282]: press feedback
+          - generic [ref=e284]: reduced motion fallback
+          - generic [ref=e286]: fade-up page entry
+          - generic [ref=e288]: hover lift
+          - generic [ref=e290]: press feedback
+          - generic [ref=e292]: reduced motion fallback
+  - region "Notifications (F8)":
+    - list

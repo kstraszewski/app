@@ -1,4 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { fileURLToPath } from 'node:url'
+
+const databaseTypes = fileURLToPath(
+  new URL('../../packages/database/database.types.ts', import.meta.url),
+)
+
 const hasSupabaseConfig = Boolean(
   process.env.NUXT_PUBLIC_SUPABASE_URL && process.env.NUXT_PUBLIC_SUPABASE_KEY,
 )
@@ -13,23 +19,30 @@ export default defineNuxtConfig({
   },
   hooks: {
     'vite:extendConfig'(config) {
-      config.server ||= {}
-      config.server.hmr = false
+      const mutableConfig = config as typeof config & { server?: { hmr?: boolean } }
+      mutableConfig.server ||= {}
+      mutableConfig.server.hmr = false
     },
   },
   modules: ['@nuxtjs/supabase'],
   runtimeConfig: {
+    resend: {
+      apiKey: '',
+      from: '',
+      replyTo: '',
+    },
     public: {
       openexpert: {
         hasSupabaseConfig,
       },
       supabase: {
-        url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321',
+        url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
         key: process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder',
       },
     },
   },
   supabase: {
+    types: databaseTypes,
     redirectOptions: {
       login: '/login',
       callback: '/confirm',

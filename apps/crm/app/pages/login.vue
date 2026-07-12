@@ -1,69 +1,170 @@
 <script setup lang="ts">
+definePageMeta({ middleware: 'guest' })
+
+const route = useRoute()
 const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
 const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
 const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-const email = ref('')
-const sent = ref(false)
+const redirectCookie = useSupabaseCookieRedirect()
+const { callbackUrl, errorMessage, resolvePostAuthPath, safeRedirect, syncAuthenticatedUser } = useAuthFlow()
+
+const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
+const password = ref('')
+const loading = ref<'password' | 'magic' | null>(null)
 const error = ref<string | null>(null)
-const loading = ref(false)
+const magicLinkSent = ref(false)
+
+const registered = computed(() => route.query.registered === '1')
+const passwordChanged = computed(() => route.query.passwordChanged === '1')
+const intendedDestination = computed(() => safeRedirect(route.query.redirect))
 
 useHead({ title: 'Logowanie — OpenExpert CRM' })
 
-async function signIn() {
+async function finishLogin() {
+  const authenticated = await syncAuthenticatedUser()
+  if (!authenticated) {
+    error.value = 'Sesja nie została poprawnie zapisana. Spróbuj ponownie.'
+    return
+  }
+  const savedPath = redirectCookie.pluck()
+  const requested = safeRedirect(route.query.redirect, safeRedirect(savedPath))
+  await navigateTo(await resolvePostAuthPath(requested))
+}
+
+async function signInWithPassword() {
   error.value = null
-  if (!supabase) {
-    error.value = 'Brakuje konfiguracji Supabase — uzupełnij plik .env.'
+  if (!supabase) return
+  loading.value = 'password'
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: email.value.trim().toLowerCase(),
+    password: password.value,
+  })
+  loading.value = null
+
+  if (signInError) {
+    error.value = errorMessage(signInError)
     return
   }
-  loading.value = true
-  const { error: err } = await supabase.auth.signInWithOtp({ email: email.value })
-  loading.value = false
-  if (err) {
-    error.value = err.message
+
+  try {
+    await finishLogin()
+  } catch (sessionError) {
+    error.value = errorMessage(sessionError as { message?: string })
+  }
+}
+
+async function sendMagicLink() {
+  error.value = null
+  if (!supabase) return
+  if (!email.value.trim()) {
+    error.value = 'Podaj adres email.'
     return
   }
-  sent.value = true
+
+  loading.value = 'magic'
+  const { error: magicError } = await supabase.auth.signInWithOtp({
+    email: email.value.trim().toLowerCase(),
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo: callbackUrl('/confirm', intendedDestination.value),
+    },
+  })
+  loading.value = null
+
+  if (magicError) {
+    error.value = errorMessage(magicError)
+    return
+  }
+
+  magicLinkSent.value = true
 }
 </script>
 
 <template>
-  <main class="auth-page oe-grid-bg">
-    <NuxtLink to="/design" class="auth-logo">
-      <picture>
-        <source srcset="/assets/logo-dark.svg" media="(prefers-color-scheme: dark)">
-        <img src="/assets/logo-light.svg" alt="" class="auth-logo__mark">
-      </picture>
-      <span>OpenExpert CRM</span>
-    </NuxtLink>
-
-    <UCard class="auth-card oe-animate-in">
-      <template #header>
-        <div class="auth-header">
-          <UBadge color="neutral" variant="outline" icon="i-lucide-shield-check">
-            Magic link
-          </UBadge>
-          <h1>Zaloguj się</h1>
-          <p>Dostęp do CRM jest zabezpieczony przez Supabase Auth.</p>
-        </div>
-      </template>
-
+  <AuthShell
+    badge="Bezpieczne logowanie"
+    icon="i-lucide-lock-keyhole"
+    title="Witaj ponownie"
+    description="Zaloguj się hasłem albo wyślij jednorazowy link na swój email."
+  >
+    <div class="grid gap-4">
       <UAlert
-        v-if="!hasSupabaseConfig"
-        role="alert"
-        color="warning"
+        v-if="registered"
+        color="success"
         variant="subtle"
-        icon="i-lucide-alert-triangle"
-        title="Brakuje konfiguracji Supabase"
-        description="Uzupełnij plik .env, żeby włączyć logowanie."
+        icon="i-lucide-badge-check"
+        title="Email potwierdzony"
+        description="Twoje konto jest gotowe. Możesz się zalogować."
       />
 
-      <form v-else-if="!sent" class="auth-form" @submit.prevent="signIn">
-        <UFormField label="Email">
-          <UInput v-model="email" type="email" required placeholder="twoj@email.pl" icon="i-lucide-mail" class="w-full" />
+      <UAlert
+        v-if="passwordChanged"
+        color="success"
+        variant="subtle"
+        icon="i-lucide-key-round"
+        title="Hasło zostało zmienione"
+      />
+
+      <UAlert
+        v-if="magicLinkSent"
+        color="success"
+        variant="subtle"
+        icon="i-lucide-mail-check"
+        title="Sprawdź skrzynkę"
+        description="Wysłaliśmy jednorazowy link logowania. Lokalny adres Mailpit wypisuje komenda pnpm db:start."
+      />
+
+      <form v-else class="grid gap-4" @submit.prevent="signInWithPassword">
+        <UFormField label="Email" required>
+          <UInput
+            v-model="email"
+            type="email"
+            autocomplete="email"
+            required
+            placeholder="twoj@email.pl"
+            icon="i-lucide-mail"
+            class="w-full"
+          />
         </UFormField>
 
-        <UButton type="submit" block variant="solid" icon="i-lucide-send" :loading="loading">
-          Wyślij link
+        <UFormField label="Hasło" required>
+          <UInput
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="Twoje hasło"
+            icon="i-lucide-key-round"
+            class="w-full"
+          />
+        </UFormField>
+
+        <div class="flex justify-end">
+          <NuxtLink to="/forgot-password" class="text-sm underline underline-offset-4">
+            Nie pamiętam hasła
+          </NuxtLink>
+        </div>
+
+        <UButton
+          type="submit"
+          block
+          variant="solid"
+          icon="i-lucide-log-in"
+          :loading="loading === 'password'"
+        >
+          Zaloguj się
+        </UButton>
+
+        <UButton
+          type="button"
+          block
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-wand-sparkles"
+          :loading="loading === 'magic'"
+          @click="sendMagicLink"
+        >
+          Wyślij magic link
         </UButton>
 
         <UAlert
@@ -75,73 +176,13 @@ async function signIn() {
           :description="error"
         />
       </form>
+    </div>
 
-      <UAlert
-        v-else
-        color="success"
-        variant="subtle"
-        icon="i-lucide-mail-check"
-        title="Sprawdź skrzynkę"
-        description="Wysłaliśmy link logowania na podany adres email."
-      />
-    </UCard>
-  </main>
+    <template #footer>
+      Nie masz konta?
+      <NuxtLink to="/register" class="font-medium underline underline-offset-4">
+        Utwórz organizację
+      </NuxtLink>
+    </template>
+  </AuthShell>
 </template>
-
-<style scoped>
-.auth-page {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 80px 20px;
-}
-
-.auth-logo {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ui-text-highlighted);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.auth-logo__mark {
-  height: 22px;
-  filter: var(--oe-logo-filter);
-}
-
-.auth-card {
-  width: min(100%, 440px);
-}
-
-.auth-header {
-  display: grid;
-  gap: 12px;
-}
-
-.auth-header h1 {
-  color: var(--ui-text-highlighted);
-  font-size: 34px;
-  font-weight: 300;
-  line-height: 1.1;
-}
-
-.auth-header p {
-  color: var(--ui-text-toned);
-  line-height: 1.6;
-}
-
-.auth-form {
-  display: grid;
-  gap: 16px;
-}
-
-@media (max-width: 560px) {
-  .auth-logo {
-    left: 20px;
-  }
-}
-</style>

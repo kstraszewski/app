@@ -8,28 +8,60 @@ const user = useSupabaseUser()
 const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
 const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
 const supabase = hasSupabaseConfig ? useSupabaseClient() : null
+const route = useRoute()
+const organizationSlug = computed(() => {
+  const raw = route.params.organizationSlug
+  return Array.isArray(raw) ? String(raw[0] ?? '') : String(raw ?? '')
+})
+const organizationBase = computed(() => organizationSlug.value ? `/org/${organizationSlug.value}` : '')
+const { data: organizations } = await useOrganizations()
+const organizationItems = computed(() => organizations.value.data.map((organization) => ({
+  label: organization.name,
+  value: organization.slug,
+})))
+const selectedOrganizationSlug = computed({
+  get: () => organizationSlug.value,
+  set: (slug: string) => {
+    if (slug && slug !== organizationSlug.value) navigateTo(`/org/${encodeURIComponent(slug)}/dashboard`)
+  },
+})
 
-const navItems = [
-  { label: 'Dashboard', to: '/dashboard', icon: 'i-lucide-layout-dashboard' },
-  { label: 'Klienci', to: '/clients', icon: 'i-lucide-users' },
-  { label: 'Sprawy', to: '/cases', icon: 'i-lucide-briefcase-business' },
-  { label: 'Ustawienia', to: '/settings', icon: 'i-lucide-settings' },
+const navItems = computed(() => [
+  { label: 'Dashboard', to: `${organizationBase.value}/dashboard`, icon: 'i-lucide-layout-dashboard' },
+  { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
+  { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
+  { label: 'Hipoteki', to: `${organizationBase.value}/mortgages`, icon: 'i-lucide-house' },
+  { label: 'Zespoły', to: `${organizationBase.value}/teams`, icon: 'i-lucide-network' },
+  { label: 'Ustawienia', to: `${organizationBase.value}/settings`, icon: 'i-lucide-settings' },
   { label: 'Design', to: '/design', icon: 'i-lucide-component' },
-]
+])
 
 async function signOut() {
-  if (supabase) await supabase.auth.signOut()
-  await navigateTo('/login')
+  try {
+    if (supabase) await supabase.auth.signOut({ scope: 'local' })
+  } finally {
+    user.value = null
+    clearNuxtData('openexpert-organizations')
+    await navigateTo('/login')
+  }
 }
 </script>
 
 <template>
   <main class="crm-shell">
     <aside class="crm-nav">
-      <NuxtLink to="/dashboard" class="crm-brand">
+      <NuxtLink :to="organizationBase ? `${organizationBase}/dashboard` : '/'" class="crm-brand">
         <img src="/assets/logo-light.svg" alt="" class="crm-brand__mark">
         <span>OpenExpert</span>
       </NuxtLink>
+
+      <USelect
+        v-model="selectedOrganizationSlug"
+        class="crm-organization-select"
+        :items="organizationItems"
+        icon="i-lucide-building-2"
+        aria-label="Aktywna organizacja"
+      />
 
       <nav class="crm-links" aria-label="CRM navigation">
         <NuxtLink
@@ -120,6 +152,10 @@ async function signOut() {
   gap: 6px;
 }
 
+.crm-organization-select {
+  width: 100%;
+}
+
 .crm-link {
   min-height: 38px;
   padding: 0 10px;
@@ -204,4 +240,3 @@ async function signOut() {
   }
 }
 </style>
-

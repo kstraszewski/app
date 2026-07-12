@@ -1,9 +1,6 @@
 <script setup lang="ts">
 useHead({ title: 'OpenExpert — Modułowa platforma dla ekspertów' })
 
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 const router = useRouter()
 const email = ref('')
 const waitlistError = ref<string | null>(null)
@@ -12,32 +9,28 @@ const waitlistLoading = ref(false)
 async function submitWaitlist() {
   const val = email.value.trim()
   if (!val || !val.includes('@')) return
-  if (!supabase) {
-    waitlistError.value = 'Brakuje konfiguracji Supabase — uzupełnij plik .env.'
-    return
-  }
   waitlistLoading.value = true
   waitlistError.value = null
 
-  const { error } = await supabase
-    .from('waitlist')
-    .insert({ email: val })
+  try {
+    const result = await $fetch<{ surveyToken: string }>('/api/waitlist', {
+      method: 'POST',
+      body: { email: val },
+    })
 
-  waitlistLoading.value = false
-
-  if (error && error.code !== '23505') {
+    localStorage.setItem('oe-waitlist', JSON.stringify({
+      step: 1,
+      email: val,
+      answers: {},
+      emailSaved: true,
+      surveyToken: result.surveyToken,
+    }))
+    await router.push('/waitlist')
+  } catch {
     waitlistError.value = 'Coś poszło nie tak — spróbuj jeszcze raz.'
-    return
+  } finally {
+    waitlistLoading.value = false
   }
-
-  // Save state so /waitlist picks up the survey at step 1
-  localStorage.setItem('oe-waitlist', JSON.stringify({
-    step: 1,
-    email: val,
-    answers: {},
-    emailSaved: true,
-  }))
-  router.push('/waitlist')
 }
 
 const marqueeItems = [

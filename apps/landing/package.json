@@ -3,16 +3,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build --dotenv ../../.env",
-    "dev": "nuxt dev --dotenv ../../.env --port 3003",
-    "generate": "nuxt generate --dotenv ../../.env",
-    "prepare": "nuxt prepare --dotenv ../../.env",
-    "preview": "nuxt preview --dotenv ../../.env --port 3003"
+    "build": "nuxt build",
+    "dev": "nuxt dev --host 127.0.0.1 --port 3003",
+    "generate": "nuxt generate",
+    "prepare": "nuxt prepare",
+    "preview": "nuxt preview --host 127.0.0.1 --port 3003",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@openexpert/email": "workspace:*",
     "@nuxtjs/supabase": "^2.0.5",
     "nuxt": "^4.4.2",
     "vue": "^3.5.32",
     "vue-router": "^5.0.4"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.7"
   }
 }

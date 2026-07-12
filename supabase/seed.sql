@@ -1,0 +1,3 @@
+-- Schema-independent seed data belongs here.
+-- The reproducible local Auth account is created through the official
+-- Supabase Admin API by 'pnpm db:setup', after migrations and this seed run.

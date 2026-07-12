@@ -152,14 +152,6 @@ async function handleEmailSubmit() {
 const surveyIndex   = computed(() => step.value - 1)
 const currentSurvey = computed(() => SURVEY_STEPS[surveyIndex.value])
 
-const canContinue = computed(() => {
-  const s = currentSurvey.value
-  if (!s || s.type === 'text') return true
-  const val = answers.value[s.id]
-  if (s.type === 'single') return !!val
-  return Array.isArray(val) && val.length > 0
-})
-
 function toggleOption(id: string, opt: string, type: string) {
   if (type === 'single') {
     answers.value[id] = opt
@@ -186,15 +178,6 @@ async function nextSurvey() {
   const isLast = surveyIndex.value === SURVEY_STEPS.length - 1
   if (isLast) {
     await submitSurvey()
-  } else {
-    step.value += 1
-  }
-}
-
-function skipSurvey() {
-  const isLast = surveyIndex.value === SURVEY_STEPS.length - 1
-  if (isLast) {
-    submitSurvey()
   } else {
     step.value += 1
   }
@@ -263,11 +246,10 @@ const filledAnswers = computed(() =>
         </picture>
         <span class="wl-logo-name">OpenExpert</span>
       </NuxtLink>
-      <NuxtLink to="/" class="wl-back">
+      <NuxtLink to="/" class="wl-back" aria-label="Wróć do strony głównej">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Wróć do strony głównej
       </NuxtLink>
     </nav>
 
@@ -283,7 +265,6 @@ const filledAnswers = computed(() =>
             class="wl-step-dot"
             :class="{ active: i === step, done: i < step }"
           />
-          <span class="wl-step-label">{{ progressLabel }}</span>
         </div>
 
         <!-- STEP 0: EMAIL FORM -->
@@ -369,11 +350,9 @@ const filledAnswers = computed(() =>
 
           <!-- Nav row -->
           <div class="wl-nav-row">
-            <button class="wl-skip" @click="skipSurvey">Pomiń pytanie →</button>
             <button
               class="wl-btn-primary"
               :disabled="loading"
-              :style="{ opacity: canContinue ? 1 : 0.4 }"
               @click="nextSurvey"
             >
               {{ loading ? 'Zapisuję…' : surveyIndex === SURVEY_STEPS.length - 1 ? 'Zakończ ankietę' : 'Dalej' }}
@@ -844,6 +823,21 @@ const filledAnswers = computed(() =>
   .wl-textarea {
     background: var(--bg-muted);
     border-color: var(--border-strong);
+  }
+
+  /* Selected option: white bg (inverted) — black checkbox with white tick */
+  .wl-option.selected .wl-option-check {
+    background: var(--black);
+    border-color: var(--black);
+  }
+  .wl-option.selected .wl-option-check::after {
+    border-color: var(--white);
+  }
+  .wl-option.selected .wl-option-radio {
+    border-color: var(--black);
+  }
+  .wl-option.selected .wl-option-radio::after {
+    background: var(--black);
   }
 }
 

@@ -5,10 +5,6 @@ const databaseTypes = fileURLToPath(
   new URL('../../packages/database/database.types.ts', import.meta.url),
 )
 
-const hasSupabaseConfig = Boolean(
-  process.env.NUXT_PUBLIC_SUPABASE_URL && process.env.NUXT_PUBLIC_SUPABASE_KEY,
-)
-
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
@@ -38,10 +34,25 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
-    public: {
-      openexpert: {
-        hasSupabaseConfig,
+    bookingSecurity: {
+      trustProxy: false,
+      rateLimitSecret: '',
+    },
+    calendarOAuth: {
+      encryptionKey: '',
+      google: {
+        clientId: '',
+        clientSecret: '',
+        redirectUri: '',
       },
+      microsoft: {
+        clientId: '',
+        clientSecret: '',
+        redirectUri: '',
+        tenant: 'common',
+      },
+    },
+    public: {
       supabase: {
         url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
         key: process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder',
@@ -60,6 +71,7 @@ export default defineNuxtConfig({
         '/forgot-password',
         '/reset-password',
         '/design',
+        '/book/*',
       ],
       saveRedirectToCookie: true,
     },

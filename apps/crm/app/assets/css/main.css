@@ -27,6 +27,7 @@
 
 @theme static {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Imbue", Georgia, serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", monospace;
 
@@ -59,7 +60,23 @@
 }
 
 :root {
-  --ui-radius: 0.25rem;
+  --ui-radius: 0.75rem;
+  --oe-radius-control: 0.75rem;
+  --oe-radius-surface: 1rem;
+  --oe-radius-emphasis: 1.25rem;
+  --oe-control-height: 40px;
+  --oe-button-padding-x: 16px;
+  --oe-button-font-weight: 600;
+  --oe-sidebar-width: 248px;
+  --oe-sidebar-collapsed-width: 72px;
+  --oe-spacing-scale: 1;
+  --oe-body-font-size: 16px;
+  --oe-body-font-weight: 400;
+  --oe-body-line-height: 1.5;
+  --oe-heading-font-weight: 300;
+  --oe-heading-letter-spacing: 0em;
+  --oe-sidebar-bg: #000000;
+  --oe-sidebar-fg: #ffffff;
   --ui-container: var(--container-8xl);
   --ui-header-height: 3.75rem;
 
@@ -144,10 +161,22 @@ body {
   background: var(--ui-bg);
   color: var(--ui-text);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: var(--oe-body-font-size);
+  font-weight: var(--oe-body-font-weight);
+  line-height: var(--oe-body-line-height);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  font-weight: var(--oe-heading-font-weight);
+  letter-spacing: var(--oe-heading-letter-spacing);
 }
 
 button,

@@ -22,7 +22,10 @@ export function useAuthFlow() {
 
   async function resolvePostAuthPath(value?: unknown) {
     const requested = safeRedirect(value, '')
-    if (requested && requested !== '/dashboard') return requested
+    if (requested.startsWith('/org/')) return requested
+
+    const legacyOrganizationPath = /^\/(dashboard|clients|cases|mortgages|settings|teams)(\/|$)/.test(requested)
+    if (requested && !legacyOrganizationPath) return requested
 
     const { data: profile, error: profileError } = await supabase
       .from('users')
@@ -36,7 +39,8 @@ export function useAuthFlow() {
       .eq('id', profile.organization_id)
       .single()
     if (organizationError || !organization?.slug) throw organizationError ?? new Error('Brak organizacji użytkownika.')
-    return `/org/${encodeURIComponent(organization.slug)}/dashboard`
+    const suffix = legacyOrganizationPath ? requested : '/dashboard'
+    return `/org/${encodeURIComponent(organization.slug)}${suffix}`
   }
 
   function passwordIssue(password: string) {

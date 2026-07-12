@@ -11,6 +11,7 @@ import {
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
+import { loadConsentDefinitions } from '~~/server/utils/consents'
 
 export interface CrmMcpTool {
   name: string
@@ -25,6 +26,77 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
   required,
   additionalProperties: false,
 })
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function parseConsentDecisions(input: unknown) {
+  if (input === undefined) return []
+  if (!Array.isArray(input)) {
+    throw createError({ statusCode: 400, statusMessage: 'consent_decisions must be an array' })
+  }
+
+  return input.map((rawDecision, index) => {
+    const decision = asRecord(rawDecision)
+    const definitionId = textValue(decision.definition_id)
+    const versionId = textValue(decision.version_id)
+    if (
+      !definitionId
+      || !uuidPattern.test(definitionId)
+      || !versionId
+      || !uuidPattern.test(versionId)
+      || typeof decision.granted !== 'boolean'
+    ) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `Invalid consent_decisions[${index}]`,
+      })
+    }
+
+    return {
+      definition_id: definitionId,
+      version_id: versionId,
+      granted: decision.granted,
+    }
+  })
+}
+
+function throwCreateClientRpcError(error: { message?: string; code?: string } | null | undefined): void {
+  if (!error) return
+  if (
+    error.message?.includes('consent_definition_is_stale')
+    || error.message?.includes('consent_catalogue_is_stale')
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Consent definitions changed. Load their current versions and try again.',
+    })
+  }
+  if (error.message?.includes('consent_contact_value_is_required')) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'A contact value is required for the selected consent channel.',
+    })
+  }
+  if (error.message?.includes('client_owner_assignment_admin_required')) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Only an organization administrator can assign a client to another user.',
+    })
+  }
+  if (error.message?.includes('required_consent_not_granted')) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'All required consents must be granted before creating the client.',
+    })
+  }
+  if (error.message?.includes('client_consent_decisions_required')) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Consent decisions are required for all active definitions.',
+    })
+  }
+  throwDbError(error)
+}
 
 export function getCrmMcpTools(): CrmMcpTool[] {
   return [
@@ -77,39 +149,85 @@ export function getCrmMcpTools(): CrmMcpTool[] {
       },
     },
     {
+      name: 'crm.client_creation_consents',
+      description: 'Load the exact active consent versions required when creating a client.',
+      inputSchema: objectSchema({}),
+      async handler(event) {
+        const session = await requireCrmSession(event)
+        const definitions = await loadConsentDefinitions(session, { activeOnly: true })
+
+        return definitions.map(definition => ({
+          definition_id: definition.id,
+          version_id: definition.current_version_id,
+          code: definition.code,
+          version: definition.current_version?.version,
+          title: definition.current_version?.display_title,
+          content: definition.current_version?.content,
+          channel: definition.current_version?.channel,
+          is_required: definition.current_version?.is_required ?? false,
+        }))
+      },
+    },
+    {
       name: 'crm.create_client',
-      description: 'Create a CRM client and optional primary person.',
+      description: 'Create a CRM client with a complete consent trail. Call crm.client_creation_consents first and pass one decision for every returned version.',
       inputSchema: objectSchema({
         display_name: { type: 'string' },
         primary_email: { type: 'string' },
         primary_phone: { type: 'string' },
         lead_source: { type: 'string' },
-      }, ['display_name']),
+        owner_user_id: { type: 'string', format: 'uuid' },
+        consent_decisions: {
+          type: 'array',
+          items: objectSchema({
+            definition_id: { type: 'string', format: 'uuid' },
+            version_id: { type: 'string', format: 'uuid' },
+            granted: { type: 'boolean' },
+          }, ['definition_id', 'version_id', 'granted']),
+        },
+      }, ['display_name', 'consent_decisions']),
       async handler(event, input) {
         const session = await requireCrmSession(event)
         const body = asRecord(input)
         const displayName = requiredText(body.display_name, 'display_name')
-
-        const { data, error } = await session.supabase
-          .from('crm_clients')
-          .insert({
-            organization_id: session.organizationId,
-            owner_user_id: session.userId,
-            display_name: displayName,
-            primary_email: textValue(body.primary_email) ?? null,
-            primary_phone: textValue(body.primary_phone) ?? null,
-            lead_source: textValue(body.lead_source) ?? 'mcp',
+        const requestedOwnerUserId = textValue(body.owner_user_id)
+        if ('owner_user_id' in body && !requestedOwnerUserId) {
+          throw createError({ statusCode: 400, statusMessage: 'owner_user_id must be a UUID' })
+        }
+        const ownerUserId = requestedOwnerUserId ?? session.userId
+        if (!uuidPattern.test(ownerUserId)) {
+          throw createError({ statusCode: 400, statusMessage: 'owner_user_id must be a UUID' })
+        }
+        if (session.role !== 'admin' && ownerUserId !== session.userId) {
+          throw createError({
+            statusCode: 403,
+            statusMessage: 'Only an organization administrator can assign a client to another user.',
           })
-          .select('*')
-          .single()
-        throwDbError(error)
+        }
 
-        await recordCrmActivity(session, {
-          client_id: data.id,
-          activity_type: 'client_created',
-          title: 'Dodano klienta przez MCP',
-          body: displayName,
+        const primaryEmail = textValue(body.primary_email) ?? null
+        const primaryPhone = textValue(body.primary_phone) ?? null
+        const consentDecisions = parseConsentDecisions(body.consent_decisions)
+        const { data, error } = await session.supabase.rpc('create_crm_client_with_consents', {
+          p_organization_id: session.organizationId,
+          p_owner_user_id: ownerUserId,
+          p_display_name: displayName,
+          p_status_code: 'lead',
+          p_lead_source: textValue(body.lead_source) ?? 'mcp',
+          p_primary_email: primaryEmail,
+          p_primary_phone: primaryPhone,
+          p_tags: [],
+          p_notes: null,
+          p_metadata: { source: 'mcp' },
+          p_primary_person: {
+            display_name: displayName,
+            email: primaryEmail,
+            phone: primaryPhone,
+            metadata: { source: 'mcp' },
+          },
+          p_consent_decisions: consentDecisions,
         })
+        throwCreateClientRpcError(error)
 
         return data
       },

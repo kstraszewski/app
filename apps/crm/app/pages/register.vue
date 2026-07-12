@@ -1,8 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'guest' })
 
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const hasSupabaseConfig = useHasSupabaseConfig()
 const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 const { callbackUrl, errorMessage, passwordIssue, resolvePostAuthPath, syncAuthenticatedUser } = useAuthFlow()
 

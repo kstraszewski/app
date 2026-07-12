@@ -1,18 +1,19 @@
 import {
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireTeamAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  const teamId = getRequiredParam(event, 'teamId')
+  await requireTeamAdmin(session, teamId)
   const { error } = await session.supabase
     .from('team_memberships')
     .delete()
     .eq('organization_id', session.organizationId)
-    .eq('team_id', getRequiredParam(event, 'teamId'))
+    .eq('team_id', teamId)
     .eq('user_id', getRequiredParam(event, 'userId'))
 
   throwDbError(error)

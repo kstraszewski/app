@@ -35,7 +35,7 @@ export interface TeamMembership {
   organization_id: string
   team_id: string
   user_id: string
-  role: 'member' | 'lead'
+  role: 'member' | 'admin'
   created_at: string
   updated_at: string
 }

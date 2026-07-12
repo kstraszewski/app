@@ -1,0 +1,34 @@
+import {
+  getRequiredParam,
+  requireCrmSession,
+  requireOrganizationAdmin,
+  throwDbError,
+} from '~~/server/utils/crm'
+
+export default defineEventHandler(async (event) => {
+  const session = await requireCrmSession(event)
+  requireOrganizationAdmin(session)
+  const bankId = getRequiredParam(event, 'bankId')
+
+  const { data: revisions, error } = await session.supabase
+    .from('mortgage_bank_override_revisions')
+    .select('id, revision, action, is_enabled, custom_name, custom_website_url, logo_path, notes, changed_by, created_at')
+    .eq('organization_id', session.organizationId)
+    .eq('bank_id', bankId)
+    .order('created_at', { ascending: false })
+  throwDbError(error)
+
+  const actorIds = [...new Set((revisions ?? []).map((revision: any) => revision.changed_by))]
+  const { data: actors, error: actorsError } = actorIds.length
+    ? await session.supabase.from('users').select('id, full_name, email').in('id', actorIds)
+    : { data: [], error: null }
+  throwDbError(actorsError)
+  const actorById = new Map((actors ?? []).map((actor: any) => [actor.id, actor]))
+
+  return {
+    data: (revisions ?? []).map((revision: any) => ({
+      ...revision,
+      actor: actorById.get(revision.changed_by) ?? null,
+    })),
+  }
+})

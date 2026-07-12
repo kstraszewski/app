@@ -11,7 +11,7 @@
   ],
   "products": [
     {
-      "bank": { "slug": "pko-bp", "name": "PKO Bank Polski / PKO Bank Hipoteczny", "websiteUrl": "https://www.pkobp.pl" },
+      "bank": { "slug": "pko-bp", "name": "PKO Bank Polski / PKO Bank Hipoteczny", "websiteUrl": "https://www.pkobp.pl", "logoUrl": "https://www.pkobp.pl/api/public/3c663fc2-a8dc-4cb9-ab55-9a4ee64b7c35.svg" },
       "product": { "slug": "wlasny-kat-fixed-5y", "name": "Własny Kąt — stała stopa 5 lat", "category": "housing" },
       "sourceKey": "pko-fixed-5y-2026-07-12",
       "version": {
@@ -25,7 +25,7 @@
       }
     },
     {
-      "bank": { "slug": "ing", "name": "ING Bank Śląski", "websiteUrl": "https://www.ing.pl" },
+      "bank": { "slug": "ing", "name": "ING Bank Śląski", "websiteUrl": "https://www.ing.pl", "logoUrl": "https://www.ing.pl/_static/img/logo_lsl_new.5800ff4f65b35cf926f5.svg" },
       "product": { "slug": "mieszkaj-po-swojemu-latwy-start-fixed", "name": "Mieszkaj po swojemu — łatwy start", "category": "housing" },
       "sourceKey": "ing-mortgage-2026-07-12",
       "version": {
@@ -39,7 +39,7 @@
       }
     },
     {
-      "bank": { "slug": "erste", "name": "Erste Bank Polska", "websiteUrl": "https://www.santander.pl" },
+      "bank": { "slug": "erste", "name": "Erste Bank Polska", "websiteUrl": "https://www.erste.pl", "logoUrl": "https://www.erste.pl/_fileserver/item/1525064", "logoBackgroundColor": "#2870ED" },
       "product": { "slug": "housing-fixed-5y", "name": "Kredyt mieszkaniowy — stała stopa 5 lat", "category": "housing" },
       "sourceKey": "erste-general-mortgage-2026-07-12",
       "version": {
@@ -53,7 +53,7 @@
       }
     },
     {
-      "bank": { "slug": "mbank", "name": "mBank", "websiteUrl": "https://www.mbank.pl" },
+      "bank": { "slug": "mbank", "name": "mBank", "websiteUrl": "https://www.mbank.pl", "logoUrl": "https://prowly-prod.s3.eu-west-1.amazonaws.com/uploads/5104/assets/254921/large-6ba0fabffbbded7d5ac20f20c407a62b.jpg" },
       "product": { "slug": "standard-fixed-5y", "name": "Kredyt hipoteczny — oferta standardowa", "category": "housing" },
       "sourceKey": "mbank-standard-mortgage-2026-07-12",
       "version": {
@@ -67,7 +67,7 @@
       }
     },
     {
-      "bank": { "slug": "pekao", "name": "Bank Pekao", "websiteUrl": "https://www.pekao.com.pl" },
+      "bank": { "slug": "pekao", "name": "Bank Pekao", "websiteUrl": "https://www.pekao.com.pl", "logoUrl": "https://www.pekao.com.pl/.resources/pekao-module/webresources/dist_v2/img/logo.svg" },
       "product": { "slug": "housing-fixed-5y", "name": "Przewygodny kredyt mieszkaniowy", "category": "housing" },
       "sourceKey": "pekao-housing-mortgage-2026-07-12",
       "version": {

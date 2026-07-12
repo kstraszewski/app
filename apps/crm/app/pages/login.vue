@@ -2,8 +2,7 @@
 definePageMeta({ middleware: 'guest' })
 
 const route = useRoute()
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const hasSupabaseConfig = useHasSupabaseConfig()
 const supabase = hasSupabaseConfig ? useSupabaseClient() : null
 const redirectCookie = useSupabaseCookieRedirect()
 const { callbackUrl, errorMessage, resolvePostAuthPath, safeRedirect, syncAuthenticatedUser } = useAuthFlow()

@@ -112,6 +112,8 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
         slug: item.bank.slug,
         name: item.bank.name,
         website_url: item.bank.websiteUrl,
+        logo_url: item.bank.logoUrl ?? null,
+        logo_background_color: item.bank.logoBackgroundColor ?? null,
       }, { onConflict: 'slug' })
       .select('id')
       .single()

@@ -3,15 +3,15 @@ import {
   asRecord,
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireTeamAdmin,
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
   const teamId = getRequiredParam(event, 'teamId')
+  await requireTeamAdmin(session, teamId)
   const body = asRecord(await readBody(event))
   const patch: Record<string, unknown> = {}
 

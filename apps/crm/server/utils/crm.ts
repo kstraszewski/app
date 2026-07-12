@@ -20,8 +20,8 @@ export interface CrmSession extends AuthenticatedSession {
 }
 
 export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
-  const openexpertConfig = useRuntimeConfig(event).public.openexpert as { hasSupabaseConfig?: boolean }
-  if (!openexpertConfig.hasSupabaseConfig) {
+  const supabaseConfig = useRuntimeConfig(event).public.supabase as { url?: string; key?: string }
+  if (!supabaseConfig.url || !supabaseConfig.key || supabaseConfig.key === 'local-development-placeholder') {
     throw createError({
       statusCode: 503,
       statusMessage: 'Supabase is not configured',
@@ -101,6 +101,21 @@ export async function requireCrmSession(
 export function requireOrganizationAdmin(session: CrmSession): void {
   if (session.role !== 'admin') {
     throw createError({ statusCode: 403, statusMessage: 'Organization admin required' })
+  }
+}
+
+export async function requireTeamAdmin(session: CrmSession, teamId: string): Promise<void> {
+  if (session.role === 'admin') return
+  const { data, error } = await session.supabase
+    .from('team_memberships')
+    .select('team_id')
+    .eq('organization_id', session.organizationId)
+    .eq('team_id', teamId)
+    .eq('user_id', session.userId)
+    .eq('role', 'admin')
+    .maybeSingle()
+  if (error || !data) {
+    throw createError({ statusCode: 403, statusMessage: 'Team admin required' })
   }
 }
 

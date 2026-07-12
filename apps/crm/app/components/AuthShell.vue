@@ -6,8 +6,7 @@ defineProps<{
   description: string
 }>()
 
-const openexpertConfig = useRuntimeConfig().public.openexpert as { hasSupabaseConfig?: boolean }
-const hasSupabaseConfig = Boolean(openexpertConfig.hasSupabaseConfig)
+const hasSupabaseConfig = useHasSupabaseConfig()
 </script>
 
 <template>

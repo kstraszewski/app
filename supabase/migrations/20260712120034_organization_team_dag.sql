@@ -96,6 +96,10 @@ create table public.team_memberships (
 create index team_memberships_user_team_idx
   on public.team_memberships(organization_id, user_id, team_id);
 
+-- This shared trigger helper only touches NEW.updated_at. Pinning its search
+-- path also keeps every new trigger below free of role-controlled lookups.
+alter function public.set_updated_at() set search_path = '';
+
 create trigger organization_memberships_set_updated_at
   before update on public.organization_memberships
   for each row execute function public.set_updated_at();
@@ -293,7 +297,8 @@ language sql
 security invoker
 set search_path = ''
 as $$
-  select (private.add_team_edge(organization_id, parent_team_id, child_team_id)).*;
+  select inserted_edge.*
+  from private.add_team_edge(organization_id, parent_team_id, child_team_id) as inserted_edge;
 $$;
 
 revoke all on function private.team_edge_would_create_cycle(uuid, uuid, uuid) from public, anon, authenticated;
@@ -355,7 +360,8 @@ language sql
 security invoker
 set search_path = ''
 as $$
-  select (private.add_organization_member_by_email(organization_id, email, role)).*;
+  select inserted_membership.*
+  from private.add_organization_member_by_email(organization_id, email, role) as inserted_membership;
 $$;
 
 revoke all on function private.add_organization_member_by_email(uuid, text, text) from public, anon;
@@ -595,8 +601,6 @@ alter table public.crm_properties
 
 create index crm_case_participants_org_person_idx
   on public.crm_case_participants(organization_id, person_id);
-create index crm_submissions_org_provider_idx
-  on public.crm_item_submissions(organization_id, provider_id);
 create index crm_settlements_org_payer_idx
   on public.crm_case_item_settlements(organization_id, payer_provider_id);
 create index crm_tasks_org_client_idx
@@ -720,10 +724,18 @@ create policy "members can view teams" on public.teams
   for select to authenticated
   using (private.is_organization_member(organization_id));
 
-create policy "admins can manage teams" on public.teams
-  for all to authenticated
+create policy "organization admins can insert teams" on public.teams
+  for insert to authenticated
+  with check (private.is_organization_admin(organization_id));
+
+create policy "organization admins can update teams" on public.teams
+  for update to authenticated
   using (private.is_organization_admin(organization_id))
   with check (private.is_organization_admin(organization_id));
+
+create policy "organization admins can delete teams" on public.teams
+  for delete to authenticated
+  using (private.is_organization_admin(organization_id));
 
 create policy "members can view team edges" on public.team_edges
   for select to authenticated
@@ -737,10 +749,18 @@ create policy "members can view direct team memberships" on public.team_membersh
   for select to authenticated
   using (private.is_organization_member(organization_id));
 
-create policy "admins can manage direct team memberships" on public.team_memberships
-  for all to authenticated
+create policy "organization admins can insert team memberships" on public.team_memberships
+  for insert to authenticated
+  with check (private.is_organization_admin(organization_id));
+
+create policy "organization admins can update team memberships" on public.team_memberships
+  for update to authenticated
   using (private.is_organization_admin(organization_id))
   with check (private.is_organization_admin(organization_id));
+
+create policy "organization admins can delete team memberships" on public.team_memberships
+  for delete to authenticated
+  using (private.is_organization_admin(organization_id));
 
 do $$
 declare

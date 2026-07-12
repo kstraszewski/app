@@ -12,11 +12,16 @@ useHead({ title: 'Zespoły — OpenExpert CRM' })
 
 const { orgApiPath } = useOrganizationContext()
 const toast = useToast()
+const currentUser = useSupabaseUser()
 const saving = ref(false)
 const teamForm = reactive({ name: '', kind: 'team', description: '' })
 const edgeForm = reactive({ parent_team_id: '', child_team_id: '' })
 const membershipForm = reactive({ team_id: '', user_id: '', role: 'member' })
 const organizationMemberForm = reactive({ email: '', role: 'expert' })
+const teamRoleItems = [
+  { label: 'Administrator', value: 'admin' },
+  { label: 'Członek', value: 'member' },
+]
 
 const emptyGraph: TeamGraphPayload = {
   organization: { id: '', name: '', slug: '', role: 'expert', isDefault: false },
@@ -33,6 +38,15 @@ const { data: graph, pending, error, refresh } = await useFetch<TeamGraphPayload
 
 const isAdmin = computed(() => graph.value.organization.role === 'admin')
 const teamItems = computed(() => graph.value.teams.map((team) => ({ label: team.name, value: team.id })))
+const teamAdminIds = computed(() => new Set(
+  graph.value.memberships
+    .filter(membership => membership.user_id === currentUser.value?.sub && membership.role === 'admin')
+    .map(membership => membership.team_id),
+))
+const canManageMemberships = computed(() => isAdmin.value || teamAdminIds.value.size > 0)
+const manageableTeamItems = computed(() => isAdmin.value
+  ? teamItems.value
+  : teamItems.value.filter(team => teamAdminIds.value.has(team.value)))
 const memberItems = computed(() => graph.value.members.map((member) => ({
   label: member.fullName || member.email,
   value: member.userId,
@@ -154,6 +168,17 @@ async function removeMembership(membership: TeamMembership) {
   await refresh()
 }
 
+async function updateMembershipRole(membership: TeamMembership, role: unknown) {
+  if (role !== 'admin' && role !== 'member') return
+  if (role === membership.role) return
+  await $fetch(orgApiPath(`/team-memberships/${membership.team_id}/${membership.user_id}`), {
+    method: 'PATCH',
+    body: { role },
+  })
+  await refresh()
+  toast.add({ title: 'Rola w zespole została zmieniona', color: 'success' })
+}
+
 async function removeTeam(team: TeamNode) {
   await $fetch(orgApiPath(`/teams/${team.id}`), { method: 'DELETE' })
   await refresh()
@@ -190,8 +215,8 @@ async function removeTeam(team: TeamNode) {
     <div v-if="pending" class="teams-loading"><USkeleton v-for="index in 6" :key="index" class="h-40 w-full" /></div>
 
     <template v-else>
-      <div v-if="isAdmin" class="teams-forms teams-block">
-        <UCard>
+      <div v-if="isAdmin || canManageMemberships" class="teams-forms teams-block">
+        <UCard v-if="isAdmin">
           <template #header><h2>Nowy węzeł</h2></template>
           <form class="teams-form" @submit.prevent="createTeam">
             <UFormField label="Nazwa"><UInput v-model="teamForm.name" required /></UFormField>
@@ -208,7 +233,7 @@ async function removeTeam(team: TeamNode) {
           </form>
         </UCard>
 
-        <UCard>
+        <UCard v-if="isAdmin">
           <template #header><h2>Nowa krawędź</h2></template>
           <form class="teams-form" @submit.prevent="addEdge">
             <UFormField label="Rodzic"><USelect v-model="edgeForm.parent_team_id" :items="teamItems" /></UFormField>
@@ -217,22 +242,22 @@ async function removeTeam(team: TeamNode) {
           </form>
         </UCard>
 
-        <UCard>
+        <UCard v-if="canManageMemberships">
           <template #header><h2>Bezpośredni członek</h2></template>
           <form class="teams-form" @submit.prevent="addMembership">
-            <UFormField label="Zespół"><USelect v-model="membershipForm.team_id" :items="teamItems" /></UFormField>
+            <UFormField label="Zespół"><USelect v-model="membershipForm.team_id" :items="manageableTeamItems" /></UFormField>
             <UFormField label="Użytkownik"><USelect v-model="membershipForm.user_id" :items="memberItems" /></UFormField>
             <UFormField label="Rola">
               <USelect v-model="membershipForm.role" :items="[
                 { label: 'Członek', value: 'member' },
-                { label: 'Lider', value: 'lead' },
+                { label: 'Administrator zespołu', value: 'admin' },
               ]" />
             </UFormField>
             <UButton type="submit" icon="i-lucide-user-plus" :loading="saving">Przypisz</UButton>
           </form>
         </UCard>
 
-        <UCard>
+        <UCard v-if="isAdmin">
           <template #header><h2>Użytkownik organizacji</h2></template>
           <form class="teams-form" @submit.prevent="addOrganizationMember">
             <UFormField label="Email istniejącego konta">
@@ -299,10 +324,19 @@ async function removeTeam(team: TeamNode) {
                   <div v-for="membership in membersByTeam.get(team.id) ?? []" :key="membership.user_id" class="team-member">
                     <div>
                       <strong>{{ memberLabel(memberById.get(membership.user_id)) }}</strong>
-                      <small>{{ membership.role }}</small>
+                      <USelect
+                        v-if="isAdmin || teamAdminIds.has(team.id)"
+                        :model-value="membership.role"
+                        :items="teamRoleItems"
+                        value-key="value"
+                        size="xs"
+                        aria-label="Rola w zespole"
+                        @update:model-value="role => updateMembershipRole(membership, role)"
+                      />
+                      <small v-else>{{ membership.role === 'admin' ? 'Administrator' : 'Członek' }}</small>
                     </div>
                     <UButton
-                      v-if="isAdmin"
+                      v-if="isAdmin || teamAdminIds.has(team.id)"
                       icon="i-lucide-x"
                       variant="ghost"
                       square

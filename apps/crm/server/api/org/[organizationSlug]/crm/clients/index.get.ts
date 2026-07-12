@@ -1,26 +1,35 @@
-import { getQuery } from 'h3'
-import { requireCrmSession, textValue, throwDbError } from '~~/server/utils/crm'
+import { getQuery, setHeader } from 'h3'
+import {
+  parseClientSearchFilters,
+  searchCrmClients,
+} from '~~/server/utils/clients'
+import { requireCrmSession } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  const query = getQuery(event)
-  const search = textValue(query.q)
-  const limit = Math.min(Number(query.limit ?? 50) || 50, 100)
+  setHeader(event, 'Cache-Control', 'no-store')
+  const filters = parseClientSearchFilters(getQuery(event), session)
+  const result = await searchCrmClients(session, filters)
+  const nextCursorToken = result.pageInfo.nextCursor
+    ? Buffer.from(JSON.stringify(result.pageInfo.nextCursor), 'utf8').toString('base64url')
+    : null
 
-  let request = session.supabase
-    .from('crm_clients')
-    .select('*', { count: 'exact' })
-    .eq('organization_id', session.organizationId)
-    .order('updated_at', { ascending: false })
-    .limit(limit)
-
-  if (search) {
-    const escaped = search.replaceAll('%', '\\%').replaceAll(',', ' ')
-    request = request.or(`display_name.ilike.%${escaped}%,primary_email.ilike.%${escaped}%,primary_phone.ilike.%${escaped}%`)
+  return {
+    data: result.data,
+    count: result.count,
+    page_info: {
+      has_more: result.pageInfo.hasMore,
+      next_cursor: nextCursorToken,
+      next_cursor_token: nextCursorToken,
+      offset: result.pageInfo.offset,
+      limit: result.pageInfo.limit,
+    },
+    // Camel-case aliases make the response convenient for API consumers while
+    // the original data/count shape and the UI-oriented snake-case keys remain.
+    pageInfo: result.pageInfo,
+    next_cursor: nextCursorToken,
+    next_cursor_token: nextCursorToken,
+    has_more: result.pageInfo.hasMore,
+    facets: result.facets,
   }
-
-  const { data, error, count } = await request
-  throwDbError(error)
-
-  return { data: data ?? [], count: count ?? 0 }
 })

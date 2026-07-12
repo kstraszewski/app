@@ -145,7 +145,10 @@ function writeAppEnvironment(credentials) {
   mkdirSync(dirname(crmPath), { recursive: true })
   mkdirSync(dirname(landingPath), { recursive: true })
 
-  writeManagedEnvironment(crmPath, publicLines)
+  writeManagedEnvironment(
+    crmPath,
+    [...publicLines, 'NUXT_SUPABASE_SECRET_KEY=' + credentials.secretKey],
+  )
   writeManagedEnvironment(
     landingPath,
     [...publicLines, 'NUXT_SUPABASE_SECRET_KEY=' + credentials.secretKey],
@@ -281,6 +284,30 @@ async function verifyPasswordLogin(credentials) {
     throw new Error(`Expected 5 mortgage source files, received ${mortgageFiles.length}.`)
   }
 
+  const { data: consentDefinitions, error: consentDefinitionsError } = await supabase
+    .from('crm_consent_definitions')
+    .select('id, code, current_version_id')
+    .eq('organization_id', profile.organization_id)
+    .order('code')
+  assertNoError(consentDefinitionsError, 'Reading consent definitions through authenticated RLS')
+  const expectedConsentCodes = ['marketing_email', 'marketing_phone', 'marketing_sms']
+  const actualConsentCodes = consentDefinitions.map((definition) => definition.code)
+  if (JSON.stringify(actualConsentCodes) !== JSON.stringify(expectedConsentCodes)) {
+    throw new Error(`Expected baseline consent definitions ${expectedConsentCodes.join(', ')}, received ${actualConsentCodes.join(', ')}.`)
+  }
+
+  const { data: consentVersions, error: consentVersionsError } = await supabase
+    .from('crm_consent_definition_versions')
+    .select('id, status, version, is_required, content_sha256')
+    .in('id', consentDefinitions.map((definition) => definition.current_version_id))
+  assertNoError(consentVersionsError, 'Reading current consent versions through authenticated RLS')
+  if (
+    consentVersions.length !== 3
+    || consentVersions.some((version) => version.status !== 'published' || version.version !== 1 || version.is_required || String(version.content_sha256 ?? '').length !== 64)
+  ) {
+    throw new Error('Baseline consent definitions must have a published, hashed and optional version 1.')
+  }
+
   await supabase.auth.signOut()
   const { data: anonymousProducts, error: anonymousProductsError } = await supabase
     .from('mortgage_products')
@@ -292,11 +319,22 @@ async function verifyPasswordLogin(credentials) {
     throw new Error('Anonymous client can read the protected mortgage catalogue.')
   }
 
+  const { data: anonymousConsents, error: anonymousConsentsError } = await supabase
+    .from('crm_consent_definitions')
+    .select('id')
+  if (anonymousConsentsError && anonymousConsentsError.code !== '42501') {
+    assertNoError(anonymousConsentsError, 'Checking anonymous consent-definition isolation')
+  }
+  if (!anonymousConsentsError && anonymousConsents.length !== 0) {
+    throw new Error('Anonymous client can read protected consent definitions.')
+  }
+
   return {
     profile,
     organization,
     mortgageProducts: mortgageProducts.length,
     mortgageFiles: mortgageFiles.length,
+    consentDefinitions: consentDefinitions.length,
   }
 }
 
@@ -310,6 +348,7 @@ function printAccount(result, credentials) {
   console.log('  Studio:   ' + (credentials.studioUrl ?? 'disabled'))
   console.log('  Mailpit:  ' + (credentials.mailpitUrl ?? 'disabled'))
   console.log('  Mortgage catalogue: ' + result.mortgageProducts + ' products / ' + result.mortgageFiles + ' source files')
+  console.log('  Consent catalogue:  ' + result.consentDefinitions + ' published definitions')
 }
 
 async function configureAndVerify({ createAccount, syncCatalog = false, restartOnFailure = false }) {

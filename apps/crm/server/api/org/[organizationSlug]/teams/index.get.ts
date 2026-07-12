@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
       .order('created_at'),
     session.supabase
       .from('organization_memberships')
-      .select('user_id, role, user:users!inner(id, email, full_name)')
+      .select('user_id, role, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
       .eq('organization_id', session.organizationId),
   ])
 

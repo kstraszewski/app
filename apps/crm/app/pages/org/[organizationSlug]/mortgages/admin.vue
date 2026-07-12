@@ -46,6 +46,7 @@ const saving = ref(false)
 const resetting = ref(false)
 const resetArmed = ref(false)
 const historyPending = ref(false)
+const mounted = ref(false)
 const history = ref<HistoryEntry[]>([])
 const selected = computed(() => data.value.products.find(product => product.id === selectedId.value) ?? null)
 const isAdmin = computed(() => data.value.role === 'admin')
@@ -184,7 +185,7 @@ function currentParameters(): JsonRecord {
 }
 
 async function loadHistory() {
-  if (import.meta.server || !selectedId.value || !isAdmin.value) return
+  if (!mounted.value || !selectedId.value || !isAdmin.value) return
   historyPending.value = true
   try {
     const result = await $fetch<{ data: HistoryEntry[] }>(`${apiBase.value}/${selectedId.value}/history`)
@@ -252,11 +253,16 @@ watch(selected, (product) => {
   loadForm(product)
   loadHistory()
 }, { immediate: true })
+onMounted(() => {
+  mounted.value = true
+  loadHistory()
+})
 </script>
 
 <template>
   <CrmShell title="Parametry hipotek" eyebrow="Panel administratora · nadpisania organizacji">
     <template #actions>
+      <UButton :to="`/org/${organizationSlug}/mortgages/institutions`" icon="i-lucide-landmark" variant="outline">Instytucje</UButton>
       <UButton :to="`/org/${organizationSlug}/mortgages`" icon="i-lucide-arrow-left" variant="outline">Porównywarka</UButton>
     </template>
 
@@ -368,7 +374,7 @@ watch(selected, (product) => {
           </form>
 
           <UCard class="history-card">
-            <template #header><div class="card-head"><div><p>Audyt</p><h2>Historia zmian</h2></div><UButton icon="i-lucide-refresh-cw" variant="ghost" :loading="historyPending" @click="loadHistory" /></div></template>
+            <template #header><div class="card-head"><div><p>Audyt</p><h2>Historia zmian</h2></div><UButton aria-label="Odśwież historię" icon="i-lucide-refresh-cw" variant="ghost" :loading="historyPending" @click="loadHistory" /></div></template>
             <div v-if="!history.length" class="empty-history">Nie zapisano jeszcze zmian dla tego produktu.</div>
             <ol v-else class="history-list">
               <li v-for="entry in history" :key="entry.id"><span class="history-dot" /><div><strong>{{ actionLabel(entry.action) }} · rewizja {{ entry.revision }}</strong><p>{{ entry.actor?.full_name || entry.actor?.email || entry.changed_by }}</p><small>{{ formatDateTime(entry.created_at) }} · {{ Object.keys(entry.parameters).length }} pól</small></div></li>

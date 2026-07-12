@@ -11,17 +11,24 @@ export default defineAppConfig({
     },
     button: {
       slots: {
-        base: 'rounded-sm font-medium cursor-pointer oe-pressable',
+        base: 'min-h-[var(--oe-control-height)] rounded-[var(--oe-radius-control)] px-[var(--oe-button-padding-x)] text-sm font-[var(--oe-button-font-weight)] cursor-pointer oe-pressable',
+      },
+      variants: {
+        square: {
+          true: {
+            base: 'aspect-square px-0',
+          },
+        },
       },
       defaultVariants: {
         color: 'neutral',
         variant: 'outline',
-        size: 'sm',
+        size: 'md',
       },
     },
     card: {
       slots: {
-        root: 'rounded-sm shadow-none',
+        root: 'rounded-[var(--oe-radius-surface)] shadow-none',
         header: 'p-4 sm:px-5',
         body: 'p-4 sm:p-5',
         footer: 'p-4 sm:px-5',
@@ -29,7 +36,7 @@ export default defineAppConfig({
     },
     input: {
       slots: {
-        base: 'rounded-sm',
+        base: 'rounded-[var(--oe-radius-control)]',
       },
       defaultVariants: {
         color: 'neutral',
@@ -39,7 +46,7 @@ export default defineAppConfig({
     },
     badge: {
       slots: {
-        base: 'rounded-xs font-medium',
+        base: 'rounded-[calc(var(--oe-radius-control)-2px)] font-medium',
       },
       defaultVariants: {
         color: 'neutral',
@@ -49,9 +56,9 @@ export default defineAppConfig({
     },
     tabs: {
       slots: {
-        list: 'rounded-sm ring ring-default bg-muted',
-        trigger: 'rounded-xs',
-        indicator: 'rounded-xs',
+        list: 'rounded-[var(--oe-radius-control)] ring ring-default bg-muted',
+        trigger: 'rounded-[calc(var(--oe-radius-control)-4px)]',
+        indicator: 'rounded-[calc(var(--oe-radius-control)-4px)]',
       },
       defaultVariants: {
         color: 'neutral',
@@ -61,7 +68,7 @@ export default defineAppConfig({
     },
     alert: {
       slots: {
-        root: 'rounded-sm',
+        root: 'rounded-[var(--oe-radius-surface)]',
         title: 'font-medium',
       },
       defaultVariants: {

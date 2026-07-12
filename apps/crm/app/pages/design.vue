@@ -32,10 +32,10 @@ const colorTokens = [
 ]
 
 const radii = [
-  { label: 'XS', value: '2px' },
-  { label: 'SM', value: '4px' },
-  { label: 'MD', value: '6px' },
-  { label: 'LG', value: '8px' },
+  { label: 'SM', value: '8px' },
+  { label: 'MD', value: '12px' },
+  { label: 'LG', value: '16px' },
+  { label: 'XL', value: '20px' },
 ]
 
 const tabItems = [
@@ -112,7 +112,7 @@ const motionItems = [
         </h1>
         <p class="oe-animate-in" data-delay="2">
           Kompaktowy system operacyjny dla pracy eksperta: neutralna paleta,
-          typografia DM Sans i Imbue, cienkie obrysy, male radiusy i animacje,
+          typografia DM Sans i Imbue, cienkie obrysy, wyraźne zaokrąglenia i animacje,
           ktore wspieraja skanowanie interfejsu.
         </p>
         <div class="design-hero__actions oe-animate-in" data-delay="2">
@@ -133,7 +133,7 @@ const motionItems = [
           <h2>Paleta i rytm UI</h2>
         </div>
         <UBadge color="neutral" variant="outline" icon="i-lucide-ruler">
-          radius 4-6px
+          radius 12-20px
         </UBadge>
       </div>
 
@@ -550,14 +550,6 @@ const motionItems = [
 
 .token-grid {
   grid-template-columns: repeat(6, 1fr);
-}
-
-.token-grid :deep(.rounded-sm),
-.component-grid :deep(.rounded-sm),
-.metrics-grid :deep(.rounded-sm),
-.spec-grid :deep(.rounded-sm) {
-  border-radius: 0;
-  box-shadow: none;
 }
 
 .swatch {

@@ -74,8 +74,7 @@ onBeforeUnmount(() => {
           <RiveAnimation
             class="app-loader__animation"
             :src="loaderSrc"
-            artboard="Loader"
-            state-machines="State Machine 1"
+            :auto-bind="false"
             fit="contain"
             label="Ładowanie aplikacji"
             @load="onAnimationSettled"

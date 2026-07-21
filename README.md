@@ -7,6 +7,7 @@ Każdy moduł eksponuje trzy interfejsy: **UI** (dla ludzi), **REST API** (dla d
 ## Stack
 
 - Nuxt 4 + TypeScript
+- Rive (`.riv`) animations
 - Supabase (PostgreSQL + Auth + RLS)
 - Vercel
 - AGPL-3.0
@@ -23,6 +24,26 @@ pnpm dev
 Potem w osobnym terminalu uruchom `claude /mcp` i autoryzuj serwer `supabase`.
 
 Aplikacja startuje na http://localhost:3000.
+
+## Animacje Rive
+
+Pliki `.riv` umieszczaj w `public/rive/` i renderuj przez globalnie dostępny komponent:
+
+```vue
+<RiveAnimation
+  src="/rive/hero.riv"
+  state-machines="Main State Machine"
+  label="Animowane logo OpenExpert"
+/>
+```
+
+Kontener komponentu musi mieć określoną wysokość. Komponent obsługuje też właściwości
+`artboard`, `animations`, `autoplay`, `auto-bind`, `fit` i `alignment` oraz zdarzenia
+`load`, `error` i `state-change`. Metody `play`, `pause`, `stop`, `reset` i
+`stateMachineInputs` są dostępne przez template ref.
+
+Globalny loader aplikacji używa `openexpert-loader-lightmode.riv` lub
+`openexpert-loader-darkmode.riv`, automatycznie dopasowując wariant do ustawień systemu.
 
 ## Deployment (Vercel)
 

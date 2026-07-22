@@ -8,9 +8,11 @@
     "generate": "nuxt generate",
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3003",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@nuxt/icon": "^2.2.1",
     "@nuxtjs/supabase": "^2.0.5",
     "@openexpert/email": "workspace:*",
     "@rive-app/webgl2": "^2.38.5",
@@ -19,6 +21,7 @@
     "vue-router": "^5.0.4"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.102",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.3.7"
   }

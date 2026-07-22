@@ -1,611 +1,1581 @@
 <script setup lang="ts">
-useHead({ title: 'OpenExpert — Modułowa platforma dla ekspertów' })
+useSeoMeta({
+  title: 'OpenExpert — Agentowy system pracy dla ekspertów',
+  description: 'Prowadź klienta przez nieruchomość, kredyt i ubezpieczenie. Agenci AI pracują na jednej sprawie: porządkują CRM, aktualizują proces i pomagają przygotować wnioski.',
+  ogTitle: 'OpenExpert — Jeden ekspert. Zespół agentów AI.',
+  ogDescription: 'Ty prowadzisz relację i podejmujesz decyzje. Agenci AI pracują bezpośrednio na sprawie klienta i wykonują konkretne zadania w CRM, procesie i dokumentach.',
+  ogType: 'website',
+  twitterCard: 'summary',
+  twitterTitle: 'OpenExpert — Jeden ekspert. Zespół agentów AI.',
+  twitterDescription: 'Agentowy system pracy dla ekspertów nieruchomości, kredytów i ubezpieczeń.',
+})
 
 const router = useRouter()
 const email = ref('')
+const emailInput = ref<HTMLInputElement | null>(null)
 const waitlistError = ref<string | null>(null)
 const waitlistLoading = ref(false)
+const mobileMenuOpen = ref(false)
+
+const platformRows = [
+  {
+    index: '01',
+    icon: 'lucide:users-round',
+    title: 'Agent CRM porządkuje sprawę',
+    description: 'Wyszukuje i tworzy klientów oraz sprawy, zapisuje aktualne zgody i porządkuje kontekst dalszej obsługi.',
+  },
+  {
+    index: '02',
+    icon: 'lucide:workflow',
+    title: 'Agent procesu utrzymuje porządek',
+    description: 'Aktualizuje statusy i dodaje notatki do osi czasu, dzięki czemu zawsze widzisz stan nieruchomości, kredytu i ubezpieczenia.',
+  },
+  {
+    index: '03',
+    icon: 'lucide:bot',
+    title: 'Eve scala pola i wskazuje braki',
+    description: 'Porównuje wspólne pola formularzy i pokazuje brakujące dane. Po zatwierdzeniu system generuje gotowy pakiet dokumentów.',
+  },
+  {
+    index: '04',
+    icon: 'lucide:file-check-2',
+    title: 'Agent przygotowuje, Ty zatwierdzasz',
+    description: 'Rozpoznaje strukturę formularzy i przygotowuje mapowanie pól. Niepewne miejsca kieruje do zatwierdzenia, zamiast podejmować decyzję za Ciebie.',
+  },
+]
+
+const expertPoints = [
+  {
+    icon: 'lucide:bot',
+    title: 'Deleguj konkretną pracę',
+    description: 'Agenci wyszukują, zapisują i aktualizują dane bezpośrednio w sprawie — nie kończą na podpowiedzi w czacie.',
+  },
+  {
+    icon: 'lucide:shield-check',
+    title: 'Zachowaj kontrolę',
+    description: 'Decyzje biznesowe pozostają po Twojej stronie, a niepewne mapowania zatwierdzasz przed eksportem.',
+  },
+  {
+    icon: 'lucide:workflow',
+    title: 'Skaluj pełną obsługę',
+    description: 'Jedna osoba prowadzi relację, a agenci wspierają kolejne etapy: nieruchomość, finansowanie i ochronę.',
+  },
+]
+
+function closeMobileMenu() {
+  mobileMenuOpen.value = false
+}
 
 async function submitWaitlist() {
-  const val = email.value.trim()
-  if (!val || !val.includes('@')) return
+  const value = email.value.trim()
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+
+  if (!isValidEmail) {
+    waitlistError.value = 'Podaj poprawny adres e-mail.'
+    await nextTick()
+    emailInput.value?.focus()
+    return
+  }
+
   waitlistLoading.value = true
   waitlistError.value = null
 
   try {
     const result = await $fetch<{ surveyToken: string }>('/api/waitlist', {
       method: 'POST',
-      body: { email: val },
+      body: { email: value },
     })
 
     localStorage.setItem('oe-waitlist', JSON.stringify({
       step: 1,
-      email: val,
+      email: value,
       answers: {},
       emailSaved: true,
       surveyToken: result.surveyToken,
     }))
+
     await router.push('/waitlist')
   } catch {
-    waitlistError.value = 'Coś poszło nie tak — spróbuj jeszcze raz.'
+    waitlistError.value = 'Nie udało się zapisać adresu. Spróbuj ponownie za chwilę.'
   } finally {
     waitlistLoading.value = false
   }
 }
-
-const marqueeItems = [
-  'Ekspert kredytowy', 'Ekspert nieruchomości', 'Ekspert ubezpieczeniowy',
-  'REST API', 'MCP tools', 'Naturalne budowanie modułów',
-  'AGPL-3.0', 'Vue 3 / Nuxt 4', 'Agentic Economy',
-  'Ekspert kredytowy', 'Ekspert nieruchomości', 'Ekspert ubezpieczeniowy',
-  'REST API', 'MCP tools', 'Naturalne budowanie modułów',
-  'AGPL-3.0', 'Vue 3 / Nuxt 4', 'Agentic Economy',
-]
-
-const cases = [
-  {
-    index: '01', title: 'Ekspert kredytowy',
-    body: 'Analiza zdolności kredytowej, scoring, porównywanie ofert, generowanie raportów dla klientów i\u00A0banków. OpenExpert obsługuje zarówno analityka przy pulpicie, jak i\u00A0agenta AI, który sam pobiera dane i\u00A0generuje\u00A0rekomendacje.',
-    tags: ['moduł.scoring', 'moduł.raporty', 'moduł.api-bankowe', 'moduł.kalkulatory'],
-  },
-  {
-    index: '02', title: 'Ekspert nieruchomości',
-    body: 'Wyceny, analiza rynku, zarządzanie ofertami i\u00A0klientami, automatyczne przygotowanie dokumentacji transakcyjnej. Agent AI może samodzielnie monitorować rynek i\u00A0powiadamiać o\u00A0okazjach\u00A0inwestycyjnych.',
-    tags: ['moduł.wyceny', 'moduł.crm', 'moduł.umowy', 'moduł.analiza-rynku'],
-  },
-  {
-    index: '03', title: 'Ekspert ubezpieczeniowy',
-    body: 'Porównywanie polis, analiza ryzyka, obsługa roszczeń i\u00A0generowanie ofert dopasowanych do profilu klienta. Platforma może działać jako silnik dla aplikacji zewnętrznych — agentowych lub\u00A0tradycyjnych.',
-    tags: ['moduł.polisy', 'moduł.ryzyko', 'moduł.roszczenia', 'moduł.ofertowanie'],
-  },
-]
-
-const modules = [
-  { tag: '@openexpert/scoring', official: true, name: 'Scoring kredytowy', desc: 'Ocena zdolności kredytowej z integracją z bazami BIK / BIG.' },
-  { tag: '@openexpert/wyceny', official: true, name: 'Wycena nieruchomości', desc: 'Automatyczna wycena na podstawie danych transakcyjnych i lokalizacji.' },
-  { tag: '@community/polisy', official: false, name: 'Porównywarka polis', desc: 'Pobieranie i porównywanie ofert ubezpieczeniowych w czasie rzeczywistym.' },
-  { tag: '@community/prawo', official: false, name: 'Analiza dokumentów prawnych', desc: 'Ekstrakcja kluczowych klauzul i flag ryzyka z umów i aktów.' },
-  { tag: '@community/podatki', official: false, name: 'Optymalizacja podatkowa', desc: 'Analiza możliwości odliczeń i generowanie rekomendacji podatkowych.' },
-]
-
-const features = [
-  {
-    title: 'Podłącz dowolne API',
-    desc: 'REST, GraphQL, WebSocket — konfigurujesz połączenie raz, platforma udostępnia je jako narzędzie MCP dla agentów i\u00A0endpoint dla\u00A0aplikacji.',
-    icon: '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
-  },
-  {
-    title: 'UI generowany automatycznie',
-    desc: 'Każdy moduł ma interfejs dla człowieka — formularze, widoki, raporty — gotowy bez pisania\u00A0frontendu.',
-    icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
-  },
-  {
-    title: 'Natywna obsługa agentów AI',
-    desc: 'Każdy moduł jest automatycznie eksponowany jako narzędzie MCP — agent może z\u00A0niego korzystać bez żadnej\u00A0integracji.',
-    icon: '<circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>',
-  },
-]
-
-const interfaces = [
-  { label: 'Tryb 01', title: 'UI dla eksperta', desc: 'Gotowy interfejs Vue\u00A03\u00A0/\u00A0Nuxt\u00A04 dla specjalistów pracujących przy pulpicie. Formularze, dashboardy, raporty — wszystko bez pisania\u00A0frontendu.', badge: 'Vue 3 · Nuxt 4' },
-  { label: 'Tryb 02', title: 'REST API', desc: 'Platforma jako headless backend. Własne aplikacje, mobilne interfejsy, zewnętrzne systemy — podłączasz się przez API i\u00A0masz dostęp do całej logiki\u00A0eksperckiej.', badge: 'OpenAPI · H3' },
-  { label: 'Tryb 03', title: 'Silnik MCP', desc: 'Każdy moduł dostępny jako narzędzie dla agenta AI. Claude, GPT, własny agent — podłączają się przez protokół MCP i\u00A0korzystają z\u00A0wiedzy eksperckiej bez\u00A0pośrednika.', badge: 'MCP · Agentic' },
-]
 </script>
 
 <template>
-  <div class="oe-root">
-    <!-- NAV -->
-    <nav class="oe-nav">
-      <a href="#" class="nav-logo">
-        <picture>
-          <source srcset="/assets/logo-dark.svg" media="(prefers-color-scheme: dark)">
-          <img src="/assets/logo-light.svg" alt="OpenExpert" class="nav-logo-img">
-        </picture>
-        <span class="nav-logo-name">OpenExpert</span>
-      </a>
-      <ul class="nav-links">
-        <li><a href="#usecases">Przykłady</a></li>
-        <li><a href="#marketplace">Marketplace</a></li>
-        <li><a href="#moduly">Architektura</a></li>
-        <li><a href="#interfejsy">Interfejsy</a></li>
-        <li><a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener">GitHub</a></li>
-      </ul>
-      <div class="nav-cta">
-        <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener" class="btn-ghost">GitHub</a>
-        <NuxtLink to="/waitlist" class="btn-primary">Dołącz do waitlisty</NuxtLink>
-      </div>
-    </nav>
+  <div class="oe-redesign" @keydown.esc="closeMobileMenu">
+    <div class="dark-shell">
+      <header class="site-header">
+        <a href="#poczatek" class="brand" aria-label="OpenExpert — strona główna" @click="closeMobileMenu">
+          <img src="/assets/logo-dark.svg" alt="" width="30" height="30">
+          <span>OpenExpert</span>
+        </a>
 
-    <!-- HERO -->
-    <div class="hero" id="hero-waitlist">
-      <div class="hero-label">
-        <span class="hero-wip-dot" />
-        W budowie — dołącz wcześnie
-      </div>
-      <h1>Ostatnie narzędzie<br>dla&nbsp;<em>każdego eksperta.</em></h1>
-      <p class="hero-sub">Dobieraj moduły, łącz je dowolnie i&nbsp;buduj własne. Platforma obsługuje człowieka i&nbsp;agenta AI jednocześnie — przez UI, REST API i&nbsp;protokół&nbsp;MCP.</p>
+        <nav class="desktop-nav" aria-label="Główna nawigacja">
+          <a href="#jak-to-dziala">Jak to działa</a>
+          <a href="#agenci-ai">Agenci AI</a>
+          <a href="#personalizuj">Personalizuj</a>
+          <a href="#dla-ekspertow">Dla ekspertów</a>
+        </nav>
 
-      <div class="hero-waitlist">
-        <input v-model="email" type="email" class="waitlist-input" placeholder="twoj@email.pl" :disabled="waitlistLoading" @keyup.enter="submitWaitlist">
-        <button class="btn-primary waitlist-btn" :disabled="waitlistLoading" @click="submitWaitlist">
-          {{ waitlistLoading ? 'Zapisuję…' : 'Zapisz się na waitlistę' }}
+        <a href="#dolacz" class="button button--light header-cta">Dołącz do waitlisty</a>
+
+        <button
+          type="button"
+          class="mobile-menu-button"
+          :aria-expanded="mobileMenuOpen"
+          aria-controls="mobile-menu"
+          :aria-label="mobileMenuOpen ? 'Zamknij menu' : 'Otwórz menu'"
+          @click="mobileMenuOpen = !mobileMenuOpen"
+        >
+          <Icon v-if="!mobileMenuOpen" name="lucide:menu" />
+          <Icon v-else name="lucide:x" />
         </button>
-      </div>
-      <p v-if="waitlistError" class="waitlist-error">{{ waitlistError }}</p>
 
-      <p class="hero-or">
-        lub <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener" class="hero-gh-link">rozwijaj projekt na GitHub</a>
-      </p>
+        <Transition name="mobile-menu">
+          <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
+            <a href="#jak-to-dziala" @click="closeMobileMenu">Jak to działa</a>
+            <a href="#agenci-ai" @click="closeMobileMenu">Agenci AI</a>
+            <a href="#personalizuj" @click="closeMobileMenu">Personalizuj</a>
+            <a href="#dla-ekspertow" @click="closeMobileMenu">Dla ekspertów</a>
+            <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Dołącz do waitlisty</a>
+          </nav>
+        </Transition>
+      </header>
+
+      <section id="poczatek" class="hero" aria-labelledby="hero-title">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Agentowy system pracy dla ekspertów</p>
+            <h1 id="hero-title" aria-label="Jedna sprawa. Jeden ekspert. Zespół agentów AI.">
+              <span aria-hidden="true">Jedna sprawa.</span>
+              <em aria-hidden="true">Jeden ekspert.</em>
+              <span aria-hidden="true">Zespół agentów AI.</span>
+            </h1>
+            <p class="hero-lead">Ty prowadzisz relację i podejmujesz decyzje. Agenci pracują bezpośrednio na sprawie: porządkują CRM, aktualizują proces i wskazują, czego brakuje do gotowych wniosków.</p>
+            <div class="hero-actions">
+              <a href="#dolacz" class="button button--light">Dołącz do waitlisty</a>
+              <a href="#agenci-ai" class="button button--dark">Zobacz agentów</a>
+            </div>
+          </div>
+
+          <LandingExpertCasePreview class="hero-preview" />
+        </div>
+      </section>
+
+      <section class="speed-results" aria-labelledby="speed-results-title">
+        <h2 id="speed-results-title" class="visually-hidden">Szybki start sprzedaży i przygotowanie sprawy kredytowej</h2>
+
+        <div class="speed-results__grid">
+          <article class="speed-result">
+            <div class="speed-result__meta">
+              <span>01</span>
+              <strong>Do 3 dni</strong>
+            </div>
+            <h3>Zacznij sprzedawać nawet w 3 dni.</h3>
+            <p>CRM, proces i agenci AI gotowi do obsługi pierwszej sprawy — bez wielomiesięcznego wdrożenia.</p>
+          </article>
+
+          <article class="speed-result">
+            <div class="speed-result__meta">
+              <span>02</span>
+              <strong>Do 3 dni</strong>
+            </div>
+            <h3>Agenci AI mogą przygotować sprawę kredytową nawet w 3 dni.</h3>
+            <p>Porządkują dane, wykrywają braki i kompletują dokumenty do weryfikacji eksperta.</p>
+          </article>
+
+          <article class="speed-result speed-result--note">
+            <div class="speed-result__meta">
+              <span>03</span>
+              <strong>Ważne</strong>
+            </div>
+            <h3>Decyzję kredytową zawsze wydaje bank.</h3>
+            <p>OpenExpert przyspiesza przygotowanie sprawy, ale nie gwarantuje finansowania ani terminu decyzji banku.</p>
+          </article>
+        </div>
+
+        <p class="speed-results__disclaimer">Czas wdrożenia i przygotowania sprawy zależy od zakresu konfiguracji oraz kompletności danych i dokumentów.</p>
+      </section>
     </div>
 
-    <!-- MARQUEE STRIP -->
-    <div class="strip">
-      <div class="strip-inner">
-        <span v-for="item in marqueeItems" :key="item" class="strip-item">
-          <span class="strip-dot" />{{ item }}
-        </span>
-      </div>
-    </div>
+    <main>
+      <LandingJourneySection />
 
-    <!-- USE CASES -->
-    <section class="usecases" id="usecases">
-      <div class="section-inner">
-        <div class="section-label">Przykładowe zastosowania</div>
-        <h2>Jeden silnik.<br><em>Dowolna dziedzina.</em><br>Nieskończone kombinacje.</h2>
-        <p class="usecases-note">To tylko trzy z&nbsp;dziesiątek możliwych zastosowań. Moduły łączysz dowolnie — platforma nie narzuca branży ani&nbsp;specjalizacji.</p>
-        <div class="cases-grid">
-          <div v-for="c in cases" :key="c.index" class="case-card">
-            <div class="case-index">{{ c.index }}</div>
-            <div class="case-title">{{ c.title }}</div>
-            <p class="case-body">{{ c.body }}</p>
-            <div class="case-modules">
-              <span v-for="tag in c.tags" :key="tag" class="case-tag">{{ tag }}</span>
-            </div>
+      <section id="personalizuj" class="personalize-section" aria-labelledby="personalize-title">
+        <div class="personalize-inner">
+          <div class="personalize-copy">
+            <p class="section-label">CRM w identyfikacji Twojej organizacji</p>
+            <h2 id="personalize-title">Ten sam system.<br><em>W pełni w Twojej marce.</em></h2>
+            <p>Dopasuj kolory, typografię i charakter interfejsu do swojej organizacji. Wybierz gotowy kierunek lub zbuduj własny motyw i od razu zobacz go na przykładowej sprawie klienta.</p>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- MARKETPLACE -->
-    <section class="marketplace" id="marketplace">
-      <div class="section-inner">
-        <div class="section-label">Marketplace modułów</div>
-        <div class="marketplace-header">
-          <div>
-            <h2 class="marketplace-h2">Gotowe moduły.<br><em>Własna logika.</em></h2>
-            <p class="marketplace-desc">Pobieraj moduły z&nbsp;marketplace, konfiguruj je do własnych potrzeb lub buduj od zera — językiem naturalnym. Każdy moduł jest od razu dostępny w&nbsp;UI, przez API i&nbsp;jako narzędzie&nbsp;MCP.</p>
-          </div>
-          <div class="marketplace-actions">
-            <span class="marketplace-soon">Wkrótce dostępne</span>
-          </div>
-        </div>
-        <div class="mkt-grid">
-          <div v-for="mod in modules" :key="mod.tag" class="mkt-card">
-            <div class="mkt-card-top">
-              <span class="mkt-tag">{{ mod.tag }}</span>
-              <span v-if="mod.official" class="mkt-verified">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                oficjalny
-              </span>
-              <span v-else class="mkt-community">community</span>
+          <div class="personalize-panel">
+            <div class="personalize-panel__header">
+              <span>Podgląd motywu</span>
+              <span>4 warianty</span>
             </div>
-            <p class="mkt-name">{{ mod.name }}</p>
-            <p class="mkt-desc">{{ mod.desc }}</p>
-          </div>
-          <div class="mkt-card mkt-card--build">
-            <div class="mkt-build-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            </div>
-            <p class="mkt-name">Zbuduj własny moduł</p>
-            <p class="mkt-desc">Opisz, co ma robić — platforma wygeneruje moduł gotowy do użycia i publikacji.</p>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- MODULAR -->
-    <section class="modular" id="moduly">
-      <div class="section-inner">
-        <div class="section-label">Architektura modułowa</div>
-        <div class="modular-grid">
-          <div>
-            <h2>Budujesz moduły<br><em>językiem naturalnym.</em></h2>
-            <p class="modular-desc">Opisz, co ma robić moduł — platforma generuje interfejs, endpointy i&nbsp;narzędzia MCP. Możesz podłączyć własne API, bazę danych, webhook lub zewnętrzny model&nbsp;AI. Każdy moduł jest natychmiast dostępny dla&nbsp;agentów.</p>
-            <ul class="feature-list">
-              <li v-for="f in features" :key="f.title" class="feature-item">
-                <div class="feature-icon">
-                  <!-- eslint-disable-next-line vue/no-v-html -->
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" v-html="f.icon" />
-                </div>
-                <div class="feature-text">
-                  <h4>{{ f.title }}</h4>
-                  <p>{{ f.desc }}</p>
-                </div>
+            <ul class="personalize-themes" aria-label="Dostępne warianty personalizacji">
+              <li class="personalize-theme">
+                <span class="personalize-theme__swatch personalize-theme__swatch--ocean" aria-hidden="true" />
+                <span><strong>Ocean</strong><small>DM Sans</small></span>
+              </li>
+              <li class="personalize-theme">
+                <span class="personalize-theme__swatch personalize-theme__swatch--ember" aria-hidden="true" />
+                <span><strong>Ember</strong><small>Roboto</small></span>
+              </li>
+              <li class="personalize-theme">
+                <span class="personalize-theme__swatch personalize-theme__swatch--plum" aria-hidden="true" />
+                <span><strong>Plum</strong><small>Manrope</small></span>
+              </li>
+              <li class="personalize-theme">
+                <span class="personalize-theme__swatch personalize-theme__swatch--custom" aria-hidden="true" />
+                <span><strong>Custom</strong><small>Twój własny</small></span>
               </li>
             </ul>
-          </div>
-          <div class="terminal-card">
-            <div class="terminal-bar">
-              <div class="terminal-dot" /><div class="terminal-dot" /><div class="terminal-dot" />
-              <span class="terminal-title">openexpert — mcp tools</span>
-            </div>
-            <div class="terminal-body">
-              <span class="t-comment"># Narzędzia MCP dostępne dla agenta</span><br>
-              <span class="t-dim">─────────────────────────────────────</span><br>
-              <br>
-              <span class="t-prompt">tool</span> <span class="t-string">kredyt.sprawdz_zdolnosc</span><br>
-              <span class="t-key">  input:</span>  dochod, zobowiazania, okres<br>
-              <span class="t-key">  output:</span> zdolnosc_kredytowa, scoring<br>
-              <br>
-              <span class="t-prompt">tool</span> <span class="t-string">kredyt.generuj_raport</span><br>
-              <span class="t-key">  input:</span>  klient_id, format<br>
-              <span class="t-key">  output:</span> pdf_url, dane_json<br>
-              <br>
-              <span class="t-prompt">tool</span> <span class="t-string">nieruchomosci.wycen</span><br>
-              <span class="t-key">  input:</span>  adres, metraz, standard<br>
-              <span class="t-key">  output:</span> wycena, przedział_ufnosci<br>
-              <br>
-              <span class="t-prompt">tool</span> <span class="t-string">ubezpieczenia.porownaj_polisy</span><br>
-              <span class="t-key">  input:</span>  profil_klienta, zakres<br>
-              <span class="t-key">  output:</span> ranking_ofert[]<br>
-              <br>
-              <span class="t-dim">─────────────────────────────────────</span><br>
-              <span class="t-comment"># Każdy moduł = zestaw narzędzi MCP</span>
-            </div>
+
+            <NuxtLink to="/personalizacja" class="button personalize-panel__cta">
+              Przetestuj personalizację
+              <Icon name="lucide:arrow-right" aria-hidden="true" />
+            </NuxtLink>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- INTERFACES -->
-    <section class="interfaces" id="interfejsy">
-      <div class="section-inner">
-        <div class="section-label">Tryby interfejsu</div>
-        <h2>Interfejs dla ludzi<br>i <em>silnik dla agentów.</em></h2>
-        <div class="interface-grid">
-          <div v-for="iface in interfaces" :key="iface.label" class="interface-card">
-            <div class="interface-card-label">{{ iface.label }}</div>
-            <h3>{{ iface.title }}</h3>
-            <p>{{ iface.desc }}</p>
-            <span class="interface-badge">{{ iface.badge }}</span>
+      <section id="agenci-ai" class="platform-section" aria-labelledby="platform-title">
+        <div class="platform-inner">
+          <div class="platform-intro">
+            <p class="section-label section-label--dark">Agentowy rdzeń OpenExpert</p>
+            <h2 id="platform-title">Nie kolejny czat.<br><em>Agenci, którzy pracują na sprawie.</em></h2>
+            <p>OpenExpert udostępnia agentom dane i konkretne narzędzia przez MCP. Dzięki temu mogą wyszukiwać, zapisywać i aktualizować informacje w tym samym kontekście, który widzisz w CRM — a decyzje pozostają po Twojej stronie.</p>
+          </div>
+
+          <ol class="platform-list">
+            <li v-for="row in platformRows" :key="row.index" class="platform-row">
+              <span class="platform-row__index">{{ row.index }}</span>
+              <span class="platform-row__icon" aria-hidden="true"><Icon :name="row.icon" /></span>
+              <span class="platform-row__copy">
+                <strong>{{ row.title }}</strong>
+                <small>{{ row.description }}</small>
+              </span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <LandingAnalyticsSection />
+
+      <section id="dla-ekspertow" class="experts-section" aria-labelledby="experts-title">
+        <div class="experts-inner">
+          <div class="experts-heading">
+            <p class="section-label">Ekspert + zespół agentów AI</p>
+            <h2 id="experts-title">Ty prowadzisz relację.<br><em>Agenci wykonują pracę.</em></h2>
+            <p>OpenExpert nie usuwa eksperta z procesu. Daje mu agentów, którzy pracują na wspólnych danych i przejmują konkretne zadania, podczas gdy odpowiedzialność i kontakt z klientem pozostają po Twojej stronie.</p>
+          </div>
+
+          <div class="expert-points">
+            <article v-for="(point, index) in expertPoints" :key="point.title" class="expert-point">
+              <span class="expert-point__index">0{{ index + 1 }}</span>
+              <span class="expert-point__icon" aria-hidden="true"><Icon :name="point.icon" /></span>
+              <div>
+                <h3>{{ point.title }}</h3>
+                <p>{{ point.description }}</p>
+              </div>
+            </article>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- OPEN SOURCE STRIP -->
-    <div class="open-strip">
-      <h2>Open-source.<br><em>Rozwijany razem.</em></h2>
-      <p>Projekt na wczesnym etapie. Szukamy współtwórców, testerów i&nbsp;pierwszych ekspertów, którzy chcą kształtować&nbsp;platformę.</p>
-      <div class="open-actions">
-        <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener" class="btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" /></svg>
-          Rozwijaj na GitHub
+      <LandingSettlementsSection />
+
+      <section id="dolacz" class="join-section" aria-labelledby="join-title">
+        <div class="join-inner">
+          <div class="join-copy">
+            <p class="section-label section-label--dark">Wczesny dostęp do systemu agentowego</p>
+            <h2 id="join-title">Pracuj z agentami,<br>którzy <em>znają całą sprawę.</em></h2>
+            <p>Dołącz do pierwszych ekspertów testujących OpenExpert i pomóż ustalić, które zadania agenci powinni przejąć jako następne.</p>
+          </div>
+
+          <form class="join-form" novalidate @submit.prevent="submitWaitlist">
+            <label for="landing-email">Twój adres e-mail</label>
+            <div class="join-form__row">
+              <input
+                id="landing-email"
+                ref="emailInput"
+                v-model="email"
+                type="email"
+                name="email"
+                autocomplete="email"
+                inputmode="email"
+                placeholder="twoj@email.pl"
+                required
+                :disabled="waitlistLoading"
+                :aria-invalid="Boolean(waitlistError)"
+                :aria-describedby="waitlistError ? 'join-error join-note' : 'join-note'"
+                @input="waitlistError = null"
+              >
+              <button type="submit" class="button button--light" :disabled="waitlistLoading">
+                {{ waitlistLoading ? 'Zapisuję…' : 'Dołącz do waitlisty' }}
+                <Icon v-if="!waitlistLoading" name="lucide:arrow-right" aria-hidden="true" />
+              </button>
+            </div>
+            <p id="join-error" class="join-form__error" aria-live="polite">{{ waitlistError }}</p>
+            <p id="join-note" class="join-form__note">Bez spamu. Tylko informacja o dostępie i najważniejsze aktualizacje projektu.</p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a href="#poczatek" class="footer-brand" aria-label="OpenExpert — wróć na początek">
+        <img src="/assets/logo-dark.svg" alt="" width="24" height="24">
+        <span>OpenExpert</span>
+      </a>
+      <p>© 2026 OpenExpert. Jeden ekspert. Zespół agentów AI.</p>
+      <nav aria-label="Linki w stopce">
+        <NuxtLink to="/waitlist">Waitlista</NuxtLink>
+        <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
+          GitHub <Icon name="lucide:github" aria-hidden="true" />
         </a>
-        <NuxtLink to="/waitlist" class="btn-ghost open-waitlist-btn">Zapisz się na waitlistę</NuxtLink>
-      </div>
-      <div class="github-stars">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="#404040"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
-        <span>AGPL-3.0 · open-source · self-hosted</span>
-      </div>
-    </div>
-
-    <!-- FOOTER -->
-    <footer class="oe-footer">
-      <div class="footer-left">
-        <div class="footer-logo">
-          <picture>
-            <source srcset="/assets/logo-dark.svg" media="(prefers-color-scheme: dark)">
-            <img src="/assets/logo-light.svg" alt="OpenExpert">
-          </picture>
-          <span>OpenExpert</span>
-        </div>
-        <span class="footer-copy">© 2026 OpenExpert. Licencja AGPL-3.0.</span>
-      </div>
-      <ul class="footer-links">
-        <li><a href="#">Dokumentacja</a></li>
-        <li><a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener">GitHub</a></li>
-        <li><a href="https://github.com/OpenExpertApp/OpenExpert/blob/main/LICENSE" target="_blank" rel="noopener">Licencja</a></li>
-        <li><a href="mailto:hello@openexpert.app">Kontakt</a></li>
-      </ul>
+      </nav>
     </footer>
   </div>
 </template>
 
 <style scoped>
-.oe-root {
+.oe-redesign {
+  min-width: 0;
+  background: #f7f7f5;
+  color: #111;
   font-family: var(--font-sans);
-  background: var(--bg-default);
-  color: var(--fg-primary);
-  overflow-x: hidden;
 }
 
-/* NAV */
-.oe-nav {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 100;
+.dark-shell {
+  background: #030303;
+  color: #f7f7f7;
+}
+
+.site-header {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  width: min(1440px, calc(100% - 80px));
+  height: 88px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin: 0 auto;
+}
+
+.brand,
+.footer-brand {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 13px;
+  color: #f7f7f7;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 30px;
+  height: 30px;
+}
+
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(22px, 3vw, 48px);
+}
+
+.desktop-nav a,
+.mobile-nav a,
+.site-footer nav a {
+  color: #dedede;
+  text-decoration: none;
+  transition: color 150ms ease-out;
+}
+
+.desktop-nav a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+}
+
+.desktop-nav a:hover,
+.mobile-nav a:hover,
+.site-footer nav a:hover {
+  color: #fff;
+}
+
+.button {
+  display: inline-flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 12px 24px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out, opacity 150ms ease-out;
+}
+
+.button :deep(svg) {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.6;
+}
+
+.button--light {
+  border-color: #f7f7f7;
+  background: #f7f7f7;
+  color: #090909;
+}
+
+.button--light:hover {
+  border-color: #d8d8d8;
+  background: #d8d8d8;
+}
+
+.button--dark {
+  border-color: #777;
+  background: transparent;
+  color: #f4f4f4;
+}
+
+.button--dark:hover {
+  border-color: #aaa;
+  background: #151515;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.header-cta {
+  justify-self: end;
+  min-width: 188px;
+  min-height: 48px;
+}
+
+.mobile-menu-button,
+.mobile-nav {
+  display: none;
+}
+
+.hero {
+  scroll-margin-top: 88px;
+  width: min(1340px, calc(100% - 96px));
+  margin: 0 auto;
+  padding: 17px 0 50px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(430px, 0.78fr) minmax(620px, 1.12fr);
+  align-items: center;
+  gap: clamp(46px, 5vw, 72px);
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.eyebrow,
+.section-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.105em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin-bottom: 24px;
+  color: #aaa;
+}
+
+.hero h1 {
+  margin: 0 0 14px;
+  color: #f7f7f7;
+  font-size: clamp(56px, 4.7vw, 74px);
+  font-variation-settings: 'opsz' 72, 'wght' 300;
+  font-weight: 300;
+  letter-spacing: 0.015em;
+  line-height: 1.13;
+}
+
+.hero h1 span,
+.hero h1 em {
+  display: block;
+  white-space: nowrap;
+}
+
+.hero h1 em {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-variation-settings: normal;
+  font-weight: 400;
+}
+
+.hero-lead {
+  max-width: 475px;
+  margin-bottom: 22px;
+  color: #aaa;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.hero-actions {
+  display: grid;
+  max-width: 430px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.hero-preview {
+  min-width: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.speed-results {
+  width: min(1340px, calc(100% - 96px));
+  margin: 0 auto;
+  border-top: 1px solid #303030;
+  padding-bottom: 42px;
+}
+
+.speed-results__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.speed-result {
+  min-width: 0;
+  padding: 30px 36px 24px;
+}
+
+.speed-result:first-child {
+  padding-left: 0;
+}
+
+.speed-result:last-child {
+  padding-right: 0;
+}
+
+.speed-result + .speed-result {
+  border-left: 1px solid #303030;
+}
+
+.speed-result__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 48px;
-  height: 60px;
-  background: var(--bg-default);
-  border-bottom: 1px solid var(--border-default);
+  gap: 20px;
+  margin-bottom: 24px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.nav-logo-img { height: 22px; display: block; }
-.nav-logo-name { font-size: var(--text-base); font-weight: var(--weight-medium); letter-spacing: -0.01em; color: var(--fg-primary); }
-.nav-links { display: flex; align-items: center; gap: 32px; list-style: none; }
-.nav-links a { font-size: var(--text-sm); color: var(--fg-secondary); text-decoration: none; transition: color var(--transition-fast); }
-.nav-links a:hover { color: var(--fg-primary); }
-.nav-cta { display: flex; align-items: center; gap: 12px; }
 
-/* BUTTONS */
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px;
-  background: var(--fg-primary); color: var(--bg-default);
-  border: 1px solid var(--fg-primary); border-radius: 4px;
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
-  cursor: pointer; text-decoration: none;
-  transition: opacity var(--transition-fast);
+.speed-result__meta span {
+  color: #666;
 }
-.btn-primary:hover { opacity: 0.75; }
 
-.btn-ghost {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px;
-  background: transparent; color: var(--fg-primary);
-  border: 1px solid var(--border-default); border-radius: 4px;
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
-  cursor: pointer; text-decoration: none;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+.speed-result__meta strong {
+  border: 1px solid #4a4a4a;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #dcdcdc;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
 }
-.btn-ghost:hover { background: var(--bg-muted); border-color: var(--border-strong); }
 
-/* HERO */
-.hero {
-  padding: 160px 48px 120px;
-  max-width: 1200px;
+.speed-result h3 {
+  max-width: 350px;
+  margin-bottom: 10px;
+  color: #f4f4f4;
+  font-size: clamp(20px, 1.7vw, 25px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.speed-result p {
+  max-width: 365px;
+  color: #929292;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.speed-result--note h3 {
+  color: #d3d3d3;
+}
+
+.speed-result--note p {
+  color: #7d7d7d;
+}
+
+.speed-results__disclaimer {
+  border-top: 1px solid #242424;
+  padding-top: 16px;
+  color: #666;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.platform-section,
+.personalize-section,
+.experts-section,
+.join-section {
+  scroll-margin-top: 88px;
+}
+
+.personalize-section {
+  border-top: 1px solid #d1d1cd;
+  background: #ecece8;
+  color: #111;
+}
+
+.personalize-inner {
+  display: grid;
+  width: min(1340px, calc(100% - 96px));
+  grid-template-columns: minmax(0, 0.92fr) minmax(480px, 1.08fr);
+  align-items: center;
+  gap: clamp(64px, 8vw, 126px);
+  margin: 0 auto;
+  padding: 92px 0 96px;
+}
+
+.personalize-copy h2 {
+  max-width: 650px;
+  margin-bottom: 25px;
+  font-size: clamp(42px, 4vw, 58px);
+  font-variation-settings: 'opsz' 58, 'wght' 300;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.personalize-copy h2 em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 58, 'wght' 340;
+  font-weight: 340;
+}
+
+.personalize-copy > p:last-child {
+  max-width: 550px;
+  color: #505050;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.personalize-panel {
+  min-width: 0;
+  border: 1px solid #c9c9c4;
+  border-radius: 6px;
+  background: #f7f7f5;
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.personalize-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 17px;
+  color: #666;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.personalize-themes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid #d2d2ce;
+  background: #d2d2ce;
+  list-style: none;
+}
+
+.personalize-theme {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  padding: 18px;
+}
+
+.personalize-theme__swatch {
+  width: 12px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background: #111;
+}
+
+.personalize-theme__swatch--ocean {
+  background: #2563eb;
+}
+
+.personalize-theme__swatch--ember {
+  background: #c2410c;
+}
+
+.personalize-theme__swatch--plum {
+  background: #9b0050;
+}
+
+.personalize-theme__swatch--custom {
+  background: linear-gradient(180deg, #6e4aff 0 33%, #14a889 33% 66%, #f4a62a 66% 100%);
+}
+
+.personalize-theme > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.personalize-theme strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personalize-theme small {
+  overflow: hidden;
+  color: #707070;
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personalize-panel__cta {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 18px;
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.personalize-panel__cta:hover {
+  border-color: #333;
+  background: #333;
+}
+
+.platform-section {
+  background: #070707;
+  color: #f7f7f7;
+}
+
+.platform-inner,
+.experts-inner,
+.join-inner {
+  width: min(1340px, calc(100% - 96px));
   margin: 0 auto;
 }
-.hero-label {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: var(--text-xs); font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-widest); text-transform: uppercase;
-  color: var(--fg-secondary); margin-bottom: 40px;
-}
-.hero-wip-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--gray-400);
-  animation: pulse-dot 2s ease-in-out infinite;
-  flex-shrink: 0;
-}
-@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.hero h1 {
-  font-size: clamp(52px, 7vw, 96px);
-  font-weight: 300; line-height: 1.05;
-  letter-spacing: -0.03em;
-  font-variation-settings: 'opsz' 72, 'wght' 300;
-  max-width: 900px; margin-bottom: 40px;
-}
-.hero h1 em { font-family: var(--font-serif); font-style: italic; font-variation-settings: 'opsz' 72, 'wght' 300; }
-.hero-sub { font-size: var(--text-md); color: var(--fg-secondary); line-height: var(--leading-relaxed); max-width: 560px; margin-bottom: 48px; }
-.hero-waitlist { display: flex; gap: 8px; margin-bottom: 16px; }
-.waitlist-input {
-  padding: 11px 16px; font-family: var(--font-sans); font-size: var(--text-base);
-  border: 1px solid var(--border-strong); border-radius: 4px;
-  background: var(--bg-default); color: var(--fg-primary);
-  width: 280px; outline: none; transition: border-color var(--transition-fast);
-}
-.waitlist-input::placeholder { color: var(--fg-tertiary); }
-.waitlist-input:focus { border-color: var(--black); }
-.waitlist-btn { padding: 11px 24px; font-size: var(--text-base); white-space: nowrap; }
-.waitlist-success { font-size: var(--text-base); color: var(--fg-secondary); padding: 12px 0; margin-bottom: 16px; }
-.waitlist-error { font-size: var(--text-sm); color: #c00; margin-top: 8px; margin-bottom: 8px; }
-.waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.waitlist-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
-@media (prefers-color-scheme: dark) {
-  .waitlist-input {
-    background: var(--bg-muted);
-    border-color: var(--border-strong);
+.platform-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(520px, 1.18fr);
+  gap: clamp(64px, 8vw, 126px);
+  padding: 104px 0;
+}
+
+.section-label {
+  margin-bottom: 24px;
+  color: #555;
+}
+
+.section-label--dark {
+  color: #a8a8a8;
+}
+
+.platform-intro h2,
+.experts-heading h2,
+.join-copy h2 {
+  font-variation-settings: 'opsz' 58, 'wght' 300;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.platform-intro h2 {
+  max-width: 610px;
+  margin-bottom: 26px;
+  font-size: clamp(42px, 4vw, 58px);
+}
+
+.platform-intro h2 em,
+.experts-heading h2 em,
+.join-copy h2 em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-variation-settings: 'opsz' 58, 'wght' 340;
+  font-weight: 340;
+}
+
+.platform-intro > p:last-child {
+  max-width: 530px;
+  color: #a8a8a8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.platform-list {
+  border-top: 1px solid #353535;
+  list-style: none;
+}
+
+.platform-row {
+  display: grid;
+  min-height: 142px;
+  grid-template-columns: 42px 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid #353535;
+}
+
+.platform-row__index {
+  align-self: start;
+  padding-top: 28px;
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.platform-row__icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid #404040;
+  border-radius: 5px;
+  color: #ededed;
+}
+
+.platform-row__icon :deep(svg) {
+  width: 24px;
+  height: 24px;
+  stroke-width: 1.4;
+}
+
+.platform-row__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 26px 0;
+}
+
+.platform-row__copy strong {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.platform-row__copy small {
+  max-width: 540px;
+  color: #9d9d9d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.experts-section {
+  background: #f7f7f5;
+  color: #111;
+}
+
+.experts-inner {
+  padding: 104px 0 112px;
+}
+
+.experts-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+  align-items: end;
+  gap: 70px;
+  margin-bottom: 66px;
+}
+
+.experts-heading .section-label {
+  grid-column: 1 / -1;
+  margin-bottom: -42px;
+}
+
+.experts-heading h2 {
+  max-width: 830px;
+  font-size: clamp(42px, 4.25vw, 62px);
+}
+
+.experts-heading > p:last-child {
+  color: #505050;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.expert-points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #cfcfcb;
+  border-bottom: 1px solid #cfcfcb;
+}
+
+.expert-point {
+  position: relative;
+  min-width: 0;
+  padding: 34px 34px 38px;
+}
+
+.expert-point + .expert-point {
+  border-left: 1px solid #cfcfcb;
+}
+
+.expert-point__index {
+  display: block;
+  margin-bottom: 34px;
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.expert-point__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  margin-bottom: 28px;
+}
+
+.expert-point__icon :deep(svg) {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.35;
+}
+
+.expert-point h3 {
+  margin-bottom: 9px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.expert-point p {
+  max-width: 360px;
+  color: #565656;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.join-section {
+  border-top: 1px solid #292929;
+  background: #030303;
+  color: #f7f7f7;
+}
+
+.join-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(480px, 1.1fr);
+  align-items: end;
+  gap: clamp(64px, 8vw, 130px);
+  padding: 104px 0 112px;
+}
+
+.join-copy h2 {
+  margin-bottom: 24px;
+  font-size: clamp(46px, 4.35vw, 64px);
+}
+
+.join-copy > p:last-child {
+  max-width: 510px;
+  color: #a8a8a8;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.join-form {
+  min-width: 0;
+}
+
+.join-form label {
+  display: block;
+  margin-bottom: 11px;
+  color: #dedede;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.join-form__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.join-form input {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #0a0a0a;
+  padding: 12px 16px;
+  color: #f7f7f7;
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 150ms ease-out, background 150ms ease-out;
+}
+
+.join-form input::placeholder {
+  color: #777;
+}
+
+.join-form input:hover {
+  border-color: #777;
+}
+
+.join-form input[aria-invalid='true'] {
+  border-color: #d67a7a;
+}
+
+.join-form .button {
+  min-height: 54px;
+  white-space: nowrap;
+}
+
+.join-form__error {
+  min-height: 22px;
+  margin-top: 9px;
+  color: #efb0b0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.join-form__note {
+  color: #777;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.site-footer {
+  display: grid;
+  width: min(1440px, calc(100% - 80px));
+  min-height: 102px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin: 0 auto;
+  background: #030303;
+  color: #777;
+}
+
+.site-footer::before {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: 1px solid #292929;
+  content: '';
+  transform: translateY(-51px);
+}
+
+.site-footer {
+  position: relative;
+}
+
+.footer-brand {
+  gap: 10px;
+  font-size: 16px;
+}
+
+.footer-brand img {
+  width: 24px;
+  height: 24px;
+}
+
+.site-footer p {
+  font-size: 11px;
+  text-align: center;
+}
+
+.site-footer nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 24px;
+}
+
+.site-footer nav a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.site-footer nav a :deep(svg) {
+  width: 15px;
+  height: 15px;
+}
+
+.oe-redesign :is(a, button, input):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+@media (max-width: 1240px) {
+  .hero-grid {
+    grid-template-columns: minmax(390px, 0.72fr) minmax(560px, 1.08fr);
+    gap: 42px;
+  }
+
+  .hero h1 {
+    font-size: clamp(50px, 4.5vw, 62px);
   }
 }
-.hero-or { font-size: var(--text-sm); color: var(--fg-tertiary); }
-.hero-gh-link { color: var(--fg-secondary); text-decoration: underline; text-underline-offset: 3px; transition: color var(--transition-fast); }
-.hero-gh-link:hover { color: var(--fg-primary); }
 
-/* STRIP */
-.strip { border-top: 1px solid var(--border-default); border-bottom: 1px solid var(--border-default); overflow: hidden; padding: 16px 0; background: var(--bg-subtle); }
-.strip-inner { display: flex; gap: 64px; animation: marquee 30s linear infinite; white-space: nowrap; }
-.strip-item { display: flex; align-items: center; gap: 12px; font-size: var(--text-sm); color: var(--fg-secondary); flex-shrink: 0; }
-.strip-dot { width: 4px; height: 4px; background: var(--gray-400); border-radius: 50%; flex-shrink: 0; }
-@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (max-width: 1099px) {
+  .site-header,
+  .site-footer {
+    width: calc(100% - 64px);
+  }
 
-/* SECTIONS */
-section { padding: 96px 48px; }
-.section-inner { max-width: 1200px; margin: 0 auto; }
-.section-label {
-  font-size: var(--text-xs); font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-widest); text-transform: uppercase;
-  color: var(--fg-tertiary); margin-bottom: 16px;
-  display: flex; align-items: center; gap: 8px;
-}
-.section-label::before { content: ''; display: block; width: 16px; height: 1px; background: currentColor; }
+  .hero,
+  .speed-results,
+  .personalize-inner,
+  .platform-inner,
+  .experts-inner,
+  .join-inner {
+    width: min(760px, calc(100% - 64px));
+  }
 
-/* USE CASES */
-.usecases { background: var(--gray-950); color: var(--white); }
-.usecases .section-label { color: var(--gray-600); }
-.usecases h2 { font-size: clamp(32px, 4vw, 52px); font-weight: 300; letter-spacing: -0.03em; font-variation-settings: 'opsz' 48, 'wght' 300; color: var(--white); max-width: 640px; margin-bottom: 24px; line-height: 1.1; }
-.usecases h2 em { font-family: var(--font-serif); font-style: italic; }
-.usecases-note { font-size: var(--text-base); color: var(--gray-300); margin-bottom: 40px; max-width: 560px; line-height: var(--leading-relaxed); }
-.cases-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--gray-800); border: 1px solid var(--gray-800); border-radius: 4px; overflow: hidden; }
-.case-card { background: var(--gray-950); padding: 40px 36px; display: flex; flex-direction: column; gap: 24px; transition: background var(--transition-fast); cursor: default; }
-.case-card:hover { background: var(--gray-900); }
-.case-index { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--gray-500); }
-.case-title { font-size: var(--text-xl); font-weight: var(--weight-medium); letter-spacing: -0.01em; color: var(--white); line-height: 1.25; }
-.case-body { font-size: var(--text-base); color: var(--gray-300); line-height: var(--leading-relaxed); flex: 1; }
-.case-modules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.case-tag { font-family: var(--font-mono); font-size: 11px; color: var(--gray-500); border: 1px solid var(--gray-800); border-radius: 2px; padding: 2px 8px; }
+  .hero {
+    padding: 40px 0 72px;
+  }
 
-/* MARKETPLACE */
-.marketplace { background: var(--bg-default); border-top: 1px solid var(--border-default); }
-.marketplace-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 48px; }
-.marketplace-h2 { font-size: clamp(28px, 3.5vw, 44px); font-weight: 300; letter-spacing: -0.03em; font-variation-settings: 'opsz' 44, 'wght' 300; line-height: 1.1; margin-bottom: 16px; }
-.marketplace-h2 em { font-family: var(--font-serif); font-style: italic; }
-.marketplace-desc { font-size: var(--text-md); color: var(--fg-secondary); line-height: var(--leading-relaxed); max-width: 480px; }
-.marketplace-actions { flex-shrink: 0; display: flex; align-items: center; }
-.marketplace-soon { font-size: var(--text-sm); color: var(--fg-tertiary); font-style: italic; }
-.mkt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border-default); border: 1px solid var(--border-default); border-radius: 4px; overflow: hidden; }
-.mkt-card { background: var(--bg-default); padding: 28px 28px 32px; display: flex; flex-direction: column; gap: 10px; transition: background var(--transition-fast); cursor: default; }
-.mkt-card:hover { background: var(--bg-subtle); }
-.mkt-card--build { background: var(--bg-subtle); justify-content: center; align-items: flex-start; cursor: pointer; }
-.mkt-card--build:hover { background: var(--bg-muted); }
-.mkt-build-icon { width: 36px; height: 36px; border: 1px solid var(--border-default); border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
-.mkt-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.mkt-tag { font-family: var(--font-mono); font-size: 11px; color: var(--fg-tertiary); }
-.mkt-verified { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--fg-secondary); font-weight: var(--weight-medium); }
-.mkt-community { font-size: 11px; color: var(--fg-tertiary); border: 1px solid var(--border-default); border-radius: 2px; padding: 1px 6px; font-family: var(--font-mono); }
-.mkt-name { font-size: var(--text-base); font-weight: var(--weight-medium); letter-spacing: -0.01em; color: var(--fg-primary); }
-.mkt-desc { font-size: var(--text-base); color: var(--fg-secondary); line-height: var(--leading-relaxed); }
+  .hero-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 52px;
+  }
 
-/* MODULAR */
-.modular { background: var(--bg-default); }
-.modular-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; margin-top: 64px; }
-.modular h2 { font-size: clamp(30px, 3.5vw, 48px); font-weight: 300; letter-spacing: -0.03em; font-variation-settings: 'opsz' 48, 'wght' 300; line-height: 1.1; margin-bottom: 24px; }
-.modular h2 em { font-family: var(--font-serif); font-style: italic; }
-.modular-desc { font-size: var(--text-md); color: var(--fg-secondary); line-height: var(--leading-relaxed); margin-bottom: 40px; }
-.feature-list { list-style: none; display: flex; flex-direction: column; }
-.feature-item { display: flex; align-items: flex-start; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--border-default); }
-.feature-item:first-child { border-top: 1px solid var(--border-default); }
-.feature-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
-.feature-icon svg { width: 16px; height: 16px; stroke: var(--fg-primary); stroke-width: 1.5; }
-.feature-text h4 { font-size: var(--text-base); font-weight: var(--weight-medium); margin-bottom: 4px; }
-.feature-text p { font-size: var(--text-base); color: var(--fg-secondary); line-height: var(--leading-relaxed); }
-.terminal-card { background: var(--gray-950); border: 1px solid var(--gray-800); border-radius: 4px; overflow: hidden; }
-.terminal-bar { display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--gray-800); }
-.terminal-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-700); }
-.terminal-title { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--gray-600); margin-left: 6px; }
-.terminal-body { padding: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.8; color: var(--gray-300); }
-.t-comment { color: var(--gray-700); }
-.t-key { color: var(--gray-400); }
-.t-string { color: var(--white); }
-.t-dim { color: var(--gray-600); }
-.t-prompt { color: var(--gray-500); }
+  .hero-copy {
+    max-width: 650px;
+  }
 
-/* INTERFACES */
-.interfaces { background: var(--bg-subtle); border-top: 1px solid var(--border-default); border-bottom: 1px solid var(--border-default); }
-.interfaces h2 { font-size: clamp(28px, 3vw, 44px); font-weight: 300; letter-spacing: -0.03em; font-variation-settings: 'opsz' 44, 'wght' 300; line-height: 1.1; max-width: 520px; margin-bottom: 56px; }
-.interfaces h2 em { font-family: var(--font-serif); font-style: italic; }
-.interface-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border-default); border: 1px solid var(--border-default); border-radius: 4px; overflow: hidden; }
-.interface-card { background: var(--bg-subtle); padding: 36px 32px 40px; display: flex; flex-direction: column; gap: 16px; transition: background var(--transition-fast); }
-.interface-card:hover { background: var(--bg-default); }
-.interface-card-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-tertiary); letter-spacing: var(--tracking-wide); }
-.interface-card h3 { font-size: var(--text-xl); font-weight: var(--weight-medium); letter-spacing: -0.01em; }
-.interface-card p { font-size: var(--text-base); color: var(--fg-secondary); line-height: var(--leading-relaxed); }
-.interface-badge { font-family: var(--font-mono); font-size: 11px; color: var(--fg-secondary); border: 1px solid var(--border-default); border-radius: 2px; padding: 3px 8px; display: inline-block; margin-top: auto; }
+  .hero h1 {
+    font-size: clamp(58px, 7.5vw, 72px);
+  }
 
-/* OPEN STRIP */
-.open-strip { background: var(--black); color: var(--white); padding: 80px 48px; text-align: center; }
-.open-strip h2 { font-size: clamp(32px, 4vw, 56px); font-weight: 300; letter-spacing: -0.03em; font-variation-settings: 'opsz' 56, 'wght' 300; color: var(--white); max-width: 700px; margin: 0 auto 24px; line-height: 1.1; }
-.open-strip h2 em { font-family: var(--font-serif); font-style: italic; color: var(--gray-400); }
-.open-strip p { font-size: var(--text-md); color: var(--gray-400); margin-bottom: 40px; max-width: 480px; margin-left: auto; margin-right: auto; }
-.open-strip .btn-primary { background: var(--white); color: var(--black); border-color: var(--white); padding: 12px 28px; font-size: var(--text-base); }
-.open-strip .btn-primary:hover { opacity: 0.85; }
-.open-strip .btn-ghost { border-color: var(--gray-700); color: var(--gray-400); padding: 12px 28px; font-size: var(--text-base); }
-.open-strip .btn-ghost:hover { background: var(--gray-900); border-color: var(--gray-600); color: var(--white); }
-.open-actions { display: flex; align-items: center; justify-content: center; gap: 12px; }
-.github-stars { display: flex; align-items: center; gap: 8px; margin-top: 40px; justify-content: center; }
-.github-stars span { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--gray-500); }
+  .hero-preview {
+    width: 100%;
+  }
 
-/* FOOTER */
-.oe-footer { padding: 40px 48px; border-top: 1px solid var(--border-default); display: flex; align-items: center; justify-content: space-between; }
-.footer-left { display: flex; align-items: center; gap: 24px; }
-.footer-logo { display: flex; align-items: center; gap: 10px; opacity: 0.5; }
-.footer-logo img { height: 18px; }
-.footer-logo span { font-size: var(--text-sm); font-weight: var(--weight-medium); }
-.footer-copy { font-size: var(--text-xs); color: var(--fg-tertiary); }
-.footer-links { display: flex; gap: 24px; list-style: none; }
-.footer-links a { font-size: var(--text-xs); color: var(--fg-tertiary); text-decoration: none; transition: color var(--transition-fast); }
-.footer-links a:hover { color: var(--fg-secondary); }
+  .platform-inner,
+  .personalize-inner,
+  .join-inner {
+    grid-template-columns: 1fr;
+    gap: 64px;
+  }
 
-/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+  .personalize-copy {
+    max-width: 650px;
+  }
 
-/* Tablet + mobile: collapse nav links */
-@media (max-width: 900px) {
-  .oe-nav { padding: 0 24px; }
-  .nav-links { display: none; }
-}
-@media (max-width: 640px) {
-  .oe-nav { padding: 0 20px; }
-  .nav-cta .btn-ghost { display: none; }
+  .experts-heading {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .experts-heading .section-label {
+    grid-column: auto;
+    margin-bottom: 0;
+  }
+
+  .experts-heading > p:last-child {
+    max-width: 600px;
+  }
+
+  .expert-point {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+
+  .join-form {
+    max-width: 690px;
+  }
 }
 
-/* Hero */
-@media (max-width: 768px) {
-  .hero { padding: 100px 20px 72px; }
-  .hero-waitlist { flex-direction: column; }
-  .waitlist-input { width: 100%; }
-  .waitlist-btn   { width: 100%; justify-content: center; }
-}
-@media (max-width: 480px) {
-  .hero { padding: 88px 20px 60px; }
+@media (max-width: 767px) {
+  .site-header {
+    width: calc(100% - 40px);
+    height: 64px;
+    grid-template-columns: 1fr auto;
+  }
+
+  .brand {
+    gap: 11px;
+    font-size: 20px;
+  }
+
+  .brand img {
+    width: 28px;
+    height: 28px;
+  }
+
+  .desktop-nav,
+  .header-cta {
+    display: none;
+  }
+
+  .mobile-menu-button {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border: 1px solid #666;
+    border-radius: 5px;
+    background: #080808;
+    color: #f7f7f7;
+    cursor: pointer;
+  }
+
+  .mobile-menu-button :deep(svg) {
+    width: 23px;
+    height: 23px;
+    stroke-width: 1.6;
+  }
+
+  .mobile-nav {
+    position: absolute;
+    top: 58px;
+    right: 0;
+    left: 0;
+    display: flex;
+    border: 1px solid #333;
+    border-radius: 5px;
+    background: #0a0a0a;
+    padding: 8px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+    flex-direction: column;
+  }
+
+  .mobile-nav a {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    border-radius: 3px;
+    padding: 0 14px;
+    font-size: 15px;
+  }
+
+  .mobile-nav a:hover {
+    background: #171717;
+  }
+
+  .mobile-nav__cta {
+    justify-content: center;
+    margin-top: 4px;
+    background: #f7f7f7;
+    color: #090909 !important;
+    font-weight: 500;
+  }
+
+  .hero,
+  .speed-results,
+  .personalize-inner,
+  .platform-inner,
+  .experts-inner,
+  .join-inner {
+    width: min(100% - 40px, 620px);
+  }
+
+  .hero {
+    padding: 18px 0 48px;
+  }
+
+  .hero-grid {
+    gap: 18px;
+  }
+
+  .eyebrow {
+    max-width: 310px;
+    margin-bottom: 20px;
+    font-size: 10px;
+    line-height: 1.55;
+  }
+
+  .hero h1 {
+    margin-bottom: 24px;
+    font-size: clamp(34px, 10.25vw, 42px);
+    line-height: 1.075;
+  }
+
+  .hero-lead {
+    margin-bottom: 14px;
+    font-size: 14.5px;
+    line-height: 1.65;
+  }
+
+  .hero-actions {
+    width: 100%;
+    max-width: none;
+    gap: 12px;
+  }
+
+  .hero-actions .button {
+    min-width: 0;
+    min-height: 48px;
+    padding-right: 12px;
+    padding-left: 12px;
+    font-size: 13.5px;
+  }
+
+  .speed-results {
+    padding-bottom: 32px;
+  }
+
+  .speed-results__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .speed-result,
+  .speed-result:first-child,
+  .speed-result:last-child {
+    padding: 25px 0;
+  }
+
+  .speed-result + .speed-result {
+    border-top: 1px solid #303030;
+    border-left: 0;
+  }
+
+  .speed-result__meta {
+    margin-bottom: 17px;
+  }
+
+  .speed-result h3 {
+    max-width: 520px;
+    font-size: 21px;
+  }
+
+  .speed-result p {
+    max-width: 540px;
+  }
+
+  .speed-results__disclaimer {
+    margin-top: 4px;
+  }
+
+  .platform-inner,
+  .personalize-inner,
+  .experts-inner,
+  .join-inner {
+    padding: 70px 0;
+  }
+
+  .platform-inner,
+  .personalize-inner,
+  .join-inner {
+    gap: 44px;
+  }
+
+  .personalize-copy h2,
+  .platform-intro h2,
+  .experts-heading h2,
+  .join-copy h2 {
+    font-size: clamp(36px, 10vw, 46px);
+  }
+
+  .platform-intro > p:last-child,
+  .personalize-copy > p:last-child,
+  .join-copy > p:last-child {
+    font-size: 15.5px;
+  }
+
+  .personalize-panel {
+    padding: 20px;
+  }
+
+  .platform-row {
+    min-height: 0;
+    grid-template-columns: 32px 46px minmax(0, 1fr);
+    gap: 13px;
+  }
+
+  .platform-row__icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .platform-row__copy {
+    padding: 24px 0;
+  }
+
+  .platform-row__copy strong {
+    font-size: 17px;
+  }
+
+  .platform-row__copy small {
+    font-size: 13px;
+  }
+
+  .experts-heading {
+    margin-bottom: 42px;
+  }
+
+  .experts-heading > p:last-child {
+    font-size: 15px;
+  }
+
+  .expert-points {
+    grid-template-columns: 1fr;
+  }
+
+  .expert-point {
+    display: grid;
+    grid-template-columns: 34px 48px minmax(0, 1fr);
+    gap: 13px;
+    padding: 24px 0;
+  }
+
+  .expert-point + .expert-point {
+    border-top: 1px solid #cfcfcb;
+    border-left: 0;
+  }
+
+  .expert-point__index,
+  .expert-point__icon {
+    margin-bottom: 0;
+  }
+
+  .expert-point h3 {
+    font-size: 17px;
+  }
+
+  .expert-point p {
+    font-size: 13px;
+  }
+
+  .join-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .join-form .button {
+    width: 100%;
+  }
+
+  .site-footer {
+    width: calc(100% - 40px);
+    min-height: 0;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    padding: 34px 0;
+  }
+
+  .site-footer::before {
+    transform: translateY(-34px);
+  }
+
+  .site-footer p {
+    display: none;
+  }
+
+  .site-footer nav {
+    gap: 16px;
+  }
 }
 
-/* Sections base padding */
-@media (max-width: 768px) {
-  section { padding: 64px 20px; }
-}
-@media (max-width: 480px) {
-  section { padding: 52px 16px; }
+@media (max-width: 359px) {
+  .site-header,
+  .site-footer,
+  .hero,
+  .speed-results,
+  .personalize-inner,
+  .platform-inner,
+  .experts-inner,
+  .join-inner {
+    width: calc(100% - 32px);
+  }
+
+  .brand {
+    font-size: 18px;
+  }
+
+  .hero-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-row {
+    grid-template-columns: 28px 42px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .platform-row__icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .site-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .site-footer nav {
+    justify-content: flex-start;
+  }
 }
 
-/* Use cases grid */
-@media (max-width: 768px) {
-  .cases-grid { grid-template-columns: 1fr; }
-  .case-card  { padding: 28px 24px; }
-}
-@media (min-width: 769px) and (max-width: 1024px) {
-  .cases-grid { grid-template-columns: 1fr 1fr; }
-}
-
-/* Marketplace */
-@media (max-width: 768px) {
-  .marketplace-header { flex-direction: column; align-items: flex-start; gap: 16px; }
-  .mkt-grid { grid-template-columns: 1fr; }
-}
-@media (min-width: 769px) and (max-width: 1024px) {
-  .mkt-grid { grid-template-columns: 1fr 1fr; }
+@media (prefers-reduced-motion: reduce) {
+  .oe-redesign *,
+  .oe-redesign *::before,
+  .oe-redesign *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
-/* Modular */
-@media (max-width: 1024px) {
-  .modular-grid { grid-template-columns: 1fr; gap: 48px; margin-top: 40px; }
+.mobile-menu-enter-active,
+.mobile-menu-leave-active {
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
 }
 
-/* Interface grid */
-@media (max-width: 768px) {
-  .interface-grid { grid-template-columns: 1fr; }
-}
-@media (min-width: 769px) and (max-width: 1024px) {
-  .interface-grid { grid-template-columns: 1fr 1fr; }
-}
-
-/* Open strip */
-@media (max-width: 768px) {
-  .open-strip { padding: 64px 20px; }
-  .open-actions { flex-direction: column; align-items: center; }
-  .open-strip .btn-primary,
-  .open-strip .btn-ghost { width: 100%; justify-content: center; max-width: 320px; }
-}
-
-/* Footer */
-@media (max-width: 768px) {
-  .oe-footer { flex-direction: column; gap: 24px; align-items: flex-start; padding: 40px 20px; }
-  .footer-left { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .footer-links { flex-wrap: wrap; gap: 16px; }
+.mobile-menu-enter-from,
+.mobile-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>

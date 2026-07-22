@@ -8,6 +8,7 @@ Każdy moduł eksponuje trzy interfejsy: **UI** (dla ludzi), **REST API** (dla d
 
 - Nuxt 4 + TypeScript
 - Turborepo + pnpm workspaces
+- Rive (`.riv`) animations
 - Supabase (PostgreSQL + Auth + RLS)
 - Resend (maile transakcyjne i produkcyjny SMTP Auth)
 - Vercel
@@ -181,9 +182,30 @@ Konfiguracja SMTP w `supabase/config.toml` pozostaje wyłączona lokalnie, dzię
 czemu testy rejestracji i resetu hasła nadal są bezpiecznie przechwytywane przez
 Mailpit.
 
+## Animacje Rive
+
+Pliki `.riv` umieszczaj w `apps/landing/public/rive/` i renderuj przez
+globalnie dostępny w aplikacji landing komponent:
+
+```vue
+<RiveAnimation
+  src="/rive/hero.riv"
+  state-machines="Main State Machine"
+  label="Animowane logo OpenExpert"
+/>
+```
+
+Kontener komponentu musi mieć określoną wysokość. Komponent obsługuje też właściwości
+`artboard`, `animations`, `autoplay`, `auto-bind`, `fit` i `alignment` oraz zdarzenia
+`load`, `error` i `state-change`. Metody `play`, `pause`, `stop`, `reset` i
+`stateMachineInputs` są dostępne przez template ref.
+
+Globalny loader aplikacji używa `openexpert-loader-lightmode.riv` lub
+`openexpert-loader-darkmode.riv`, automatycznie dopasowując wariant do ustawień systemu.
+
 ## Deployment (Vercel)
 
-1. Push repo do `OpenExpertApp/OpenExpert`.
+1. Push repo do `OpenExpertApp/app`.
 2. Import w Vercelu — utwórz osobne projekty dla `apps/landing` i `apps/crm`.
 3. Ustaw zmienne środowiskowe w Vercel project settings:
    - `NUXT_PUBLIC_SUPABASE_URL`

@@ -15,15 +15,21 @@ test('neutral presets expose distinct palettes and font choices', () => {
   assert.equal(ocean?.id, 'ocean')
   assert.equal(ocean?.colors.primary, '#2563EB')
   assert.equal(ocean?.fonts.body, 'dm-sans')
+  assert.equal(ocean?.radius, 8)
+  assert.equal(ocean?.controlRadius, 4)
   assert.equal(ember?.id, 'ember')
   assert.equal(ember?.colors.primary, '#C2410C')
   assert.equal(ember?.fonts.body, 'roboto')
+  assert.equal(ember?.radius, 4)
+  assert.equal(ember?.controlRadius, 4)
   assert.equal(plum?.id, 'plum')
   assert.equal(plum?.colors.primary, '#9B0050')
   assert.equal(plum?.colors.accent, '#EF7F1A')
   assert.equal(plum?.colors.text, '#111928')
   assert.equal(plum?.fonts.display, 'manrope')
   assert.equal(plum?.fonts.body, 'manrope')
+  assert.equal(plum?.radius, 24)
+  assert.equal(plum?.controlRadius, 8)
 })
 
 test('custom theme clones a preset without mutating the source', () => {
@@ -48,6 +54,7 @@ test('stored custom values are normalized and invalid values fall back safely', 
       body: 'unknown-font',
     },
     radius: 200,
+    controlRadius: -10,
   }, fallback)
 
   assert.equal(normalized.colors.primary, '#123456')
@@ -55,6 +62,7 @@ test('stored custom values are normalized and invalid values fall back safely', 
   assert.equal(normalized.fonts.display, 'georgia')
   assert.equal(normalized.fonts.body, fallback.fonts.body)
   assert.equal(normalized.radius, 24)
+  assert.equal(normalized.controlRadius, 0)
 })
 
 test('theme CSS variables include palette, derived soft colors, fonts and radius', () => {
@@ -63,7 +71,8 @@ test('theme CSS variables include palette, derived soft colors, fonts and radius
   assert.equal(variables['--theme-primary'], '#9B0050')
   assert.equal(variables['--theme-primary-soft'], 'rgba(155, 0, 80, 0.09)')
   assert.match(variables['--theme-font-display'] ?? '', /Manrope/)
-  assert.equal(variables['--theme-radius'], '8px')
+  assert.equal(variables['--theme-radius'], '24px')
+  assert.equal(variables['--theme-control-radius'], '8px')
 })
 
 test('contrast ratio matches WCAG reference values', () => {

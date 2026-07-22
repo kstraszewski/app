@@ -243,10 +243,10 @@ onBeforeUnmount(() => {
                 :style="themeToCssVariables(theme)"
               >
                 <input
+                  v-model="selectedThemeId"
                   type="radio"
                   name="personalization-theme"
                   :value="theme.id"
-                  :checked="selectedThemeId === theme.id"
                   @change="selectTheme(theme.id)"
                 >
                 <span class="theme-card__topline">
@@ -359,14 +359,20 @@ onBeforeUnmount(() => {
                 <Icon name="lucide:scan-line" aria-hidden="true" />
                 <div>
                   <h3>Kształt</h3>
-                  <p>Promień kart i kontrolek.</p>
+                  <p>Osobno dla powierzchni i kontrolek.</p>
                 </div>
               </div>
 
-              <label class="range-control">
-                <span>Zaokrąglenie <strong>{{ customTheme.radius }} px</strong></span>
-                <input v-model.number="customTheme.radius" type="range" min="0" max="24" step="1">
-              </label>
+              <div class="range-controls">
+                <label class="range-control">
+                  <span>Panele i karty <strong>{{ customTheme.radius }} px</strong></span>
+                  <input v-model.number="customTheme.radius" type="range" min="0" max="24" step="1">
+                </label>
+                <label class="range-control">
+                  <span>Przyciski i pola <strong>{{ customTheme.controlRadius }} px</strong></span>
+                  <input v-model.number="customTheme.controlRadius" type="range" min="0" max="24" step="1">
+                </label>
+              </div>
             </div>
 
             <div class="custom-actions">
@@ -613,12 +619,12 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex-direction: column;
   border: 1px solid #dcdcd7;
-  border-radius: 12px;
+  border-radius: var(--theme-radius);
   background: #fff;
   color: #151515;
   padding: 14px;
   cursor: pointer;
-  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition: border-color 150ms ease, border-radius 220ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .theme-card:hover {
@@ -694,7 +700,7 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid #e2e2dd;
-  border-radius: 999px;
+  border-radius: var(--theme-control-radius);
   margin-top: 13px;
 }
 
@@ -938,9 +944,17 @@ onBeforeUnmount(() => {
   margin-top: 12px;
 }
 
+.range-controls,
 .range-control {
   display: flex;
   flex-direction: column;
+}
+
+.range-controls {
+  gap: 17px;
+}
+
+.range-control {
   gap: 11px;
 }
 

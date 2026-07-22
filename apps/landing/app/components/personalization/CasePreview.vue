@@ -152,7 +152,7 @@ const caseSteps = [
   grid-template-columns: 70px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--theme-border);
-  border-radius: calc(var(--theme-radius) + 4px);
+  border-radius: var(--theme-radius);
   background: var(--theme-surface);
   box-shadow: 0 20px 60px rgba(17, 25, 40, 0.08);
   color: var(--theme-text);
@@ -189,7 +189,7 @@ const caseSteps = [
   width: 46px;
   height: 46px;
   place-items: center;
-  border-radius: max(4px, calc(var(--theme-radius) - 3px));
+  border-radius: var(--theme-control-radius);
   color: var(--theme-on-primary);
   opacity: 0.72;
 }
@@ -247,7 +247,7 @@ const caseSteps = [
   gap: 9px;
   flex: 0 0 auto;
   border: 1px solid var(--theme-primary);
-  border-radius: max(4px, calc(var(--theme-radius) - 2px));
+  border-radius: var(--theme-control-radius);
   background: var(--theme-primary);
   color: var(--theme-on-primary);
   font-family: var(--theme-font-body);
@@ -338,7 +338,7 @@ const caseSteps = [
   place-items: center;
   flex: 0 0 auto;
   border: 1px solid var(--theme-primary);
-  border-radius: max(4px, calc(var(--theme-radius) - 2px));
+  border-radius: var(--theme-control-radius);
   background: var(--theme-surface);
   color: var(--theme-primary);
 }
@@ -438,7 +438,7 @@ const caseSteps = [
   height: 54px;
   place-items: center;
   border: 1px solid var(--theme-border);
-  border-radius: max(4px, calc(var(--theme-radius) - 3px));
+  border-radius: var(--theme-control-radius);
   background: var(--theme-surface);
 }
 
@@ -517,7 +517,7 @@ const caseSteps = [
 
 .theme-step__status {
   border: 1px solid var(--theme-border);
-  border-radius: max(3px, calc(var(--theme-radius) - 5px));
+  border-radius: var(--theme-control-radius);
   background: var(--theme-surface);
   color: var(--theme-muted);
   font-size: 10px;

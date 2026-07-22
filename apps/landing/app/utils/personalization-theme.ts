@@ -23,6 +23,7 @@ export interface PersonalizationTheme {
     body: ThemeFontKey
   }
   radius: number
+  controlRadius: number
 }
 
 export const themeFontOptions: Array<{ label: string, value: ThemeFontKey, stack: string }> = [
@@ -81,7 +82,8 @@ export const personalizationPresets: PersonalizationTheme[] = [
       display: 'dm-sans',
       body: 'dm-sans',
     },
-    radius: 12,
+    radius: 8,
+    controlRadius: 4,
   },
   {
     id: 'ember',
@@ -102,6 +104,7 @@ export const personalizationPresets: PersonalizationTheme[] = [
       body: 'roboto',
     },
     radius: 4,
+    controlRadius: 4,
   },
   {
     id: 'plum',
@@ -121,7 +124,8 @@ export const personalizationPresets: PersonalizationTheme[] = [
       display: 'manrope',
       body: 'manrope',
     },
-    radius: 8,
+    radius: 24,
+    controlRadius: 8,
   },
 ]
 
@@ -181,6 +185,7 @@ export function normalizeCustomTheme(
     body: normalizeFont(inputFonts.body, custom.fonts.body),
   }
   custom.radius = Math.min(24, Math.max(0, Number.isFinite(Number(input.radius)) ? Number(input.radius) : custom.radius))
+  custom.controlRadius = Math.min(24, Math.max(0, Number.isFinite(Number(input.controlRadius)) ? Number(input.controlRadius) : custom.controlRadius))
 
   return custom
 }
@@ -216,6 +221,7 @@ export function themeToCssVariables(theme: PersonalizationTheme): Record<string,
     '--theme-font-display': fontStacks[safe.fonts.display],
     '--theme-font-body': fontStacks[safe.fonts.body],
     '--theme-radius': `${safe.radius}px`,
+    '--theme-control-radius': `${safe.controlRadius}px`,
   }
 }
 

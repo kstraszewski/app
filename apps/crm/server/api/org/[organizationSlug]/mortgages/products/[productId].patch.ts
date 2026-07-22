@@ -3,7 +3,7 @@ import {
   asRecord,
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSuperAdmin,
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
@@ -11,18 +11,32 @@ import { sanitizeMortgageOverrideParameters } from '~~/server/utils/mortgage-cat
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireSuperAdmin(session)
   const productId = getRequiredParam(event, 'productId')
   const body = asRecord(await readBody(event))
 
   const { data: product, error: productError } = await session.supabase
     .from('mortgage_products')
-    .select('id')
+    .select('id, current_published_version_id')
     .eq('id', productId)
     .maybeSingle()
   throwDbError(productError)
   if (!product) {
     throw createError({ statusCode: 404, statusMessage: 'Mortgage product not found' })
+  }
+  if ('parameters' in body && product.current_published_version_id) {
+    const { data: currentVersion, error: versionError } = await session.supabase
+      .from('mortgage_product_versions')
+      .select('calculator_schema_version')
+      .eq('id', product.current_published_version_id)
+      .maybeSingle()
+    throwDbError(versionError)
+    if (Number(currentVersion?.calculator_schema_version ?? 1) >= 2 && Object.keys(asRecord(body.parameters)).length) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'V2 pricing must be changed through the versioned mortgage-offer backoffice, not an organization flat-field override.',
+      })
+    }
   }
 
   const { data: existing, error: existingError } = await session.supabase

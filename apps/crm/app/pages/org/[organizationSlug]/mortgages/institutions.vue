@@ -26,7 +26,7 @@ type Bank = {
   productCount: number
   override: BankOverride | null
 }
-type Payload = { banks: Bank[], role: 'admin' | 'expert' }
+type Payload = { banks: Bank[], role: 'admin' | 'expert', superAdmin: boolean }
 type HistoryEntry = {
   id: string
   revision: number
@@ -41,7 +41,7 @@ const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const apiBase = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks`)
 const { data, pending, error, refresh } = await useFetch<Payload>(apiBase, {
-  default: () => ({ banks: [], role: 'expert' as const }),
+  default: () => ({ banks: [], role: 'expert' as const, superAdmin: false }),
 })
 
 const selectedId = ref('')
@@ -55,7 +55,7 @@ const mounted = ref(false)
 const logoFile = ref<File | null>(null)
 const history = ref<HistoryEntry[]>([])
 const selected = computed(() => data.value.banks.find(bank => bank.id === selectedId.value) ?? null)
-const isAdmin = computed(() => data.value.role === 'admin')
+const isSuperAdmin = computed(() => data.value.superAdmin)
 const hasCustomLogo = computed(() => Boolean(selected.value?.override?.logo_path))
 
 const form = reactive({
@@ -74,7 +74,7 @@ function loadForm(bank: Bank) {
 }
 
 async function loadHistory() {
-  if (!mounted.value || !selectedId.value || !isAdmin.value) return
+  if (!mounted.value || !selectedId.value || !isSuperAdmin.value) return
   historyPending.value = true
   try {
     const result = await $fetch<{ data: HistoryEntry[] }>(`${apiBase.value}/${selectedId.value}/history`)
@@ -215,20 +215,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <CrmShell title="Instytucje finansowe" eyebrow="Panel administratora · prezentacja banków">
+  <CrmShell title="Instytucje finansowe" eyebrow="SuperAdmin · katalog instytucji">
     <template #actions>
+      <UButton :to="`/org/${organizationSlug}/mortgages/offers`" icon="i-lucide-badge-percent">Oferty</UButton>
       <UButton :to="`/org/${organizationSlug}/mortgages/admin`" icon="i-lucide-package-open" variant="outline">Produkty</UButton>
       <UButton :to="`/org/${organizationSlug}/mortgages`" icon="i-lucide-arrow-left" variant="outline">Porównywarka</UButton>
     </template>
 
     <UAlert v-if="error" color="error" variant="subtle" title="Nie udało się pobrać instytucji" />
     <UAlert
-      v-else-if="!pending && !isAdmin"
+      v-else-if="!pending && !isSuperAdmin"
       color="warning"
       variant="subtle"
       icon="i-lucide-shield-alert"
-      title="Panel tylko dla administratora organizacji"
-      description="Edycja instytucji finansowych wymaga roli administratora."
+      title="Panel tylko dla SuperAdmina"
+      description="Edycja instytucji finansowych wymaga globalnej roli SuperAdmin."
     />
 
     <template v-else>

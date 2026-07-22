@@ -1,4 +1,4 @@
-import { requireAuthenticatedSession, throwDbError } from '~~/server/utils/crm'
+import { hasSuperAdminRole, requireAuthenticatedSession, throwDbError } from '~~/server/utils/crm'
 
 type MembershipRow = {
   role: 'expert' | 'admin'
@@ -11,14 +11,18 @@ type MembershipRow = {
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuthenticatedSession(event)
-  const { data, error } = await session.supabase
-    .from('organization_memberships')
-    .select('role, organization:organizations!inner(id, name, slug)')
-    .eq('user_id', session.userId)
+  const [{ data, error }, superAdmin] = await Promise.all([
+    session.supabase
+      .from('organization_memberships')
+      .select('role, organization:organizations!inner(id, name, slug)')
+      .eq('user_id', session.userId),
+    hasSuperAdminRole(session),
+  ])
 
   throwDbError(error)
 
   return {
+    access: { superAdmin },
     data: ((data ?? []) as MembershipRow[])
       .filter((membership) => membership.organization)
       .map((membership) => ({

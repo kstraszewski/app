@@ -1,4 +1,7 @@
 import { createError } from 'h3'
+import { throwDbError, type CrmSession } from './crm'
+
+const logoBucket = 'mortgage-bank-logos'
 
 export const mortgageOverrideParameterKeys = [
   'effective_from',
@@ -22,6 +25,8 @@ export const mortgageOverrideParameterKeys = [
   'is_eco',
   'cost_rules',
   'requirements',
+  'document_requirements',
+  'multiform_template_ids',
   'representative_example',
   'assumptions',
   'unknown_fields',
@@ -55,6 +60,74 @@ const costRuleKeys = new Set([
   'lifeInsuranceMonthlyRatePct',
   'lifeInsuranceMonths',
 ])
+const documentRequirementKeys = new Set([
+  'code',
+  'label',
+  'category',
+  'itemKind',
+  'scope',
+  'stage',
+  'applicability',
+  'evidence',
+  'required',
+  'multiple',
+  'allowedMimeTypes',
+  'templateId',
+  'notes',
+])
+const documentRequirementItemKinds = new Set([
+  'client_document',
+  'bank_document',
+  'external_check',
+  'manual_action',
+])
+const documentRequirementCategories = new Set([
+  'application',
+  'identity',
+  'income_employment',
+  'income_business',
+  'income_other',
+  'liabilities',
+  'transaction',
+  'property_legal',
+  'valuation',
+  'construction_renovation',
+  'refinance_discharge',
+  'insurance_security',
+  'disbursement',
+  'disclosure_privacy',
+  'other',
+])
+const documentRequirementScopes = new Set([
+  'case',
+  'primary_applicant',
+  'each_applicant',
+])
+const documentRequirementStages = new Set([
+  'analysis',
+  'agreement',
+  'disbursement',
+  'tranche',
+  'maintenance',
+])
+const documentRequirementApplicability = new Set([
+  'always',
+  'conditional',
+  'optional',
+  'case_requested',
+])
+const documentRequirementEvidence = new Set([
+  'confirmed_bank_source',
+  'inferred',
+  'expert_default',
+  'organization_custom',
+])
+const allowedDocumentMimeTypes = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+])
+const identifierPattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
 
 function recordValue(value: unknown, field: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -93,6 +166,140 @@ function stringList(value: unknown, field: string): string[] {
       throw createError({ statusCode: 400, statusMessage: `${field} contains an invalid entry` })
     }
     return entry.trim()
+  })
+}
+
+function requiredText(value: unknown, field: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: `${field} must be text` })
+  }
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > maxLength) {
+    throw createError({ statusCode: 400, statusMessage: `${field} is invalid` })
+  }
+  return trimmed
+}
+
+function identifier(value: unknown, field: string, maxLength = 100): string {
+  const parsed = requiredText(value, field, maxLength)
+  if (!identifierPattern.test(parsed)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${field} must be a lowercase identifier using letters, numbers, dots, dashes or underscores`,
+    })
+  }
+  return parsed
+}
+
+function enumValue(value: unknown, allowed: Set<string>, field: string): string {
+  if (typeof value !== 'string' || !allowed.has(value)) {
+    throw createError({ statusCode: 400, statusMessage: `${field} is unsupported` })
+  }
+  return value
+}
+
+function booleanValue(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw createError({ statusCode: 400, statusMessage: `${field} must be boolean` })
+  }
+  return value
+}
+
+function sanitizeMultiformTemplateIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 50) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'multiform_template_ids must be a list with at most 50 entries',
+    })
+  }
+
+  const identifiers = value.map((entry, index) => (
+    identifier(entry, `multiform_template_ids[${index}]`, 120)
+  ))
+  if (new Set(identifiers).size !== identifiers.length) {
+    throw createError({ statusCode: 400, statusMessage: 'multiform_template_ids contains duplicates' })
+  }
+  return identifiers
+}
+
+function sanitizeAllowedMimeTypes(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length > allowedDocumentMimeTypes.size) {
+    throw createError({ statusCode: 400, statusMessage: `${field} must be a MIME type list` })
+  }
+  const result = value.map((entry) => {
+    if (typeof entry !== 'string' || !allowedDocumentMimeTypes.has(entry)) {
+      throw createError({ statusCode: 400, statusMessage: `${field} contains an unsupported MIME type` })
+    }
+    return entry
+  })
+  if (new Set(result).size !== result.length) {
+    throw createError({ statusCode: 400, statusMessage: `${field} contains duplicates` })
+  }
+  return result
+}
+
+function sanitizeDocumentRequirements(value: unknown): JsonRecord[] {
+  if (!Array.isArray(value) || value.length > 100) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'document_requirements must be a list with at most 100 entries',
+    })
+  }
+
+  const codes = new Set<string>()
+  return value.map((entry, index) => {
+    const field = `document_requirements[${index}]`
+    const source = recordValue(entry, field)
+    const unknownKeys = Object.keys(source).filter(key => !documentRequirementKeys.has(key))
+    if (unknownKeys.length) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${field} contains unsupported fields: ${unknownKeys.join(', ')}`,
+      })
+    }
+
+    const code = identifier(source.code, `${field}.code`, 100)
+    if (codes.has(code)) {
+      throw createError({ statusCode: 400, statusMessage: `Duplicate document requirement code: ${code}` })
+    }
+    codes.add(code)
+
+    const itemKind = enumValue(source.itemKind, documentRequirementItemKinds, `${field}.itemKind`)
+    const allowedMimeTypes = sanitizeAllowedMimeTypes(source.allowedMimeTypes, `${field}.allowedMimeTypes`)
+    if (itemKind === 'client_document' && allowedMimeTypes.length === 0) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${field}.allowedMimeTypes must not be empty for a client document`,
+      })
+    }
+
+    const result: JsonRecord = {
+      code,
+      label: requiredText(source.label, `${field}.label`, 200),
+      category: enumValue(source.category, documentRequirementCategories, `${field}.category`),
+      itemKind,
+      scope: enumValue(source.scope, documentRequirementScopes, `${field}.scope`),
+      stage: enumValue(source.stage, documentRequirementStages, `${field}.stage`),
+      applicability: enumValue(source.applicability, documentRequirementApplicability, `${field}.applicability`),
+      evidence: enumValue(source.evidence, documentRequirementEvidence, `${field}.evidence`),
+      required: booleanValue(source.required, `${field}.required`),
+      multiple: booleanValue(source.multiple, `${field}.multiple`),
+      allowedMimeTypes,
+    }
+
+    if ('templateId' in source && source.templateId !== null && source.templateId !== '') {
+      if (itemKind !== 'bank_document') {
+        throw createError({
+          statusCode: 400,
+          statusMessage: `${field}.templateId is supported only for a bank document`,
+        })
+      }
+      result.templateId = identifier(source.templateId, `${field}.templateId`, 120)
+    }
+    if ('notes' in source && source.notes !== null && source.notes !== '') {
+      result.notes = requiredText(source.notes, `${field}.notes`, 1_000)
+    }
+    return result
   })
 }
 
@@ -177,6 +384,19 @@ export function sanitizeMortgageOverrideParameters(value: unknown): Record<Mortg
   }
   if ('cost_rules' in source) result.cost_rules = sanitizeCostRules(source.cost_rules)
   if ('requirements' in source) result.requirements = stringList(source.requirements, 'requirements')
+  if ('document_requirements' in source) result.document_requirements = sanitizeDocumentRequirements(source.document_requirements)
+  const referencedTemplateIds = Array.isArray(result.document_requirements)
+    ? result.document_requirements.flatMap((entry) => {
+        const templateId = (entry as JsonRecord).templateId
+        return typeof templateId === 'string' ? [templateId] : []
+      })
+    : []
+  if ('multiform_template_ids' in source || referencedTemplateIds.length) {
+    const configured = 'multiform_template_ids' in source
+      ? sanitizeMultiformTemplateIds(source.multiform_template_ids)
+      : []
+    result.multiform_template_ids = [...new Set([...configured, ...referencedTemplateIds])]
+  }
   if ('assumptions' in source) result.assumptions = stringList(source.assumptions, 'assumptions')
   if ('unknown_fields' in source) result.unknown_fields = stringList(source.unknown_fields, 'unknown_fields')
   if ('representative_example' in source) {
@@ -195,4 +415,137 @@ export function mergeMortgageVersion(baseVersion: JsonRecord, parameters: unknow
     ? parameters as JsonRecord
     : {}
   return { ...baseVersion, ...safeParameters }
+}
+
+export async function loadMortgageCatalog(
+  session: CrmSession,
+  options: { includeDisabled?: boolean } = {},
+): Promise<{ products: JsonRecord[], retrievedAt: string | null }> {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: products, error: productError } = await session.supabase
+    .from('mortgage_products')
+    .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color)')
+    .eq('is_active', true)
+    .order('name')
+  throwDbError(productError)
+
+  const productIds = (products ?? []).map((product: any) => product.id)
+  if (!productIds.length) return { products: [], retrievedAt: null }
+
+  const bankIds = [...new Set((products ?? []).map((product: any) => product.bank_id))]
+  const { data: versions, error: versionError } = await session.supabase
+    .from('mortgage_product_versions')
+    .select('*')
+    .in('product_id', productIds)
+    .eq('lifecycle_status', 'published')
+    .order('retrieved_at', { ascending: false })
+  throwDbError(versionError)
+
+  const sourceIds = [...new Set((versions ?? [])
+    .map((version: any) => version.source_document_id)
+    .filter(Boolean))]
+  const { data: sources, error: sourceError } = sourceIds.length
+    ? await session.supabase
+        .from('mortgage_source_documents')
+        .select('id, title, source_url, source_kind, sha256, storage_path, retrieved_at, published_at, retrieval_status, extraction_status')
+        .in('id', sourceIds)
+    : { data: [], error: null }
+  throwDbError(sourceError)
+
+  const [{ data: overrides, error: overrideError }, { data: bankOverrides, error: bankOverrideError }] = await Promise.all([
+    session.supabase
+      .from('mortgage_product_overrides')
+      .select('id, product_id, is_enabled, custom_name, parameters, notes, revision, created_at, updated_at, created_by, updated_by')
+      .eq('organization_id', session.organizationId)
+      .in('product_id', productIds),
+    session.supabase
+      .from('mortgage_bank_overrides')
+      .select('id, bank_id, is_enabled, custom_name, custom_website_url, logo_path, revision, created_at, updated_at')
+      .eq('organization_id', session.organizationId)
+      .in('bank_id', bankIds),
+  ])
+  throwDbError(overrideError)
+  throwDbError(bankOverrideError)
+
+  const sourceById = new Map((sources ?? []).map((source: any) => [source.id, source]))
+  const overrideByProduct = new Map((overrides ?? []).map((override: any) => [override.product_id, override]))
+  const overrideByBank = new Map((bankOverrides ?? []).map((override: any) => [override.bank_id, override]))
+  const versionById = new Map((versions ?? []).map((version: any) => [version.id, version]))
+  const latestByProduct = new Map<string, any>()
+  for (const product of products ?? []) {
+    const pointed = versionById.get((product as any).current_published_version_id)
+    if (pointed) latestByProduct.set((product as any).id, pointed)
+  }
+  for (const version of versions ?? []) {
+    if (!latestByProduct.has(version.product_id)) latestByProduct.set(version.product_id, version)
+  }
+
+  const selectedVersionIds = [...new Set([...latestByProduct.values()].map(version => version.id))]
+  const { data: variants, error: variantError } = selectedVersionIds.length
+    ? await session.supabase
+        .from('mortgage_product_version_variants')
+        .select('id, product_version_id, code, name, is_default, calculation_readiness, pricing_config, eligibility_config')
+        .in('product_version_id', selectedVersionIds)
+        .order('sort_order')
+    : { data: [], error: null }
+  throwDbError(variantError)
+  const defaultVariantByVersion = new Map<string, any>()
+  for (const variant of variants ?? []) {
+    if (variant.is_default || !defaultVariantByVersion.has(variant.product_version_id)) {
+      defaultVariantByVersion.set(variant.product_version_id, variant)
+    }
+  }
+
+  return {
+    retrievedAt: versions?.[0]?.retrieved_at ?? null,
+    products: (products ?? []).flatMap((product: any) => {
+      const version = latestByProduct.get(product.id)
+      if (!version) return []
+      if (version.effective_from && version.effective_from > today) return []
+      if (version.effective_to && version.effective_to < today) return []
+      const override = overrideByProduct.get(product.id) as any
+      const bankOverride = overrideByBank.get(product.bank_id) as any
+      if (bankOverride?.is_enabled === false && !options.includeDisabled) return []
+      if (override?.is_enabled === false && !options.includeDisabled) return []
+      const rawBank = Array.isArray(product.mortgage_banks)
+        ? product.mortgage_banks[0]
+        : product.mortgage_banks
+      const source = sourceById.get(version.source_document_id) ?? null
+      const variant = defaultVariantByVersion.get(version.id) ?? null
+      const baseVersion = {
+        ...version,
+        source,
+        variant,
+        offer_definition: variant?.pricing_config ?? null,
+        calculation_readiness: variant?.calculation_readiness ?? 'partial',
+      }
+      const logoUrl = bankOverride?.logo_path
+        ? session.supabase.storage.from(logoBucket).getPublicUrl(bankOverride.logo_path).data.publicUrl
+        : rawBank.logo_url
+      return [{
+        id: product.id,
+        slug: product.slug,
+        name: override?.custom_name ?? product.name,
+        baseName: product.name,
+        category: product.category,
+        bank: {
+          ...rawBank,
+          name: bankOverride?.custom_name ?? rawBank.name,
+          website_url: bankOverride?.custom_website_url ?? rawBank.website_url,
+          baseName: rawBank.name,
+          baseWebsiteUrl: rawBank.website_url,
+          isEnabled: bankOverride?.is_enabled ?? true,
+          logoUrl,
+          logoBackground: bankOverride?.logo_path ? null : rawBank.logo_background_color,
+          override: bankOverride ?? null,
+        },
+        isEnabled: override?.is_enabled ?? true,
+        version: Number(version.calculator_schema_version ?? 1) >= 2
+          ? baseVersion
+          : mergeMortgageVersion(baseVersion, override?.parameters),
+        baseVersion,
+        override: override ?? null,
+      }]
+    }),
+  }
 }

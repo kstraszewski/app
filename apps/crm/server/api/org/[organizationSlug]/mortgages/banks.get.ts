@@ -1,9 +1,10 @@
-import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { hasSuperAdminRole, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 
 const logoBucket = 'mortgage-bank-logos'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
+  const superAdmin = await hasSuperAdminRole(session)
   const { data: banks, error: banksError } = await session.supabase
     .from('mortgage_banks')
     .select('id, slug, name, website_url, logo_url, logo_background_color, updated_at')
@@ -11,7 +12,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(banksError)
 
   const bankIds = (banks ?? []).map((bank: any) => bank.id)
-  if (!bankIds.length) return { banks: [], role: session.role }
+  if (!bankIds.length) return { banks: [], role: session.role, superAdmin }
 
   const [{ data: products, error: productsError }, { data: overrides, error: overridesError }] = await Promise.all([
     session.supabase
@@ -36,6 +37,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     role: session.role,
+    superAdmin,
     banks: (banks ?? []).map((bank: any) => {
       const override = overrideByBank.get(bank.id) as any
       const logoUrl = override?.logo_path

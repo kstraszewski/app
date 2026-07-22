@@ -213,6 +213,8 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
       is_eco: Boolean(version.isEco),
       cost_rules: version.costRules,
       requirements: version.requirements,
+      document_requirements: version.documentRequirements ?? [],
+      multiform_template_ids: version.multiformTemplateIds ?? [],
       representative_example: version.representativeExample,
       assumptions: version.assumptions,
       unknown_fields: version.unknownFields,

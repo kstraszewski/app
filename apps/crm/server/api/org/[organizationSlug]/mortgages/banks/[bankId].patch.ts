@@ -3,7 +3,7 @@ import {
   asRecord,
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSuperAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
@@ -34,7 +34,7 @@ function nullableWebsiteUrl(value: unknown): string | null {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
   const body = asRecord(await readBody(event))
 

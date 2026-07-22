@@ -3,7 +3,7 @@ import { createError, readMultipartFormData } from 'h3'
 import {
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSuperAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
@@ -25,7 +25,7 @@ function hasValidSignature(type: keyof typeof imageTypes, data: Buffer): boolean
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
 
   const { data: bank, error: bankError } = await session.supabase

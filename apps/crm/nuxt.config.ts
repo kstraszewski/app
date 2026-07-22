@@ -8,6 +8,18 @@ const databaseTypes = fileURLToPath(
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
+  typescript: {
+    tsConfig: {
+      compilerOptions: {
+        allowImportingTsExtensions: true,
+      },
+    },
+    sharedTsConfig: {
+      compilerOptions: {
+        allowImportingTsExtensions: true,
+      },
+    },
+  },
   vite: {
     server: {
       hmr: false,
@@ -21,6 +33,15 @@ export default defineNuxtConfig({
     },
   },
   modules: ['@nuxt/ui', '@nuxtjs/supabase'],
+  nitro: {
+    typescript: {
+      tsConfig: {
+        compilerOptions: {
+          allowImportingTsExtensions: true,
+        },
+      },
+    },
+  },
   css: ['~/assets/css/main.css'],
   ui: {
     fonts: false,

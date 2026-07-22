@@ -1,7 +1,7 @@
 import {
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSuperAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
@@ -9,7 +9,7 @@ const logoBucket = 'mortgage-bank-logos'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
 
   const { data, error } = await session.supabase

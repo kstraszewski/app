@@ -1,13 +1,13 @@
 import {
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSuperAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireSuperAdmin(session)
   const productId = getRequiredParam(event, 'productId')
 
   const { data, error } = await session.supabase

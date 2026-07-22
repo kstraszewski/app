@@ -119,6 +119,24 @@ export async function requireTeamAdmin(session: CrmSession, teamId: string): Pro
   }
 }
 
+export async function hasSuperAdminRole(session: AuthenticatedSession): Promise<boolean> {
+  const { data, error } = await session.supabase
+    .from('platform_user_roles')
+    .select('user_id')
+    .eq('user_id', session.userId)
+    .eq('role', 'super_admin')
+    .maybeSingle()
+
+  throwDbError(error)
+  return Boolean(data)
+}
+
+export async function requireSuperAdmin(session: AuthenticatedSession): Promise<void> {
+  if (!await hasSuperAdminRole(session)) {
+    throw createError({ statusCode: 403, statusMessage: 'SuperAdmin role required' })
+  }
+}
+
 export function getRequiredParam(event: H3Event, name: string): string {
   const value = getRouterParam(event, name)
   if (!value) {

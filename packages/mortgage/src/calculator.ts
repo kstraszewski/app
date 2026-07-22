@@ -1,4 +1,4 @@
-import type { MortgageCalculation, MortgageScenario } from './types'
+import type { MortgageCalculation, MortgageScenario } from './types.ts'
 
 const EPSILON = 0.005
 

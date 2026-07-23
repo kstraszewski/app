@@ -7,7 +7,7 @@
       "routePrefix": "/"
     },
     "eve": {
-      "buildCommand": "pnpm build",
+      "buildCommand": "eve build",
       "entrypoint": "../../multiform-agent",
       "framework": "eve",
       "routePrefix": "/_eve_internal/eve"

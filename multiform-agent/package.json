@@ -11,16 +11,15 @@
     "#evals/*": "./evals/*"
   },
   "scripts": {
-    "build": "eve build && node scripts/package-sqljs.mjs",
+    "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",
     "typecheck": "tsgo"
   },
   "dependencies": {
     "@openexpert/multiform": "link:../packages/multiform",
-    "ai": "7.0.0-canary.171",
-    "eve": "0.22.5",
-    "sql.js": "1.14.1",
+    "ai": "7.0.26",
+    "eve": "0.24.6",
     "zod": "4.4.3"
   },
   "devDependencies": {

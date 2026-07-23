@@ -799,6 +799,281 @@ export type Database = {
           },
         ]
       }
+      crm_case_bank_applications: {
+        Row: {
+          appraisal_value_amount: number | null
+          bank_id: string
+          calculated_at: string | null
+          calculation_snapshot: Json | null
+          calculator_version: string | null
+          case_id: string
+          case_item_id: string
+          collateral_value_amount: number | null
+          collateral_value_basis: string | null
+          comparison_baseline_offer_id: string | null
+          cost_first_five_years: number | null
+          created_at: string
+          created_by_user_id: string | null
+          financed_costs: number | null
+          first_installment: number | null
+          first_monthly_outflow: number | null
+          gross_loan_amount: number | null
+          ltv_debt_amount: number | null
+          ltv_debt_basis: string | null
+          ltv_pct: number | null
+          net_loan_amount: number | null
+          offer_id: string
+          organization_id: string
+          property_id: string | null
+          purchase_price_amount: number | null
+          scenario_snapshot: Json | null
+          slot: number
+          snapshot_schema_version: string | null
+          snapshot_status: string
+          submission_id: string
+          total_cost: number | null
+        }
+        Insert: {
+          appraisal_value_amount?: number | null
+          bank_id: string
+          calculated_at?: string | null
+          calculation_snapshot?: Json | null
+          calculator_version?: string | null
+          case_id: string
+          case_item_id: string
+          collateral_value_amount?: number | null
+          collateral_value_basis?: string | null
+          comparison_baseline_offer_id?: string | null
+          cost_first_five_years?: number | null
+          created_at?: string
+          created_by_user_id?: string | null
+          financed_costs?: number | null
+          first_installment?: number | null
+          first_monthly_outflow?: number | null
+          gross_loan_amount?: number | null
+          ltv_debt_amount?: number | null
+          ltv_debt_basis?: string | null
+          ltv_pct?: number | null
+          net_loan_amount?: number | null
+          offer_id: string
+          organization_id: string
+          property_id?: string | null
+          purchase_price_amount?: number | null
+          scenario_snapshot?: Json | null
+          slot: number
+          snapshot_schema_version?: string | null
+          snapshot_status?: string
+          submission_id: string
+          total_cost?: number | null
+        }
+        Update: {
+          appraisal_value_amount?: number | null
+          bank_id?: string
+          calculated_at?: string | null
+          calculation_snapshot?: Json | null
+          calculator_version?: string | null
+          case_id?: string
+          case_item_id?: string
+          collateral_value_amount?: number | null
+          collateral_value_basis?: string | null
+          comparison_baseline_offer_id?: string | null
+          cost_first_five_years?: number | null
+          created_at?: string
+          created_by_user_id?: string | null
+          financed_costs?: number | null
+          first_installment?: number | null
+          first_monthly_outflow?: number | null
+          gross_loan_amount?: number | null
+          ltv_debt_amount?: number | null
+          ltv_debt_basis?: string | null
+          ltv_pct?: number | null
+          net_loan_amount?: number | null
+          offer_id?: string
+          organization_id?: string
+          property_id?: string | null
+          purchase_price_amount?: number | null
+          scenario_snapshot?: Json | null
+          slot?: number
+          snapshot_schema_version?: string | null
+          snapshot_status?: string
+          submission_id?: string
+          total_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_bank_applications_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_baseline_offer_fkey"
+            columns: [
+              "organization_id",
+              "case_id",
+              "comparison_baseline_offer_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "crm_case_offer_snapshots"
+            referencedColumns: ["organization_id", "case_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_case_item_fkey"
+            columns: ["organization_id", "case_item_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_items"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_case_offer_bank_fkey"
+            columns: ["organization_id", "case_id", "offer_id", "bank_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_offer_snapshots"
+            referencedColumns: ["organization_id", "case_id", "id", "bank_id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_case_property_fkey"
+            columns: ["organization_id", "case_id", "property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_properties"
+            referencedColumns: ["organization_id", "case_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_bank_applications_submission_item_fkey"
+            columns: ["organization_id", "case_item_id", "submission_id"]
+            isOneToOne: false
+            referencedRelation: "crm_item_submissions"
+            referencedColumns: ["organization_id", "case_item_id", "id"]
+          },
+        ]
+      }
+      crm_case_clients: {
+        Row: {
+          case_id: string
+          client_id: string
+          created_at: string
+          id: string
+          is_primary: boolean
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_clients_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_clients_organization_client_fkey"
+            columns: ["organization_id", "client_id"]
+            isOneToOne: false
+            referencedRelation: "crm_clients"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_case_contract_selections: {
+        Row: {
+          application_id: string
+          case_id: string
+          organization_id: string
+          signed_at: string
+          signed_by_user_id: string
+        }
+        Insert: {
+          application_id: string
+          case_id: string
+          organization_id: string
+          signed_at?: string
+          signed_by_user_id: string
+        }
+        Update: {
+          application_id?: string
+          case_id?: string
+          organization_id?: string
+          signed_at?: string
+          signed_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_contract_selections_application_fkey"
+            columns: ["organization_id", "case_id", "application_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_bank_applications"
+            referencedColumns: ["organization_id", "case_id", "submission_id"]
+          },
+          {
+            foreignKeyName: "crm_case_contract_selections_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: true
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_contract_selections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_contract_selections_signed_by_user_id_fkey"
+            columns: ["signed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_case_item_settlements: {
         Row: {
           case_item_id: string
@@ -986,6 +1261,190 @@ export type Database = {
           },
         ]
       }
+      crm_case_offer_selections: {
+        Row: {
+          case_id: string
+          offer_id: string
+          organization_id: string
+          selected_at: string
+          selected_by_user_id: string | null
+        }
+        Insert: {
+          case_id: string
+          offer_id: string
+          organization_id: string
+          selected_at?: string
+          selected_by_user_id?: string | null
+        }
+        Update: {
+          case_id?: string
+          offer_id?: string
+          organization_id?: string
+          selected_at?: string
+          selected_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_offer_selections_case_offer_fkey"
+            columns: ["organization_id", "case_id", "offer_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_offer_snapshots"
+            referencedColumns: ["organization_id", "case_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_selections_focused_application_fkey"
+            columns: ["organization_id", "case_id", "offer_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_bank_applications"
+            referencedColumns: ["organization_id", "case_id", "offer_id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_selections_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: true
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_selections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_selections_selected_by_user_id_fkey"
+            columns: ["selected_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_case_offer_snapshots: {
+        Row: {
+          bank_id: string | null
+          bank_name: string
+          calculation_snapshot: Json
+          calculator_version: string
+          case_id: string
+          catalog_snapshot: Json
+          cost_first_five_years: number | null
+          currency: string
+          first_installment: number | null
+          first_monthly_outflow: number | null
+          id: string
+          loan_amount: number | null
+          mortgage_product_id: string | null
+          mortgage_product_version_id: string | null
+          offer_type: string
+          organization_id: string
+          product_name: string
+          representative_apr_pct: number | null
+          saved_at: string
+          saved_by_user_id: string | null
+          scenario_snapshot: Json
+          stress_snapshot: Json | null
+          total_cost: number | null
+          version_key: string | null
+        }
+        Insert: {
+          bank_id?: string | null
+          bank_name: string
+          calculation_snapshot: Json
+          calculator_version: string
+          case_id: string
+          catalog_snapshot: Json
+          cost_first_five_years?: number | null
+          currency?: string
+          first_installment?: number | null
+          first_monthly_outflow?: number | null
+          id?: string
+          loan_amount?: number | null
+          mortgage_product_id?: string | null
+          mortgage_product_version_id?: string | null
+          offer_type?: string
+          organization_id: string
+          product_name: string
+          representative_apr_pct?: number | null
+          saved_at?: string
+          saved_by_user_id?: string | null
+          scenario_snapshot: Json
+          stress_snapshot?: Json | null
+          total_cost?: number | null
+          version_key?: string | null
+        }
+        Update: {
+          bank_id?: string | null
+          bank_name?: string
+          calculation_snapshot?: Json
+          calculator_version?: string
+          case_id?: string
+          catalog_snapshot?: Json
+          cost_first_five_years?: number | null
+          currency?: string
+          first_installment?: number | null
+          first_monthly_outflow?: number | null
+          id?: string
+          loan_amount?: number | null
+          mortgage_product_id?: string | null
+          mortgage_product_version_id?: string | null
+          offer_type?: string
+          organization_id?: string
+          product_name?: string
+          representative_apr_pct?: number | null
+          saved_at?: string
+          saved_by_user_id?: string | null
+          scenario_snapshot?: Json
+          stress_snapshot?: Json | null
+          total_cost?: number | null
+          version_key?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_offer_snapshots_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_snapshots_mortgage_product_id_fkey"
+            columns: ["mortgage_product_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_snapshots_mortgage_product_version_id_fkey"
+            columns: ["mortgage_product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_snapshots_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_offer_snapshots_saved_by_user_id_fkey"
+            columns: ["saved_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_case_participants: {
         Row: {
           case_id: string
@@ -1052,6 +1511,59 @@ export type Database = {
           },
         ]
       }
+      crm_case_property_selections: {
+        Row: {
+          case_id: string
+          organization_id: string
+          property_id: string
+          selected_at: string
+          selected_by_user_id: string | null
+        }
+        Insert: {
+          case_id: string
+          organization_id: string
+          property_id: string
+          selected_at?: string
+          selected_by_user_id?: string | null
+        }
+        Update: {
+          case_id?: string
+          organization_id?: string
+          property_id?: string
+          selected_at?: string
+          selected_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_case_property_selections_case_property_fkey"
+            columns: ["organization_id", "case_id", "property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_properties"
+            referencedColumns: ["organization_id", "case_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_property_selections_organization_case_fkey"
+            columns: ["organization_id", "case_id"]
+            isOneToOne: true
+            referencedRelation: "crm_cases"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_case_property_selections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_case_property_selections_selected_by_user_id_fkey"
+            columns: ["selected_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_cases: {
         Row: {
           client_id: string
@@ -1065,6 +1577,8 @@ export type Database = {
           owner_user_id: string | null
           priority: string
           progress_percent: number
+          search_text: string
+          search_vector: unknown
           status_code: string
           title: string
           updated_at: string
@@ -1081,6 +1595,8 @@ export type Database = {
           owner_user_id?: string | null
           priority?: string
           progress_percent?: number
+          search_text?: string
+          search_vector?: unknown
           status_code?: string
           title: string
           updated_at?: string
@@ -1097,6 +1613,8 @@ export type Database = {
           owner_user_id?: string | null
           priority?: string
           progress_percent?: number
+          search_text?: string
+          search_vector?: unknown
           status_code?: string
           title?: string
           updated_at?: string
@@ -1549,14 +2067,18 @@ export type Database = {
           document_type: string
           id: string
           metadata: Json
+          mime_type: string | null
           name: string
           organization_id: string
           received_at: string | null
+          sha256: string | null
+          size_bytes: number | null
           status_code: string
           storage_bucket: string | null
           storage_path: string | null
           submission_id: string | null
           updated_at: string
+          uploaded_by_user_id: string | null
           verified_at: string | null
         }
         Insert: {
@@ -1567,14 +2089,18 @@ export type Database = {
           document_type?: string
           id?: string
           metadata?: Json
+          mime_type?: string | null
           name: string
           organization_id: string
           received_at?: string | null
+          sha256?: string | null
+          size_bytes?: number | null
           status_code?: string
           storage_bucket?: string | null
           storage_path?: string | null
           submission_id?: string | null
           updated_at?: string
+          uploaded_by_user_id?: string | null
           verified_at?: string | null
         }
         Update: {
@@ -1585,14 +2111,18 @@ export type Database = {
           document_type?: string
           id?: string
           metadata?: Json
+          mime_type?: string | null
           name?: string
           organization_id?: string
           received_at?: string | null
+          sha256?: string | null
+          size_bytes?: number | null
           status_code?: string
           storage_bucket?: string | null
           storage_path?: string | null
           submission_id?: string | null
           updated_at?: string
+          uploaded_by_user_id?: string | null
           verified_at?: string | null
         }
         Relationships: [
@@ -1644,6 +2174,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "crm_case_items"
             referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_documents_organization_submission_fkey"
+            columns: ["organization_id", "submission_id"]
+            isOneToOne: false
+            referencedRelation: "crm_item_submissions"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_documents_organization_uploader_membership_fkey"
+            columns: ["organization_id", "uploaded_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
           },
           {
             foreignKeyName: "crm_documents_submission_id_fkey"
@@ -1797,13 +2341,17 @@ export type Database = {
       crm_properties: {
         Row: {
           address: string
+          appraisal_value_amount: number | null
           area_m2: number | null
           case_id: string | null
           case_item_id: string | null
           city: string | null
           created_at: string
           currency: string
+          description: string | null
           id: string
+          imported_at: string | null
+          listing_title: string | null
           market_type: string | null
           metadata: Json
           organization_id: string
@@ -1811,17 +2359,23 @@ export type Database = {
           price_amount: number | null
           property_type: string | null
           rooms: number | null
+          source_published_at: string | null
+          source_url: string | null
           updated_at: string
         }
         Insert: {
           address: string
+          appraisal_value_amount?: number | null
           area_m2?: number | null
           case_id?: string | null
           case_item_id?: string | null
           city?: string | null
           created_at?: string
           currency?: string
+          description?: string | null
           id?: string
+          imported_at?: string | null
+          listing_title?: string | null
           market_type?: string | null
           metadata?: Json
           organization_id: string
@@ -1829,17 +2383,23 @@ export type Database = {
           price_amount?: number | null
           property_type?: string | null
           rooms?: number | null
+          source_published_at?: string | null
+          source_url?: string | null
           updated_at?: string
         }
         Update: {
           address?: string
+          appraisal_value_amount?: number | null
           area_m2?: number | null
           case_id?: string | null
           case_item_id?: string | null
           city?: string | null
           created_at?: string
           currency?: string
+          description?: string | null
           id?: string
+          imported_at?: string | null
+          listing_title?: string | null
           market_type?: string | null
           metadata?: Json
           organization_id?: string
@@ -1847,6 +2407,8 @@ export type Database = {
           price_amount?: number | null
           property_type?: string | null
           rooms?: number | null
+          source_published_at?: string | null
+          source_url?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1877,6 +2439,88 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_property_images: {
+        Row: {
+          alt_text: string | null
+          case_id: string
+          created_at: string
+          height_px: number | null
+          id: string
+          metadata: Json
+          mime_type: string
+          organization_id: string
+          property_id: string
+          sha256: string
+          size_bytes: number
+          sort_order: number
+          source_url: string | null
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          width_px: number | null
+        }
+        Insert: {
+          alt_text?: string | null
+          case_id: string
+          created_at?: string
+          height_px?: number | null
+          id?: string
+          metadata?: Json
+          mime_type: string
+          organization_id: string
+          property_id: string
+          sha256: string
+          size_bytes: number
+          sort_order?: number
+          source_url?: string | null
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          width_px?: number | null
+        }
+        Update: {
+          alt_text?: string | null
+          case_id?: string
+          created_at?: string
+          height_px?: number | null
+          id?: string
+          metadata?: Json
+          mime_type?: string
+          organization_id?: string
+          property_id?: string
+          sha256?: string
+          size_bytes?: number
+          sort_order?: number
+          source_url?: string | null
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          width_px?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_property_images_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "crm_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_property_images_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_property_images_property_fkey"
+            columns: ["organization_id", "case_id", "property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_properties"
+            referencedColumns: ["organization_id", "case_id", "id"]
           },
         ]
       }
@@ -2937,6 +3581,151 @@ export type Database = {
           },
         ]
       }
+      mortgage_catalog_events: {
+        Row: {
+          actor_user_id: string | null
+          bank_id: string | null
+          content_sha256_after: string | null
+          content_sha256_before: string | null
+          created_at: string
+          draft_id: string | null
+          event_type: string
+          id: string
+          metadata: Json
+          product_id: string | null
+          product_version_id: string | null
+          revision_after: number | null
+          revision_before: number | null
+        }
+        Insert: {
+          actor_user_id?: string | null
+          bank_id?: string | null
+          content_sha256_after?: string | null
+          content_sha256_before?: string | null
+          created_at?: string
+          draft_id?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json
+          product_id?: string | null
+          product_version_id?: string | null
+          revision_after?: number | null
+          revision_before?: number | null
+        }
+        Update: {
+          actor_user_id?: string | null
+          bank_id?: string | null
+          content_sha256_after?: string | null
+          content_sha256_before?: string | null
+          created_at?: string
+          draft_id?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json
+          product_id?: string | null
+          product_version_id?: string | null
+          revision_after?: number | null
+          revision_before?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_catalog_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_catalog_events_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_catalog_events_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_catalog_events_product_version_id_fkey"
+            columns: ["product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_product_drafts: {
+        Row: {
+          base_version_id: string | null
+          created_at: string
+          created_by_user_id: string | null
+          draft_data: Json
+          id: string
+          product_id: string
+          revision: number
+          updated_at: string
+          updated_by_user_id: string | null
+          validation_report: Json
+        }
+        Insert: {
+          base_version_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          draft_data: Json
+          id?: string
+          product_id: string
+          revision?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+          validation_report?: Json
+        }
+        Update: {
+          base_version_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          draft_data?: Json
+          id?: string
+          product_id?: string
+          revision?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+          validation_report?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_product_drafts_base_version_fkey"
+            columns: ["product_id", "base_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["product_id", "id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_drafts_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_drafts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "mortgage_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_drafts_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mortgage_product_override_revisions: {
         Row: {
           action: string
@@ -3085,14 +3874,143 @@ export type Database = {
           },
         ]
       }
+      mortgage_product_version_sources: {
+        Row: {
+          created_at: string
+          product_version_id: string
+          source_document_id: string
+          source_role: string
+        }
+        Insert: {
+          created_at?: string
+          product_version_id: string
+          source_document_id: string
+          source_role?: string
+        }
+        Update: {
+          created_at?: string
+          product_version_id?: string
+          source_document_id?: string
+          source_role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_product_version_sources_product_version_id_fkey"
+            columns: ["product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_version_sources_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_source_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_product_version_variants: {
+        Row: {
+          calculation_readiness: string
+          code: string
+          created_at: string
+          eligibility_config: Json
+          fixed_period_months: number | null
+          fixed_rate_pct: number | null
+          id: string
+          interest_type: string
+          is_default: boolean
+          margin_pct: number | null
+          max_amount: number | null
+          max_ltv_pct: number | null
+          max_term_months: number | null
+          min_amount: number | null
+          min_ltv_pct: number | null
+          min_term_months: number | null
+          name: string
+          pricing_config: Json
+          product_version_id: string
+          reference_rate_as_of: string | null
+          reference_rate_code: string | null
+          reference_rate_pct: number | null
+          representative_apr_pct: number | null
+          sort_order: number
+        }
+        Insert: {
+          calculation_readiness?: string
+          code: string
+          created_at?: string
+          eligibility_config?: Json
+          fixed_period_months?: number | null
+          fixed_rate_pct?: number | null
+          id?: string
+          interest_type: string
+          is_default?: boolean
+          margin_pct?: number | null
+          max_amount?: number | null
+          max_ltv_pct?: number | null
+          max_term_months?: number | null
+          min_amount?: number | null
+          min_ltv_pct?: number | null
+          min_term_months?: number | null
+          name: string
+          pricing_config: Json
+          product_version_id: string
+          reference_rate_as_of?: string | null
+          reference_rate_code?: string | null
+          reference_rate_pct?: number | null
+          representative_apr_pct?: number | null
+          sort_order?: number
+        }
+        Update: {
+          calculation_readiness?: string
+          code?: string
+          created_at?: string
+          eligibility_config?: Json
+          fixed_period_months?: number | null
+          fixed_rate_pct?: number | null
+          id?: string
+          interest_type?: string
+          is_default?: boolean
+          margin_pct?: number | null
+          max_amount?: number | null
+          max_ltv_pct?: number | null
+          max_term_months?: number | null
+          min_amount?: number | null
+          min_ltv_pct?: number | null
+          min_term_months?: number | null
+          name?: string
+          pricing_config?: Json
+          product_version_id?: string
+          reference_rate_as_of?: string | null
+          reference_rate_code?: string | null
+          reference_rate_pct?: number | null
+          representative_apr_pct?: number | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_product_version_variants_product_version_id_fkey"
+            columns: ["product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mortgage_product_versions: {
         Row: {
           assumptions: Json
           calculation_date: string | null
+          calculator_engine_version: string
+          calculator_schema_version: number
           completeness_score: number
+          content_sha256: string
           cost_rules: Json
           created_at: string
           data_status: string
+          document_requirements: Json
           effective_from: string | null
           effective_to: string | null
           fixed_period_months: number | null
@@ -3100,32 +4018,44 @@ export type Database = {
           id: string
           interest_type: string
           is_eco: boolean
+          lifecycle_status: string
           margin_pct: number | null
           max_amount: number | null
           max_ltv_pct: number | null
           max_term_months: number | null
           min_amount: number | null
           min_term_months: number | null
+          multiform_template_ids: string[]
           product_id: string
+          published_at: string | null
+          published_by_user_id: string | null
           reference_rate_as_of: string | null
           reference_rate_code: string | null
           reference_rate_pct: number | null
           representative_apr_pct: number | null
           representative_example: Json
           requirements: Json
+          retired_at: string | null
+          retired_by_user_id: string | null
           retrieved_at: string
           source_document_id: string | null
           unknown_fields: string[]
           updated_at: string
+          validation_report: Json
           version_key: string
+          version_number: number
         }
         Insert: {
           assumptions?: Json
           calculation_date?: string | null
+          calculator_engine_version?: string
+          calculator_schema_version?: number
           completeness_score: number
+          content_sha256: string
           cost_rules?: Json
           created_at?: string
           data_status: string
+          document_requirements?: Json
           effective_from?: string | null
           effective_to?: string | null
           fixed_period_months?: number | null
@@ -3133,32 +4063,44 @@ export type Database = {
           id?: string
           interest_type: string
           is_eco?: boolean
+          lifecycle_status?: string
           margin_pct?: number | null
           max_amount?: number | null
           max_ltv_pct?: number | null
           max_term_months?: number | null
           min_amount?: number | null
           min_term_months?: number | null
+          multiform_template_ids?: string[]
           product_id: string
+          published_at?: string | null
+          published_by_user_id?: string | null
           reference_rate_as_of?: string | null
           reference_rate_code?: string | null
           reference_rate_pct?: number | null
           representative_apr_pct?: number | null
           representative_example?: Json
           requirements?: Json
+          retired_at?: string | null
+          retired_by_user_id?: string | null
           retrieved_at: string
           source_document_id?: string | null
           unknown_fields?: string[]
           updated_at?: string
+          validation_report?: Json
           version_key: string
+          version_number: number
         }
         Update: {
           assumptions?: Json
           calculation_date?: string | null
+          calculator_engine_version?: string
+          calculator_schema_version?: number
           completeness_score?: number
+          content_sha256?: string
           cost_rules?: Json
           created_at?: string
           data_status?: string
+          document_requirements?: Json
           effective_from?: string | null
           effective_to?: string | null
           fixed_period_months?: number | null
@@ -3166,24 +4108,32 @@ export type Database = {
           id?: string
           interest_type?: string
           is_eco?: boolean
+          lifecycle_status?: string
           margin_pct?: number | null
           max_amount?: number | null
           max_ltv_pct?: number | null
           max_term_months?: number | null
           min_amount?: number | null
           min_term_months?: number | null
+          multiform_template_ids?: string[]
           product_id?: string
+          published_at?: string | null
+          published_by_user_id?: string | null
           reference_rate_as_of?: string | null
           reference_rate_code?: string | null
           reference_rate_pct?: number | null
           representative_apr_pct?: number | null
           representative_example?: Json
           requirements?: Json
+          retired_at?: string | null
+          retired_by_user_id?: string | null
           retrieved_at?: string
           source_document_id?: string | null
           unknown_fields?: string[]
           updated_at?: string
+          validation_report?: Json
           version_key?: string
+          version_number?: number
         }
         Relationships: [
           {
@@ -3191,6 +4141,20 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "mortgage_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_versions_published_by_user_id_fkey"
+            columns: ["published_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_versions_retired_by_user_id_fkey"
+            columns: ["retired_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -3204,44 +4168,93 @@ export type Database = {
       }
       mortgage_products: {
         Row: {
+          archived_at: string | null
+          archived_by_user_id: string | null
           bank_id: string
           category: string
           created_at: string
+          created_by_user_id: string | null
+          current_published_version_id: string | null
           distribution_channel: string
           id: string
           is_active: boolean
           name: string
+          product_kind: string
+          revision: number
           slug: string
           updated_at: string
+          updated_by_user_id: string | null
         }
         Insert: {
+          archived_at?: string | null
+          archived_by_user_id?: string | null
           bank_id: string
           category?: string
           created_at?: string
+          created_by_user_id?: string | null
+          current_published_version_id?: string | null
           distribution_channel?: string
           id?: string
           is_active?: boolean
           name: string
+          product_kind?: string
+          revision?: number
           slug: string
           updated_at?: string
+          updated_by_user_id?: string | null
         }
         Update: {
+          archived_at?: string | null
+          archived_by_user_id?: string | null
           bank_id?: string
           category?: string
           created_at?: string
+          created_by_user_id?: string | null
+          current_published_version_id?: string | null
           distribution_channel?: string
           id?: string
           is_active?: boolean
           name?: string
+          product_kind?: string
+          revision?: number
           slug?: string
           updated_at?: string
+          updated_by_user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "mortgage_products_archived_by_user_id_fkey"
+            columns: ["archived_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "mortgage_products_bank_id_fkey"
             columns: ["bank_id"]
             isOneToOne: false
             referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_products_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_products_current_published_version_fkey"
+            columns: ["id", "current_published_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
+            referencedColumns: ["product_id", "id"]
+          },
+          {
+            foreignKeyName: "mortgage_products_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -3420,6 +4433,27 @@ export type Database = {
           id?: string
           name?: string
           slug?: string
+        }
+        Relationships: []
+      }
+      platform_user_roles: {
+        Row: {
+          created_at: string
+          granted_by: string | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by?: string | null
+          role: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string | null
+          role?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -3705,6 +4739,113 @@ export type Database = {
         }
         Returns: number
       }
+      create_crm_case_bank_application: {
+        Args: {
+          target_case_id: string
+          target_offer_id: string
+          target_organization_id: string
+          target_property_id?: string
+        }
+        Returns: {
+          appraisal_value_amount: number | null
+          bank_id: string
+          calculated_at: string | null
+          calculation_snapshot: Json | null
+          calculator_version: string | null
+          case_id: string
+          case_item_id: string
+          collateral_value_amount: number | null
+          collateral_value_basis: string | null
+          comparison_baseline_offer_id: string | null
+          cost_first_five_years: number | null
+          created_at: string
+          created_by_user_id: string | null
+          financed_costs: number | null
+          first_installment: number | null
+          first_monthly_outflow: number | null
+          gross_loan_amount: number | null
+          ltv_debt_amount: number | null
+          ltv_debt_basis: string | null
+          ltv_pct: number | null
+          net_loan_amount: number | null
+          offer_id: string
+          organization_id: string
+          property_id: string | null
+          purchase_price_amount: number | null
+          scenario_snapshot: Json | null
+          slot: number
+          snapshot_schema_version: string | null
+          snapshot_status: string
+          submission_id: string
+          total_cost: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "crm_case_bank_applications"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_crm_case_bank_application_snapshot: {
+        Args: {
+          expected_property_updated_at: string
+          target_actor_user_id: string
+          target_calculation_snapshot: Json
+          target_case_id: string
+          target_offer_id: string
+          target_organization_id: string
+          target_property_id: string
+          target_scenario_snapshot: Json
+        }
+        Returns: {
+          appraisal_value_amount: number | null
+          bank_id: string
+          calculated_at: string | null
+          calculation_snapshot: Json | null
+          calculator_version: string | null
+          case_id: string
+          case_item_id: string
+          collateral_value_amount: number | null
+          collateral_value_basis: string | null
+          comparison_baseline_offer_id: string | null
+          cost_first_five_years: number | null
+          created_at: string
+          created_by_user_id: string | null
+          financed_costs: number | null
+          first_installment: number | null
+          first_monthly_outflow: number | null
+          gross_loan_amount: number | null
+          ltv_debt_amount: number | null
+          ltv_debt_basis: string | null
+          ltv_pct: number | null
+          net_loan_amount: number | null
+          offer_id: string
+          organization_id: string
+          property_id: string | null
+          purchase_price_amount: number | null
+          scenario_snapshot: Json | null
+          slot: number
+          snapshot_schema_version: string | null
+          snapshot_status: string
+          submission_id: string
+          total_cost: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "crm_case_bank_applications"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_crm_case_simple: {
+        Args: {
+          p_client_ids: string[]
+          p_organization_id: string
+          p_owner_user_id?: string
+          p_title: string
+        }
+        Returns: Json
+      }
       create_crm_client_with_consents: {
         Args: {
           p_consent_decisions: Json
@@ -3741,6 +4882,18 @@ export type Database = {
           p_status: string
         }
         Returns: string
+      }
+      create_mortgage_product_draft_v2: {
+        Args: {
+          p_actor_user_id: string
+          p_bank_id: string
+          p_category: string
+          p_distribution_channel: string
+          p_draft_data: Json
+          p_name: string
+          p_slug: string
+        }
+        Returns: Json
       }
       create_staff_appointment: {
         Args: {
@@ -3808,6 +4961,17 @@ export type Database = {
           starts_at: string
         }[]
       }
+      publish_mortgage_product_draft: {
+        Args: {
+          p_actor_user_id: string
+          p_expected_revision: number
+          p_product_id: string
+        }
+        Returns: {
+          version_id: string
+          version_number: number
+        }[]
+      }
       replace_calendar_busy_blocks: {
         Args: {
           p_blocks: Json
@@ -3843,9 +5007,50 @@ export type Database = {
         }
         Returns: Json
       }
+      save_mortgage_product_draft_v2: {
+        Args: {
+          p_actor_user_id: string
+          p_draft_data: Json
+          p_expected_revision: number
+          p_product_id: string
+        }
+        Returns: Json
+      }
+      search_crm_cases: {
+        Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
       search_crm_clients: {
         Args: { p_filters?: Json; p_organization_id: string }
         Returns: Json
+      }
+      set_crm_case_clients: {
+        Args: {
+          p_case_id: string
+          p_client_ids: string[]
+          p_organization_id: string
+        }
+        Returns: Json
+      }
+      sign_crm_case_contract: {
+        Args: {
+          target_application_id: string
+          target_case_id: string
+          target_organization_id: string
+        }
+        Returns: {
+          application_id: string
+          case_id: string
+          organization_id: string
+          signed_at: string
+          signed_by_user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "crm_case_contract_selections"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       update_booking_widget_configuration: {
         Args: {
@@ -4026,4 +5231,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

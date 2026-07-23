@@ -4,7 +4,7 @@ import {
   mortgageBackofficeText,
   mortgageBackofficeUuid,
   mortgageOfferDraftData,
-  mortgageProductCategory,
+  mortgageProductClassification,
   requireMortgageBackoffice,
   throwMortgageBackofficeDbError,
 } from '~~/server/utils/mortgage-backoffice'
@@ -16,7 +16,10 @@ export default defineEventHandler(async (event) => {
   const body = asRecord(await readBody(event))
   const name = mortgageBackofficeText(body.name, 'name', { min: 3, max: 160 })
   const slug = mortgageBackofficeSlug(body.slug ?? body.code)
-  const category = mortgageProductCategory(body.category)
+  const classification = mortgageProductClassification(
+    body.category ?? body.productKind,
+    body.productKind,
+  )
   const distributionChannel = typeof body.distributionChannel === 'string'
     ? body.distributionChannel.slice(0, 80)
     : 'backoffice'
@@ -36,7 +39,7 @@ export default defineEventHandler(async (event) => {
       p_bank_id: bankId,
       p_slug: slug,
       p_name: name,
-      p_category: category,
+      p_category: classification.rpcCategory,
       p_distribution_channel: distributionChannel,
       p_draft_data: draftData,
       p_actor_user_id: session.userId,
@@ -53,7 +56,9 @@ export default defineEventHandler(async (event) => {
         code: created.slug,
         name: created.name,
         slug: created.slug,
-        productType: created.category,
+        productKind: created.productKind ?? classification.productKind,
+        category: created.category ?? classification.category,
+        productType: created.category ?? classification.category,
         currency: 'PLN',
         status: 'draft',
         createdAt: created.productCreatedAt,

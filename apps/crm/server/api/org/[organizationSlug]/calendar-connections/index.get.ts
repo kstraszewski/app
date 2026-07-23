@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
     label: provider === 'google' ? 'Google Calendar' : 'Outlook / Microsoft 365',
     enabled: availability[provider],
     connectPath: canManage && availability[provider]
-      ? `/api/org/${encodeURIComponent(session.organizationSlug)}/calendar-connections/${provider}/connect?ownerKind=${ownerKind}&ownerId=${encodeURIComponent(ownerId)}&returnTo=${encodeURIComponent(`/org/${session.organizationSlug}/facilities?facility=${ownerId}`)}`
+      ? `/api/org/${encodeURIComponent(session.organizationSlug)}/calendar-connections/${provider}/connect?ownerKind=${ownerKind}&ownerId=${encodeURIComponent(ownerId)}&returnTo=${encodeURIComponent(`/org/${session.organizationSlug}/facilities/${ownerId}?section=calendars`)}`
       : null,
   }))
 

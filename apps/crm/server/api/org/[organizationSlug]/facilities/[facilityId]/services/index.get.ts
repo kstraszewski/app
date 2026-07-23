@@ -1,9 +1,10 @@
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
-import { requireFacilityPermission } from '~~/server/utils/scheduling'
+import { ensureGenericMeetingService, requireFacilityPermission } from '~~/server/utils/scheduling'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
+  await ensureGenericMeetingService(event, session.organizationId, String(access.facility.id))
   const [linksResult, catalogResult, expertsResult] = await Promise.all([
     session.supabase
       .from('facility_services')
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
       .from('booking_services')
       .select('*')
       .eq('organization_id', session.organizationId)
+      .eq('slug', 'spotkanie')
       .order('name'),
     session.supabase
       .from('facility_service_experts')

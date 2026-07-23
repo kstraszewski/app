@@ -1,0 +1,924 @@
+<script setup lang="ts">
+import { apiErrorMessage } from '~/utils/api-error'
+
+definePageMeta({ middleware: ['auth', 'organization'] })
+
+type ChecklistItem = {
+  code: string
+  label: string
+  category: string
+  itemKind: string
+  scope: string
+  stage: string
+  applicability: string
+  evidence: string
+  required: boolean
+  multiple: boolean
+  allowedMimeTypes: string[]
+  templateId: string | null
+  notes: string | null
+}
+
+type VersionSummary = {
+  id: string
+  revision: number
+  lifecycleStatus: string
+  validFrom: string | null
+  validTo: string | null
+  dataStatus: string | null
+  completenessScore: number | null
+  interestType: string | null
+  fixedRatePct: number | null
+  fixedPeriodMonths: number | null
+  marginPct: number | null
+  referenceRateCode: string | null
+  referenceRatePct: number | null
+  referenceRateAsOf: string | null
+  representativeAprPct: number | null
+  unknownFields: string[]
+  checklistCount: number
+  costRuleCount: number
+  requirementRuleCount: number
+  publishedAt: string | null
+  retiredAt: string | null
+  retrievedAt: string | null
+  updatedAt: string | null
+}
+
+type OfferSummary = {
+  id: string
+  code: string
+  slug: string
+  name: string
+  baseName: string
+  category: string
+  distributionChannel: string
+  isActive: boolean
+  organizationEnabled: boolean
+  liveInCalculator: boolean
+  publicationStatus: 'draft' | 'published' | 'archived'
+  hasPublishedVersion: boolean
+  hasDraft: boolean
+  revision: number
+  archivedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  currentVersion: VersionSummary | null
+  versions: VersionSummary[]
+  publishedChecklist: ChecklistItem[]
+  draft: null | {
+    id: string
+    revision: number
+    baseVersionId: string | null
+    validationIssueCount: number
+    updatedAt: string | null
+    configuration: {
+      checklist: ChecklistItem[]
+      sourceCount: number
+      costCount: number
+      unknownCostCount: number
+      ratePhaseCount: number
+      marginModifierCount: number
+      featureCount: number
+      variantCount: number
+      hasBridgeInsurance: boolean
+    }
+  }
+  sourceCount: number
+  organizationOverride: null | {
+    id: string
+    revision: number
+    isEnabled: boolean
+    customName: string | null
+    notes: string | null
+    updatedAt: string | null
+  }
+}
+
+type BankSource = {
+  id: string
+  productId: string | null
+  productName: string | null
+  title: string
+  url: string | null
+  kind: string
+  mimeType: string | null
+  sha256: string | null
+  retrievedAt: string | null
+  publishedAt: string | null
+  retrievalStatus: string
+  extractionStatus: string
+  errorMessage: string | null
+  links: Array<{
+    productVersionId: string
+    productId: string | null
+    productName: string | null
+    versionNumber: number | null
+    role: string
+  }>
+}
+
+type BankProfilePayload = {
+  superAdmin: boolean
+  bank: {
+    id: string
+    slug: string
+    name: string
+    baseName: string
+    websiteUrl: string | null
+    baseWebsiteUrl: string | null
+    logoUrl: string | null
+    baseLogoUrl: string | null
+    logoBackground: string | null
+    isEnabled: boolean
+    notes: string | null
+    createdAt: string | null
+    updatedAt: string | null
+    override: null | {
+      id: string
+      revision: number
+      isEnabled: boolean
+      customName: string | null
+      customWebsiteUrl: string | null
+      hasCustomLogo: boolean
+      notes: string | null
+      createdAt: string | null
+      updatedAt: string | null
+    }
+  }
+  metrics: {
+    offers: number
+    publishedOffers: number
+    liveOffers: number
+    draftOffers: number
+    archivedOffers: number
+    versions: number
+    sourceDocuments: number
+    reviewedSourceDocuments: number
+    publishedChecklistItems: number
+    draftChecklistItems: number
+    unknownFields: number
+    averageCompleteness: number | null
+  }
+  offers: OfferSummary[]
+  sources: BankSource[]
+  history: Array<{
+    id: string
+    revision: number
+    action: string
+    isEnabled: boolean
+    customName: string | null
+    customWebsiteUrl: string | null
+    notes: string | null
+    createdAt: string | null
+    actor: null | { id: string, name: string | null, email: string | null }
+  }>
+}
+
+const route = useRoute()
+const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
+const bankId = computed(() => String(route.params.bankId ?? ''))
+const apiPath = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks/${encodeURIComponent(bankId.value)}`)
+const offersPath = computed(() => `/org/${organizationSlug.value}/mortgages/offers`)
+const settingsPath = computed(() => `/org/${organizationSlug.value}/mortgages/institutions?bank=${encodeURIComponent(bankId.value)}`)
+const createOfferPath = computed(() => `${offersPath.value}?createBank=${encodeURIComponent(bankId.value)}`)
+
+const { data, status, error, refresh } = await useFetch<BankProfilePayload>(apiPath)
+const bank = computed(() => data.value?.bank ?? null)
+const metrics = computed(() => data.value?.metrics ?? null)
+const offers = computed(() => data.value?.offers ?? [])
+const sources = computed(() => data.value?.sources ?? [])
+const history = computed(() => data.value?.history ?? [])
+const checklistOffers = computed(() => offers.value.filter(offer => (
+  offer.publishedChecklist.length || offer.draft?.configuration.checklist.length
+)))
+const expandedChecklists = ref<string[]>([])
+
+useHead(() => ({ title: `${bank.value?.name ?? 'Profil instytucji'} — OpenExpert` }))
+
+function initials(name: string) {
+  return name.split(/\s+/u).slice(0, 2).map(part => part[0]).join('').toUpperCase()
+}
+
+function formatDate(value: string | null, withTime = false) {
+  if (!value) return '—'
+  const date = new Date(value.length === 10 ? `${value}T00:00:00` : value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('pl-PL', withTime
+    ? { dateStyle: 'medium', timeStyle: 'short' }
+    : { dateStyle: 'medium' }).format(date)
+}
+
+function formatPercent(value: number | null) {
+  if (value === null) return '—'
+  return `${new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(value)}%`
+}
+
+function validityLabel(version: VersionSummary | null) {
+  if (!version?.validFrom && !version?.validTo) return 'Bez określonego terminu'
+  if (version.validFrom && version.validTo) return `${formatDate(version.validFrom)} – ${formatDate(version.validTo)}`
+  if (version.validFrom) return `Od ${formatDate(version.validFrom)}`
+  return `Do ${formatDate(version.validTo)}`
+}
+
+function statusLabel(statusValue: OfferSummary['publicationStatus']) {
+  return ({ draft: 'Nieopublikowana', published: 'Opublikowana', archived: 'Archiwalna' })[statusValue]
+}
+
+function statusColor(statusValue: OfferSummary['publicationStatus']): 'warning' | 'success' | 'neutral' {
+  return statusValue === 'published' ? 'success' : statusValue === 'draft' ? 'warning' : 'neutral'
+}
+
+function versionStatusLabel(statusValue: string) {
+  return ({ published: 'Opublikowana', retired: 'Wycofana', superseded: 'Zastąpiona', draft: 'Robocza' } as Record<string, string>)[statusValue] ?? statusValue
+}
+
+function versionStatusColor(statusValue: string): 'success' | 'warning' | 'neutral' {
+  return statusValue === 'published' ? 'success' : statusValue === 'draft' ? 'warning' : 'neutral'
+}
+
+function categoryLabel(category: string) {
+  return ({
+    housing: 'Kredyt mieszkaniowy',
+    mortgage: 'Kredyt mieszkaniowy',
+    refinance: 'Refinansowanie',
+    construction: 'Budowa domu',
+    secured_loan: 'Pożyczka hipoteczna',
+    eco: 'Oferta ekologiczna',
+    family: 'Oferta rodzinna',
+  } as Record<string, string>)[category] ?? category
+}
+
+function channelLabel(channel: string) {
+  return ({
+    all: 'Wszystkie kanały', branch: 'Oddział', broker: 'Pośrednik', online: 'Online',
+    bank_public_website: 'Strona banku',
+  } as Record<string, string>)[channel] ?? channel
+}
+
+function stageLabel(stage: string) {
+  return ({
+    analysis: 'Analiza', agreement: 'Umowa', disbursement: 'Uruchomienie',
+    tranche: 'Transza', maintenance: 'Obsługa',
+  } as Record<string, string>)[stage] ?? stage
+}
+
+function categoryDocumentLabel(category: string) {
+  return ({
+    application: 'Wniosek', identity: 'Tożsamość', income_employment: 'Dochód z etatu',
+    income_business: 'Działalność', income_other: 'Inny dochód', liabilities: 'Zobowiązania',
+    transaction: 'Transakcja', property_legal: 'Nieruchomość', valuation: 'Wycena',
+    construction_renovation: 'Budowa i remont', refinance_discharge: 'Refinansowanie',
+    insurance_security: 'Ubezpieczenia', disbursement: 'Uruchomienie',
+    disclosure_privacy: 'Zgody i informacje', other: 'Inne',
+  } as Record<string, string>)[category] ?? category
+}
+
+function requirementLabel(item: ChecklistItem) {
+  if (item.applicability === 'conditional') return 'Warunkowy'
+  if (item.applicability === 'case_requested') return 'Na żądanie'
+  if (item.applicability === 'optional' || !item.required) return 'Opcjonalny'
+  return 'Wymagany'
+}
+
+function requirementColor(item: ChecklistItem): 'primary' | 'warning' | 'neutral' {
+  if (item.applicability === 'conditional' || item.applicability === 'case_requested') return 'warning'
+  return item.required ? 'primary' : 'neutral'
+}
+
+function sourceKindLabel(kind: string) {
+  return ({
+    pricing_table: 'Tabela oprocentowania', product_page: 'Strona produktu',
+    promotion_rules: 'Warunki promocji', general_information: 'Informacje banku',
+    bank_tariff: 'Taryfa opłat', bank_terms: 'Regulamin', other: 'Inne źródło',
+  } as Record<string, string>)[kind] ?? kind
+}
+
+function sourceRoleLabel(role: string) {
+  return ({
+    primary: 'główne', pricing: 'oprocentowanie', eligibility: 'dostępność', costs: 'koszty',
+    documents: 'dokumenty', legal: 'warunki prawne', general: 'ogólne',
+    representative_example: 'przykład reprezentatywny', other: 'inne',
+  } as Record<string, string>)[role] ?? role
+}
+
+function extractionLabel(statusValue: string) {
+  return ({ reviewed: 'Zweryfikowane', extracted: 'Odczytane', pending: 'Oczekuje', failed: 'Błąd' } as Record<string, string>)[statusValue] ?? statusValue
+}
+
+function extractionColor(statusValue: string): 'success' | 'warning' | 'error' | 'neutral' {
+  if (statusValue === 'reviewed') return 'success'
+  if (statusValue === 'failed') return 'error'
+  if (statusValue === 'pending') return 'warning'
+  return 'neutral'
+}
+
+function historyActionLabel(action: string) {
+  return ({ created: 'Utworzono ustawienia', updated: 'Zmieniono ustawienia', reset: 'Przywrócono dane źródłowe' } as Record<string, string>)[action] ?? action
+}
+
+function offerPath(offerId: string) {
+  return `${offersPath.value}/${encodeURIComponent(offerId)}`
+}
+
+function offerDocumentsPath(offerId: string) {
+  return `${offerPath(offerId)}?step=documents`
+}
+
+function checklistKey(offerId: string, kind: 'published' | 'draft') {
+  return `${offerId}:${kind}`
+}
+
+function checklistExpanded(key: string) {
+  return expandedChecklists.value.includes(key)
+}
+
+function visibleChecklist(items: ChecklistItem[], key: string) {
+  return checklistExpanded(key) ? items : items.slice(0, 6)
+}
+
+function toggleChecklist(key: string) {
+  expandedChecklists.value = checklistExpanded(key)
+    ? expandedChecklists.value.filter(item => item !== key)
+    : [...expandedChecklists.value, key]
+}
+</script>
+
+<template>
+  <CrmShell title="Profil instytucji" eyebrow="Backoffice · bank i powiązane dane">
+    <template #actions>
+      <UButton :to="offersPath" color="neutral" variant="outline" icon="i-lucide-arrow-left">
+        Katalog ofert
+      </UButton>
+      <UButton :to="settingsPath" color="neutral" variant="outline" icon="i-lucide-settings-2">
+        Ustawienia banku
+      </UButton>
+      <UButton v-if="bank" :to="createOfferPath" icon="i-lucide-plus">
+        Dodaj ofertę
+      </UButton>
+    </template>
+
+    <UAlert
+      v-if="error"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      title="Nie udało się pobrać profilu instytucji"
+      :description="apiErrorMessage(error)"
+      :actions="[{ label: 'Ponów', onClick: () => refresh() }]"
+    />
+
+    <div v-else-if="status === 'pending' || status === 'idle'" class="profile-loading">
+      <USkeleton class="h-52 w-full" />
+      <div class="profile-loading__metrics">
+        <USkeleton v-for="index in 6" :key="index" class="h-28 w-full" />
+      </div>
+      <USkeleton class="h-96 w-full" />
+    </div>
+
+    <div v-else-if="bank && metrics" class="bank-profile">
+      <section class="bank-hero">
+        <div
+          class="bank-hero__logo"
+          :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
+        >
+          <img v-if="bank.logoUrl" :src="bank.logoUrl" :alt="`Logo ${bank.name}`">
+          <span v-else>{{ initials(bank.name) }}</span>
+        </div>
+        <div class="bank-hero__body">
+          <div class="bank-hero__headline">
+            <div>
+              <div class="bank-hero__badges">
+                <UBadge :color="bank.isEnabled ? 'success' : 'warning'" variant="subtle">
+                  {{ bank.isEnabled ? 'Widoczna w organizacji' : 'Ukryta w organizacji' }}
+                </UBadge>
+                <UBadge v-if="bank.override" color="primary" variant="outline">
+                  Ustawienia własne · r{{ bank.override.revision }}
+                </UBadge>
+                <UBadge v-else color="neutral" variant="outline">Dane źródłowe</UBadge>
+              </div>
+              <h2>{{ bank.name }}</h2>
+              <p v-if="bank.name !== bank.baseName" class="bank-hero__source-name">Nazwa źródłowa: {{ bank.baseName }}</p>
+            </div>
+            <UButton
+              v-if="bank.websiteUrl"
+              :to="bank.websiteUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              color="neutral"
+              variant="ghost"
+              trailing-icon="i-lucide-external-link"
+            >
+              Strona banku
+            </UButton>
+          </div>
+          <p v-if="bank.notes" class="bank-hero__notes">{{ bank.notes }}</p>
+          <p v-else class="bank-hero__notes bank-hero__notes--empty">
+            Brak notatki organizacyjnej. Możesz dodać opiekuna, zakres współpracy lub ważne ustalenia w ustawieniach banku.
+          </p>
+          <div class="bank-hero__meta">
+            <span><UIcon name="i-lucide-building-2" />{{ bank.slug }}</span>
+            <span><UIcon name="i-lucide-clock-3" />Aktualizacja {{ formatDate(bank.updatedAt, true) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="profile-metrics" aria-label="Podsumowanie instytucji">
+        <article>
+          <span>Wszystkie oferty</span>
+          <strong>{{ metrics.offers }}</strong>
+          <small>{{ metrics.versions }} {{ metrics.versions === 1 ? 'wersja' : 'wersji' }} w historii</small>
+        </article>
+        <article>
+          <span>W kalkulatorze</span>
+          <strong>{{ metrics.liveOffers }}</strong>
+          <small>{{ metrics.publishedOffers }} {{ metrics.publishedOffers === 1 ? 'opublikowana łącznie' : 'opublikowanych łącznie' }}</small>
+        </article>
+        <article>
+          <span>Szkice</span>
+          <strong>{{ metrics.draftOffers }}</strong>
+          <small>Zmiany oczekujące na publikację</small>
+        </article>
+        <article>
+          <span>Checklisty</span>
+          <strong>{{ metrics.publishedChecklistItems }}</strong>
+          <small v-if="metrics.draftChecklistItems">+ {{ metrics.draftChecklistItems }} pozycji w szkicach</small>
+          <small v-else>Pozycje wersji opublikowanych</small>
+        </article>
+        <article>
+          <span>Źródła</span>
+          <strong>{{ metrics.sourceDocuments }}</strong>
+          <small>{{ metrics.reviewedSourceDocuments }} zweryfikowanych</small>
+        </article>
+        <article>
+          <span>Kompletność danych</span>
+          <strong>{{ metrics.averageCompleteness === null ? '—' : `${metrics.averageCompleteness}%` }}</strong>
+          <small>{{ metrics.unknownFields }} niewypełnionych pól</small>
+        </article>
+      </section>
+
+      <nav class="profile-jump" aria-label="Sekcje profilu instytucji">
+        <a href="#bank-offers"><UIcon name="i-lucide-badge-percent" />Oferty <span>{{ offers.length }}</span></a>
+        <a href="#bank-checklists"><UIcon name="i-lucide-list-checks" />Checklisty <span>{{ metrics.publishedChecklistItems }}</span></a>
+        <a href="#bank-sources"><UIcon name="i-lucide-files" />Źródła <span>{{ sources.length }}</span></a>
+        <a href="#bank-settings"><UIcon name="i-lucide-history" />Ustawienia i historia <span>{{ history.length }}</span></a>
+      </nav>
+
+      <section id="bank-offers" class="profile-section">
+        <div class="section-heading">
+          <div>
+            <span>01 · produkty</span>
+            <h2>Oferty i wersje kalkulatora</h2>
+            <p>Każda oferta zachowuje własną stopę, koszty, warianty, checklistę i historię publikacji.</p>
+          </div>
+          <UButton :to="createOfferPath" icon="i-lucide-plus" variant="outline">Dodaj ofertę tego banku</UButton>
+        </div>
+
+        <div v-if="offers.length" class="offer-cards">
+          <article v-for="offer in offers" :key="offer.id" class="offer-card">
+            <header class="offer-card__header">
+              <div class="offer-card__identity">
+                <span class="offer-card__icon"><UIcon name="i-lucide-house" /></span>
+                <div>
+                  <div class="offer-card__badges">
+                    <UBadge v-if="offer.liveInCalculator" color="primary" variant="subtle">Aktywna dziś w kalkulatorze</UBadge>
+                    <UBadge :color="statusColor(offer.publicationStatus)" variant="subtle">
+                      {{ statusLabel(offer.publicationStatus) }}
+                    </UBadge>
+                    <UBadge v-if="offer.hasDraft" color="warning" variant="outline">Szkic r{{ offer.draft?.revision }}</UBadge>
+                  </div>
+                  <h3>{{ offer.name }}</h3>
+                  <p>
+                    {{ categoryLabel(offer.category) }} · {{ channelLabel(offer.distributionChannel) }} · {{ offer.code }}
+                    <template v-if="offer.name !== offer.baseName"> · nazwa źródłowa: {{ offer.baseName }}</template>
+                  </p>
+                </div>
+              </div>
+              <UButton :to="offerPath(offer.id)" color="neutral" variant="outline" trailing-icon="i-lucide-arrow-right">
+                Otwórz ofertę
+              </UButton>
+            </header>
+
+            <div class="offer-card__facts">
+              <div>
+                <span>Oprocentowanie stałe</span>
+                <strong>{{ formatPercent(offer.currentVersion?.fixedRatePct ?? null) }}</strong>
+                <small v-if="offer.currentVersion?.fixedPeriodMonths">{{ offer.currentVersion.fixedPeriodMonths }} mies.</small>
+                <small v-else>Brak wartości w publikacji</small>
+              </div>
+              <div>
+                <span>Marża po okresie stałym</span>
+                <strong>{{ formatPercent(offer.currentVersion?.marginPct ?? null) }}</strong>
+                <small>{{ offer.currentVersion?.referenceRateCode || 'Brak indeksu referencyjnego' }}</small>
+              </div>
+              <div>
+                <span>RRSO reprezentatywne</span>
+                <strong>{{ formatPercent(offer.currentVersion?.representativeAprPct ?? null) }}</strong>
+                <small>Według danych wersji</small>
+              </div>
+              <div>
+                <span>Ważność wersji</span>
+                <strong class="offer-card__fact-text">{{ validityLabel(offer.currentVersion) }}</strong>
+                <small v-if="offer.currentVersion">v{{ offer.currentVersion.revision }} · {{ offer.versions.length }} {{ offer.versions.length === 1 ? 'wersja' : 'wersji' }}</small>
+                <small v-else>Brak opublikowanej wersji</small>
+              </div>
+              <div>
+                <span>Kompletność</span>
+                <strong>{{ offer.currentVersion?.completenessScore === null || !offer.currentVersion ? '—' : `${offer.currentVersion.completenessScore}%` }}</strong>
+                <small>{{ offer.currentVersion?.unknownFields.length ?? 0 }} niewypełnionych pól</small>
+              </div>
+              <div>
+                <span>Dokumentacja</span>
+                <strong>{{ offer.publishedChecklist.length }}</strong>
+                <small>{{ offer.sourceCount }} {{ offer.sourceCount === 1 ? 'źródło' : 'źródeł' }}</small>
+              </div>
+            </div>
+
+            <div v-if="offer.draft" class="offer-card__draft">
+              <div>
+                <UIcon name="i-lucide-pencil-ruler" />
+                <span><strong>Szkic r{{ offer.draft.revision }}</strong><small>Aktualizacja {{ formatDate(offer.draft.updatedAt, true) }}</small></span>
+              </div>
+              <span>{{ offer.draft.configuration.costCount }} kosztów</span>
+              <span>{{ offer.draft.configuration.marginModifierCount }} zmian marży</span>
+              <span>{{ offer.draft.configuration.variantCount }} wariantów</span>
+              <span>{{ offer.draft.configuration.checklist.length }} dokumentów</span>
+              <UBadge v-if="offer.draft.configuration.hasBridgeInsurance" color="primary" variant="subtle">Pomostowe</UBadge>
+              <UBadge v-if="offer.draft.validationIssueCount" color="warning" variant="subtle">
+                {{ offer.draft.validationIssueCount }} uwag walidacji
+              </UBadge>
+            </div>
+
+            <div v-if="offer.currentVersion?.unknownFields.length" class="offer-card__unknown">
+              <span>Do uzupełnienia:</span>
+              <UBadge v-for="field in offer.currentVersion.unknownFields" :key="field" color="warning" variant="outline">{{ field }}</UBadge>
+            </div>
+
+            <details v-if="offer.versions.length" class="offer-card__versions">
+              <summary>
+                <span><UIcon name="i-lucide-history" />Historia publikacji</span>
+                <span>{{ offer.versions.length }} {{ offer.versions.length === 1 ? 'wersja' : 'wersji' }} <UIcon name="i-lucide-chevron-down" /></span>
+              </summary>
+              <div class="version-list">
+                <div v-for="version in offer.versions" :key="version.id" class="version-row">
+                  <strong>v{{ version.revision }}</strong>
+                  <UBadge :color="versionStatusColor(version.lifecycleStatus)" variant="subtle">{{ versionStatusLabel(version.lifecycleStatus) }}</UBadge>
+                  <span>{{ validityLabel(version) }}</span>
+                  <span>Kompletność {{ version.completenessScore === null ? '—' : `${version.completenessScore}%` }}</span>
+                  <small>Publikacja {{ formatDate(version.publishedAt, true) }}</small>
+                </div>
+              </div>
+            </details>
+          </article>
+        </div>
+
+        <div v-else class="section-empty">
+          <UIcon name="i-lucide-package-plus" />
+          <h3>Ten bank nie ma jeszcze oferty</h3>
+          <p>Utwórz pierwszy szkic, skonfiguruj kalkulację i opublikuj go po walidacji.</p>
+          <UButton :to="createOfferPath" icon="i-lucide-plus">Dodaj pierwszą ofertę</UButton>
+        </div>
+      </section>
+
+      <section id="bank-checklists" class="profile-section">
+        <div class="section-heading">
+          <div>
+            <span>02 · dokumenty</span>
+            <h2>Checklisty wymagane przez bank</h2>
+            <p>Pozycje są przypisane do konkretnej oferty i wersji, dlatego nie tracą kontekstu wariantu kredytu.</p>
+          </div>
+        </div>
+
+        <div v-if="checklistOffers.length" class="checklist-groups">
+          <article v-for="offer in checklistOffers" :key="offer.id" class="checklist-group">
+            <header class="checklist-group__header">
+              <div>
+                <h3>{{ offer.name }}</h3>
+                <p>{{ offer.code }} · {{ offer.currentVersion ? `wersja v${offer.currentVersion.revision}` : 'bez publikacji' }}</p>
+              </div>
+              <div>
+                <UBadge color="success" variant="subtle">{{ offer.publishedChecklist.length }} opublikowanych</UBadge>
+                <UBadge v-if="offer.draft" color="warning" variant="subtle">{{ offer.draft.configuration.checklist.length }} w szkicu</UBadge>
+                <UButton :to="offerDocumentsPath(offer.id)" color="neutral" variant="outline" size="xs" icon="i-lucide-pencil-line">
+                  Edytuj checklistę
+                </UButton>
+              </div>
+            </header>
+
+            <div v-if="offer.publishedChecklist.length" class="checklist-variant">
+              <div class="checklist-variant__title">
+                <span><UIcon name="i-lucide-badge-check" />Checklista używana w kalkulatorze</span>
+                <small>Opublikowana {{ formatDate(offer.currentVersion?.publishedAt ?? null) }}</small>
+              </div>
+              <div class="checklist-list">
+                <div
+                  v-for="item in visibleChecklist(offer.publishedChecklist, checklistKey(offer.id, 'published'))"
+                  :key="item.code"
+                  class="checklist-item"
+                >
+                  <span class="checklist-item__icon"><UIcon :name="item.required ? 'i-lucide-file-check-2' : 'i-lucide-file-question'" /></span>
+                  <span class="checklist-item__copy">
+                    <strong>{{ item.label }}</strong>
+                    <small>{{ item.notes || item.code }}</small>
+                  </span>
+                  <span class="checklist-item__meta">
+                    <UBadge color="neutral" variant="outline">{{ stageLabel(item.stage) }}</UBadge>
+                    <UBadge color="neutral" variant="subtle">{{ categoryDocumentLabel(item.category) }}</UBadge>
+                  </span>
+                  <UBadge :color="requirementColor(item)" variant="subtle">
+                    {{ requirementLabel(item) }}
+                  </UBadge>
+                </div>
+              </div>
+              <UButton
+                v-if="offer.publishedChecklist.length > 6"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                :trailing-icon="checklistExpanded(checklistKey(offer.id, 'published')) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                @click="toggleChecklist(checklistKey(offer.id, 'published'))"
+              >
+                {{ checklistExpanded(checklistKey(offer.id, 'published')) ? 'Pokaż mniej' : `Pokaż wszystkie (${offer.publishedChecklist.length})` }}
+              </UButton>
+            </div>
+
+            <details v-if="offer.draft?.configuration.checklist.length" class="draft-checklist">
+              <summary>
+                <span><UIcon name="i-lucide-pencil-line" />Robocza checklista · szkic r{{ offer.draft.revision }}</span>
+                <UBadge color="warning" variant="subtle">{{ offer.draft.configuration.checklist.length }} pozycji</UBadge>
+              </summary>
+              <div class="checklist-list">
+                <div
+                  v-for="item in offer.draft.configuration.checklist"
+                  :key="item.code"
+                  class="checklist-item"
+                >
+                  <span class="checklist-item__icon"><UIcon :name="item.required ? 'i-lucide-file-check-2' : 'i-lucide-file-question'" /></span>
+                  <span class="checklist-item__copy"><strong>{{ item.label }}</strong><small>{{ item.notes || item.code }}</small></span>
+                  <span class="checklist-item__meta"><UBadge color="neutral" variant="outline">{{ stageLabel(item.stage) }}</UBadge></span>
+                  <UBadge :color="requirementColor(item)" variant="subtle">{{ requirementLabel(item) }}</UBadge>
+                </div>
+              </div>
+            </details>
+          </article>
+        </div>
+
+        <div v-else class="section-empty section-empty--compact">
+          <UIcon name="i-lucide-list-x" />
+          <h3>Brak checklist dokumentów</h3>
+          <p>Dodaj wymagania dokumentowe w edytorze konkretnej oferty.</p>
+        </div>
+      </section>
+
+      <section id="bank-sources" class="profile-section">
+        <div class="section-heading">
+          <div>
+            <span>03 · pochodzenie danych</span>
+            <h2>Dokumenty i strony źródłowe</h2>
+            <p>Materiały, na podstawie których zdefiniowano oprocentowanie, koszty, warunki i checklisty.</p>
+          </div>
+        </div>
+
+        <div v-if="sources.length" class="source-list">
+          <article v-for="source in sources" :key="source.id" class="source-item">
+            <span class="source-item__icon"><UIcon name="i-lucide-file-search-2" /></span>
+            <div class="source-item__body">
+              <div class="source-item__title">
+                <div>
+                  <h3>{{ source.title }}</h3>
+                  <p>{{ source.productName || 'Materiał ogólny instytucji' }} · {{ sourceKindLabel(source.kind) }}</p>
+                </div>
+                <UBadge :color="extractionColor(source.extractionStatus)" variant="subtle">
+                  {{ extractionLabel(source.extractionStatus) }}
+                </UBadge>
+              </div>
+              <div class="source-item__meta">
+                <span><UIcon name="i-lucide-calendar-check" />Pobrano {{ formatDate(source.retrievedAt) }}</span>
+                <span v-if="source.publishedAt"><UIcon name="i-lucide-calendar" />Publikacja {{ formatDate(source.publishedAt) }}</span>
+                <span v-if="source.sha256" :title="source.sha256"><UIcon name="i-lucide-fingerprint" />SHA-256 potwierdzony</span>
+              </div>
+              <div v-if="source.links.length" class="source-item__roles">
+                <UBadge v-for="link in source.links" :key="`${link.productVersionId}:${link.role}`" color="neutral" variant="outline">
+                  {{ sourceRoleLabel(link.role) }}<template v-if="link.versionNumber"> · v{{ link.versionNumber }}</template>
+                </UBadge>
+              </div>
+              <UAlert v-if="source.errorMessage" color="error" variant="subtle" :description="source.errorMessage" />
+            </div>
+            <UButton
+              v-if="source.url"
+              :to="source.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              color="neutral"
+              variant="ghost"
+              square
+              icon="i-lucide-external-link"
+              :aria-label="`Otwórz źródło: ${source.title}`"
+            />
+          </article>
+        </div>
+
+        <div v-else class="section-empty section-empty--compact">
+          <UIcon name="i-lucide-file-x-2" />
+          <h3>Brak materiałów źródłowych</h3>
+          <p>Źródła dodasz w zakładce Dokumenty wewnątrz edytora oferty.</p>
+        </div>
+      </section>
+
+      <section id="bank-settings" class="profile-section">
+        <div class="section-heading">
+          <div>
+            <span>04 · organizacja</span>
+            <h2>Ustawienia i historia banku</h2>
+            <p>Zmiany tutaj dotyczą wyłącznie bieżącej organizacji i nie modyfikują danych globalnych.</p>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <UCard>
+            <template #header>
+              <div class="settings-card__head">
+                <div><span>Konfiguracja</span><h3>W tej organizacji</h3></div>
+                <UButton :to="settingsPath" color="neutral" variant="ghost" icon="i-lucide-settings-2">Edytuj</UButton>
+              </div>
+            </template>
+            <dl class="settings-list">
+              <div><dt>Widoczność</dt><dd><UBadge :color="bank.isEnabled ? 'success' : 'warning'" variant="subtle">{{ bank.isEnabled ? 'Włączona' : 'Wyłączona' }}</UBadge></dd></div>
+              <div><dt>Nazwa</dt><dd>{{ bank.name }}<small>{{ bank.override?.customName ? 'Własna' : 'Źródłowa' }}</small></dd></div>
+              <div><dt>Strona</dt><dd>{{ bank.websiteUrl || 'Nie podano' }}<small>{{ bank.override?.customWebsiteUrl ? 'Własna' : 'Źródłowa' }}</small></dd></div>
+              <div><dt>Logo</dt><dd>{{ bank.override?.hasCustomLogo ? 'Własne logo organizacji' : 'Logo źródłowe' }}</dd></div>
+              <div><dt>Rewizja</dt><dd>{{ bank.override ? `r${bank.override.revision}` : 'Brak zmian' }}</dd></div>
+            </dl>
+          </UCard>
+
+          <UCard>
+            <template #header>
+              <div class="settings-card__head">
+                <div><span>Audyt</span><h3>Historia zmian</h3></div>
+                <UButton color="neutral" variant="ghost" square icon="i-lucide-refresh-cw" aria-label="Odśwież profil" @click="() => refresh()" />
+              </div>
+            </template>
+            <ol v-if="history.length" class="history-list">
+              <li v-for="entry in history.slice(0, 8)" :key="entry.id">
+                <span class="history-list__dot" />
+                <div>
+                  <strong>{{ historyActionLabel(entry.action) }} · r{{ entry.revision }}</strong>
+                  <p>{{ entry.actor?.name || entry.actor?.email || 'SuperAdmin' }}</p>
+                  <small>{{ formatDate(entry.createdAt, true) }}</small>
+                </div>
+              </li>
+            </ol>
+            <div v-else class="settings-empty">Nie zapisano jeszcze zmian dla tej instytucji.</div>
+          </UCard>
+        </div>
+      </section>
+    </div>
+  </CrmShell>
+</template>
+
+<style scoped>
+.profile-loading, .bank-profile { display: grid; gap: 22px; min-width: 0; }
+.profile-loading__metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.bank-hero { display: grid; grid-template-columns: 126px minmax(0, 1fr); gap: 24px; padding: 24px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: calc(var(--ui-radius) * 1.35); background: linear-gradient(135deg, var(--ui-bg) 55%, var(--ui-bg-muted)); }
+.bank-hero__logo { display: grid; place-items: center; width: 126px; height: 126px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 22px; color: var(--ui-color-neutral-900); background: white; font-size: 26px; font-weight: 800; }
+.bank-hero__logo img { width: 100%; height: 100%; padding: 18px; object-fit: contain; }
+.bank-hero__body { display: grid; align-content: center; gap: 14px; min-width: 0; }
+.bank-hero__headline { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.bank-hero__headline h2 { margin: 8px 0 0; font-size: clamp(25px, 3vw, 38px); line-height: 1.05; }
+.bank-hero__badges, .offer-card__badges { display: flex; flex-wrap: wrap; gap: 7px; }
+.bank-hero__source-name { margin: 6px 0 0; color: var(--ui-text-muted); font-size: 13px; }
+.bank-hero__notes { max-width: 850px; margin: 0; color: var(--ui-text-toned); line-height: 1.55; }
+.bank-hero__notes--empty { color: var(--ui-text-muted); }
+.bank-hero__meta { display: flex; flex-wrap: wrap; gap: 16px; color: var(--ui-text-muted); font-size: 12px; }
+.bank-hero__meta span { display: inline-flex; align-items: center; gap: 6px; }
+.profile-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.profile-metrics article { display: grid; gap: 5px; min-width: 0; padding: 17px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
+.profile-metrics span, .section-heading > div > span, .settings-card__head span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.profile-metrics strong { font-size: 28px; line-height: 1; }
+.profile-metrics small { overflow: hidden; color: var(--ui-text-muted); font-size: 11px; text-overflow: ellipsis; }
+.profile-jump { position: sticky; top: 10px; z-index: 4; display: flex; gap: 8px; padding: 8px; overflow-x: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: color-mix(in srgb, var(--ui-bg) 94%, transparent); backdrop-filter: blur(14px); }
+.profile-jump a { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; padding: 8px 11px; border-radius: calc(var(--ui-radius) * .7); color: var(--ui-text-toned); font-size: 12px; font-weight: 650; text-decoration: none; }
+.profile-jump a:hover { background: var(--ui-bg-muted); }
+.profile-jump a span { min-width: 20px; padding: 2px 6px; border-radius: 999px; color: var(--ui-text-muted); background: var(--ui-bg-elevated); font-size: 10px; text-align: center; }
+.profile-section { display: grid; gap: 16px; min-width: 0; scroll-margin-top: 80px; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 10px 2px 3px; }
+.section-heading h2 { margin: 5px 0 0; font-size: 25px; }
+.section-heading p { max-width: 760px; margin: 5px 0 0; color: var(--ui-text-muted); font-size: 13px; }
+.offer-cards, .checklist-groups, .source-list { display: grid; gap: 13px; }
+.offer-card, .checklist-group, .source-item { min-width: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
+.offer-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px; border-bottom: 1px solid var(--ui-border); }
+.offer-card__identity { display: flex; gap: 13px; min-width: 0; }
+.offer-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px; color: var(--ui-primary); background: var(--ui-bg-muted); }
+.offer-card__identity h3 { margin: 7px 0 0; font-size: 18px; }
+.offer-card__identity p { margin: 3px 0 0; color: var(--ui-text-muted); font-size: 12px; }
+.offer-card__facts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.offer-card__facts > div { display: grid; align-content: start; gap: 5px; min-width: 0; padding: 16px 18px; border-right: 1px solid var(--ui-border); }
+.offer-card__facts > div:last-child { border-right: 0; }
+.offer-card__facts span { color: var(--ui-text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.offer-card__facts strong { font-size: 19px; }
+.offer-card__facts small { overflow: hidden; color: var(--ui-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.offer-card__facts .offer-card__fact-text { font-size: 13px; line-height: 1.35; }
+.offer-card__draft { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--ui-border); background: var(--ui-bg-muted); color: var(--ui-text-muted); font-size: 11px; }
+.offer-card__draft > div { display: flex; align-items: center; gap: 8px; margin-right: auto; color: var(--ui-text-toned); }
+.offer-card__draft > div span { display: grid; }
+.offer-card__draft > div small { color: var(--ui-text-muted); }
+.offer-card__draft > span { padding: 4px 7px; border: 1px solid var(--ui-border); border-radius: 7px; background: var(--ui-bg); }
+.offer-card__unknown { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 11px 18px; border-top: 1px solid var(--ui-border); }
+.offer-card__unknown > span { color: var(--ui-text-muted); font-size: 11px; font-weight: 700; }
+.offer-card__versions { border-top: 1px solid var(--ui-border); }
+.offer-card__versions summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; color: var(--ui-text-muted); cursor: pointer; list-style: none; font-size: 11px; }
+.offer-card__versions summary::-webkit-details-marker { display: none; }
+.offer-card__versions summary span { display: inline-flex; align-items: center; gap: 7px; }
+.offer-card__versions[open] summary { color: var(--ui-text-toned); background: var(--ui-bg-muted); }
+.version-list { display: grid; padding: 0 18px 13px; }
+.version-row { display: grid; grid-template-columns: 38px auto minmax(160px, 1fr) minmax(140px, auto) minmax(175px, auto); align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--ui-border); color: var(--ui-text-muted); font-size: 11px; }
+.version-row strong { color: var(--ui-text-toned); }
+.version-row small { text-align: right; }
+.section-empty { display: grid; place-items: center; gap: 9px; min-height: 260px; padding: 32px; border: 1px dashed var(--ui-border-accented); border-radius: var(--ui-radius); background: var(--ui-bg); text-align: center; }
+.section-empty--compact { min-height: 190px; }
+.section-empty > svg { width: 32px; height: 32px; color: var(--ui-text-muted); }
+.section-empty h3, .section-empty p { margin: 0; }
+.section-empty p { color: var(--ui-text-muted); }
+.checklist-group__header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; background: var(--ui-bg-muted); }
+.checklist-group__header h3, .checklist-group__header p { margin: 0; }
+.checklist-group__header p { margin-top: 3px; color: var(--ui-text-muted); font-size: 11px; }
+.checklist-group__header > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.checklist-variant { display: grid; gap: 10px; padding: 16px 18px; border-top: 1px solid var(--ui-border); }
+.checklist-variant__title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.checklist-variant__title span { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; }
+.checklist-variant__title small { color: var(--ui-text-muted); }
+.checklist-list { display: grid; border: 1px solid var(--ui-border); border-radius: calc(var(--ui-radius) * .8); }
+.checklist-item { display: grid; grid-template-columns: 34px minmax(220px, 1fr) minmax(220px, auto) auto; align-items: center; gap: 11px; padding: 11px 12px; border-top: 1px solid var(--ui-border); }
+.checklist-item:first-child { border-top: 0; }
+.checklist-item__icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--ui-text-toned); background: var(--ui-bg-muted); }
+.checklist-item__copy { display: grid; min-width: 0; }
+.checklist-item__copy strong, .checklist-item__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.checklist-item__copy strong { font-size: 12px; }
+.checklist-item__copy small { color: var(--ui-text-muted); font-size: 10px; }
+.checklist-item__meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.draft-checklist { border-top: 1px solid var(--ui-border); }
+.draft-checklist summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; cursor: pointer; list-style: none; }
+.draft-checklist summary::-webkit-details-marker { display: none; }
+.draft-checklist summary > span { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; }
+.draft-checklist[open] summary { border-bottom: 1px solid var(--ui-border); background: var(--ui-bg-muted); }
+.draft-checklist > .checklist-list { margin: 16px 18px; }
+.source-item { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: start; gap: 13px; padding: 16px; }
+.source-item__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; color: var(--ui-primary); background: var(--ui-bg-muted); }
+.source-item__body { display: grid; gap: 9px; min-width: 0; }
+.source-item__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.source-item__title h3, .source-item__title p { margin: 0; }
+.source-item__title h3 { font-size: 14px; }
+.source-item__title p { margin-top: 3px; color: var(--ui-text-muted); font-size: 11px; }
+.source-item__meta, .source-item__roles { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.source-item__meta { color: var(--ui-text-muted); font-size: 11px; }
+.source-item__meta span { display: inline-flex; align-items: center; gap: 5px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.settings-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.settings-card__head h3 { margin: 4px 0 0; font-size: 18px; }
+.settings-list { display: grid; gap: 0; margin: 0; }
+.settings-list > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 14px; padding: 11px 0; border-top: 1px solid var(--ui-border); }
+.settings-list > div:first-child { border-top: 0; }
+.settings-list dt { color: var(--ui-text-muted); font-size: 12px; }
+.settings-list dd { display: grid; justify-items: start; gap: 3px; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; }
+.settings-list dd small { color: var(--ui-text-muted); font-weight: 400; }
+.history-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.history-list li { position: relative; display: flex; gap: 12px; padding: 0 0 17px; }
+.history-list li:not(:last-child)::before { position: absolute; top: 9px; bottom: 0; left: 4px; width: 1px; background: var(--ui-border); content: ''; }
+.history-list__dot { z-index: 1; flex: 0 0 auto; width: 9px; height: 9px; margin-top: 4px; border-radius: 99px; background: var(--ui-primary); }
+.history-list strong { font-size: 12px; }
+.history-list p { margin: 2px 0; color: var(--ui-text-muted); font-size: 11px; }
+.history-list small, .settings-empty { color: var(--ui-text-muted); font-size: 11px; }
+@media (max-width: 1280px) {
+  .profile-metrics, .profile-loading__metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .offer-card__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .offer-card__facts > div:nth-child(3) { border-right: 0; }
+  .offer-card__facts > div:nth-child(n + 4) { border-top: 1px solid var(--ui-border); }
+}
+@media (max-width: 860px) {
+  .bank-hero { grid-template-columns: 88px minmax(0, 1fr); padding: 18px; }
+  .bank-hero__logo { width: 88px; height: 88px; border-radius: 17px; }
+  .bank-hero__logo img { padding: 12px; }
+  .bank-hero__headline, .section-heading, .offer-card__header { align-items: stretch; flex-direction: column; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .checklist-item { grid-template-columns: 34px minmax(0, 1fr) auto; }
+  .checklist-item__meta { display: none; }
+  .version-row { grid-template-columns: 38px auto minmax(0, 1fr); }
+  .version-row > :nth-child(4), .version-row > :nth-child(5) { display: none; }
+}
+@media (max-width: 620px) {
+  .bank-hero { grid-template-columns: 1fr; }
+  .bank-hero__logo { width: 76px; height: 76px; }
+  .profile-metrics, .profile-loading__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .offer-card__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .offer-card__facts > div { border-top: 1px solid var(--ui-border); }
+  .offer-card__facts > div:nth-child(odd) { border-right: 1px solid var(--ui-border); }
+  .offer-card__facts > div:nth-child(even) { border-right: 0; }
+  .checklist-group__header, .checklist-variant__title, .source-item__title { align-items: flex-start; flex-direction: column; }
+  .checklist-group__header > div:last-child, .checklist-item__meta { justify-content: flex-start; }
+  .checklist-item { grid-template-columns: 34px minmax(0, 1fr); }
+  .checklist-item > .badge { grid-column: 2; justify-self: start; }
+  .source-item { grid-template-columns: 38px minmax(0, 1fr); }
+  .source-item > :last-child { grid-column: 2; justify-self: start; }
+  .settings-list > div { grid-template-columns: 1fr; gap: 5px; }
+}
+</style>

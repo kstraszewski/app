@@ -9,8 +9,6 @@ const clientId = computed(() => String(route.params.id))
 const toast = useToast()
 const caseForm = reactive({
   title: '',
-  description: '',
-  priority: 'normal',
 })
 const savingCase = ref(false)
 
@@ -109,15 +107,11 @@ async function createCase() {
     await $fetch(crmApiPath('/cases'), {
       method: 'POST',
       body: {
-        client_id: clientId.value,
+        client_ids: [clientId.value],
         title: caseForm.title,
-        description: caseForm.description || undefined,
-        priority: caseForm.priority,
       },
     })
     caseForm.title = ''
-    caseForm.description = ''
-    caseForm.priority = 'normal'
     await refresh()
     toast.add({ title: 'Dodano sprawę', color: 'success' })
   } finally {
@@ -158,15 +152,12 @@ async function createCase() {
                 <h2>Dane klienta</h2>
                 <p>{{ data.data?.primary_email || data.data?.primary_phone || 'Brak danych kontaktowych' }}</p>
               </div>
-              <CrmStatusBadge :status="data.data?.status_code" />
             </div>
           </template>
 
           <div class="info-grid">
             <span>Opiekun</span>
             <strong>{{ data.owner?.full_name || data.owner?.email || '—' }}</strong>
-            <span>Źródło</span>
-            <strong>{{ data.data?.lead_source || '—' }}</strong>
             <span>Email</span>
             <strong>{{ data.data?.primary_email || '—' }}</strong>
             <span>Telefon</span>
@@ -325,7 +316,7 @@ async function createCase() {
             <div class="panel-head">
               <div>
                 <h2>Sprawy klienta</h2>
-                <p>Jedna sprawa może zawierać wiele produktów.</p>
+                <p>Sprawy, w których uczestniczy ten klient.</p>
               </div>
             </div>
           </template>
@@ -334,9 +325,9 @@ async function createCase() {
             <NuxtLink v-for="item in data.cases" :key="item.id" :to="orgPath(`/cases/${item.id}`)" class="case-row">
               <div>
                 <strong>{{ item.title }}</strong>
-                <span>{{ item.priority }} · {{ new Date(item.updated_at).toLocaleDateString('pl-PL') }}</span>
+                <span>{{ item.offer_count || 0 }} zapisanych ofert · {{ new Date(item.updated_at).toLocaleDateString('pl-PL') }}</span>
               </div>
-              <CrmStatusBadge :status="item.status_code" />
+              <UIcon name="i-lucide-chevron-right" />
             </NuxtLink>
           </div>
           <div v-else class="empty-line">Ten klient nie ma jeszcze spraw.</div>
@@ -349,7 +340,7 @@ async function createCase() {
             <div class="panel-head">
               <div>
                 <h2>Nowa sprawa</h2>
-                <p>Kontener dla kredytu, ubezpieczenia i nieruchomości.</p>
+                <p>Nazwij sprawę; tego klienta przypiszemy automatycznie.</p>
               </div>
             </div>
           </template>
@@ -357,20 +348,6 @@ async function createCase() {
           <form class="case-form" @submit.prevent="createCase">
             <UFormField label="Tytuł">
               <UInput v-model="caseForm.title" required placeholder="Zakup mieszkania Warszawa" />
-            </UFormField>
-            <UFormField label="Opis">
-              <UTextarea v-model="caseForm.description" :rows="3" placeholder="Cel klienta, terminy, kontekst" />
-            </UFormField>
-            <UFormField label="Priorytet">
-              <USelect
-                v-model="caseForm.priority"
-                :items="[
-                  { label: 'Niski', value: 'low' },
-                  { label: 'Normalny', value: 'normal' },
-                  { label: 'Wysoki', value: 'high' },
-                  { label: 'Pilny', value: 'urgent' },
-                ]"
-              />
             </UFormField>
             <UButton type="submit" icon="i-lucide-save" variant="solid" :loading="savingCase">
               Zapisz sprawę

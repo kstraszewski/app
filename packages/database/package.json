@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "db:reset": "node ./scripts/local-supabase.mjs reset",
+    "db:seed-demo": "node ./scripts/local-supabase.mjs seed-demo",
     "db:setup": "node ./scripts/local-supabase.mjs setup",
     "db:start": "node ./scripts/local-supabase.mjs start",
     "db:status": "node ./scripts/local-supabase.mjs status",

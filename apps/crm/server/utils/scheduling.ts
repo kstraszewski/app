@@ -339,6 +339,68 @@ export async function getPublicSchedulingClient(event: H3Event): Promise<any> {
   return serverSupabaseServiceRole(event) as any
 }
 
+export async function ensureGenericMeetingService(
+  event: H3Event,
+  organizationId: string,
+  facilityId: string,
+): Promise<Record<string, any>> {
+  const serviceRole = serverSupabaseServiceRole(event) as any
+  const { data: service, error: serviceError } = await serviceRole
+    .from('booking_services')
+    .upsert({
+      organization_id: organizationId,
+      name: 'Spotkanie',
+      slug: 'spotkanie',
+      description: 'Ogólne spotkanie z ekspertem.',
+      duration_minutes: 60,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      slot_interval_minutes: 15,
+      min_notice_minutes: 60,
+      max_advance_days: 90,
+      is_active: true,
+    }, { onConflict: 'organization_id,slug' })
+    .select('*')
+    .single()
+  throwDbError(serviceError)
+
+  const { error: facilityServiceError } = await serviceRole
+    .from('facility_services')
+    .upsert({
+      organization_id: organizationId,
+      facility_id: facilityId,
+      service_id: service.id,
+      is_active: true,
+    }, { onConflict: 'organization_id,facility_id,service_id' })
+  throwDbError(facilityServiceError)
+
+  const { data: experts, error: expertsError } = await serviceRole
+    .from('facility_memberships')
+    .select('user_id')
+    .eq('organization_id', organizationId)
+    .eq('facility_id', facilityId)
+    .eq('is_bookable', true)
+  throwDbError(expertsError)
+
+  if (experts?.length) {
+    const { error: assignmentsError } = await serviceRole
+      .from('facility_service_experts')
+      .upsert(
+        experts.map((expert: any) => ({
+          organization_id: organizationId,
+          facility_id: facilityId,
+          service_id: service.id,
+          user_id: expert.user_id,
+          is_active: true,
+        })),
+        { onConflict: 'organization_id,facility_id,service_id,user_id' },
+      )
+    throwDbError(assignmentsError)
+  }
+
+  return service
+}
+
 export async function assertPublicBookingRateLimit(
   event: H3Event,
   scope: 'catalog' | 'slots' | 'booking',
@@ -439,6 +501,13 @@ export async function requireFacilityPermission(
     }
   }
 
+  if (permission === 'manage') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Organization administrator required',
+    })
+  }
+
   const { data: directMembership, error: membershipError } = await session.supabase
     .from('facility_memberships')
     .select('role')
@@ -449,15 +518,11 @@ export async function requireFacilityPermission(
   throwDbError(membershipError)
 
   if (directMembership) {
-    const canManage = directMembership.role === 'admin'
-    if (permission === 'manage' && !canManage) {
-      throw createError({ statusCode: 403, statusMessage: 'Facility admin required' })
-    }
     return {
       facility,
       source: 'facility',
-      role: canManage ? 'admin' : 'member',
-      canManage,
+      role: 'member',
+      canManage: false,
     }
   }
 
@@ -481,9 +546,6 @@ export async function requireFacilityPermission(
     if (memberships.length) {
       // Team membership grants access to a linked facility, but a team admin
       // administers the link/team, not the facility itself.
-      if (permission === 'manage') {
-        throw createError({ statusCode: 403, statusMessage: 'Facility admin required' })
-      }
       return {
         facility,
         source: 'team',

@@ -92,6 +92,22 @@ export default defineEventHandler(async (event) => {
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
+  const { data: caseLinks, error: caseLinksError } = await session.supabase
+    .from('crm_case_clients')
+    .select('case_id')
+    .eq('organization_id', session.organizationId)
+    .eq('client_id', id)
+  throwDbError(caseLinksError)
+  const clientCaseIds = [...new Set((caseLinks ?? []).map((link: any) => String(link.case_id)))]
+  const casesRequest = clientCaseIds.length
+    ? session.supabase
+        .from('crm_cases')
+        .select('id, title, closed_at, created_at, updated_at')
+        .eq('organization_id', session.organizationId)
+        .in('id', clientCaseIds)
+        .order('updated_at', { ascending: false })
+    : Promise.resolve({ data: [], error: null })
+
   const [
     peopleResult,
     casesResult,
@@ -108,12 +124,7 @@ export default defineEventHandler(async (event) => {
       .eq('client_id', id)
       .order('role', { ascending: true })
       .order('created_at', { ascending: true }),
-    session.supabase
-      .from('crm_cases')
-      .select('*')
-      .eq('organization_id', session.organizationId)
-      .eq('client_id', id)
-      .order('updated_at', { ascending: false }),
+    casesRequest,
     session.supabase
       .from('crm_activities')
       .select('*', { count: 'exact' })
@@ -146,7 +157,25 @@ export default defineEventHandler(async (event) => {
   throwDbError(appointmentsResult.error)
 
   const people = peopleResult.data ?? []
-  const cases = casesResult.data ?? []
+  const caseRows = casesResult.data ?? []
+  const caseIds = caseRows.map((crmCase: any) => String(crmCase.id))
+  const { data: caseOffers, error: caseOffersError } = caseIds.length
+    ? await session.supabase
+        .from('crm_case_offer_snapshots')
+        .select('case_id')
+        .eq('organization_id', session.organizationId)
+        .in('case_id', caseIds)
+    : { data: [], error: null }
+  throwDbError(caseOffersError)
+  const offerCountByCase = new Map<string, number>()
+  for (const offer of caseOffers ?? []) {
+    const caseId = String(offer.case_id)
+    offerCountByCase.set(caseId, (offerCountByCase.get(caseId) ?? 0) + 1)
+  }
+  const cases = caseRows.map((crmCase: any) => ({
+    ...crmCase,
+    offer_count: offerCountByCase.get(String(crmCase.id)) ?? 0,
+  }))
   const consentEvents = consentEventsResult.data ?? []
   const consentHistory = consentEvents.slice(
     consentHistoryOffset,
@@ -154,11 +183,11 @@ export default defineEventHandler(async (event) => {
   )
   const consentDefinitions = consentDefinitionsResult.data ?? []
   const appointments = appointmentsResult.data ?? []
-  const caseIds = cases
+  const relatedCaseIds = cases
     .map((item: any) => String(item.id))
     .filter((uuid: string) => uuidPattern.test(uuid))
-  const relatedEntityFilter = caseIds.length
-    ? `client_id.eq.${id},case_id.in.(${caseIds.join(',')})`
+  const relatedEntityFilter = relatedCaseIds.length
+    ? `client_id.eq.${id},case_id.in.(${relatedCaseIds.join(',')})`
     : `client_id.eq.${id}`
 
   const [tasksResult, openTasksResult, documentsResult] = await Promise.all([

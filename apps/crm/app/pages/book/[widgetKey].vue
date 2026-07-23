@@ -102,28 +102,23 @@ const bookableServices = computed(() => data.value.services.filter((service) => 
 const bookingUnavailableReason = computed(() => {
   if (!data.value.services.length) {
     return {
-      title: 'Brak dostępnych usług',
-      description: 'Placówka nie udostępniła jeszcze usług, które można zarezerwować przez ten widget.',
+      title: 'Brak dostępnych terminów',
+      description: 'Placówka nie ma jeszcze aktywnej konfiguracji spotkań.',
     }
   }
   if (!bookableServices.value.length) {
     return data.value.widget.fixedExpertUserId
       ? {
           title: 'Ekspert jest obecnie niedostępny',
-          description: 'Wybrany ekspert nie obsługuje obecnie żadnej z usług dostępnych w tym widgecie.',
+          description: 'Wybrany ekspert nie przyjmuje obecnie spotkań przez ten widget.',
         }
       : {
           title: 'Brak dostępnych ekspertów',
-          description: 'Żaden ekspert nie obsługuje obecnie usług dostępnych w tym widgecie.',
+          description: 'Żaden ekspert nie przyjmuje obecnie spotkań przez ten widget.',
         }
   }
   return null
 })
-
-const serviceItems = computed(() => bookableServices.value.map(service => ({
-  label: `${service.name} · ${service.durationMinutes} min`,
-  value: service.id,
-})))
 
 const matchingExperts = computed(() => data.value.experts.filter((expert) => {
   return expertSupportsService(expert, selectedServiceId.value)
@@ -410,7 +405,7 @@ watch(() => data.value.widget.fixedExpertUserId, (expertUserId) => {
 }, { immediate: true })
 watch(bookableServices, (services) => {
   if (services.some(service => service.id === selectedServiceId.value)) return
-  selectedServiceId.value = services.length === 1 ? services[0]?.id ?? '' : ''
+  selectedServiceId.value = services[0]?.id ?? ''
 }, { immediate: true })
 watch(() => data.value.consents, (consents) => {
   const versionIds = new Set(consents.map(consent => consent.versionId))
@@ -488,7 +483,6 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         <h2>Do zobaczenia na spotkaniu</h2>
         <dl>
           <div><dt>Termin</dt><dd>{{ confirmationDate(confirmation.appointment.startsAt) }}</dd></div>
-          <div><dt>Usługa</dt><dd>{{ confirmation.appointment.serviceName }}</dd></div>
           <div><dt>Ekspert</dt><dd>{{ confirmation.appointment.expertName }}</dd></div>
           <div><dt>Placówka</dt><dd>{{ confirmation.appointment.facilityName }}</dd></div>
         </dl>
@@ -540,19 +534,10 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         <section class="booking-section" aria-labelledby="booking-details-title">
           <div class="booking-section__heading">
             <span>01</span>
-            <div><h2 id="booking-details-title">Wybierz spotkanie</h2><p>Usługa, ekspert i dzień.</p></div>
+            <div><h2 id="booking-details-title">Wybierz spotkanie</h2><p>Ekspert i dzień.</p></div>
           </div>
 
           <div class="booking-fields">
-            <UFormField name="service" label="Usługa" required>
-              <USelect
-                v-model="selectedServiceId"
-                class="w-full"
-                :items="serviceItems"
-                placeholder="Wybierz usługę"
-                icon="i-lucide-briefcase-business"
-              />
-            </UFormField>
             <UFormField v-if="canChooseExpert" name="expert" label="Ekspert" :required="expertRequired">
               <USelect
                 v-model="selectedExpertId"
@@ -604,7 +589,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
           </div>
           <div v-else class="booking-empty">
             <UIcon name="i-lucide-calendar-x-2" />
-            <p>{{ selectedServiceId && selectedDate ? 'Brak wolnych terminów tego dnia.' : 'Wybierz usługę i dzień, żeby zobaczyć terminy.' }}</p>
+            <p>{{ selectedServiceId && selectedDate ? 'Brak wolnych terminów tego dnia.' : 'Wybierz dzień, żeby zobaczyć terminy.' }}</p>
           </div>
         </section>
 

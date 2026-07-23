@@ -65,6 +65,9 @@ const { data: rawDetail, status, error, refresh } = await useFetch<unknown>(endp
   default: () => ({ data: null }),
 })
 const detail = computed(() => normalizeMortgageOfferDetail<MortgageOfferDraftDataV2>(rawDetail.value))
+const bankPath = computed(() => detail.value?.bank?.id
+  ? `/org/${organizationSlug.value}/mortgages/institutions/${encodeURIComponent(detail.value.bank.id)}`
+  : '')
 
 const draft = ref<MortgageOfferDraftDataV2>(normalizeMortgageOfferDraftV2(null))
 const revision = ref(0)
@@ -75,6 +78,14 @@ const publishing = ref(false)
 const publishOpen = ref(false)
 const conflict = ref<string | null>(null)
 const editorForm = useTemplateRef('editorForm')
+const legacyDraftNotice = computed(() => (
+  detail.value?.draft.seededFromLegacy === true
+  || draft.value.migration?.fromSchema === 'legacy-flat-v1'
+))
+const legacyDraftDescription = computed(() => (
+  detail.value?.draft.seedWarnings[0]
+  ?? 'Ta oferta została przeniesiona z wcześniejszego modelu danych. Sprawdź pola oznaczone jako nieznane, zapisz szkic i dopiero potem opublikuj nową wersję.'
+))
 
 const editorSteps = [
   { value: 'basics', slot: 'basics', title: 'Podstawy', description: 'Ważność i dostępność', icon: 'i-lucide-settings-2' },
@@ -85,7 +96,14 @@ const editorSteps = [
   { value: 'documents', slot: 'documents', title: 'Dokumenty', description: 'Checklista i źródła', icon: 'i-lucide-files' },
   { value: 'preview', slot: 'preview', title: 'Laboratorium', description: 'Próba kalkulacji', icon: 'i-lucide-flask-conical' },
 ]
-const activeStep = ref('basics')
+function editorStepFromQuery(value: unknown) {
+  const requested = Array.isArray(value) ? value[0] : value
+  return typeof requested === 'string' && editorSteps.some(step => step.value === requested)
+    ? requested
+    : 'basics'
+}
+
+const activeStep = ref(editorStepFromQuery(route.query.step))
 
 const draftSchema = z.object({
   schemaVersion: z.literal('openexpert.mortgage-offer/2.0'),
@@ -290,6 +308,7 @@ watch(detail, (value) => {
 
 watch(() => draft.value.features, syncPreviewSelections, { deep: true })
 watch(() => draft.value.costs, syncPreviewCostSettlements, { deep: true })
+watch(() => route.query.step, value => { activeStep.value = editorStepFromQuery(value) })
 useHead(() => ({ title: `${detail.value?.product.name ?? 'Edycja oferty'} — OpenExpert` }))
 
 defineShortcuts({
@@ -771,6 +790,16 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
   <CrmShell :title="detail?.product.name ?? 'Edycja oferty'" eyebrow="Backoffice · wersjonowany szkic oferty">
     <template #actions>
       <UButton :to="listPath" icon="i-lucide-arrow-left" color="neutral" variant="outline">Katalog</UButton>
+      <UButton
+        v-if="detail?.bank && bankPath"
+        :to="bankPath"
+        icon="i-lucide-landmark"
+        color="neutral"
+        variant="outline"
+        square
+        :aria-label="`Profil banku: ${detail.bank.name}`"
+        :title="`Profil banku: ${detail.bank.name}`"
+      />
       <UBadge v-if="detail?.product.hasPublishedVersion" color="success" variant="subtle">
         Opublikowana · {{ detail.versions[0] ? `v${detail.versions[0].revision}` : 'live' }}
       </UBadge>
@@ -818,6 +847,15 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
       </div>
 
       <template v-else-if="detail">
+        <UAlert
+          v-if="legacyDraftNotice"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-file-warning"
+          title="Oferta przygotowana do migracji na kalkulator V2"
+          :description="legacyDraftDescription"
+        />
+
         <section class="offer-editor__statusbar">
           <div>
             <span class="offer-editor__status-icon"><UIcon name="i-lucide-cloud" /></span>
@@ -1184,18 +1222,19 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 </template>
 
 <style scoped>
-.offer-editor { display: grid; gap: 16px; }
+.offer-editor { display: grid; gap: 16px; min-width: 0; }
+.offer-editor > *, .offer-editor form { min-width: 0; max-width: 100%; }
 .offer-editor__loading { display: grid; gap: 16px; }
-.offer-editor__statusbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.offer-editor__statusbar > div { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-left: 1px solid var(--ui-border); }
+.offer-editor__statusbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
+.offer-editor__statusbar > div { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 13px 16px; border-left: 1px solid var(--ui-border); }
 .offer-editor__statusbar > div:first-child { border-left: 0; }
-.offer-editor__statusbar span:last-child { display: grid; gap: 2px; }
+.offer-editor__statusbar span:last-child { display: grid; gap: 2px; min-width: 0; }
 .offer-editor__statusbar small { color: var(--ui-text-muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .offer-editor__statusbar strong { color: var(--ui-text-highlighted); font-size: 12px; }
 .offer-editor__status-icon { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px; color: var(--ui-text-toned); background: var(--ui-bg-elevated); }
-.offer-editor__workspace { overflow: visible; }
-.offer-editor__stepper { min-width: 0; }
-.offer-editor__stepper :deep([data-slot="header"]) { overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.offer-editor__workspace { min-width: 0; max-width: 100%; }
+.offer-editor__stepper { min-width: 0; max-width: 100%; }
+.offer-editor__stepper :deep([data-slot="header"]) { overflow-x: auto; max-width: 100%; padding-bottom: 6px; overscroll-behavior-inline: contain; scrollbar-width: thin; }
 .offer-editor__stepper :deep([data-slot="item"]) { min-width: 128px; }
 .editor-section { display: grid; gap: 22px; padding-top: 22px; }
 .editor-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--ui-border); }
@@ -1257,19 +1296,37 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 .publish-review dt { color: var(--ui-text-muted); }
 .publish-review dd { margin: 0; color: var(--ui-text-highlighted); font-weight: 600; text-align: right; }
 @media (max-width: 1200px) {
-  .form-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .result-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .option-row { grid-template-columns: 1fr 1fr 34px; }
-  .option-row > :nth-child(3) { grid-column: span 2; }
-}
-@media (max-width: 900px) {
+  .offer-editor__stepper :deep([data-slot="header"]) {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+  .offer-editor__stepper :deep([data-slot="item"]) {
+    min-width: 0;
+    padding: 10px 8px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: var(--ui-bg-muted);
+  }
+  .offer-editor__stepper :deep([data-slot="item"][data-state="active"]) {
+    border-color: var(--ui-border-accented);
+    background: var(--ui-bg-elevated);
+  }
+  .offer-editor__stepper :deep([data-slot="separator"]) { display: none; }
   .offer-editor__statusbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .offer-editor__statusbar > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--ui-border); }
   .offer-editor__statusbar > div:nth-child(4) { border-top: 1px solid var(--ui-border); }
   .form-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .form-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .result-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .option-row { grid-template-columns: 1fr 1fr 34px; }
+  .option-row > :nth-child(3) { grid-column: span 2; }
   .laboratory { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  .offer-editor__stepper :deep([data-slot="header"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .offer-editor__statusbar, .form-grid--2, .form-grid--3, .form-grid--4, .result-metrics { grid-template-columns: 1fr; }
   .offer-editor__statusbar > div { border-top: 1px solid var(--ui-border); border-left: 0; }
   .offer-editor__statusbar > div:first-child { border-top: 0; }

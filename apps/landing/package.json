@@ -2,6 +2,9 @@
   "name": "@openexpert/landing",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev --host 127.0.0.1 --port 3003",
@@ -9,19 +12,30 @@
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3003",
     "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test:pdf": "node --test --experimental-strip-types test/*.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "4.0.0-canary.103",
     "@nuxt/icon": "^2.2.1",
     "@nuxtjs/supabase": "^2.0.5",
     "@openexpert/email": "workspace:*",
+    "@openexpert/multiform": "workspace:*",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@rive-app/webgl2": "^2.38.5",
+    "ai": "7.0.0-canary.171",
+    "eve": "0.22.5",
+    "fflate": "^0.8.3",
     "nuxt": "^4.4.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200",
     "vue": "^3.5.32",
-    "vue-router": "^5.0.4"
+    "vue-router": "^5.0.4",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.102",
+    "just-bash": "^3.1.0",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.3.7"
   }

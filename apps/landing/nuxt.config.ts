@@ -12,6 +12,13 @@ const hasSupabaseConfig = Boolean(
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
+  typescript: {
+    tsConfig: {
+      compilerOptions: {
+        allowImportingTsExtensions: true,
+      },
+    },
+  },
   vite: {
     server: {
       hmr: false,
@@ -24,7 +31,10 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxtjs/supabase', '@nuxt/icon'],
+  modules: ['eve/nuxt', '@nuxtjs/supabase', '@nuxt/icon'],
+  eve: {
+    eveRoot: '../../multiform-agent',
+  },
   icon: {
     provider: 'none',
     clientBundle: {
@@ -33,6 +43,7 @@ export default defineNuxtConfig({
         'lucide:arrow-left',
         'lucide:arrow-right',
         'lucide:bot',
+        'lucide:briefcase-business',
         'lucide:calendar-days',
         'lucide:check',
         'lucide:circle-check',
@@ -43,6 +54,7 @@ export default defineNuxtConfig({
         'lucide:github',
         'lucide:house',
         'lucide:landmark',
+        'lucide:mail',
         'lucide:menu',
         'lucide:message-square',
         'lucide:palette',
@@ -62,6 +74,30 @@ export default defineNuxtConfig({
       ],
     },
   },
+  nitro: {
+    externals: {
+      traceInclude: [
+        fileURLToPath(new URL('./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url)),
+      ],
+    },
+    typescript: {
+      tsConfig: {
+        compilerOptions: {
+          allowImportingTsExtensions: true,
+        },
+      },
+    },
+    serverAssets: [
+      {
+        baseName: 'multiform-mocks',
+        dir: fileURLToPath(new URL('../../mock-files', import.meta.url)),
+      },
+      {
+        baseName: 'multiform-fonts',
+        dir: fileURLToPath(new URL('./public/fonts', import.meta.url)),
+      },
+    ],
+  },
   runtimeConfig: {
     resend: {
       apiKey: '',
@@ -71,6 +107,7 @@ export default defineNuxtConfig({
     public: {
       openexpert: {
         hasSupabaseConfig,
+        crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL || 'http://127.0.0.1:3004',
       },
       supabase: {
         url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
@@ -80,10 +117,15 @@ export default defineNuxtConfig({
   },
   supabase: {
     types: databaseTypes,
+    cookiePrefix: process.env.NODE_ENV === 'production' ? undefined : 'openexpert-local-auth',
+    cookieOptions: {
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/', '/personalizacja', '/waitlist', '/api/mcp'],
+      exclude: ['/', '/personalizacja', '/waitlist', '/multiform-eve', '/multiform-eve/admin', '/api/mcp'],
     },
   },
   css: ['~/assets/css/design.css'],

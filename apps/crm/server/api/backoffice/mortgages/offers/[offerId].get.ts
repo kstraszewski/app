@@ -4,6 +4,7 @@ import {
   requireMortgageBackoffice,
   throwMortgageBackofficeDbError,
 } from '~~/server/utils/mortgage-backoffice'
+import { mortgageLegacyVersionToDraft } from '~~/server/utils/mortgage-legacy-offer-draft'
 import { getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
@@ -12,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: product, error: productError } = await serviceRole
     .from('mortgage_products')
-    .select('id, bank_id, slug, name, category, distribution_channel, is_active, current_published_version_id, archived_at, created_at, updated_at, mortgage_banks!inner(id, slug, name, logo_url)')
+    .select('id, bank_id, slug, name, product_kind, category, distribution_channel, is_active, current_published_version_id, archived_at, created_at, updated_at, mortgage_banks!inner(id, slug, name, logo_url)')
     .eq('id', offerId)
     .maybeSingle()
   throwMortgageBackofficeDbError(productError)
@@ -34,6 +35,8 @@ export default defineEventHandler(async (event) => {
   throwMortgageBackofficeDbError(versionsError)
 
   let resolvedDraftData = draft?.draft_data ?? null
+  let seededFromLegacy = false
+  let seedWarnings: string[] = []
   if (!resolvedDraftData && product.current_published_version_id) {
     const { data: variant, error: variantError } = await serviceRole
       .from('mortgage_product_version_variants')
@@ -42,7 +45,42 @@ export default defineEventHandler(async (event) => {
       .eq('is_default', true)
       .maybeSingle()
     throwMortgageBackofficeDbError(variantError)
-    resolvedDraftData = variant?.pricing_config ?? null
+    const pricingConfig = variant?.pricing_config
+    const isV2PricingConfig = pricingConfig
+      && typeof pricingConfig === 'object'
+      && !Array.isArray(pricingConfig)
+      && pricingConfig.schemaVersion === 'openexpert.mortgage-offer/2.0'
+    if (isV2PricingConfig) resolvedDraftData = pricingConfig
+  }
+
+  // Offers published before the V2 editor contain the flat calculator shape.
+  // Convert it only for the editor preview; the immutable publication remains
+  // unchanged until a SuperAdmin explicitly saves and publishes the V2 draft.
+  if (!resolvedDraftData && product.current_published_version_id) {
+    const { data: legacyVersion, error: legacyVersionError } = await serviceRole
+      .from('mortgage_product_versions')
+      .select('id, version_key, source_document_id, effective_from, effective_to, retrieved_at, calculation_date, interest_type, fixed_rate_pct, fixed_period_months, margin_pct, reference_rate_code, reference_rate_pct, reference_rate_as_of, min_amount, max_amount, min_term_months, max_term_months, max_ltv_pct, cost_rules, requirements, document_requirements, assumptions, unknown_fields, calculator_schema_version, calculator_engine_version')
+      .eq('id', product.current_published_version_id)
+      .maybeSingle()
+    throwMortgageBackofficeDbError(legacyVersionError)
+
+    if (legacyVersion && Number(legacyVersion.calculator_schema_version ?? 1) < 2) {
+      let sourceDocument = null
+      if (legacyVersion.source_document_id) {
+        const { data: source, error: sourceError } = await serviceRole
+          .from('mortgage_source_documents')
+          .select('id, title, source_url, source_kind, sha256, retrieved_at, published_at')
+          .eq('id', legacyVersion.source_document_id)
+          .maybeSingle()
+        throwMortgageBackofficeDbError(sourceError)
+        sourceDocument = source
+      }
+
+      const seeded = mortgageLegacyVersionToDraft(legacyVersion, sourceDocument)
+      resolvedDraftData = seeded.draftData
+      seededFromLegacy = true
+      seedWarnings = seeded.warnings
+    }
   }
 
   const rawBank = Array.isArray(product.mortgage_banks)
@@ -65,6 +103,8 @@ export default defineEventHandler(async (event) => {
         code: product.slug,
         name: product.name,
         slug: product.slug,
+        productKind: product.product_kind,
+        category: product.category,
         productType: product.category,
         currency: 'PLN',
         status,
@@ -85,6 +125,8 @@ export default defineEventHandler(async (event) => {
         validationReport: draft?.validation_report ?? {},
         updatedAt: draft?.updated_at ?? null,
         updatedBy: draft?.updated_by_user_id ?? null,
+        seededFromLegacy,
+        seedWarnings,
       },
       versions: (versions ?? []).map((version: any) => ({
         id: version.id,

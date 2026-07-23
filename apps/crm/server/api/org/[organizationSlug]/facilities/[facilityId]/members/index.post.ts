@@ -3,7 +3,6 @@ import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
   assertOrganizationMemberIds,
   booleanValue,
-  enumValue,
   integerValue,
   requireFacilityPermission,
   uuidValue,
@@ -22,7 +21,7 @@ export default defineEventHandler(async (event) => {
       organization_id: session.organizationId,
       facility_id: access.facility.id,
       user_id: userId,
-      role: body.role === undefined ? 'member' : enumValue(body.role, 'role', ['admin', 'member'] as const),
+      role: 'member',
       is_bookable: body.isBookable === undefined && body.is_bookable === undefined
         ? true
         : booleanValue(body.isBookable ?? body.is_bookable, 'isBookable'),

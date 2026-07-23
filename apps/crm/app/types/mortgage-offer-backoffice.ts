@@ -1,6 +1,7 @@
 export type JsonObject = Record<string, unknown>
 
 export type MortgageOfferLifecycleStatus = 'draft' | 'published' | 'archived'
+export type MortgageProductKind = 'mortgage' | 'home_equity'
 
 export interface MortgageOfferSummary {
   id: string
@@ -8,6 +9,9 @@ export interface MortgageOfferSummary {
   code: string
   name: string
   slug: string
+  productKind: MortgageProductKind
+  category: string
+  /** @deprecated Use productKind. Kept while older UI consumers migrate. */
   productType: string
   currency: string
   /** Compatibility status for clients that can display only one lifecycle. */
@@ -38,6 +42,9 @@ export interface MortgageOfferProductRecord {
   code: string
   name: string
   slug: string
+  productKind: MortgageProductKind
+  category: string
+  /** @deprecated Use productKind. Kept while older UI consumers migrate. */
   productType: string
   currency: string
   status: MortgageOfferLifecycleStatus
@@ -55,6 +62,9 @@ export interface MortgageOfferDraftRecord<TDraft = JsonObject> {
   draftData: TDraft
   updatedAt: string | null
   updatedBy: string | null
+  /** True only for an unsaved editor seed converted from a legacy publication. */
+  seededFromLegacy: boolean
+  seedWarnings: string[]
 }
 
 export interface MortgageOfferVersionSummary {
@@ -96,6 +106,20 @@ function lifecycleStatus(value: unknown): MortgageOfferLifecycleStatus {
   return value === 'published' || value === 'archived' ? value : 'draft'
 }
 
+function productKind(value: unknown): MortgageProductKind {
+  return value === 'home_equity' || value === 'secured_loan' ? 'home_equity' : 'mortgage'
+}
+
+function legacyCategory(source: JsonObject): string {
+  const explicitCategory = string(source.category)
+  if (explicitCategory) return explicitCategory
+  const legacyProductType = string(source.productType ?? source.product_type)
+  if (['housing', 'construction', 'refinance', 'eco', 'family'].includes(legacyProductType)) {
+    return legacyProductType
+  }
+  return 'housing'
+}
+
 function unwrapData(value: unknown): unknown {
   const source = record(value)
   return 'data' in source ? source.data : value
@@ -124,6 +148,9 @@ function normalizeOffer(value: unknown, fallbackBankId: string): MortgageOfferSu
       ?? source.publication_status
       ?? (status === 'archived' ? 'archived' : hasPublishedVersion ? 'published' : 'draft'),
   )
+  const normalizedProductKind = productKind(
+    source.productKind ?? source.product_kind ?? source.productType ?? source.product_type,
+  )
 
   return {
     id: string(source.id ?? source.offerId ?? source.offer_id),
@@ -131,7 +158,9 @@ function normalizeOffer(value: unknown, fallbackBankId: string): MortgageOfferSu
     code: string(source.code ?? source.productCode ?? source.product_code),
     name: string(source.name ?? source.productName ?? source.product_name, 'Oferta hipoteczna'),
     slug: string(source.slug),
-    productType: string(source.productType ?? source.product_type, 'mortgage'),
+    productKind: normalizedProductKind,
+    category: legacyCategory(source),
+    productType: string(source.productType ?? source.product_type, legacyCategory(source)),
     currency: string(source.currency ?? currentVersion.currency, 'PLN'),
     status,
     publicationStatus,
@@ -200,13 +229,21 @@ export function normalizeMortgageOfferDetail<TDraft = JsonObject>(value: unknown
       ?? productSource.publication_status
       ?? (status === 'archived' ? 'archived' : hasPublishedVersion ? 'published' : 'draft'),
   )
+  const normalizedProductKind = productKind(
+    productSource.productKind
+      ?? productSource.product_kind
+      ?? productSource.productType
+      ?? productSource.product_type,
+  )
   const product: MortgageOfferProductRecord = {
     id: productId,
     bankId: string(productSource.bankId ?? productSource.bank_id),
     code: string(productSource.code ?? productSource.productCode ?? productSource.product_code),
     name: string(productSource.name, 'Oferta hipoteczna'),
     slug: string(productSource.slug),
-    productType: string(productSource.productType ?? productSource.product_type, 'mortgage'),
+    productKind: normalizedProductKind,
+    category: legacyCategory(productSource),
+    productType: string(productSource.productType ?? productSource.product_type, legacyCategory(productSource)),
     currency: string(productSource.currency ?? record(draftSource.draftData ?? draftSource.draft_data).currency, 'PLN'),
     status,
     publicationStatus,
@@ -239,6 +276,12 @@ export function normalizeMortgageOfferDetail<TDraft = JsonObject>(value: unknown
       draftData: record(rawDraftData) as TDraft,
       updatedAt: nullableString(draftSource.updatedAt ?? draftSource.updated_at),
       updatedBy: nullableString(draftSource.updatedBy ?? draftSource.updated_by),
+      seededFromLegacy: draftSource.seededFromLegacy === true || draftSource.seeded_from_legacy === true,
+      seedWarnings: (Array.isArray(draftSource.seedWarnings)
+        ? draftSource.seedWarnings
+        : Array.isArray(draftSource.seed_warnings)
+          ? draftSource.seed_warnings
+          : []).filter((warning): warning is string => typeof warning === 'string'),
     },
     versions,
     bank: Object.keys(bankSource).length

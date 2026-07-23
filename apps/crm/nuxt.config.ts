@@ -5,6 +5,10 @@ const databaseTypes = fileURLToPath(
   new URL('../../packages/database/database.types.ts', import.meta.url),
 )
 
+const multiformServiceUrl = process.env.NUXT_MULTIFORM_SERVICE_URL
+  || process.env.NUXT_PUBLIC_MULTIFORM_EVE_URL?.replace(/\/multiform-eve\/?$/u, '')
+  || 'http://127.0.0.1:3013'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
@@ -32,7 +36,20 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxt/ui', '@nuxtjs/supabase'],
+  modules: ['@nuxt/ui', '@nuxtjs/supabase', 'eve/nuxt'],
+  eve: {
+    eveRoot: 'agent',
+  },
+  // Eve runs its own Nitro/H3 runtime in development. Keep icons in the client
+  // bundle so the CRM does not need a mixed-runtime /api/_nuxt_icon endpoint.
+  icon: {
+    provider: 'none',
+    clientBundle: {
+      icons: ['lucide:monitor'],
+      scan: true,
+      sizeLimitKb: 512,
+    },
+  },
   nitro: {
     typescript: {
       tsConfig: {
@@ -55,6 +72,9 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    multiformServiceUrl,
+    aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
+    googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
     bookingSecurity: {
       trustProxy: false,
       rateLimitSecret: '',
@@ -82,6 +102,11 @@ export default defineNuxtConfig({
   },
   supabase: {
     types: databaseTypes,
+    cookiePrefix: process.env.NODE_ENV === 'production' ? undefined : 'openexpert-local-auth',
+    cookieOptions: {
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
     redirectOptions: {
       login: '/login',
       callback: '/confirm',

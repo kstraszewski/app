@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
       .order('name'),
     serviceRole
       .from('mortgage_products')
-      .select('id, bank_id, slug, name, category, distribution_channel, is_active, current_published_version_id, revision, archived_at, updated_at')
+      .select('id, bank_id, slug, name, product_kind, category, distribution_channel, is_active, current_published_version_id, revision, archived_at, updated_at')
       .order('name'),
     serviceRole
       .from('mortgage_product_drafts')
@@ -60,6 +60,8 @@ export default defineEventHandler(async (event) => {
       code: product.slug,
       name: product.name,
       slug: product.slug,
+      productKind: product.product_kind,
+      category: product.category,
       productType: product.category,
       currency: 'PLN',
       status,

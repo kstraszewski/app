@@ -24,7 +24,7 @@ export function useAuthFlow() {
     const requested = safeRedirect(value, '')
     if (requested.startsWith('/org/')) return requested
 
-    const legacyOrganizationPath = /^\/(dashboard|clients|cases|mortgages|settings|teams)(\/|$)/.test(requested)
+    const legacyOrganizationPath = /^\/(dashboard|clients|cases|facilities|mortgages|settings|teams)(\/|$)/.test(requested)
     if (requested && !legacyOrganizationPath) return requested
 
     const { data: profile, error: profileError } = await supabase

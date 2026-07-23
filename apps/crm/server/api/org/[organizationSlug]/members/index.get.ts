@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const role: 'expert' | 'admin' = session.role === 'admin' ? 'admin' : 'expert'
   const { data, error } = await session.supabase
     .from('organization_memberships')
-    .select('user_id, role, user:users!inner(email, full_name)')
+    .select('user_id, role, user:users!organization_memberships_user_id_fkey!inner(email, full_name)')
     .eq('organization_id', session.organizationId)
 
   throwDbError(error)

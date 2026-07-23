@@ -26,8 +26,6 @@ type ConsentChoice = 'granted' | 'declined'
 
 interface ClientCreateFormState {
   display_name: string
-  status_code: string
-  lead_source: string
   owner_user_id: string
   first_name: string
   last_name: string
@@ -38,7 +36,7 @@ interface ClientCreateFormState {
 }
 
 interface ActiveFilterChip {
-  key: 'search' | 'owner' | 'status' | 'source' | 'tag' | 'contact' | 'consent' | 'consentDecision' | 'createdFrom' | 'createdTo' | 'updatedFrom' | 'updatedTo'
+  key: 'search' | 'owner' | 'tag' | 'contact' | 'consent' | 'consentDecision' | 'createdFrom' | 'createdTo' | 'updatedFrom' | 'updatedTo'
   label: string
 }
 
@@ -65,8 +63,6 @@ const createEmptyList = (): ClientListResponse => ({
 const searchInput = ref('')
 const search = ref('')
 const ownerFilter = ref('all')
-const statusFilter = ref('all')
-const sourceFilter = ref('all')
 const tagFilter = ref('all')
 const contactFilter = ref('all')
 const consentFilter = ref('all')
@@ -85,8 +81,6 @@ const consentDecisions = reactive<Record<string, ConsentChoice | undefined>>({})
 
 const form = reactive<ClientCreateFormState>({
   display_name: '',
-  status_code: 'lead',
-  lead_source: '',
   owner_user_id: '',
   first_name: '',
   last_name: '',
@@ -173,8 +167,6 @@ function localDateBoundary(value: string, endOfDay = false) {
 const clientsQuery = computed<ClientListQuery>(() => ({
   q: search.value || undefined,
   owner_user_id: ownerFilterUserId.value,
-  status_code: statusFilter.value === 'all' ? undefined : statusFilter.value,
-  lead_source: sourceFilter.value === 'all' ? undefined : sourceFilter.value,
   tags_any: tagFilter.value === 'all' ? undefined : tagFilter.value,
   consent_definition_id: consentFilter.value === 'all' ? undefined : consentFilter.value,
   consent_decision: consentFilter.value !== 'all' && consentDecisionFilter.value !== 'all'
@@ -213,8 +205,6 @@ const {
 watch([
   search,
   ownerFilter,
-  statusFilter,
-  sourceFilter,
   tagFilter,
   contactFilter,
   consentFilter,
@@ -248,23 +238,6 @@ function normalizeOptions(options: ClientFilterOption[] | undefined) {
       value: option.value,
     }))
 }
-
-const statusOptions = computed(() => normalizeOptions(filterConfiguration.value.statuses))
-const sourceOptions = computed(() => normalizeOptions(
-  filterConfiguration.value.sources.length
-    ? filterConfiguration.value.sources
-    : filterConfiguration.value.lead_sources,
-))
-
-const statusFilterItems = computed(() => [
-  { label: 'Wszystkie statusy', value: 'all' },
-  ...statusOptions.value,
-])
-
-const sourceFilterItems = computed(() => [
-  { label: 'Wszystkie źródła', value: 'all' },
-  ...sourceOptions.value,
-])
 
 const tagFilterItems = computed(() => [
   { label: 'Wszystkie tagi', value: 'all' },
@@ -334,14 +307,6 @@ const ownerFilterItems = computed(() => {
   }
 
   return ownerOptions
-})
-
-const createStatusItems = computed(() => {
-  const items = statusOptions.value.slice()
-  if (!items.some(item => item.value === 'lead')) {
-    items.unshift({ label: 'Lead', value: 'lead' })
-  }
-  return items
 })
 
 const sortItems = [
@@ -523,8 +488,6 @@ function validateClientForm(state: Partial<ClientCreateFormState>): FormError[] 
 
 function resetCreateForm() {
   form.display_name = ''
-  form.status_code = 'lead'
-  form.lead_source = ''
   form.owner_user_id = memberConfiguration.value.currentUserId
   form.first_name = ''
   form.last_name = ''
@@ -569,8 +532,6 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
 
   const body: CreateClientRequest = {
     display_name: compactText(form.display_name),
-    status_code: form.status_code,
-    lead_source: compactText(form.lead_source),
     primary_email: compactText(form.primary_email),
     primary_phone: compactText(form.primary_phone),
     tags: tags.length ? tags : undefined,
@@ -631,12 +592,6 @@ const activeFilterChips = computed<ActiveFilterChip[]>(() => {
   if (ownerFilter.value !== 'all') {
     chips.push({ key: 'owner', label: optionLabel(ownerFilterItems.value, ownerFilter.value) })
   }
-  if (statusFilter.value !== 'all') {
-    chips.push({ key: 'status', label: optionLabel(statusFilterItems.value, statusFilter.value) })
-  }
-  if (sourceFilter.value !== 'all') {
-    chips.push({ key: 'source', label: optionLabel(sourceFilterItems.value, sourceFilter.value) })
-  }
   if (tagFilter.value !== 'all') {
     chips.push({ key: 'tag', label: `Tag: ${optionLabel(tagFilterItems.value, tagFilter.value)}` })
   }
@@ -670,8 +625,6 @@ function clearFilter(key: ActiveFilterChip['key']) {
     search.value = ''
   }
   if (key === 'owner') ownerFilter.value = 'all'
-  if (key === 'status') statusFilter.value = 'all'
-  if (key === 'source') sourceFilter.value = 'all'
   if (key === 'tag') tagFilter.value = 'all'
   if (key === 'contact') contactFilter.value = 'all'
   if (key === 'consent') consentFilter.value = 'all'
@@ -686,8 +639,6 @@ function resetFilters() {
   searchInput.value = ''
   search.value = ''
   ownerFilter.value = 'all'
-  statusFilter.value = 'all'
-  sourceFilter.value = 'all'
   tagFilter.value = 'all'
   contactFilter.value = 'all'
   consentFilter.value = 'all'
@@ -735,9 +686,7 @@ const resultDescription = computed(() => {
 const columns: TableColumn<ClientListItem>[] = [
   { accessorKey: 'display_name', header: 'Klient' },
   { id: 'contact', header: 'Kontakt' },
-  { accessorKey: 'status_code', header: 'Status' },
   { accessorKey: 'owner_user_id', header: 'Opiekun' },
-  { accessorKey: 'lead_source', header: 'Źródło' },
   { accessorKey: 'updated_at', header: 'Aktualizacja' },
   { id: 'actions', header: '' },
 ]
@@ -791,22 +740,6 @@ const columns: TableColumn<ClientListItem>[] = [
           value-key="value"
           icon="i-lucide-user-round-check"
           aria-label="Filtruj po opiekunie"
-        />
-        <USelect
-          v-model="statusFilter"
-          :items="statusFilterItems"
-          value-key="value"
-          icon="i-lucide-circle-dot"
-          :disabled="filtersPending || Boolean(filtersError)"
-          aria-label="Filtruj po statusie"
-        />
-        <USelect
-          v-model="sourceFilter"
-          :items="sourceFilterItems"
-          value-key="value"
-          icon="i-lucide-waypoints"
-          :disabled="filtersPending || Boolean(filtersError)"
-          aria-label="Filtruj po źródle"
         />
         <USelect
           v-model="sortValue"
@@ -917,7 +850,7 @@ const columns: TableColumn<ClientListItem>[] = [
         variant="subtle"
         icon="i-lucide-list-filter"
         title="Nie udało się pobrać opcji filtrów"
-        description="Lista nadal może działać, ale filtry statusu i źródła oraz formularz nowego klienta są chwilowo niedostępne."
+        description="Lista nadal może działać, ale część opcji filtrowania jest chwilowo niedostępna."
         :actions="[{ label: 'Spróbuj ponownie', onClick: () => refreshFilters() }]"
       />
 
@@ -991,19 +924,11 @@ const columns: TableColumn<ClientListItem>[] = [
               </div>
             </template>
 
-            <template #status_code-cell="{ row }">
-              <CrmStatusBadge :status="row.original.status_code" />
-            </template>
-
             <template #owner_user_id-cell="{ row }">
               <span class="owner-cell">
                 <UIcon name="i-lucide-user-round-check" />
                 {{ clientOwnerLabel(row.original) }}
               </span>
-            </template>
-
-            <template #lead_source-cell="{ row }">
-              <span class="source-cell">{{ row.original.lead_source || '—' }}</span>
             </template>
 
             <template #updated_at-cell="{ row }">
@@ -1045,16 +970,11 @@ const columns: TableColumn<ClientListItem>[] = [
                   </UBadge>
                 </div>
               </div>
-              <CrmStatusBadge :status="client.status_code" />
             </div>
             <dl>
               <div>
                 <dt>Opiekun</dt>
                 <dd>{{ clientOwnerLabel(client) }}</dd>
-              </div>
-              <div>
-                <dt>Źródło</dt>
-                <dd>{{ client.lead_source || '—' }}</dd>
               </div>
               <div>
                 <dt>Aktualizacja</dt>
@@ -1120,7 +1040,7 @@ const columns: TableColumn<ClientListItem>[] = [
               <span><UIcon name="i-lucide-building-2" /></span>
               <div>
                 <h3 id="client-card-heading">Karta klienta</h3>
-                <p>Nazwa rekordu, status i odpowiedzialny opiekun.</p>
+                <p>Nazwa rekordu i odpowiedzialny opiekun.</p>
               </div>
             </div>
 
@@ -1132,19 +1052,6 @@ const columns: TableColumn<ClientListItem>[] = [
                 description="Opcjonalna, jeśli podasz dane osoby głównej."
               >
                 <UInput v-model="form.display_name" class="w-full" :maxlength="200" placeholder="Anna Kowalska lub ACME sp. z o.o." />
-              </UFormField>
-
-              <UFormField name="status_code" label="Status" required>
-                <USelect
-                  v-model="form.status_code"
-                  class="w-full"
-                  :items="createStatusItems"
-                  value-key="value"
-                />
-              </UFormField>
-
-              <UFormField name="lead_source" label="Źródło leada">
-                <UInput v-model="form.lead_source" class="w-full" :maxlength="200" placeholder="Polecenie, www, partner" />
               </UFormField>
 
               <UFormField

@@ -25,6 +25,7 @@ export type FinancingComparisonBaseline = {
   overpaymentStrategy: OverpaymentStrategy
   mortgageRegistrationMonth: number | null
   financeCommission: boolean
+  presetId: string | null
   selections: Record<string, string>
 }
 
@@ -198,6 +199,9 @@ export function getFinancingComparisonBaseline(
   const installmentType = scenario?.installmentType
   const overpaymentStrategy = scenario?.overpaymentStrategy ?? 'shorten_term'
   const mortgageRegistrationMonth = finiteNumber(scenario?.mortgageRegistrationMonth)
+  const presetId = typeof scenario?.presetId === 'string' && scenario.presetId.trim()
+    ? scenario.presetId.trim()
+    : null
   const rawSelections = asRecord(scenario?.selections) ?? {}
   const selections = Object.fromEntries(Object.entries(rawSelections).flatMap(([featureId, optionId]) => (
     typeof optionId === 'string' ? [[featureId, optionId]] : []
@@ -236,6 +240,7 @@ export function getFinancingComparisonBaseline(
     overpaymentStrategy,
     mortgageRegistrationMonth,
     financeCommission: scenario?.financeCommission !== false,
+    presetId,
     selections,
   }
 }
@@ -323,6 +328,9 @@ export function calculatePropertyOfferComparison(
 
   let calculation
   const targetScenario = asRecord(offer.scenario_snapshot)
+  const targetPresetId = typeof targetScenario?.presetId === 'string' && targetScenario.presetId.trim()
+    ? targetScenario.presetId.trim()
+    : null
   const targetSelectionsRecord = asRecord(targetScenario?.selections) ?? {}
   const targetSelections = Object.fromEntries(Object.entries(targetSelectionsRecord).flatMap(([featureId, optionId]) => (
     typeof optionId === 'string' ? [[featureId, optionId]] : []
@@ -352,6 +360,7 @@ export function calculatePropertyOfferComparison(
     overpaymentStrategy: baseline.overpaymentStrategy,
     mortgageRegistrationMonth: targetRegistrationMonth,
     financeCommission: targetScenario?.financeCommission !== false,
+    ...(targetPresetId ? { presetId: targetPresetId } : {}),
     selections: targetSelections,
     selectionEvents: targetSelectionEvents,
   }
@@ -421,6 +430,14 @@ export function calculatePropertyOfferComparison(
     : collateralValueBasis === 'lower_of_purchase_and_appraisal'
       ? appraisalValue == null ? null : Math.min(normalizedPrice, appraisalValue)
       : normalizedPrice
+  const resolvedSelectionsRecord = isV2
+    ? asRecord(asRecord(calculation.raw)?.resolvedSelections)
+    : null
+  const resolvedSelections = resolvedSelectionsRecord
+    ? Object.fromEntries(Object.entries(resolvedSelectionsRecord).flatMap(([featureId, optionId]) => (
+        typeof optionId === 'string' ? [[featureId, optionId]] : []
+      )))
+    : targetSelections
   return {
     propertyId,
     offerId: offer.id,
@@ -476,7 +493,8 @@ export function calculatePropertyOfferComparison(
         overpaymentStrategy: baseline.overpaymentStrategy,
         mortgageRegistrationMonth: targetRegistrationMonth,
         financeCommission: targetScenario?.financeCommission !== false,
-        selections: targetSelections,
+        presetId: targetPresetId,
+        selections: resolvedSelections,
         selectionEvents: targetSelectionEvents,
       },
       // Compatibility fields for existing consumers while the application
@@ -492,7 +510,8 @@ export function calculatePropertyOfferComparison(
       overpaymentStrategy: baseline.overpaymentStrategy,
       mortgageRegistrationMonth: targetRegistrationMonth,
       financeCommission: targetScenario?.financeCommission !== false,
-      selections: targetSelections,
+      presetId: targetPresetId,
+      selections: resolvedSelections,
       selectionEvents: targetSelectionEvents,
     },
     calculationSnapshot: {

@@ -72,6 +72,31 @@ function formatMetric(metric: DashboardMetric) {
       </template>
     </UAlert>
 
+    <section class="dashboard-agent dashboard-block" aria-labelledby="dashboard-agent-title">
+      <span class="dashboard-agent__icon" aria-hidden="true">
+        <UIcon name="i-lucide-sparkles" />
+      </span>
+      <div class="dashboard-agent__copy">
+        <div class="dashboard-agent__eyebrow">
+          <span class="dashboard-agent__status" />
+          Agent AI jest gotowy
+        </div>
+        <h2 id="dashboard-agent-title">Zapytaj Eve o sprawy i proces kredytowy</h2>
+        <p>Agent znajdzie Twoje sprawy w CRM, pomoże ustalić kolejny krok i uporządkować pracę z klientem.</p>
+      </div>
+      <UButton
+        class="dashboard-agent__button"
+        :to="orgPath('/assistant')"
+        color="neutral"
+        variant="solid"
+        size="lg"
+        icon="i-lucide-message-circle-more"
+        trailing-icon="i-lucide-arrow-right"
+      >
+        Otwórz Agenta AI
+      </UButton>
+    </section>
+
     <div class="metric-grid dashboard-block">
       <UCard v-for="metric in dashboard.metrics" :key="metric.label" class="oe-hover-lift">
         <div class="metric-top">
@@ -181,6 +206,67 @@ function formatMetric(metric: DashboardMetric) {
 <style scoped>
 .dashboard-block {
   margin-bottom: 24px;
+}
+
+.dashboard-agent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 22px;
+  border: 1px solid var(--ui-border-inverted);
+  border-radius: var(--oe-radius-emphasis);
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+}
+
+.dashboard-agent__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid color-mix(in srgb, var(--ui-text-inverted) 20%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ui-text-inverted) 10%, transparent);
+  font-size: 24px;
+}
+
+.dashboard-agent__copy {
+  min-width: 0;
+}
+
+.dashboard-agent__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  color: color-mix(in srgb, var(--ui-text-inverted) 64%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dashboard-agent__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-success);
+}
+
+.dashboard-agent h2 {
+  margin: 0;
+  color: var(--ui-text-inverted);
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.dashboard-agent p {
+  max-width: 720px;
+  margin: 5px 0 0;
+  color: color-mix(in srgb, var(--ui-text-inverted) 68%, transparent);
+  font-size: 13px;
 }
 
 .metric-grid {
@@ -360,6 +446,15 @@ function formatMetric(metric: DashboardMetric) {
 }
 
 @media (max-width: 760px) {
+  .dashboard-agent {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dashboard-agent__button {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
   .metric-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;

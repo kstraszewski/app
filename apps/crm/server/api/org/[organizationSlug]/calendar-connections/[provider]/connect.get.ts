@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   const returnTo = textValue(query.returnTo)
   const safeReturnTo = returnTo?.startsWith(`/org/${session.organizationSlug}/`)
     ? returnTo
-    : `/org/${encodeURIComponent(session.organizationSlug)}/facilities?facility=${encodeURIComponent(ownerId)}`
+    : `/org/${encodeURIComponent(session.organizationSlug)}/facilities/${encodeURIComponent(ownerId)}?section=calendars`
 
   setCookie(
     event,

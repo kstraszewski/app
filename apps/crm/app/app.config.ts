@@ -1,3 +1,21 @@
+type FieldFocusColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral'
+
+interface FieldFocusVariant {
+  color: FieldFocusColor
+  variant: ('outline' | 'subtle')[]
+  class: string
+}
+
+const fieldFocusVariants: FieldFocusVariant[] = [
+  { color: 'primary', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-primary' },
+  { color: 'secondary', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-secondary' },
+  { color: 'success', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-success' },
+  { color: 'info', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-info' },
+  { color: 'warning', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-warning' },
+  { color: 'error', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-error' },
+  { color: 'neutral', variant: ['outline', 'subtle'], class: 'focus:ring-2 focus:ring-inset focus:ring-inverted' },
+]
+
 export default defineAppConfig({
   ui: {
     colors: {
@@ -36,12 +54,75 @@ export default defineAppConfig({
     },
     input: {
       slots: {
-        base: 'rounded-[var(--oe-radius-control)]',
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
       },
+      compoundVariants: fieldFocusVariants,
       defaultVariants: {
         color: 'neutral',
         variant: 'outline',
         size: 'sm',
+      },
+    },
+    inputNumber: {
+      slots: {
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
+      },
+      compoundVariants: fieldFocusVariants,
+    },
+    inputMenu: {
+      slots: {
+        root: 'oe-field-motion',
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
+        content: 'oe-overlay-motion-fast',
+        item: 'oe-state-motion',
+      },
+      compoundVariants: fieldFocusVariants,
+    },
+    textarea: {
+      slots: {
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
+      },
+      compoundVariants: fieldFocusVariants,
+    },
+    select: {
+      slots: {
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
+        content: 'oe-overlay-motion-fast',
+        item: 'oe-state-motion',
+      },
+    },
+    selectMenu: {
+      slots: {
+        base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
+        content: 'oe-overlay-motion-fast',
+        item: 'oe-state-motion',
+      },
+      compoundVariants: fieldFocusVariants,
+    },
+    checkbox: {
+      slots: {
+        root: 'oe-state-motion',
+        base: 'oe-choice-motion',
+        indicator: 'oe-choice-indicator-motion',
+      },
+    },
+    radioGroup: {
+      slots: {
+        item: 'oe-state-motion',
+        base: 'oe-choice-motion',
+        indicator: 'oe-choice-indicator-motion',
+      },
+    },
+    switch: {
+      slots: {
+        base: 'oe-switch-track-motion',
+        thumb: 'oe-switch-thumb-motion',
+        icon: 'oe-state-motion',
+      },
+    },
+    slider: {
+      slots: {
+        thumb: 'oe-slider-thumb-motion',
       },
     },
     badge: {
@@ -57,8 +138,8 @@ export default defineAppConfig({
     tabs: {
       slots: {
         list: 'rounded-[var(--oe-radius-control)] ring ring-default bg-muted',
-        trigger: 'rounded-[calc(var(--oe-radius-control)-4px)]',
-        indicator: 'rounded-[calc(var(--oe-radius-control)-4px)]',
+        trigger: 'rounded-[calc(var(--oe-radius-control)-4px)] oe-state-motion',
+        indicator: 'rounded-[calc(var(--oe-radius-control)-4px)] oe-indicator-motion',
       },
       defaultVariants: {
         color: 'neutral',
@@ -84,6 +165,55 @@ export default defineAppConfig({
       },
       defaultVariants: {
         size: 'sm',
+      },
+    },
+    modal: {
+      slots: {
+        overlay: 'oe-overlay-motion-base',
+        content: 'oe-overlay-motion-base',
+      },
+    },
+    slideover: {
+      slots: {
+        overlay: 'oe-overlay-motion-base',
+        content: 'oe-overlay-motion-base',
+      },
+    },
+    popover: {
+      slots: {
+        content: 'oe-overlay-motion-fast',
+      },
+    },
+    dropdownMenu: {
+      slots: {
+        content: 'oe-overlay-motion-fast',
+        item: 'oe-state-motion',
+      },
+    },
+    tooltip: {
+      slots: {
+        content: 'oe-overlay-motion-fast',
+      },
+    },
+    accordion: {
+      slots: {
+        content: 'oe-disclosure-motion',
+        trailingIcon: 'oe-indicator-motion',
+      },
+    },
+    collapsible: {
+      slots: {
+        content: 'oe-disclosure-motion',
+      },
+    },
+    toast: {
+      slots: {
+        root: 'oe-state-motion',
+      },
+    },
+    toaster: {
+      slots: {
+        base: 'oe-overlay-motion-base',
       },
     },
   },

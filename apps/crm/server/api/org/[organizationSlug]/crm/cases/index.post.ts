@@ -4,47 +4,44 @@ import {
   recordCrmActivity,
   requireCrmSession,
   requiredText,
+  stringArrayValue,
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
+import { caseUuidPattern } from '~~/server/utils/cases'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const body = asRecord(await readBody(event))
-  const clientId = requiredText(body.client_id, 'client_id')
-  const title = requiredText(body.title, 'title')
+  const title = requiredText(body.title ?? body.name, 'title')
+  const legacyClientId = textValue(body.client_id)
+  const clientIds = [...new Set([
+    ...stringArrayValue(body.client_ids),
+    ...(legacyClientId ? [legacyClientId] : []),
+  ])]
 
-  const { data: client, error: clientError } = await session.supabase
-    .from('crm_clients')
-    .select('id')
-    .eq('organization_id', session.organizationId)
-    .eq('id', clientId)
-    .maybeSingle()
-  if (clientError || !client) throwDbError(clientError ?? { message: 'Client not found' }, 404)
+  if (!clientIds.length) {
+    throw createError({ statusCode: 400, statusMessage: 'client_ids is required' })
+  }
+  if (clientIds.some(clientId => !caseUuidPattern.test(clientId))) {
+    throw createError({ statusCode: 400, statusMessage: 'client_ids must contain UUIDs' })
+  }
 
-  const { data, error } = await session.supabase
-    .from('crm_cases')
-    .insert({
-      organization_id: session.organizationId,
-      client_id: clientId,
-      owner_user_id: textValue(body.owner_user_id) ?? session.userId,
-      title,
-      description: textValue(body.description) ?? null,
-      status_code: textValue(body.status_code) ?? 'nowa',
-      priority: textValue(body.priority) ?? 'normal',
-      metadata: asRecord(body.metadata),
-    })
-    .select('*')
-    .single()
-
-  throwDbError(error)
+  const { data, error } = await session.supabase.rpc('create_crm_case_simple', {
+    p_organization_id: session.organizationId,
+    p_title: title,
+    p_client_ids: clientIds,
+    p_owner_user_id: session.userId,
+  })
+  throwDbError(error, error?.code === '22023' ? 400 : 500)
 
   await recordCrmActivity(session, {
-    client_id: clientId,
+    client_id: clientIds[0],
     case_id: data.id,
     activity_type: 'case_created',
-    title: 'Dodano sprawe',
+    title: 'Dodano sprawę',
     body: title,
+    payload: { client_ids: clientIds },
   })
 
   return { data }

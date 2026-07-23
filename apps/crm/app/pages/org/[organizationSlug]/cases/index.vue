@@ -1,216 +1,880 @@
 <script setup lang="ts">
+import type { FormError, FormSubmitEvent } from '@nuxt/ui'
+import type {
+  CaseFilterOption,
+  CaseFiltersResponse,
+  CaseListResponse,
+  CreateCaseResponse,
+} from '~/types/cases'
+
 definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Sprawy — OpenExpert CRM' })
 
-const { crmApiPath, orgPath } = useOrganizationContext()
+interface CaseCreateForm {
+  title: string
+  client_ids: string[]
+}
 
-const search = ref('')
-const form = reactive({
-  client_id: '',
-  title: '',
-  priority: 'normal',
-  description: '',
-})
-const saving = ref(false)
+interface ActiveFilterChip {
+  key: 'search' | 'clients' | 'banks' | 'offers' | 'updatedFrom' | 'updatedTo'
+  label: string
+}
+
+const route = useRoute()
+const router = useRouter()
+const { organizationSlug, crmApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
+const requestFetch = useRequestFetch()
 
-const { data: cases, pending, refresh } = await useFetch<{ data: Array<Record<string, any>>; count: number }>(() => crmApiPath('/cases'), {
-  query: computed(() => ({ q: search.value || undefined })),
-  default: () => ({ data: [], count: 0 }),
+function queryText(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+function queryList(value: unknown) {
+  const raw = Array.isArray(value) ? value.join(',') : queryText(value)
+  return [...new Set(raw.split(',').map(item => item.trim()).filter(Boolean))]
+}
+
+const searchInput = ref(queryText(route.query.q))
+const search = ref(searchInput.value.trim())
+const clientFilter = ref<string[]>(queryList(route.query.clients))
+const bankFilter = ref<string[]>(queryList(route.query.banks))
+const offerMode = ref(queryText(route.query.offers) || 'all')
+const updatedFrom = ref(queryText(route.query.updated_from))
+const updatedTo = ref(queryText(route.query.updated_to))
+const sortValue = ref(queryText(route.query.sort) || (search.value ? 'relevance' : 'updated_desc'))
+const page = ref(Math.max(1, Number(route.query.page) || 1))
+const pageSize = ref(25)
+const advancedFiltersOpen = ref(Boolean(updatedFrom.value || updatedTo.value))
+const createOpen = ref(false)
+const saving = ref(false)
+const form = reactive<CaseCreateForm>({ title: '', client_ids: [] })
+
+let searchDebounce: ReturnType<typeof setTimeout> | undefined
+watch(searchInput, (value) => {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => {
+    search.value = value.trim()
+  }, 300)
+})
+onBeforeUnmount(() => {
+  if (searchDebounce) clearTimeout(searchDebounce)
 })
 
-const { data: clients } = await useFetch<{ data: Array<Record<string, any>> }>(() => crmApiPath('/clients'), {
-  default: () => ({ data: [] }),
+watch(search, (value, previous) => {
+  if (value && !previous) sortValue.value = 'relevance'
+  if (!value && sortValue.value === 'relevance') sortValue.value = 'updated_desc'
 })
 
-const clientItems = computed(() => clients.value.data.map((client) => ({
+const emptyFilters = (): CaseFiltersResponse => ({
+  clients: [],
+  banks: [],
+  offer_counts: { with: 0, without: 0 },
+  date_bounds: null,
+})
+const emptyCases = (): CaseListResponse => ({ data: [], count: 0 })
+
+const {
+  data: filterConfiguration,
+  pending: filtersPending,
+  error: filtersError,
+  refresh: refreshFilters,
+} = await useAsyncData<CaseFiltersResponse>(
+  `crm-cases-filters:${organizationSlug.value}`,
+  () => requestFetch<CaseFiltersResponse>(crmApiPath('/cases/filters')),
+  { default: emptyFilters, watch: [organizationSlug] },
+)
+
+const clientItems = computed(() => filterConfiguration.value.clients.map(client => ({
   label: client.display_name,
+  description: client.primary_email || client.primary_phone || 'Brak danych kontaktowych',
   value: client.id,
 })))
+const bankItems = computed(() => filterConfiguration.value.banks.map(bank => ({
+  label: bank.count === undefined ? bank.label : `${bank.label} (${bank.count})`,
+  value: bank.value,
+})))
+const clientById = computed(() => new Map(
+  filterConfiguration.value.clients.map(client => [client.id, client]),
+))
+const bankById = computed(() => new Map(
+  filterConfiguration.value.banks.map(bank => [bank.value, bank]),
+))
 
-async function createCase() {
-  if (!form.client_id || !form.title.trim()) return
+const offerItems = computed(() => [
+  { label: 'Wszystkie sprawy', value: 'all' },
+  { label: `Z zapisanymi ofertami (${filterConfiguration.value.offer_counts.with})`, value: 'with' },
+  { label: `Bez zapisanych ofert (${filterConfiguration.value.offer_counts.without})`, value: 'without' },
+])
+const sortItems = computed(() => [
+  ...(search.value ? [{ label: 'Najlepsze dopasowanie', value: 'relevance' }] : []),
+  { label: 'Ostatnio zmienione', value: 'updated_desc' },
+  { label: 'Najdawniej zmienione', value: 'updated_asc' },
+  { label: 'Najnowsze', value: 'created_desc' },
+  { label: 'Nazwa A–Z', value: 'title_asc' },
+  { label: 'Nazwa Z–A', value: 'title_desc' },
+  { label: 'Najwięcej ofert', value: 'offers_desc' },
+])
+
+function localDateBoundary(value: string, endOfDay = false) {
+  if (!value) return undefined
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return undefined
+  const date = new Date(
+    year,
+    month - 1,
+    day,
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0,
+  )
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
+const casesQuery = computed(() => ({
+  q: search.value || undefined,
+  client_ids: clientFilter.value.length ? clientFilter.value.join(',') : undefined,
+  bank_ids: bankFilter.value.length ? bankFilter.value.join(',') : undefined,
+  offer_mode: offerMode.value === 'all' ? undefined : offerMode.value,
+  updated_from: localDateBoundary(updatedFrom.value),
+  updated_to: localDateBoundary(updatedTo.value, true),
+  sort: sortValue.value,
+  offset: (page.value - 1) * pageSize.value,
+  limit: pageSize.value,
+}))
+
+const {
+  data: cases,
+  pending: casesPending,
+  error: casesError,
+  refresh: refreshCases,
+} = await useAsyncData<CaseListResponse>(
+  `crm-cases-list:${organizationSlug.value}`,
+  () => requestFetch<CaseListResponse>(crmApiPath('/cases'), { query: casesQuery.value }),
+  { default: emptyCases, watch: [organizationSlug, casesQuery] },
+)
+
+watch([
+  search,
+  clientFilter,
+  bankFilter,
+  offerMode,
+  updatedFrom,
+  updatedTo,
+  sortValue,
+  pageSize,
+], () => { page.value = 1 }, { deep: true })
+
+const totalCases = computed(() => Math.max(0, Number(cases.value.count) || 0))
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCases.value / pageSize.value)))
+
+function requestErrorMessage(error: unknown) {
+  const candidate = error as {
+    data?: { statusMessage?: string, message?: string }
+    statusMessage?: string
+    message?: string
+  } | null
+  return candidate?.data?.statusMessage
+    ?? candidate?.data?.message
+    ?? candidate?.statusMessage
+    ?? candidate?.message
+}
+
+const loadErrorDescription = computed(() => {
+  const failures = [
+    casesError.value ? `Lista spraw: ${requestErrorMessage(casesError.value) ?? 'nieznany błąd'}.` : '',
+    filtersError.value ? `Filtry: ${requestErrorMessage(filtersError.value) ?? 'nieznany błąd'}.` : '',
+  ].filter(Boolean)
+
+  return failures.join(' ') || 'Odśwież widok i spróbuj ponownie.'
+})
+
+watch(totalPages, value => {
+  if (page.value > value) page.value = value
+})
+
+const routeQuery = computed(() => ({
+  ...(search.value ? { q: search.value } : {}),
+  ...(clientFilter.value.length ? { clients: clientFilter.value.join(',') } : {}),
+  ...(bankFilter.value.length ? { banks: bankFilter.value.join(',') } : {}),
+  ...(offerMode.value !== 'all' ? { offers: offerMode.value } : {}),
+  ...(updatedFrom.value ? { updated_from: updatedFrom.value } : {}),
+  ...(updatedTo.value ? { updated_to: updatedTo.value } : {}),
+  ...(sortValue.value !== (search.value ? 'relevance' : 'updated_desc') ? { sort: sortValue.value } : {}),
+  ...(page.value > 1 ? { page: String(page.value) } : {}),
+}))
+watch(routeQuery, value => {
+  void router.replace({ query: value })
+}, { deep: true })
+
+const hasActiveFilters = computed(() => Boolean(
+  search.value
+  || clientFilter.value.length
+  || bankFilter.value.length
+  || offerMode.value !== 'all'
+  || updatedFrom.value
+  || updatedTo.value,
+))
+
+const activeFilterChips = computed<ActiveFilterChip[]>(() => {
+  const chips: ActiveFilterChip[] = []
+  if (search.value) chips.push({ key: 'search', label: `Szukasz: „${search.value}”` })
+  if (clientFilter.value.length) {
+    const names = clientFilter.value.map(id => clientById.value.get(id)?.display_name ?? 'Klient')
+    chips.push({ key: 'clients', label: names.length === 1 ? names[0]! : `Klienci: ${names.length}` })
+  }
+  if (bankFilter.value.length) {
+    const names = bankFilter.value.map(id => bankById.value.get(id)?.label ?? 'Bank')
+    chips.push({ key: 'banks', label: names.length === 1 ? names[0]! : `Banki: ${names.length}` })
+  }
+  if (offerMode.value !== 'all') {
+    chips.push({ key: 'offers', label: offerMode.value === 'with' ? 'Z ofertami' : 'Bez ofert' })
+  }
+  if (updatedFrom.value) chips.push({ key: 'updatedFrom', label: `Zmienione od ${updatedFrom.value}` })
+  if (updatedTo.value) chips.push({ key: 'updatedTo', label: `Zmienione do ${updatedTo.value}` })
+  return chips
+})
+
+function removeFilter(key: ActiveFilterChip['key']) {
+  if (key === 'search') {
+    searchInput.value = ''
+    search.value = ''
+  } else if (key === 'clients') clientFilter.value = []
+  else if (key === 'banks') bankFilter.value = []
+  else if (key === 'offers') offerMode.value = 'all'
+  else if (key === 'updatedFrom') updatedFrom.value = ''
+  else if (key === 'updatedTo') updatedTo.value = ''
+}
+
+function resetFilters() {
+  searchInput.value = ''
+  search.value = ''
+  clientFilter.value = []
+  bankFilter.value = []
+  offerMode.value = 'all'
+  updatedFrom.value = ''
+  updatedTo.value = ''
+  sortValue.value = 'updated_desc'
+  advancedFiltersOpen.value = false
+}
+
+function clearSearch() {
+  searchInput.value = ''
+  search.value = ''
+}
+
+function toggleAdvancedFilters() {
+  advancedFiltersOpen.value = !advancedFiltersOpen.value
+}
+
+async function refreshView() {
+  await Promise.all([refreshCases(), refreshFilters()])
+}
+
+function validateCaseForm(state: Partial<CaseCreateForm>): FormError[] {
+  const errors: FormError[] = []
+  if (!state.title?.trim()) errors.push({ name: 'title', message: 'Podaj nazwę sprawy.' })
+  if ((state.title?.trim().length ?? 0) > 200) {
+    errors.push({ name: 'title', message: 'Nazwa może mieć maksymalnie 200 znaków.' })
+  }
+  if (!state.client_ids?.length) {
+    errors.push({ name: 'client_ids', message: 'Wybierz co najmniej jednego klienta.' })
+  }
+  return errors
+}
+
+function openCreateForm() {
+  createOpen.value = true
+}
+
+function resetCreateForm() {
+  form.title = ''
+  form.client_ids = []
+}
+
+async function createCase(_event: FormSubmitEvent<CaseCreateForm>) {
   saving.value = true
   try {
-    await $fetch(crmApiPath('/cases'), {
+    const response = await $fetch<CreateCaseResponse>(crmApiPath('/cases'), {
       method: 'POST',
-      body: { ...form },
+      body: { title: form.title.trim(), client_ids: form.client_ids },
     })
-    form.title = ''
-    form.description = ''
-    form.priority = 'normal'
-    await refresh()
-    toast.add({ title: 'Dodano sprawę', color: 'success' })
+    createOpen.value = false
+    resetCreateForm()
+    toast.add({
+      title: 'Utworzono sprawę',
+      description: 'Możesz teraz zapisać w niej wybrane oferty.',
+      color: 'success',
+    })
+    await navigateTo(orgPath(`/cases/${response.data.id}`))
+  } catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się utworzyć sprawy',
+      description: caught?.data?.statusMessage ?? caught?.message ?? 'Sprawdź dane formularza.',
+      color: 'error',
+    })
   } finally {
     saving.value = false
   }
 }
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('pl-PL', { dateStyle: 'medium' }).format(new Date(value))
+}
+
+function caseBanks(item: CaseListResponse['data'][number]) {
+  const names = [...new Set(item.banks.map(bank => bank.name).filter(Boolean))]
+  if (!names.length) return 'Brak zapisanych ofert'
+  return names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+}
 </script>
 
 <template>
-  <CrmShell title="Sprawy" eyebrow="Pipeline">
+  <CrmShell title="Sprawy" eyebrow="Klienci i zapisane oferty">
     <template #actions>
-      <UInput v-model="search" icon="i-lucide-search" placeholder="Szukaj sprawy" />
+      <UButton icon="i-lucide-plus" @click="openCreateForm">
+        Nowa sprawa
+      </UButton>
     </template>
 
-    <div class="cases-grid">
-      <UCard>
-        <template #header>
-          <div class="panel-head">
-            <div>
-              <h2>Aktywne sprawy</h2>
-              <p>{{ cases.count }} spraw w widoku</p>
-            </div>
-          </div>
-        </template>
+    <UAlert
+      v-if="casesError || filtersError"
+      class="cases-alert"
+      color="error"
+      variant="subtle"
+      title="Nie udało się pobrać spraw"
+      :description="loadErrorDescription"
+    >
+      <template #actions>
+        <UButton color="error" variant="soft" size="sm" @click="refreshView">
+          Odśwież
+        </UButton>
+      </template>
+    </UAlert>
 
-        <div v-if="pending" class="case-list">
-          <USkeleton v-for="index in 6" :key="index" class="h-14 w-full" />
+    <UCard class="cases-card">
+      <template #header>
+        <div class="cases-heading">
+          <div>
+            <h2>Wszystkie sprawy</h2>
+            <p>Jedno miejsce dla klientów i ofert zachowanych na konkretny moment.</p>
+          </div>
+          <span aria-live="polite">{{ totalCases }} {{ totalCases === 1 ? 'sprawa' : 'spraw' }}</span>
         </div>
-        <div v-else-if="cases.data.length" class="case-list">
-          <NuxtLink v-for="item in cases.data" :key="item.id" :to="orgPath(`/cases/${item.id}`)" class="case-row">
-            <div>
+      </template>
+
+      <section class="filters" aria-label="Filtry listy spraw">
+        <div class="filters-main">
+          <UInput
+            v-model="searchInput"
+            class="search-input"
+            icon="i-lucide-search"
+            placeholder="Nazwa sprawy, klient, bank lub oferta"
+            aria-label="Przeszukaj sprawy"
+            data-testid="cases-search"
+          >
+            <template v-if="searchInput" #trailing>
+              <UButton
+                icon="i-lucide-x"
+                color="neutral"
+                variant="link"
+                size="xs"
+                aria-label="Wyczyść wyszukiwanie"
+                @click="clearSearch"
+              />
+            </template>
+          </UInput>
+
+          <USelectMenu
+            v-model="clientFilter"
+            class="filter-select"
+            :items="clientItems"
+            value-key="value"
+            label-key="label"
+            multiple
+            clear
+            placeholder="Klienci"
+            aria-label="Filtruj po klientach"
+            :loading="filtersPending"
+          />
+          <USelectMenu
+            v-model="bankFilter"
+            class="filter-select"
+            :items="bankItems"
+            value-key="value"
+            label-key="label"
+            multiple
+            clear
+            placeholder="Banki"
+            aria-label="Filtruj po bankach"
+            :loading="filtersPending"
+          />
+          <USelect v-model="offerMode" class="filter-select filter-select--offers" :items="offerItems" value-key="value" aria-label="Filtruj po zapisanych ofertach" />
+          <USelect v-model="sortValue" class="filter-select filter-select--sort" :items="sortItems" value-key="value" aria-label="Sortuj sprawy" />
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-sliders-horizontal"
+            :aria-expanded="advancedFiltersOpen"
+            @click="toggleAdvancedFilters"
+          >
+            Daty
+          </UButton>
+        </div>
+
+        <div v-if="advancedFiltersOpen" class="filters-advanced">
+          <UFormField label="Zmienione od">
+            <UInput v-model="updatedFrom" type="date" />
+          </UFormField>
+          <UFormField label="Zmienione do">
+            <UInput v-model="updatedTo" type="date" />
+          </UFormField>
+        </div>
+
+        <div v-if="activeFilterChips.length" class="active-filters" aria-label="Aktywne filtry spraw">
+          <UButton
+            v-for="chip in activeFilterChips"
+            :key="chip.key"
+            color="neutral"
+            variant="soft"
+            size="xs"
+            trailing-icon="i-lucide-x"
+            @click="removeFilter(chip.key)"
+          >
+            {{ chip.label }}
+          </UButton>
+          <UButton color="neutral" variant="link" size="xs" @click="resetFilters">
+            Wyczyść wszystko
+          </UButton>
+        </div>
+      </section>
+
+      <div v-if="casesPending" class="case-skeletons">
+        <USkeleton v-for="index in 7" :key="index" class="h-18 w-full" />
+      </div>
+
+      <div v-else-if="cases.data.length" data-testid="cases-results">
+        <div class="case-table-head" aria-hidden="true">
+          <span>Sprawa</span>
+          <span>Klienci</span>
+          <span>Zapisane oferty</span>
+          <span />
+        </div>
+        <div class="case-list">
+          <NuxtLink
+            v-for="item in cases.data"
+            :key="item.id"
+            :to="orgPath(`/cases/${item.id}`)"
+            class="case-row"
+            data-testid="case-row"
+            :data-case-id="item.id"
+          >
+            <div class="case-title">
               <strong>{{ item.title }}</strong>
-              <span>{{ item.client?.display_name || 'Brak klienta' }} · {{ item.items?.length || 0 }} produkty</span>
+              <span>Zmieniono {{ formatDate(item.updated_at) }}</span>
             </div>
-            <div class="case-row__meta">
-              <CrmStatusBadge :status="item.status_code" />
-              <UBadge color="neutral" variant="outline">{{ item.priority }}</UBadge>
+            <div class="client-chips">
+              <UBadge
+                v-for="client in item.clients.slice(0, 3)"
+                :key="client.id"
+                color="neutral"
+                variant="subtle"
+              >
+                {{ client.display_name }}
+              </UBadge>
+              <UBadge v-if="item.clients.length > 3" color="neutral" variant="outline">
+                +{{ item.clients.length - 3 }}
+              </UBadge>
             </div>
+            <div class="offer-summary">
+              <span class="offer-count"><UIcon name="i-lucide-bookmark-check" />{{ item.offer_count }}</span>
+              <small>{{ caseBanks(item) }}</small>
+            </div>
+            <UIcon class="row-arrow" name="i-lucide-chevron-right" />
           </NuxtLink>
         </div>
-        <div v-else class="empty-state">
-          <UIcon name="i-lucide-briefcase-business" />
-          <h3>Brak spraw</h3>
-          <p>Sprawa grupuje proces klienta i wszystkie produkty: kredyt, polisę oraz nieruchomość.</p>
+      </div>
+
+      <div v-else class="empty-state">
+        <span class="empty-state__icon">
+          <UIcon :name="hasActiveFilters ? 'i-lucide-search-x' : 'i-lucide-folder-plus'" />
+        </span>
+        <h3>{{ hasActiveFilters ? 'Nie znaleźliśmy takich spraw' : 'Utwórz pierwszą sprawę' }}</h3>
+        <p>
+          {{ hasActiveFilters
+            ? 'Zmień wyszukiwanie albo usuń część filtrów.'
+            : 'Nazwij sprawę, przypisz klientów i zapisuj w niej wybrane oferty.' }}
+        </p>
+        <div class="empty-state__actions">
+          <UButton v-if="hasActiveFilters" color="neutral" variant="outline" @click="resetFilters">
+            Wyczyść filtry
+          </UButton>
+          <UButton icon="i-lucide-plus" @click="openCreateForm">
+            Nowa sprawa
+          </UButton>
         </div>
-      </UCard>
+      </div>
 
-      <UCard>
-        <template #header>
-          <div class="panel-head">
-            <div>
-              <h2>Nowa sprawa</h2>
-              <p>Najpierw wybierz klienta, potem dodasz produkty.</p>
-            </div>
-          </div>
-        </template>
+      <template v-if="totalCases > pageSize" #footer>
+        <div class="pagination-row">
+          <span>Strona {{ page }} z {{ totalPages }}</span>
+          <UPagination
+            v-model:page="page"
+            :total="totalCases"
+            :items-per-page="pageSize"
+            :sibling-count="1"
+            show-edges
+          />
+        </div>
+      </template>
+    </UCard>
 
-        <form class="case-form" @submit.prevent="createCase">
-          <UFormField label="Klient">
-            <USelect v-model="form.client_id" :items="clientItems" placeholder="Wybierz klienta" />
-          </UFormField>
-          <UFormField label="Tytuł">
-            <UInput v-model="form.title" required placeholder="Zakup domu + ubezpieczenie" />
-          </UFormField>
-          <UFormField label="Priorytet">
-            <USelect
-              v-model="form.priority"
-              :items="[
-                { label: 'Niski', value: 'low' },
-                { label: 'Normalny', value: 'normal' },
-                { label: 'Wysoki', value: 'high' },
-                { label: 'Pilny', value: 'urgent' },
-              ]"
+    <UModal
+      v-model:open="createOpen"
+      title="Nowa sprawa"
+      description="Sprawa potrzebuje tylko nazwy i klientów. Oferty dodasz po utworzeniu."
+      :dismissible="!saving"
+      :ui="{ footer: 'justify-end' }"
+      @after:leave="!saving && resetCreateForm()"
+    >
+      <template #body>
+        <UForm
+          id="create-case-form"
+          :state="form"
+          :validate="validateCaseForm"
+          :validate-on="['blur', 'change']"
+          class="create-form"
+          data-testid="create-case-form"
+          @submit="createCase"
+        >
+          <UFormField name="title" label="Nazwa sprawy" required>
+            <UInput
+              v-model="form.title"
+              class="w-full"
+              :maxlength="200"
+              autofocus
+              placeholder="Zakup mieszkania — Kowalscy"
             />
           </UFormField>
-          <UFormField label="Opis">
-            <UTextarea v-model="form.description" :rows="3" />
+          <UFormField
+            name="client_ids"
+            label="Klienci"
+            description="Pierwsza wybrana osoba będzie klientem głównym."
+            required
+          >
+            <USelectMenu
+              v-model="form.client_ids"
+              class="w-full"
+              :items="clientItems"
+              value-key="value"
+              label-key="label"
+              multiple
+              clear
+              placeholder="Wybierz jednego lub kilku klientów"
+              aria-label="Wybierz klientów sprawy"
+              :loading="filtersPending"
+            />
           </UFormField>
-          <UButton type="submit" icon="i-lucide-save" variant="solid" :loading="saving">
-            Utwórz sprawę
-          </UButton>
-        </form>
-      </UCard>
-    </div>
+        </UForm>
+      </template>
+      <template #footer="{ close }">
+        <UButton color="neutral" variant="outline" :disabled="saving" @click="close">
+          Anuluj
+        </UButton>
+        <UButton type="submit" form="create-case-form" icon="i-lucide-folder-plus" :loading="saving">
+          Utwórz sprawę
+        </UButton>
+      </template>
+    </UModal>
   </CrmShell>
 </template>
 
 <style scoped>
-.cases-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 24px;
+.cases-alert {
+  margin-bottom: 16px;
 }
 
-.panel-head h2 {
+.cases-heading,
+.pagination-row,
+.filters-main,
+.active-filters,
+.empty-state__actions {
+  display: flex;
+  align-items: center;
+}
+
+.cases-heading,
+.pagination-row {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.cases-heading h2 {
   margin: 0;
   color: var(--ui-text-highlighted);
   font-size: 18px;
   font-weight: 650;
 }
 
-.panel-head p {
+.cases-heading p,
+.cases-heading > span,
+.pagination-row > span {
   margin: 4px 0 0;
   color: var(--ui-text-muted);
   font-size: 13px;
 }
 
-.case-list,
-.case-form {
+.cases-heading > span {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--ui-bg-muted);
+}
+
+.filters {
   display: grid;
   gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.filters-main {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.search-input {
+  flex: 1 1 360px;
+  min-width: 260px;
+}
+
+.filter-select {
+  width: 190px;
+}
+
+.filter-select--offers {
+  width: 210px;
+}
+
+.filter-select--sort {
+  width: 190px;
+}
+
+.filters-advanced {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+}
+
+.active-filters {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.case-skeletons,
+.case-list,
+.create-form {
+  display: grid;
+  gap: 10px;
+}
+
+.case-skeletons {
+  padding-top: 18px;
+}
+
+.case-table-head,
+.case-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(260px, 1.4fr) minmax(200px, 0.9fr) 24px;
+  gap: 20px;
+  align-items: center;
+}
+
+.case-table-head {
+  padding: 18px 14px 10px;
+  color: var(--ui-text-dimmed);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
 }
 
 .case-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 58px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--ui-border);
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: inherit;
   text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
-.case-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.case-row:hover,
+.case-row:focus-visible {
+  border-color: var(--ui-border-accented);
+  background: var(--ui-bg-elevated);
+  outline: none;
 }
 
-.case-row strong {
-  display: block;
+.case-title,
+.offer-summary {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.case-title strong {
+  overflow: hidden;
   color: var(--ui-text-highlighted);
   font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.case-row span {
+.case-title span,
+.offer-summary small {
+  overflow: hidden;
   color: var(--ui-text-muted);
-  font-size: 13px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.case-row__meta {
+.client-chips {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.offer-count {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.offer-count .iconify {
+  color: var(--ui-primary);
+}
+
+.row-arrow {
+  color: var(--ui-text-dimmed);
 }
 
 .empty-state {
   display: grid;
   justify-items: center;
-  gap: 8px;
-  padding: 44px 20px;
-  color: var(--ui-text-muted);
+  gap: 10px;
+  padding: 70px 20px;
   text-align: center;
 }
 
-.empty-state .iconify {
-  font-size: 28px;
+.empty-state__icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-muted);
+  font-size: 24px;
+}
+
+.empty-state h3,
+.empty-state p {
+  margin: 0;
 }
 
 .empty-state h3 {
-  margin: 0;
   color: var(--ui-text-highlighted);
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .empty-state p {
-  max-width: 360px;
-  margin: 0;
+  max-width: 480px;
+  color: var(--ui-text-muted);
   font-size: 13px;
 }
 
-@media (max-width: 980px) {
-  .cases-grid {
+.empty-state__actions {
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 1120px) {
+  .search-input {
+    flex-basis: 100%;
+  }
+
+  .filter-select,
+  .filter-select--offers,
+  .filter-select--sort {
+    flex: 1 1 180px;
+    width: auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .case-table-head {
+    display: none;
+  }
+
+  .case-list {
+    padding-top: 16px;
+  }
+
+  .case-row {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    border-color: var(--ui-border);
+  }
+
+  .client-chips,
+  .offer-summary {
+    grid-column: 1;
+  }
+
+  .row-arrow {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+}
+
+@media (max-width: 640px) {
+  .cases-heading,
+  .pagination-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .filters-main,
+  .empty-state__actions {
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .search-input,
+  .filter-select,
+  .filter-select--offers,
+  .filter-select--sort,
+  .filters-main > :deep(button) {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filters-advanced {
     grid-template-columns: 1fr;
   }
 }

@@ -23,7 +23,7 @@ Każdy moduł eksponuje trzy interfejsy: **UI** (dla ludzi), **REST API** (dla d
 
 ### Wymagania
 
-- Node.js 20+ (repo jest sprawdzone na Node 22)
+- Node.js 24 (wymagany przez agenta Eve w aplikacji CRM)
 - pnpm 10
 - runtime zgodny z Docker API: Docker Desktop, Colima, OrbStack lub Rancher Desktop
 
@@ -51,6 +51,7 @@ Konto lokalne:
 ```text
 email:    admin@openexpert.local
 hasło:    OpenExpert123!
+role:     SuperAdmin + administrator organizacji
 ```
 
 Usługi:
@@ -111,6 +112,25 @@ przykładu bankowego, a nie wynik bieżącego scenariusza.
 
 Pełna analiza funkcji FinCRM, pokrycia MVP i braków znajduje się w
 `docs/research/2026-07-12-fincrm-mortgage-mvp-analysis.md`.
+
+### Asystent kredytowy Eve
+
+CRM zawiera agenta Vercel Eve korzystającego z Gemini 3.5 Flash-Lite. Agent
+odpowiada na pytania kredytowe i ma jedno ograniczone narzędzie do odczytu spraw
+zalogowanego użytkownika. Tożsamość użytkownika i organizacja są ustalane po
+stronie serwera na podstawie sesji Supabase — model nie może ich podać ani
+zmienić.
+
+Do lokalnego uruchomienia odpowiedzi modelu dodaj do `apps/crm/.env` serwerowy
+klucz AI Gateway:
+
+```text
+AI_GATEWAY_API_KEY=vck_...
+```
+
+Bez klucza interfejs czatu i autoryzacja działają, ale Eve nie może wywołać
+modelu. Alternatywnie połącz środowisko z Vercel poleceniem `pnpm exec eve link`
+uruchomionym w `apps/crm`.
 
 Build wszystkich aplikacji:
 
@@ -210,7 +230,8 @@ Globalny loader aplikacji używa `openexpert-loader-lightmode.riv` lub
 3. Ustaw zmienne środowiskowe w Vercel project settings:
    - `NUXT_PUBLIC_SUPABASE_URL`
    - `NUXT_PUBLIC_SUPABASE_KEY`
-   - `NUXT_SUPABASE_SECRET_KEY` — tylko w projekcie landing, nigdy jako zmienna publiczna
+   - `NUXT_SUPABASE_SECRET_KEY` — w projektach landing i CRM, nigdy jako zmienna publiczna
+   - `AI_GATEWAY_API_KEY` — tylko w projekcie CRM, nigdy jako zmienna publiczna
    - `NUXT_RESEND_API_KEY` — tylko w projekcie landing, nigdy jako zmienna publiczna
    - `NUXT_RESEND_FROM`
    - `NUXT_RESEND_REPLY_TO`

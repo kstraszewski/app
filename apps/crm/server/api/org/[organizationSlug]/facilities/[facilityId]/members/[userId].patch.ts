@@ -2,7 +2,6 @@ import { readBody } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
   booleanValue,
-  enumValue,
   integerValue,
   requireFacilityPermission,
   uuidValue,
@@ -14,7 +13,10 @@ export default defineEventHandler(async (event) => {
   const userId = uuidValue(getRouterParam(event, 'userId'), 'userId')
   const body = asRecord(await readBody(event))
   const patch: Record<string, unknown> = {}
-  if ('role' in body) patch.role = enumValue(body.role, 'role', ['admin', 'member'] as const)
+  if ('role' in body && body.role !== 'member') {
+    throw createError({ statusCode: 400, statusMessage: 'Facility membership role must be member' })
+  }
+  if ('role' in body) patch.role = 'member'
   if ('isBookable' in body || 'is_bookable' in body) patch.is_bookable = booleanValue(body.isBookable ?? body.is_bookable, 'isBookable')
   if ('bookingPriority' in body || 'booking_priority' in body) patch.booking_priority = integerValue(body.bookingPriority ?? body.booking_priority, 'bookingPriority', 0, 10_000)
   if (!Object.keys(patch).length) {

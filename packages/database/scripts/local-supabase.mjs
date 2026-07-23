@@ -192,6 +192,143 @@ function adminClient(credentials) {
   })
 }
 
+async function ensureLocalDemoWorkspace(supabase, profile) {
+  const organizationId = profile.organization_id
+  const userId = profile.id
+
+  const { data: facility, error: facilityError } = await supabase
+    .from('facilities')
+    .upsert({
+      organization_id: organizationId,
+      name: 'OpenExpert Szczecin Centrum',
+      slug: 'szczecin-centrum',
+      description: 'Fikcyjna placówka demonstracyjna obsługująca klientów ze Szczecina i okolic.',
+      timezone: 'Europe/Warsaw',
+      address_line1: 'al. Wojska Polskiego 42',
+      postal_code: '70-475',
+      city: 'Szczecin',
+      country_code: 'PL',
+      phone: '+48 91 881 24 60',
+      email: 'szczecin@openexpert.local',
+      is_active: true,
+    }, { onConflict: 'organization_id,slug' })
+    .select('id, name, slug')
+    .single()
+  assertNoError(facilityError, 'Seeding the Szczecin facility')
+
+  const teamSeeds = [
+    {
+      slug: 'oddzial-szczecin',
+      name: 'Oddział Szczecin',
+      kind: 'department',
+      description: 'Struktura regionalna fikcyjnej placówki w Szczecinie.',
+    },
+    {
+      slug: 'doradcy-hipoteczni-szczecin',
+      name: 'Doradcy hipoteczni',
+      kind: 'team',
+      description: 'Zespół prowadzący konsultacje i sprawy hipoteczne.',
+    },
+    {
+      slug: 'obsluga-klienta-szczecin',
+      name: 'Obsługa klienta',
+      kind: 'team',
+      description: 'Zespół pierwszego kontaktu, dokumentów i umawiania spotkań.',
+    },
+  ]
+  const { data: teams, error: teamsError } = await supabase
+    .from('teams')
+    .upsert(
+      teamSeeds.map(team => ({ organization_id: organizationId, ...team })),
+      { onConflict: 'organization_id,slug' },
+    )
+    .select('id, name, slug')
+  assertNoError(teamsError, 'Seeding the Szczecin teams')
+
+  const teamBySlug = new Map((teams ?? []).map(team => [team.slug, team]))
+  const branch = teamBySlug.get('oddzial-szczecin')
+  const mortgage = teamBySlug.get('doradcy-hipoteczni-szczecin')
+  const service = teamBySlug.get('obsluga-klienta-szczecin')
+  if (!branch || !mortgage || !service) {
+    throw new Error('The Szczecin demo teams were not returned after upsert.')
+  }
+
+  const { error: edgeError } = await supabase.from('team_edges').upsert([
+    { organization_id: organizationId, parent_team_id: branch.id, child_team_id: mortgage.id },
+    { organization_id: organizationId, parent_team_id: branch.id, child_team_id: service.id },
+  ], { onConflict: 'organization_id,parent_team_id,child_team_id' })
+  assertNoError(edgeError, 'Seeding the Szczecin team graph')
+
+  const { error: facilityLinksError } = await supabase.from('team_facilities').upsert(
+    [branch, mortgage, service].map(team => ({
+      organization_id: organizationId,
+      team_id: team.id,
+      facility_id: facility.id,
+    })),
+    { onConflict: 'organization_id,team_id,facility_id' },
+  )
+  assertNoError(facilityLinksError, 'Linking the Szczecin teams to the facility')
+
+  const { error: teamMembershipsError } = await supabase.from('team_memberships').upsert(
+    [branch, mortgage, service].map(team => ({
+      organization_id: organizationId,
+      team_id: team.id,
+      user_id: userId,
+      role: 'member',
+    })),
+    { onConflict: 'organization_id,team_id,user_id' },
+  )
+  assertNoError(teamMembershipsError, 'Assigning the local account to the Szczecin teams')
+
+  const { error: facilityMembershipError } = await supabase.from('facility_memberships').upsert({
+    organization_id: organizationId,
+    facility_id: facility.id,
+    user_id: userId,
+    role: 'member',
+    is_bookable: true,
+    booking_priority: 100,
+  }, { onConflict: 'organization_id,facility_id,user_id' })
+  assertNoError(facilityMembershipError, 'Assigning the local account to the Szczecin facility')
+
+  const { data: meetingService, error: meetingServiceError } = await supabase
+    .from('booking_services')
+    .upsert({
+      organization_id: organizationId,
+      name: 'Spotkanie',
+      slug: 'spotkanie',
+      description: 'Ogólne spotkanie z ekspertem.',
+      duration_minutes: 60,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      slot_interval_minutes: 15,
+      min_notice_minutes: 60,
+      max_advance_days: 90,
+      is_active: true,
+    }, { onConflict: 'organization_id,slug' })
+    .select('id, name, slug')
+    .single()
+  assertNoError(meetingServiceError, 'Seeding the generic meeting service')
+
+  const { error: facilityServiceError } = await supabase.from('facility_services').upsert({
+    organization_id: organizationId,
+    facility_id: facility.id,
+    service_id: meetingService.id,
+    is_active: true,
+  }, { onConflict: 'organization_id,facility_id,service_id' })
+  assertNoError(facilityServiceError, 'Enabling the generic meeting service at the Szczecin facility')
+
+  const { error: expertServiceError } = await supabase.from('facility_service_experts').upsert({
+    organization_id: organizationId,
+    facility_id: facility.id,
+    service_id: meetingService.id,
+    user_id: userId,
+    is_active: true,
+  }, { onConflict: 'organization_id,facility_id,service_id,user_id' })
+  assertNoError(expertServiceError, 'Assigning the generic meeting service to the local expert')
+
+  return { facility, teams: [branch, mortgage, service] }
+}
+
 async function ensureDevAccount(credentials) {
   const supabase = adminClient(credentials)
   const { data: usersData, error: usersError } = await supabase.auth.admin.listUsers({
@@ -234,6 +371,13 @@ async function ensureDevAccount(credentials) {
   if (profile.role !== 'admin' || !profile.organization_id) {
     throw new Error('The local account was created without an admin organization profile.')
   }
+
+  const { error: platformRoleError } = await supabase
+    .from('platform_user_roles')
+    .upsert({ user_id: userId, role: 'super_admin' }, { onConflict: 'user_id,role' })
+  assertNoError(platformRoleError, 'Assigning the local SuperAdmin role')
+
+  await ensureLocalDemoWorkspace(supabase, profile)
 
   return profile
 }
@@ -389,6 +533,23 @@ async function main() {
 
   if (command === 'verify') {
     await configureAndVerify({ createAccount: false })
+    return
+  }
+
+  if (command === 'seed-demo') {
+    const credentials = localCredentials()
+    await waitForLocalServices(credentials)
+    const supabase = adminClient(credentials)
+    const { data: profile, error } = await supabase
+      .from('users')
+      .select('id, organization_id, email')
+      .eq('email', devAccount.email)
+      .single()
+    assertNoError(error, 'Reading the local profile for demo seed')
+    const result = await ensureLocalDemoWorkspace(supabase, profile)
+    console.log('OpenExpert demo workspace is ready:')
+    console.log('  Facility: ' + result.facility.name)
+    console.log('  Teams:    ' + result.teams.map(team => team.name).join(', '))
     return
   }
 

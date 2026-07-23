@@ -22,6 +22,11 @@ function optionalString(value: unknown, maxLength = 2000) {
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<SurveyBody>(event)
+
+  if (!body) {
+    throw createError({ statusCode: 400, statusMessage: 'Treść ankiety jest wymagana.' })
+  }
+
   const email = typeof body?.email === 'string'
     ? body.email.trim().toLowerCase()
     : ''

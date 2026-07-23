@@ -1,5 +1,4 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { getQuery, setHeader } from 'h3'
 import { requireCrmSession, textValue, throwDbError } from '~~/server/utils/crm'
 import {
   enumValue,
@@ -12,8 +11,10 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  setHeader(event, 'Cache-Control', 'no-store')
-  const query = getQuery(event)
+  event.node.res.setHeader('Cache-Control', 'no-store')
+  const query = Object.fromEntries(
+    new URL(event.node.req.url ?? '/', 'http://localhost').searchParams.entries(),
+  )
   const facilityId = optionalUuidValue(query.facilityId ?? query.facility_id, 'facilityId')
   const clientId = optionalUuidValue(query.clientId ?? query.client_id, 'clientId')
   const expertUserId = optionalUuidValue(query.expertUserId ?? query.expert_user_id, 'expertUserId')

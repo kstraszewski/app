@@ -88,6 +88,13 @@ export interface OfferSourceV2 {
 export type MortgageOfferDraftDataV2 = Omit<MortgageOfferVersionV2, 'costs' | 'bridgeInsurance'> & {
   costs: MortgageCostRuleDraftV2[]
   bridgeInsurance?: MortgageBridgeInsuranceV2
+  migration?: {
+    fromSchema?: string
+    sourceVersionId?: string | null
+    sourceVersionKey?: string | null
+    assumptions?: unknown[]
+    unknownFields?: unknown[]
+  }
   documentation: {
     requirements: DocumentRequirementV2[]
     sources: OfferSourceV2[]

@@ -8,6 +8,9 @@ const sidebarCollapsed = useCookie<boolean>('openexpert-crm-nav-collapsed', {
   default: () => false,
   sameSite: 'lax',
 })
+const mobileNavigationOpen = ref(false)
+const mobileViewport = ref(false)
+let viewportMedia: MediaQueryList | null = null
 const organizationDesign = useOrganizationDesignState()
 const user = useSupabaseUser()
 const hasSupabaseConfig = useHasSupabaseConfig()
@@ -18,6 +21,7 @@ const organizationSlug = computed(() => {
   return Array.isArray(raw) ? String(raw[0] ?? '') : String(raw ?? '')
 })
 const organizationBase = computed(() => organizationSlug.value ? `/org/${organizationSlug.value}` : '')
+const isAssistantPage = computed(() => route.path === `${organizationBase.value}/assistant`)
 const { data: organizations } = await useOrganizations()
 const organizationItems = computed(() => organizations.value.data.map((organization) => ({
   label: organization.name,
@@ -37,9 +41,36 @@ const activeOrganization = computed(() => (
   organizations.value.data.find(organization => organization.slug === organizationSlug.value)
 ))
 const isOrganizationAdmin = computed(() => activeOrganization.value?.role === 'admin')
-const sidebarToggleLabel = computed(() => sidebarCollapsed.value ? 'Rozwiń nawigację' : 'Zwiń nawigację')
+const isSuperAdmin = computed(() => organizations.value.access.superAdmin)
+const sidebarToggleLabel = computed(() => {
+  if (mobileViewport.value) return mobileNavigationOpen.value ? 'Zamknij nawigację' : 'Otwórz nawigację'
+  return sidebarCollapsed.value ? 'Rozwiń nawigację' : 'Zwiń nawigację'
+})
+const sidebarToggleIcon = computed(() => {
+  if (mobileViewport.value) return mobileNavigationOpen.value ? 'i-lucide-x' : 'i-lucide-menu'
+  return sidebarCollapsed.value ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'
+})
+
+function updateViewport() {
+  mobileViewport.value = viewportMedia?.matches ?? false
+  if (!mobileViewport.value) mobileNavigationOpen.value = false
+}
+
+onMounted(() => {
+  viewportMedia = window.matchMedia('(max-width: 900px)')
+  updateViewport()
+  viewportMedia.addEventListener('change', updateViewport)
+})
+
+onBeforeUnmount(() => {
+  viewportMedia?.removeEventListener('change', updateViewport)
+})
 
 function toggleSidebar() {
+  if (import.meta.client && window.matchMedia('(max-width: 900px)').matches) {
+    mobileNavigationOpen.value = !mobileNavigationOpen.value
+    return
+  }
   sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
@@ -47,17 +78,29 @@ function expandSidebar() {
   sidebarCollapsed.value = false
 }
 
+function isNestedNavigationActive(to: string) {
+  const settingsPath = `${organizationBase.value}/settings`
+  return to === settingsPath && route.path.startsWith(`${settingsPath}/`)
+}
+
 const navGroups = computed(() => {
   const groups = [{
+    key: 'calculators',
+    label: 'Kalkulatory',
+    items: [
+      { label: 'Zdolność', to: `${organizationBase.value}/mortgages/capacity`, icon: 'i-lucide-calculator' },
+      { label: 'Hipoteki', to: `${organizationBase.value}/mortgages`, icon: 'i-lucide-house' },
+    ],
+  }, {
     key: 'expert',
     label: 'Ekspert',
     items: [
       { label: 'Dashboard', to: `${organizationBase.value}/dashboard`, icon: 'i-lucide-layout-dashboard' },
-      { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
+      { label: 'Agent AI', to: `${organizationBase.value}/assistant`, icon: 'i-lucide-sparkles' },
       { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
-      { label: 'Placówki', to: `${organizationBase.value}/facilities`, icon: 'i-lucide-map-pinned' },
-      { label: 'Hipoteki', to: `${organizationBase.value}/mortgages`, icon: 'i-lucide-house' },
-      { label: 'Zdolność', to: `${organizationBase.value}/mortgages/capacity`, icon: 'i-lucide-calculator' },
+      { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
+      { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
+      { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
     ],
   }]
 
@@ -66,10 +109,21 @@ const navGroups = computed(() => {
       key: 'admin',
       label: 'Administracja organizacji',
       items: [
+        { label: 'Placówki', to: `${organizationBase.value}/facilities`, icon: 'i-lucide-building-2' },
         { label: 'Zespoły', to: `${organizationBase.value}/teams`, icon: 'i-lucide-network' },
         { label: 'Zgody', to: `${organizationBase.value}/consents`, icon: 'i-lucide-shield-check' },
         { label: 'Ustawienia', to: `${organizationBase.value}/settings`, icon: 'i-lucide-settings' },
-        { label: 'Design', to: `${organizationBase.value}/design`, icon: 'i-lucide-component' },
+      ],
+    })
+  }
+
+  if (isSuperAdmin.value) {
+    groups.push({
+      key: 'super-admin',
+      label: 'SuperAdmin',
+      items: [
+        { label: 'Instytucje', to: `${organizationBase.value}/mortgages/institutions`, icon: 'i-lucide-landmark' },
+        { label: 'Oferty kredytowe', to: `${organizationBase.value}/mortgages/offers`, icon: 'i-lucide-badge-percent' },
       ],
     })
   }
@@ -89,7 +143,13 @@ async function signOut() {
 </script>
 
 <template>
-  <main class="crm-shell" :class="{ 'crm-shell--collapsed': sidebarCollapsed }">
+  <main
+    class="crm-shell"
+    :class="{
+      'crm-shell--collapsed': sidebarCollapsed,
+      'crm-shell--mobile-open': mobileNavigationOpen,
+    }"
+  >
     <aside class="crm-nav">
       <div class="crm-nav__head">
         <NuxtLink
@@ -111,7 +171,7 @@ async function signOut() {
           color="neutral"
           variant="ghost"
           square
-          :icon="sidebarCollapsed ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'"
+          :icon="sidebarToggleIcon"
           :aria-label="sidebarToggleLabel"
           :title="sidebarToggleLabel"
           @click="toggleSidebar"
@@ -153,10 +213,13 @@ async function signOut() {
               v-for="item in group.items"
               :key="item.to"
               class="crm-link"
+              :class="{ 'crm-link--active': isNestedNavigationActive(item.to) }"
               active-class="crm-link--active"
               :to="item.to"
               :aria-label="item.label"
+              :aria-current="isNestedNavigationActive(item.to) ? 'page' : undefined"
               :title="sidebarCollapsed ? item.label : undefined"
+              @click="mobileNavigationOpen = false"
             >
               <UIcon :name="item.icon" />
               <span class="crm-link__label">{{ item.label }}</span>
@@ -166,6 +229,20 @@ async function signOut() {
       </nav>
 
       <div class="crm-nav__footer">
+        <div
+          v-if="user?.email"
+          class="crm-nav__account"
+          :title="user.email"
+        >
+          <span class="crm-nav__account-icon" aria-hidden="true">
+            <UIcon name="i-lucide-user-round" />
+          </span>
+          <span class="crm-nav__account-copy">
+            <span class="crm-nav__account-label">Zalogowano jako</span>
+            <span class="crm-nav__account-email">{{ user.email }}</span>
+          </span>
+        </div>
+
         <div class="crm-color-mode">
           <label for="crm-color-mode" class="crm-color-mode__label">Motyw</label>
           <UColorModeSelect
@@ -195,7 +272,7 @@ async function signOut() {
             title="Motyw kolorystyczny"
             :ui="{
               base: 'size-10 justify-center p-0',
-              leading: 'static',
+              leading: 'static ps-0',
               leadingIcon: 'size-5 text-inverted',
               value: 'hidden',
               trailing: 'hidden',
@@ -221,12 +298,12 @@ async function signOut() {
 
     <section class="crm-content">
       <header class="crm-header">
-        <div>
+        <div class="crm-header__copy">
           <p v-if="props.eyebrow" class="crm-eyebrow">{{ props.eyebrow }}</p>
           <h1>{{ props.title }}</h1>
-          <UBadge color="neutral" variant="outline" icon="i-lucide-user">
-            {{ user?.email }}
-          </UBadge>
+          <div v-if="$slots.meta" class="crm-header__meta">
+            <slot name="meta" />
+          </div>
         </div>
         <div class="crm-header__actions">
           <slot name="actions" />
@@ -245,6 +322,8 @@ async function signOut() {
 
       <slot />
     </section>
+
+    <CrmEveAssistant v-if="!isAssistantPage" />
   </main>
 </template>
 
@@ -388,6 +467,50 @@ async function signOut() {
   margin-top: auto;
 }
 
+.crm-nav__account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--ui-text-inverted) 14%, transparent);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text-inverted);
+}
+
+.crm-nav__account-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
+}
+
+.crm-nav__account-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.crm-nav__account-label {
+  color: color-mix(in srgb, var(--ui-text-inverted) 42%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.crm-nav__account-email {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .crm-color-mode {
   display: grid;
   gap: 7px;
@@ -484,6 +607,17 @@ async function signOut() {
   justify-items: center;
 }
 
+.crm-shell--collapsed .crm-nav__account {
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.crm-shell--collapsed .crm-nav__account-copy {
+  display: none;
+}
+
 .crm-shell--collapsed .crm-color-mode {
   display: none;
 }
@@ -500,20 +634,28 @@ async function signOut() {
 }
 
 .crm-content {
+  min-width: 0;
   width: min(100%, var(--ui-container));
   padding: 32px;
 }
 
 .crm-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
+  min-width: 0;
   margin-bottom: 24px;
 }
 
+.crm-header__copy {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
 .crm-header h1 {
-  margin: 4px 0 12px;
+  margin: 4px 0 0;
   color: var(--ui-text-highlighted);
   font-size: 42px;
   font-weight: var(--oe-heading-font-weight);
@@ -531,8 +673,17 @@ async function signOut() {
 
 .crm-header__actions {
   display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crm-header__meta {
+  margin-top: 10px;
 }
 
 .crm-alert {
@@ -548,14 +699,15 @@ async function signOut() {
   .crm-nav,
   .crm-shell--collapsed .crm-nav {
     position: static;
-    gap: 16px;
+    gap: 12px;
     height: auto;
     overflow: visible;
-    padding: 16px;
+    padding: 14px 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--ui-text-inverted) 12%, transparent);
   }
 
   .crm-nav__head :deep(.crm-nav__toggle) {
-    display: none;
+    display: inline-flex;
   }
 
   .crm-shell--collapsed .crm-nav__head {
@@ -567,18 +719,34 @@ async function signOut() {
     width: auto;
   }
 
+  .crm-brand__label,
   .crm-shell--collapsed .crm-brand__label,
   .crm-shell--collapsed .crm-link__label,
   .crm-shell--collapsed .crm-nav__logout-label {
     display: inline;
   }
 
-  .crm-shell--collapsed .crm-link-group__label {
-    display: block;
+  .crm-organization-select,
+  .crm-organization-mini,
+  .crm-links,
+  .crm-nav__footer,
+  .crm-shell--collapsed .crm-organization-select,
+  .crm-shell--collapsed .crm-links,
+  .crm-shell--collapsed .crm-nav__footer {
+    display: none;
   }
 
-  .crm-shell--collapsed .crm-organization-select {
+  .crm-shell--mobile-open .crm-organization-select {
     display: flex;
+  }
+
+  .crm-shell--mobile-open .crm-links,
+  .crm-shell--mobile-open .crm-nav__footer {
+    display: grid;
+  }
+
+  .crm-shell--collapsed .crm-link-group__label {
+    display: block;
   }
 
   .crm-shell--collapsed .crm-nav :deep(.crm-organization-mini) {
@@ -618,6 +786,17 @@ async function signOut() {
     justify-items: stretch;
   }
 
+  .crm-shell--collapsed .crm-nav__account {
+    justify-content: flex-start;
+    width: 100%;
+    height: auto;
+    padding: 10px;
+  }
+
+  .crm-shell--collapsed .crm-nav__account-copy {
+    display: grid;
+  }
+
   .crm-shell--collapsed .crm-color-mode {
     display: grid;
   }
@@ -627,7 +806,7 @@ async function signOut() {
   }
 
   .crm-content {
-    padding: 20px;
+    padding: 18px 16px 28px;
   }
 
   .crm-header {
@@ -635,8 +814,16 @@ async function signOut() {
     flex-direction: column;
   }
 
+  .crm-header__copy {
+    flex-basis: auto;
+  }
+
   .crm-header h1 {
     font-size: 34px;
+  }
+
+  .crm-header__actions {
+    justify-content: flex-start;
   }
 }
 </style>

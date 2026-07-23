@@ -1,0 +1,29 @@
+{
+  "name": "multiform-agent",
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "24.x"
+  },
+  "imports": {
+    "#*": "./agent/*",
+    "#evals/*": "./evals/*"
+  },
+  "scripts": {
+    "build": "eve build",
+    "dev": "eve dev",
+    "start": "eve start",
+    "typecheck": "tsgo"
+  },
+  "dependencies": {
+    "@openexpert/multiform": "link:../packages/multiform",
+    "ai": "7.0.0-canary.171",
+    "eve": "0.22.5",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260523.1",
+    "just-bash": "^3.1.0"
+  }
+}

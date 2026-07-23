@@ -175,6 +175,17 @@ export interface FacilityWidgetsPayload {
   data: BookingWidget[]
 }
 
+export interface PersonalWidgetFacility {
+  facility: Facility
+  services: BookingService[]
+  widgets: BookingWidget[]
+}
+
+export interface PersonalWidgetsPayload {
+  currentUserId: string
+  data: PersonalWidgetFacility[]
+}
+
 export interface CalendarConnection {
   id: string
   provider: CalendarProvider

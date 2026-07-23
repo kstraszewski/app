@@ -138,6 +138,7 @@ const comparedIds = ref<string[]>([])
 const scheduleRows = ref(24)
 const savingOfferKeys = ref<string[]>([])
 const savedOfferKeys = ref<string[]>([])
+const pricingPresetIds = reactive<Record<string, string | null>>({})
 const optionSelections = reactive<Record<string, Record<string, string>>>({})
 const optionSelectionEvents = reactive<Record<string, Record<string, { month: number, optionId: string }>>>({})
 
@@ -162,15 +163,45 @@ function v2Definition(product: CatalogProduct): MortgageOfferVersionV2 | null {
     : null
 }
 
+function productPresetId(product: CatalogProduct): string | undefined {
+  const definition = v2Definition(product)
+  if (!definition) return undefined
+  if (Object.prototype.hasOwnProperty.call(pricingPresetIds, product.id)) {
+    const selectedId = pricingPresetIds[product.id]
+    if (!selectedId) return undefined
+    if (definition.presets.some(preset => preset.id === selectedId)) return selectedId
+  }
+  return definition.presets.find(preset => preset.isDefault)?.id
+}
+
+function productPresetValue(product: CatalogProduct): string {
+  return productPresetId(product) ?? ''
+}
+
 function productSelections(product: CatalogProduct): Record<string, string> {
   const definition = v2Definition(product)
   if (!definition) return optionSelections[product.id] ?? {}
-  const defaultPreset = definition.presets.find(preset => preset.isDefault)
-  const defaults = { ...(defaultPreset?.selections ?? {}) }
+  const selectedPreset = definition.presets.find(preset => preset.id === productPresetId(product))
+  const defaults = { ...(selectedPreset?.selections ?? {}) }
   for (const feature of definition.features) {
     if (!(feature.id in defaults) && feature.defaultOptionId) defaults[feature.id] = feature.defaultOptionId
   }
   return { ...defaults, ...(optionSelections[product.id] ?? {}) }
+}
+
+function setProductPreset(product: CatalogProduct, presetId: string) {
+  const currentSelections = productSelections(product)
+  if (presetId) {
+    pricingPresetIds[product.id] = presetId
+    optionSelections[product.id] = {}
+    return
+  }
+  pricingPresetIds[product.id] = null
+  optionSelections[product.id] = currentSelections
+}
+
+function updateProductPreset(product: CatalogProduct, event: Event) {
+  setProductPreset(product, (event.target as HTMLSelectElement | null)?.value ?? '')
 }
 
 function setProductSelection(productId: string, featureId: string, optionId: string) {
@@ -236,6 +267,7 @@ function productSelectionEventList(product: CatalogProduct) {
 }
 
 function calculationScenario(product: CatalogProduct) {
+  const presetId = productPresetId(product)
   return {
     propertyValue: Math.max(1, n(scenario.propertyValue)),
     appraisalValue: scenario.appraisalValue == null || n(scenario.appraisalValue) <= 0
@@ -249,6 +281,10 @@ function calculationScenario(product: CatalogProduct) {
     overpaymentStrategy: scenario.overpaymentStrategy,
     mortgageRegistrationMonth: Math.max(0, Math.round(n(scenario.mortgageRegistrationMonth))),
     financeCommission: Boolean(scenario.financeCommission),
+    ...(presetId ? { presetId } : {}),
+    // Keep the resolved feature choices beside presetId. The calculator uses
+    // the published preset, while saved case snapshots remain deterministic
+    // for consumers that only understand selections.
     selections: productSelections(product),
     selectionEvents: productSelectionEventList(product),
   }
@@ -622,7 +658,20 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
               <div><dt>RRSO banku</dt><dd>{{ offer.product.version.representative_apr_pct == null ? 'nieznane' : `${number.format(offer.product.version.representative_apr_pct)}%` }}</dd></div>
             </dl>
             <div class="rate"><span>{{ rateLines(offer)[0] }}</span><span>{{ rateLines(offer)[1] }}</span></div>
-            <div v-if="v2Definition(offer.product)?.features.length" class="offer-options">
+            <div v-if="v2Definition(offer.product)?.features.length || v2Definition(offer.product)?.presets.length" class="offer-options">
+              <label v-if="v2Definition(offer.product)?.presets.length" class="offer-options__preset">
+                Wariant cenowy
+                <select
+                  :value="productPresetValue(offer.product)"
+                  @change="updateProductPreset(offer.product, $event)"
+                >
+                  <option value="">Konfiguracja własna</option>
+                  <option v-for="preset in v2Definition(offer.product)?.presets ?? []" :key="preset.id" :value="preset.id">
+                    {{ preset.label }}{{ preset.isDefault ? ' · domyślny' : '' }}
+                  </option>
+                </select>
+                <small>Wariant pochodzi z opublikowanej wersji oferty. Zmiana automatycznie przelicza marżę, ratę i powiązane koszty.</small>
+              </label>
               <label v-for="feature in v2Definition(offer.product)?.features ?? []" :key="feature.id">
                 {{ feature.label }}
                 <select
@@ -703,7 +752,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
 </template>
 
 <style scoped>
-.case-context{margin-bottom:16px}.notice{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-bottom:20px;padding:14px 16px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg);font-size:13px}.notice p{margin:0}.notice span{color:var(--ui-text-muted);white-space:nowrap}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;align-items:start}.scenario-panel{position:sticky;top:20px;display:grid;gap:16px;padding:20px;border:1px solid var(--ui-border);border-radius:14px;background:var(--ui-bg)}.panel-heading,.section-title{display:flex;gap:12px;align-items:flex-start}.panel-heading>span,.section-title>span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--ui-primary);color:white;font:700 11px var(--font-mono)}h2,h3,p{margin:0}.panel-heading h2,.section-title h2{font-size:18px}.panel-heading p,.section-title p,.schedule-heading p{color:var(--ui-text-muted);font-size:12px}.panel-heading--compact{margin-top:8px;padding-top:20px;border-top:1px solid var(--ui-border)}label{display:grid;gap:7px;color:var(--ui-text-muted);font-size:12px;font-weight:600}label small{font-weight:400}input,select{width:100%;height:40px;padding:0 10px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-bg);color:var(--ui-text-highlighted);font:inherit}input[type=range]{height:auto;padding:0}.label-value{float:right;color:var(--ui-text-highlighted)}.scenario-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.scenario-metrics span{display:grid;gap:3px;padding:10px;border-radius:8px;background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:11px}.scenario-metrics strong{color:var(--ui-text-highlighted)}.danger strong{color:var(--ui-error)}fieldset{display:flex;flex-wrap:wrap;gap:6px;padding:0;border:0}legend{width:100%;margin-bottom:7px;color:var(--ui-text-muted);font-size:12px;font-weight:600}.chip,.secondary,.primary{min-height:32px;padding:0 10px;border:1px solid var(--ui-border);border-radius:8px;background:transparent;color:var(--ui-text);cursor:pointer}.chip{font-size:11px}.chip.active,.primary{border-color:var(--ui-primary);background:var(--ui-primary);color:white}.check{display:flex;grid-template-columns:auto 1fr;align-items:center}.check input{width:16px;height:16px}.label-value{float:right;color:var(--ui-text-highlighted)}.results{min-width:0}.results-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.results-toolbar>div{font-size:13px}.results-toolbar>div strong{font-size:22px}.results-toolbar>div span{color:var(--ui-text-muted)}.results-toolbar label{display:flex;grid-template-columns:auto 230px;align-items:center}.offer-grid,.loading-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.offer{display:grid;gap:15px;padding:18px;border:1px solid var(--ui-border);border-radius:14px;background:var(--ui-bg);transition:.2s}.offer.selected{border-color:var(--ui-primary);box-shadow:0 0 0 1px var(--ui-primary)}.offer header,.offer footer,.source,.source>div,.schedule-heading{display:flex;justify-content:space-between;gap:12px}.offer-heading{display:flex;align-items:flex-start;min-width:0}.offer header small{display:block;color:var(--ui-text-muted)}.offer h3{margin-top:3px;font-size:15px}.rank{display:inline-grid;place-items:center;flex:0 0 auto;width:28px;height:28px;margin-right:8px;border-radius:6px;background:var(--ui-bg-muted);font:700 11px var(--font-mono)}.bank-logo{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;margin-right:9px;overflow:hidden;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-bg-muted)}.bank-logo img{width:100%;height:100%;padding:4px;object-fit:contain}.score{height:max-content;padding:4px 7px;border-radius:99px;background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:10px;white-space:nowrap}.primary-price{display:grid;gap:3px;padding:14px;border-radius:10px;background:var(--ui-bg-muted)}.primary-price span,.primary-price small{color:var(--ui-text-muted);font-size:11px}.primary-price strong{font-size:28px;font-weight:600}.offer dl,.summary dl,.anatomy dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}.offer dl div,.summary dl div,.anatomy dl div{display:grid;gap:2px}.offer dt,.summary dt,.anatomy dt{color:var(--ui-text-muted);font-size:10px}.offer dd,.summary dd,.anatomy dd{margin:0;font-size:13px;font-weight:600}.rate{display:grid;gap:4px;padding-left:10px;border-left:2px solid var(--ui-primary);font-size:11px}.offer-options{display:grid;gap:8px;padding:10px;border:1px solid var(--ui-border);border-radius:10px;background:var(--ui-bg-muted)}.offer-options label{font-size:11px}.offer-options select{height:34px;background:var(--ui-bg)}.offer-options__change{display:grid;grid-template-columns:minmax(130px,1fr) 90px minmax(130px,1fr);gap:6px;align-items:center;color:var(--ui-text-muted);font-size:10px;font-weight:400}.offer-options__change input,.offer-options__change select{height:32px;background:var(--ui-bg)}.unknown{display:flex;gap:6px;align-items:center;color:var(--ui-warning);font-size:11px}.offer footer button{flex:1}.offer footer button:disabled{opacity:.4;cursor:not-allowed}.empty{display:grid;place-items:center;gap:8px;padding:60px;border:1px dashed var(--ui-border);border-radius:14px}.empty>svg{font-size:32px}.comparison,.detail{margin-top:28px;padding-top:24px;border-top:1px solid var(--ui-border)}.comparison-table,.schedule{overflow:auto;margin-top:15px;border:1px solid var(--ui-border);border-radius:12px}table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}th,td{padding:11px 12px;border-bottom:1px solid var(--ui-border);text-align:right}th:first-child,td:first-child{text-align:left}thead th{background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:10px;text-transform:uppercase}.comparison th button{margin-left:8px;border:0;background:none;color:var(--ui-text-muted);cursor:pointer}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.anatomy,.summary{padding:18px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.anatomy>strong{display:block;margin:12px 0 7px;font-size:30px}.bar{height:7px;margin-bottom:14px;border-radius:99px;background:var(--ui-bg-muted);overflow:hidden}.bar span{display:block;height:100%;background:var(--ui-primary)}.detail-columns{display:grid;grid-template-columns:1.1fr 1.4fr 1fr;gap:14px;margin-top:14px}.detail-columns>div{padding:16px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.detail-columns h3{margin-bottom:12px;font-size:13px}.detail-columns ul{display:grid;gap:7px;margin:0;padding-left:18px;color:var(--ui-text-muted);font-size:11px}.facts{padding:0!important;list-style:none}.facts li{display:flex;justify-content:space-between;gap:8px}.facts strong{color:var(--ui-text-highlighted)}.facts .muted{color:var(--ui-warning)}.assumptions{margin-top:12px!important;padding-top:12px!important;border-top:1px solid var(--ui-border)}.missing li::marker{color:var(--ui-warning)}.schedule-heading{align-items:flex-end;margin-top:24px}.boundary{box-shadow:inset 3px 0 var(--ui-warning)}.source{align-items:center;margin-top:14px;padding:15px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.source>div{align-items:flex-start}.source>div>svg{font-size:22px;color:var(--ui-success)}.source strong,.source span,.source code{display:block}.source span,.source code{margin-top:3px;color:var(--ui-text-muted);font-size:10px}.source a{color:var(--ui-primary);font-size:12px}.fineprint{margin-top:12px;color:var(--ui-text-muted);font-size:10px;line-height:1.5}.primary,.secondary{font-size:12px}.loading-grid{grid-template-columns:repeat(2,1fr)}
+.case-context{margin-bottom:16px}.notice{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-bottom:20px;padding:14px 16px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg);font-size:13px}.notice p{margin:0}.notice span{color:var(--ui-text-muted);white-space:nowrap}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;align-items:start}.scenario-panel{position:sticky;top:20px;display:grid;gap:16px;padding:20px;border:1px solid var(--ui-border);border-radius:14px;background:var(--ui-bg)}.panel-heading,.section-title{display:flex;gap:12px;align-items:flex-start}.panel-heading>span,.section-title>span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--ui-primary);color:white;font:700 11px var(--font-mono)}h2,h3,p{margin:0}.panel-heading h2,.section-title h2{font-size:18px}.panel-heading p,.section-title p,.schedule-heading p{color:var(--ui-text-muted);font-size:12px}.panel-heading--compact{margin-top:8px;padding-top:20px;border-top:1px solid var(--ui-border)}label{display:grid;gap:7px;color:var(--ui-text-muted);font-size:12px;font-weight:600}label small{font-weight:400}input,select{width:100%;height:40px;padding:0 10px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-bg);color:var(--ui-text-highlighted);font:inherit}input[type=range]{height:auto;padding:0}.label-value{float:right;color:var(--ui-text-highlighted)}.scenario-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.scenario-metrics span{display:grid;gap:3px;padding:10px;border-radius:8px;background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:11px}.scenario-metrics strong{color:var(--ui-text-highlighted)}.danger strong{color:var(--ui-error)}fieldset{display:flex;flex-wrap:wrap;gap:6px;padding:0;border:0}legend{width:100%;margin-bottom:7px;color:var(--ui-text-muted);font-size:12px;font-weight:600}.chip,.secondary,.primary{min-height:32px;padding:0 10px;border:1px solid var(--ui-border);border-radius:8px;background:transparent;color:var(--ui-text);cursor:pointer}.chip{font-size:11px}.chip.active,.primary{border-color:var(--ui-primary);background:var(--ui-primary);color:white}.check{display:flex;grid-template-columns:auto 1fr;align-items:center}.check input{width:16px;height:16px}.label-value{float:right;color:var(--ui-text-highlighted)}.results{min-width:0}.results-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.results-toolbar>div{font-size:13px}.results-toolbar>div strong{font-size:22px}.results-toolbar>div span{color:var(--ui-text-muted)}.results-toolbar label{display:flex;grid-template-columns:auto 230px;align-items:center}.offer-grid,.loading-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.offer{display:grid;gap:15px;padding:18px;border:1px solid var(--ui-border);border-radius:14px;background:var(--ui-bg);transition:.2s}.offer.selected{border-color:var(--ui-primary);box-shadow:0 0 0 1px var(--ui-primary)}.offer header,.offer footer,.source,.source>div,.schedule-heading{display:flex;justify-content:space-between;gap:12px}.offer-heading{display:flex;align-items:flex-start;min-width:0}.offer header small{display:block;color:var(--ui-text-muted)}.offer h3{margin-top:3px;font-size:15px}.rank{display:inline-grid;place-items:center;flex:0 0 auto;width:28px;height:28px;margin-right:8px;border-radius:6px;background:var(--ui-bg-muted);font:700 11px var(--font-mono)}.bank-logo{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;margin-right:9px;overflow:hidden;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-bg-muted)}.bank-logo img{width:100%;height:100%;padding:4px;object-fit:contain}.score{height:max-content;padding:4px 7px;border-radius:99px;background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:10px;white-space:nowrap}.primary-price{display:grid;gap:3px;padding:14px;border-radius:10px;background:var(--ui-bg-muted)}.primary-price span,.primary-price small{color:var(--ui-text-muted);font-size:11px}.primary-price strong{font-size:28px;font-weight:600}.offer dl,.summary dl,.anatomy dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}.offer dl div,.summary dl div,.anatomy dl div{display:grid;gap:2px}.offer dt,.summary dt,.anatomy dt{color:var(--ui-text-muted);font-size:10px}.offer dd,.summary dd,.anatomy dd{margin:0;font-size:13px;font-weight:600}.rate{display:grid;gap:4px;padding-left:10px;border-left:2px solid var(--ui-primary);font-size:11px}.offer-options{display:grid;gap:8px;padding:10px;border:1px solid var(--ui-border);border-radius:10px;background:var(--ui-bg-muted)}.offer-options label{font-size:11px}.offer-options select{height:34px;background:var(--ui-bg)}.offer-options__preset{padding-bottom:9px;border-bottom:1px solid var(--ui-border)}.offer-options__preset small{color:var(--ui-text-muted);font-size:10px;line-height:1.4}.offer-options__change{display:grid;grid-template-columns:minmax(130px,1fr) 90px minmax(130px,1fr);gap:6px;align-items:center;color:var(--ui-text-muted);font-size:10px;font-weight:400}.offer-options__change input,.offer-options__change select{height:32px;background:var(--ui-bg)}.unknown{display:flex;gap:6px;align-items:center;color:var(--ui-warning);font-size:11px}.offer footer button{flex:1}.offer footer button:disabled{opacity:.4;cursor:not-allowed}.empty{display:grid;place-items:center;gap:8px;padding:60px;border:1px dashed var(--ui-border);border-radius:14px}.empty>svg{font-size:32px}.comparison,.detail{margin-top:28px;padding-top:24px;border-top:1px solid var(--ui-border)}.comparison-table,.schedule{overflow:auto;margin-top:15px;border:1px solid var(--ui-border);border-radius:12px}table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}th,td{padding:11px 12px;border-bottom:1px solid var(--ui-border);text-align:right}th:first-child,td:first-child{text-align:left}thead th{background:var(--ui-bg-muted);color:var(--ui-text-muted);font-size:10px;text-transform:uppercase}.comparison th button{margin-left:8px;border:0;background:none;color:var(--ui-text-muted);cursor:pointer}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.anatomy,.summary{padding:18px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.anatomy>strong{display:block;margin:12px 0 7px;font-size:30px}.bar{height:7px;margin-bottom:14px;border-radius:99px;background:var(--ui-bg-muted);overflow:hidden}.bar span{display:block;height:100%;background:var(--ui-primary)}.detail-columns{display:grid;grid-template-columns:1.1fr 1.4fr 1fr;gap:14px;margin-top:14px}.detail-columns>div{padding:16px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.detail-columns h3{margin-bottom:12px;font-size:13px}.detail-columns ul{display:grid;gap:7px;margin:0;padding-left:18px;color:var(--ui-text-muted);font-size:11px}.facts{padding:0!important;list-style:none}.facts li{display:flex;justify-content:space-between;gap:8px}.facts strong{color:var(--ui-text-highlighted)}.facts .muted{color:var(--ui-warning)}.assumptions{margin-top:12px!important;padding-top:12px!important;border-top:1px solid var(--ui-border)}.missing li::marker{color:var(--ui-warning)}.schedule-heading{align-items:flex-end;margin-top:24px}.boundary{box-shadow:inset 3px 0 var(--ui-warning)}.source{align-items:center;margin-top:14px;padding:15px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-bg)}.source>div{align-items:flex-start}.source>div>svg{font-size:22px;color:var(--ui-success)}.source strong,.source span,.source code{display:block}.source span,.source code{margin-top:3px;color:var(--ui-text-muted);font-size:10px}.source a{color:var(--ui-primary);font-size:12px}.fineprint{margin-top:12px;color:var(--ui-text-muted);font-size:10px;line-height:1.5}.primary,.secondary{font-size:12px}.loading-grid{grid-template-columns:repeat(2,1fr)}
 .panel-heading>span,
 .section-title>span,
 .chip.active,

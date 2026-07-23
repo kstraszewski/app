@@ -417,16 +417,59 @@ export async function materializeMortgageOfferSources(
   return cloned
 }
 
-export function mortgageProductCategory(value: unknown): string {
-  const aliases: Record<string, string> = {
+export type MortgageProductKind = 'mortgage' | 'home_equity'
+
+export interface MortgageProductClassification {
+  productKind: MortgageProductKind
+  category: 'housing' | 'construction' | 'refinance' | 'eco' | 'family'
+  /**
+   * The existing creation RPC keeps its historic `p_category` signature. This
+   * normalized alias lets it persist product kind and category atomically.
+   */
+  rpcCategory: string
+}
+
+export function mortgageProductClassification(
+  categoryValue: unknown,
+  productKindValue?: unknown,
+): MortgageProductClassification {
+  const rawCategory = String(categoryValue ?? '').trim().toLowerCase()
+  const rawProductKind = String(productKindValue ?? '').trim().toLowerCase()
+  const inferredKind = rawCategory === 'secured_loan' || rawCategory === 'home_equity'
+    ? 'home_equity'
+    : 'mortgage'
+  const productKindAlias = rawProductKind === 'secured_loan' ? 'home_equity' : rawProductKind
+  const productKind = (productKindAlias || inferredKind) as MortgageProductKind
+  if (!['mortgage', 'home_equity'].includes(productKind)) {
+    throw createError({ statusCode: 400, statusMessage: 'productKind is unsupported' })
+  }
+
+  const categoryAliases: Record<string, MortgageProductClassification['category']> = {
     mortgage: 'housing',
     secured_loan: 'housing',
+    home_equity: 'housing',
   }
-  const normalized = aliases[String(value ?? '')] ?? String(value ?? '')
-  if (!['housing', 'construction', 'refinance', 'eco', 'family'].includes(normalized)) {
+  const category = categoryAliases[rawCategory]
+    ?? rawCategory as MortgageProductClassification['category']
+  if (!['housing', 'construction', 'refinance', 'eco', 'family'].includes(category)) {
     throw createError({ statusCode: 400, statusMessage: 'category is unsupported' })
   }
-  return normalized
+  if (productKind === 'home_equity' && category !== 'housing') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'home_equity currently supports only the housing legacy category',
+    })
+  }
+
+  return {
+    productKind,
+    category,
+    rpcCategory: productKind === 'home_equity' ? 'home_equity' : category,
+  }
+}
+
+export function mortgageProductCategory(value: unknown): string {
+  return mortgageProductClassification(value).category
 }
 
 export function throwMortgageBackofficeDbError(

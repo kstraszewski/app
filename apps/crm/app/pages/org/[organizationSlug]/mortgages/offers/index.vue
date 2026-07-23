@@ -10,7 +10,7 @@ import { apiErrorMessage } from '~/utils/api-error'
 import { createDefaultMortgageOfferV2 } from '~/utils/mortgage-offer-draft'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Oferty hipoteczne — OpenExpert' })
+useHead({ title: 'Oferty kredytowe — OpenExpert' })
 
 const route = useRoute()
 const toast = useToast()
@@ -29,6 +29,7 @@ const search = ref('')
 const lifecycleFilter = ref<'all' | 'draft' | 'published' | 'archived'>('all')
 const createOpen = ref(false)
 const creating = ref(false)
+const handledCreateBankId = ref('')
 
 const createSchema = z.object({
   bankId: z.string().min(1, 'Wybierz instytucję.'),
@@ -101,6 +102,10 @@ function offerPath(offerId: string) {
   return `${listPath.value}/${encodeURIComponent(offerId)}`
 }
 
+function bankPath(bankId: string) {
+  return `/org/${organizationSlug.value}/mortgages/institutions/${encodeURIComponent(bankId)}`
+}
+
 function openCreate(bank?: MortgageOfferBankSummary) {
   Object.assign(createState, {
     bankId: bank?.id ?? banks.value[0]?.id ?? '',
@@ -113,6 +118,15 @@ function openCreate(bank?: MortgageOfferBankSummary) {
   })
   createOpen.value = true
 }
+
+watch([banks, () => route.query.createBank], ([availableBanks, rawBankId]) => {
+  const requestedBankId = Array.isArray(rawBankId) ? rawBankId[0] : rawBankId
+  if (typeof requestedBankId !== 'string' || requestedBankId === handledCreateBankId.value) return
+  const requestedBank = availableBanks.find(bank => bank.id === requestedBankId)
+  if (!requestedBank) return
+  handledCreateBankId.value = requestedBankId
+  openCreate(requestedBank)
+}, { immediate: true })
 
 function slugFromName() {
   if (createState.slug) return
@@ -187,7 +201,7 @@ function validityLabel(offer: MortgageOfferSummary) {
 </script>
 
 <template>
-  <CrmShell title="Oferty hipoteczne" eyebrow="Backoffice · oferta → warianty → kalkulacja">
+  <CrmShell title="Oferty kredytowe" eyebrow="Centralny katalog · instytucja → oferta → wersja → kalkulator">
     <template #actions>
       <UButton
         :to="`/org/${organizationSlug}/mortgages/institutions`"
@@ -232,7 +246,7 @@ function validityLabel(offer: MortgageOfferSummary) {
           <article>
             <span>Oferty</span>
             <strong>{{ totalOffers }}</strong>
-            <small>Wszystkie produkty w katalogu</small>
+            <small>Wszystkie oferty w katalogu</small>
           </article>
           <article>
             <span>Opublikowane</span>
@@ -272,7 +286,7 @@ function validityLabel(offer: MortgageOfferSummary) {
           <div v-else-if="filteredBanks.length" class="bank-groups">
             <section v-for="bank in filteredBanks" :key="bank.id" class="bank-group">
               <header class="bank-group__header">
-                <div class="bank-group__identity">
+                <NuxtLink :to="bankPath(bank.id)" class="bank-group__identity">
                   <span class="bank-group__logo">
                     <img v-if="bank.logoUrl" :src="bank.logoUrl" alt="">
                     <UIcon v-else name="i-lucide-landmark" />
@@ -281,16 +295,27 @@ function validityLabel(offer: MortgageOfferSummary) {
                     <h3>{{ bank.name }}</h3>
                     <p>{{ bank.offers.length }} {{ bank.offers.length === 1 ? 'oferta' : 'ofert' }}</p>
                   </div>
+                </NuxtLink>
+                <div class="bank-group__actions">
+                  <UButton
+                    :to="bankPath(bank.id)"
+                    icon="i-lucide-layout-dashboard"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                  >
+                    Profil banku
+                  </UButton>
+                  <UButton
+                    icon="i-lucide-plus"
+                    color="neutral"
+                    variant="outline"
+                    size="xs"
+                    @click="openCreate(bank)"
+                  >
+                    Dodaj ofertę
+                  </UButton>
                 </div>
-                <UButton
-                  icon="i-lucide-plus"
-                  color="neutral"
-                  variant="outline"
-                  size="xs"
-                  @click="openCreate(bank)"
-                >
-                  Dodaj ofertę
-                </UButton>
               </header>
 
               <div v-if="bank.offers.length" class="bank-group__offers">
@@ -303,7 +328,7 @@ function validityLabel(offer: MortgageOfferSummary) {
                   <span class="offer-row__icon"><UIcon name="i-lucide-house" /></span>
                   <span class="offer-row__identity">
                     <strong>{{ offer.name }}</strong>
-                    <small>{{ offer.code || 'Bez kodu produktu' }}</small>
+                    <small>{{ offer.code || 'Bez kodu oferty' }}</small>
                   </span>
                   <span class="offer-row__validity">
                     <small>Obowiązuje</small>
@@ -330,7 +355,7 @@ function validityLabel(offer: MortgageOfferSummary) {
 
               <button v-else type="button" class="bank-group__empty" @click="openCreate(bank)">
                 <UIcon name="i-lucide-file-plus-2" />
-                <span><strong>Brak ofert</strong><small>Dodaj pierwszy produkt tej instytucji</small></span>
+                <span><strong>Brak ofert</strong><small>Dodaj pierwszą ofertę tej instytucji</small></span>
                 <UIcon name="i-lucide-chevron-right" />
               </button>
             </section>
@@ -348,7 +373,7 @@ function validityLabel(offer: MortgageOfferSummary) {
 
     <UModal
       v-model:open="createOpen"
-      title="Nowa oferta hipoteczna"
+      title="Nowa oferta kredytowa"
       description="Najpierw utworzymy bezpieczny szkic. Publikacja nastąpi dopiero po walidacji kalkulacji."
       :ui="{ content: 'sm:max-w-2xl', footer: 'justify-end' }"
     >
@@ -378,7 +403,7 @@ function validityLabel(offer: MortgageOfferSummary) {
           <UFormField name="currency" label="Waluta" required>
             <USelect v-model="createState.currency" :items="[{ label: 'PLN', value: 'PLN' }]" class="w-full" />
           </UFormField>
-          <UFormField name="category" label="Rodzaj produktu" required>
+          <UFormField name="category" label="Rodzaj kredytu" required>
             <USelect v-model="createState.category" :items="categoryItems" class="w-full" />
           </UFormField>
           <UFormField name="distributionChannel" label="Kanał dystrybucji" required>
@@ -412,15 +437,18 @@ function validityLabel(offer: MortgageOfferSummary) {
 .offer-catalog__metrics span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .offer-catalog__metrics strong { color: var(--ui-text-highlighted); font-size: 30px; line-height: 1; }
 .offer-catalog__metrics small { color: var(--ui-text-muted); }
-.offer-catalog__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.offer-catalog__toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .85fr); align-items: end; gap: 20px; min-width: 0; }
+.offer-catalog__toolbar > :first-child { min-width: 0; }
 .offer-catalog__toolbar h2, .offer-catalog__toolbar p { margin: 0; }
 .offer-catalog__toolbar p { margin-top: 4px; color: var(--ui-text-muted); font-size: 13px; }
-.offer-catalog__filters { display: flex; gap: 10px; }
-.offer-catalog__filters > :first-child { width: min(320px, 42vw); }
+.offer-catalog__filters { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(160px, .65fr); gap: 10px; min-width: 0; }
+.offer-catalog__filters > * { min-width: 0; width: 100%; }
 .offer-catalog__loading, .bank-groups { display: grid; gap: 14px; }
 .bank-group { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
 .bank-group__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--ui-border); background: var(--ui-bg-muted); }
-.bank-group__identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.bank-group__identity { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
+.bank-group__identity:hover h3 { color: var(--ui-primary); }
+.bank-group__actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .bank-group__identity h3, .bank-group__identity p { margin: 0; }
 .bank-group__identity p { margin-top: 2px; color: var(--ui-text-muted); font-size: 12px; }
 .bank-group__logo { display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-bg); }
@@ -450,15 +478,18 @@ function validityLabel(offer: MortgageOfferSummary) {
 .offer-create-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 1100px) {
   .offer-catalog__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .offer-catalog__toolbar { grid-template-columns: 1fr; align-items: stretch; }
+  .offer-catalog__filters { width: min(100%, 680px); }
   .offer-row { grid-template-columns: 38px minmax(0, 1fr) auto 18px; }
   .offer-row__validity, .offer-row__revision { display: none; }
 }
 @media (max-width: 720px) {
   .offer-catalog__metrics { grid-template-columns: 1fr; }
-  .offer-catalog__toolbar, .offer-catalog__filters { align-items: stretch; flex-direction: column; }
-  .offer-catalog__filters > :first-child { width: 100%; }
+  .offer-catalog__filters { grid-template-columns: 1fr; width: 100%; }
   .offer-row { grid-template-columns: 34px minmax(0, 1fr) 18px; padding-inline: 12px; }
   .offer-row > .badge { display: none; }
+  .bank-group__header { align-items: flex-start; }
+  .bank-group__actions > :first-child { display: none; }
   .offer-create-form { grid-template-columns: 1fr; }
   .offer-create-form > * { grid-column: auto !important; }
 }

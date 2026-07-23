@@ -52,7 +52,7 @@ if (data.value.data.length === 1) {
           v-for="organization in data.data"
           :key="organization.id"
           :to="`/org/${encodeURIComponent(organization.slug)}/dashboard`"
-          class="organization-card"
+          class="organization-card oe-hover-lift"
         >
           <div class="organization-card__icon"><UIcon name="i-lucide-building-2" /></div>
           <div>
@@ -129,12 +129,10 @@ if (data.value.data.length === 1) {
   background: var(--ui-bg);
   color: inherit;
   text-decoration: none;
-  transition: border-color 160ms ease, transform 160ms ease;
 }
 
 .organization-card:hover {
   border-color: var(--ui-color-primary-500);
-  transform: translateY(-2px);
 }
 
 .organization-card__icon {

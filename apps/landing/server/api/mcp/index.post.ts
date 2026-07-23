@@ -1,6 +1,10 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ method: string; params?: Record<string, unknown> }>(event)
 
+  if (!body) {
+    throw createError({ statusCode: 400, statusMessage: 'request body is required' })
+  }
+
   if (body.method === 'tools/list') {
     return {
       tools: listMcpTools().map(({ name, description, inputSchema }) => ({

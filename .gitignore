@@ -3,6 +3,7 @@
 .data
 .nuxt
 .nitro
+.eve
 .cache
 .turbo
 dist

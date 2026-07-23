@@ -336,6 +336,87 @@ test('replays a frozen V2 offer with cross-sell, financed commission and bridge 
   assert.equal(calculationSnapshot.summary.financedCosts, 10_816.33)
 })
 
+test('replays a published insurance preset with its margin modifier and linked cost', () => {
+  const offerDefinition = integratedV2Offer()
+  offerDefinition.presets = [
+    {
+      id: 'standard',
+      label: 'Bez pakietu',
+      selections: { 'life-insurance': 'none' },
+      isDefault: true,
+    },
+    {
+      id: 'insured',
+      label: 'Z ubezpieczeniem bankowym',
+      selections: { 'life-insurance': 'bank' },
+      isDefault: false,
+    },
+  ]
+  offerDefinition.costs.push({
+    id: 'bank-life-insurance',
+    label: 'Ubezpieczenie na życie',
+    state: 'known',
+    classification: 'conditional_cost',
+    category: 'life_insurance',
+    formula: {
+      kind: 'percentage',
+      ratePct: '0.03000',
+      basis: 'opening_balance_after_draw',
+      ratePeriod: 'per_occurrence',
+    },
+    timing: {
+      kind: 'recurring',
+      everyMonths: 1,
+      period: {
+        from: { kind: 'month', month: 1, edge: 'start' },
+        endExclusive: { kind: 'month', month: 37, edge: 'start' },
+      },
+    },
+    when: { op: 'selection_is', featureId: 'life-insurance', optionId: 'bank' },
+    settlement: { allowed: ['cash'], default: 'cash' },
+    includedInApr: true,
+  })
+
+  const standardOffer = offer('standard-preset', {
+    scenario: {
+      presetId: 'standard',
+      mortgageRegistrationMonth: 4,
+      financeCommission: true,
+      selections: {},
+    },
+    version: { max_ltv_pct: 90, offer_definition: offerDefinition },
+  })
+  const insuredOffer = offer('insured-preset', {
+    scenario: {
+      presetId: 'insured',
+      mortgageRegistrationMonth: 4,
+      financeCommission: true,
+      selections: {},
+    },
+    version: { max_ltv_pct: 90, offer_definition: offerDefinition },
+  })
+  const baseline = getFinancingComparisonBaseline([standardOffer, insuredOffer], standardOffer.id)
+  assert.ok(baseline)
+  assert.equal(baseline.presetId, 'standard')
+
+  const standard = calculatePropertyOfferComparison('property-standard', 600_000, standardOffer, baseline)
+  const insured = calculatePropertyOfferComparison('property-insured', 600_000, insuredOffer, baseline)
+
+  assert.equal(standard.status, 'available')
+  assert.equal(insured.status, 'available')
+  assert.ok(insured.firstInstallment! < standard.firstInstallment!)
+  assert.ok(insured.firstRecurringCosts! > standard.firstRecurringCosts!)
+  assert.ok(insured.costFirstFiveYears! > standard.costFirstFiveYears!)
+
+  const insuredScenario = insured.scenarioSnapshot as Record<string, any>
+  const insuredCalculation = insured.calculationSnapshot as Record<string, any>
+  assert.equal(insuredScenario.presetId, 'insured')
+  assert.equal(insuredScenario.pricing.presetId, 'insured')
+  assert.deepEqual(insuredScenario.selections, { 'life-insurance': 'bank' })
+  assert.deepEqual(insuredScenario.pricing.selections, { 'life-insurance': 'bank' })
+  assert.equal(insuredCalculation.raw.resolvedSelections['life-insurance'], 'bank')
+})
+
 test('uses appraisal collateral and gross facility limit for the frozen V2 LTV snapshot', () => {
   const offerDefinition = integratedV2Offer()
   offerDefinition.eligibility.ltvDebtBasis = 'facility_limit'

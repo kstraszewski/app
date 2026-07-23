@@ -212,29 +212,7 @@ async function submitWaitlist() {
           </div>
 
           <div class="personalize-panel">
-            <div class="personalize-panel__header">
-              <span>Podgląd motywu</span>
-              <span>4 warianty</span>
-            </div>
-
-            <ul class="personalize-themes" aria-label="Dostępne warianty personalizacji">
-              <li class="personalize-theme">
-                <span class="personalize-theme__swatch personalize-theme__swatch--ocean" aria-hidden="true" />
-                <span><strong>Ocean</strong><small>DM Sans</small></span>
-              </li>
-              <li class="personalize-theme">
-                <span class="personalize-theme__swatch personalize-theme__swatch--ember" aria-hidden="true" />
-                <span><strong>Ember</strong><small>Roboto</small></span>
-              </li>
-              <li class="personalize-theme">
-                <span class="personalize-theme__swatch personalize-theme__swatch--plum" aria-hidden="true" />
-                <span><strong>Plum</strong><small>Manrope</small></span>
-              </li>
-              <li class="personalize-theme">
-                <span class="personalize-theme__swatch personalize-theme__swatch--custom" aria-hidden="true" />
-                <span><strong>Custom</strong><small>Twój własny</small></span>
-              </li>
-            </ul>
+            <LandingPersonalizationPreview />
 
             <NuxtLink to="/personalizacja" class="button personalize-panel__cta">
               Przetestuj personalizację
@@ -702,85 +680,6 @@ async function submitWaitlist() {
   border-radius: 6px;
   background: #f7f7f5;
   padding: clamp(22px, 3vw, 34px);
-}
-
-.personalize-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 17px;
-  color: #666;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.personalize-themes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  border: 1px solid #d2d2ce;
-  background: #d2d2ce;
-  list-style: none;
-}
-
-.personalize-theme {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 14px;
-  background: #fff;
-  padding: 18px;
-}
-
-.personalize-theme__swatch {
-  width: 12px;
-  height: 38px;
-  flex: 0 0 auto;
-  border-radius: 2px;
-  background: #111;
-}
-
-.personalize-theme__swatch--ocean {
-  background: #2563eb;
-}
-
-.personalize-theme__swatch--ember {
-  background: #c2410c;
-}
-
-.personalize-theme__swatch--plum {
-  background: #9b0050;
-}
-
-.personalize-theme__swatch--custom {
-  background: linear-gradient(180deg, #6e4aff 0 33%, #14a889 33% 66%, #f4a62a 66% 100%);
-}
-
-.personalize-theme > span:last-child {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.personalize-theme strong {
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.personalize-theme small {
-  overflow: hidden;
-  color: #707070;
-  font-size: 11.5px;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .personalize-panel__cta {

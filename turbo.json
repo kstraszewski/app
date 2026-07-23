@@ -1,7 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "AI_GATEWAY_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY"
+  ],
   "tasks": {
     "db:reset": {
+      "cache": false
+    },
+    "db:seed-demo": {
       "cache": false
     },
     "db:setup": {

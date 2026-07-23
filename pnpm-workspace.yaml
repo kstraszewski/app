@@ -1,5 +1,6 @@
 packages:
   - "apps/*"
+  - "multiform-agent"
   - "packages/*"
 
 allowBuilds:

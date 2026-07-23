@@ -1,8 +1,7 @@
-import { defineSandbox } from "eve/sandbox";
-import { justbash } from "eve/sandbox/just-bash";
+import { defaultBackend, defineSandbox } from "eve/sandbox";
 
-// A lightweight deterministic backend is enough for this chat agent and avoids
-// requiring Docker or a local VM during OpenExpert development.
+// Vercel uses its hosted sandbox in production. Local development falls back
+// through Docker or microsandbox to the installed just-bash interpreter.
 export default defineSandbox({
-  backend: justbash(),
+  backend: defaultBackend(),
 });

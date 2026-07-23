@@ -66,7 +66,7 @@ function consumeRateLimit(event: H3Event) {
       1,
       Math.ceil((bucket.windowStartedAt + rateLimitWindowMs - now) / 1000),
     )
-    setResponseHeader(event, 'Retry-After', retryAfterSeconds)
+    setResponseHeader(event, 'Retry-After', String(retryAfterSeconds))
     throw createError({
       statusCode: 429,
       statusMessage: 'Limit generatora to 5 analiz na godzinę. Spróbuj ponownie później.',

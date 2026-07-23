@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Pakiet może zawierać maksymalnie 10 dokumentów.' })
   }
 
-  const crmContext = body.crmContext === undefined
+  const crmContext = body?.crmContext === undefined
     ? undefined
     : await loadCrmMultiformContext(event, parseCrmMultiformSelection(body.crmContext))
   if (crmContext && !sameStringSet(templateIds, crmContext.templateIds)) {

@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@openexpert/multiform": "link:../packages/multiform",
-    "ai": "7.0.26",
-    "eve": "0.24.6",
+    "ai": "7.0.34",
+    "eve": "0.27.1",
     "zod": "4.4.3"
   },
   "devDependencies": {

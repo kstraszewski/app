@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const safeFileName = quotedFileName(template.source.fileName)
   setHeader(event, 'Content-Type', 'application/pdf')
-  setHeader(event, 'Content-Length', String(bytes.byteLength))
+  setHeader(event, 'Content-Length', bytes.byteLength)
   setHeader(event, 'Content-Disposition', `inline; filename="${safeFileName}"; filename*=UTF-8''${encodeURIComponent(safeFileName)}`)
   setHeader(event, 'Cache-Control', 'public, max-age=3600')
   setHeader(event, 'ETag', `"${sha256}"`)

@@ -111,7 +111,6 @@ export default defineEventHandler(async (event) => {
   const [
     peopleResult,
     casesResult,
-    activitiesResult,
     consentEventsResult,
     consentDefinitionsResult,
     ownerResult,
@@ -125,13 +124,6 @@ export default defineEventHandler(async (event) => {
       .order('role', { ascending: true })
       .order('created_at', { ascending: true }),
     casesRequest,
-    session.supabase
-      .from('crm_activities')
-      .select('*', { count: 'exact' })
-      .eq('organization_id', session.organizationId)
-      .eq('client_id', id)
-      .order('created_at', { ascending: false })
-      .limit(50),
     session.supabase
       .from('crm_client_consent_events')
       .select('*', { count: 'exact' })
@@ -150,7 +142,6 @@ export default defineEventHandler(async (event) => {
 
   throwDbError(peopleResult.error)
   throwDbError(casesResult.error)
-  throwDbError(activitiesResult.error)
   throwDbError(consentEventsResult.error)
   throwDbError(consentDefinitionsResult.error)
   throwDbError(ownerResult.error)
@@ -190,7 +181,7 @@ export default defineEventHandler(async (event) => {
     ? `client_id.eq.${id},case_id.in.(${relatedCaseIds.join(',')})`
     : `client_id.eq.${id}`
 
-  const [tasksResult, openTasksResult, documentsResult] = await Promise.all([
+  const [tasksResult, openTasksResult, documentsResult, activitiesResult] = await Promise.all([
     session.supabase
       .from('crm_tasks')
       .select('*', { count: 'exact' })
@@ -211,11 +202,45 @@ export default defineEventHandler(async (event) => {
       .or(relatedEntityFilter)
       .order('created_at', { ascending: false })
       .limit(100),
+    session.supabase
+      .from('crm_activities')
+      .select('*', { count: 'exact' })
+      .eq('organization_id', session.organizationId)
+      .or(relatedEntityFilter)
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   throwDbError(tasksResult.error)
   throwDbError(openTasksResult.error)
   throwDbError(documentsResult.error)
+  throwDbError(activitiesResult.error)
+
+  const activityRows = activitiesResult.data ?? []
+  const activityActorIds = [...new Set(activityRows
+    .map((activity: any) => activity.actor_user_id ? String(activity.actor_user_id) : null)
+    .filter((actorId: string | null): actorId is string => Boolean(actorId)))]
+  const activityActorsResult = activityActorIds.length
+    ? await session.supabase
+        .from('organization_memberships')
+        .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
+        .eq('organization_id', session.organizationId)
+        .in('user_id', activityActorIds)
+    : { data: [], error: null }
+  throwDbError(activityActorsResult.error)
+
+  const activityActorById = new Map(
+    (activityActorsResult.data ?? []).flatMap((membership: any) => {
+      const user = Array.isArray(membership.user) ? membership.user[0] : membership.user
+      return user ? [[String(membership.user_id), user] as const] : []
+    }),
+  )
+  const activities = activityRows.map((activity: any) => ({
+    ...activity,
+    actor: activity.actor_user_id
+      ? activityActorById.get(String(activity.actor_user_id)) ?? null
+      : null,
+  }))
 
   const latestConsentByDefinitionId = new Map<string, any>()
   for (const consentEvent of consentEvents) {
@@ -335,7 +360,7 @@ export default defineEventHandler(async (event) => {
     cases,
     tasks: tasksResult.data ?? [],
     documents: documentsResult.data ?? [],
-    activities: activitiesResult.data ?? [],
+    activities,
     activity_count: activitiesResult.count ?? 0,
     consents,
     consent_states: consentStates,

@@ -84,13 +84,152 @@ export interface ClientListResponse {
   facets?: ClientListFacets
 }
 
+export type ClientDetailJson =
+  | null
+  | boolean
+  | number
+  | string
+  | ClientDetailJson[]
+  | { [key: string]: ClientDetailJson }
+
+export interface ClientUserSummary {
+  id: string
+  email: string
+  full_name: string | null
+}
+
+export interface ClientDetailRecord extends Omit<ClientListItem, 'organization_id' | 'tags'> {
+  organization_id: string
+  tags: string[]
+  metadata: ClientDetailJson
+  primary_email_normalized?: string | null
+  primary_phone_normalized?: string | null
+  search_text?: string
+}
+
+export interface ClientPerson {
+  id: string
+  organization_id: string
+  client_id: string
+  role: string
+  first_name: string | null
+  last_name: string | null
+  display_name: string
+  email: string | null
+  phone: string | null
+  pesel: string | null
+  date_of_birth: string | null
+  metadata: ClientDetailJson
+  created_at: string
+  updated_at: string
+  email_normalized?: string | null
+  phone_normalized?: string | null
+}
+
+export interface ClientCaseSummary {
+  id: string
+  title: string
+  closed_at: string | null
+  created_at: string
+  updated_at: string
+  offer_count: number
+}
+
+export interface ClientTask {
+  id: string
+  organization_id: string
+  assignee_user_id: string | null
+  client_id: string | null
+  case_id: string | null
+  case_item_id: string | null
+  title: string
+  description: string | null
+  status_code: string
+  priority: string
+  due_at: string | null
+  completed_at: string | null
+  metadata: ClientDetailJson
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientDocument {
+  id: string
+  organization_id: string
+  client_id: string | null
+  case_id: string | null
+  case_item_id: string | null
+  submission_id: string | null
+  document_type: string
+  name: string
+  status_code: string
+  storage_bucket: string | null
+  storage_path: string | null
+  received_at: string | null
+  verified_at: string | null
+  metadata: ClientDetailJson
+  created_at: string
+  updated_at: string
+  mime_type?: string | null
+  sha256?: string | null
+  size_bytes?: number | null
+  uploaded_by_user_id?: string | null
+}
+
+export interface ClientActivity {
+  id: string
+  organization_id: string
+  actor_user_id: string | null
+  client_id: string | null
+  case_id: string | null
+  case_item_id: string | null
+  submission_id: string | null
+  activity_type: string
+  title: string
+  body: string | null
+  payload: ClientDetailJson
+  created_at: string
+  actor?: ClientUserSummary | null
+}
+
+export interface ClientAppointmentFacility {
+  id: string
+  name: string
+  timezone: string
+}
+
+export interface ClientAppointmentService {
+  id: string
+  name: string
+  duration_minutes: number
+}
+
 export interface ClientAppointmentSummary {
   id: string
+  client_id: string
+  facility_id: string
+  service_id: string
+  expert_user_id: string
   facilityName: string
   serviceName: string
   expertName: string
   starts_at: string
+  ends_at: string
+  timezone: string
   status: 'hold' | 'confirmed' | 'cancelled' | string
+  confirmed_at: string | null
+  cancelled_at: string | null
+  cancellation_reason: string | null
+  customer_name: string
+  customer_email: string | null
+  customer_phone: string | null
+  notes: string | null
+  source: string
+  created_at: string
+  updated_at: string
+  facility: ClientAppointmentFacility | null
+  service: ClientAppointmentService | null
+  expert: ClientUserSummary | null
 }
 
 export interface ClientAppointmentsPageInfo {
@@ -115,6 +254,59 @@ export interface ClientConsentDefinition {
   code: string
   current_version_id: string
   current_version: ClientConsentVersion
+}
+
+export interface ClientConsentDefinitionRecord {
+  id: string
+  code: string
+  context: string
+  current_version_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientDetailConsentDefinition extends ClientConsentDefinitionRecord {
+  current_version: ClientConsentVersion | null
+}
+
+export interface ClientConsentEvent {
+  id: string
+  organization_id: string
+  client_id: string
+  subject_person_id: string
+  definition_id: string
+  definition_version_id: string
+  decision: ClientConsentDecision
+  contact_value: string | null
+  source: string
+  recorded_by_user_id: string | null
+  evidence_reference: string | null
+  metadata: ClientDetailJson
+  occurred_at: string
+  created_at: string
+}
+
+export interface ClientConsentHistoryEvent extends ClientConsentEvent {
+  version: ClientConsentVersion | null
+}
+
+export interface ClientConsentState {
+  id: string | null
+  client_id: string
+  definition_id: string
+  definition_version_id: string
+  decision: ClientConsentDecision | 'missing'
+  occurred_at: string | null
+  source: string | null
+  contact_value: string | null
+  definition: ClientConsentDefinitionRecord
+  version: ClientConsentVersion | null
+  organization_id?: string
+  subject_person_id?: string
+  recorded_by_user_id?: string | null
+  evidence_reference?: string | null
+  metadata?: ClientDetailJson
+  created_at?: string
 }
 
 /** Wire shape accepted from both SQL JSON facets (camelCase) and REST aliases. */
@@ -164,6 +356,48 @@ export interface ClientContactCounts {
   phone?: number
   both?: number
   none?: number
+}
+
+export interface ClientDetailSummary {
+  people_count: number
+  cases_count: number
+  open_cases_count: number
+  task_count: number
+  open_tasks_count: number
+  documents_count: number
+  activity_count: number
+  consent_definition_count: number
+  granted_consent_count: number
+  appointment_count: number
+}
+
+/**
+ * Contract: GET /api/org/:organizationSlug/crm/clients/:id
+ *
+ * Activities include direct client activity and activity from every case linked
+ * to the client. Actor profiles are scoped to the current organization.
+ */
+export interface ClientDetailResponse {
+  data: ClientDetailRecord
+  owner: ClientUserSummary | null
+  primary_person: ClientPerson | null
+  people: ClientPerson[]
+  cases: ClientCaseSummary[]
+  tasks: ClientTask[]
+  documents: ClientDocument[]
+  activities: ClientActivity[]
+  activity_count: number
+  consents: ClientConsentState[]
+  consent_states: ClientConsentState[]
+  consent_definitions: ClientDetailConsentDefinition[]
+  consent_history: ClientConsentHistoryEvent[]
+  consent_history_count: number
+  appointments: ClientAppointmentSummary[]
+  appointment_count: number
+  appointments_page_info: ClientAppointmentsPageInfo
+  summary: ClientDetailSummary
+  consent_events?: ClientConsentEvent[]
+  consent_history_page_info?: ClientAppointmentsPageInfo
 }
 
 /**

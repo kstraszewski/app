@@ -20,6 +20,7 @@ definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Klienci — OpenExpert CRM' })
 
 const { organizationSlug, crmApiPath, orgApiPath, orgPath } = useOrganizationContext()
+const requestFetch = useRequestFetch()
 const toast = useToast()
 
 type ConsentChoice = 'granted' | 'declined'
@@ -110,7 +111,7 @@ const {
   refresh: refreshFilters,
 } = await useAsyncData<ClientFiltersResponse>(
   `crm-clients-filters:${organizationSlug.value}`,
-  () => $fetch<ClientFiltersResponse>(crmApiPath('/clients/filters')),
+  () => requestFetch<ClientFiltersResponse>(crmApiPath('/clients/filters')),
   {
     default: createEmptyFilters,
     watch: [organizationSlug],
@@ -124,7 +125,7 @@ const {
   refresh: refreshMembers,
 } = await useAsyncData<ClientMembersResponse>(
   `crm-clients-members:${organizationSlug.value}`,
-  () => $fetch<ClientMembersResponse>(orgApiPath('/members')),
+  () => requestFetch<ClientMembersResponse>(orgApiPath('/members')),
   {
     default: createEmptyMembers,
     watch: [organizationSlug],
@@ -195,7 +196,7 @@ const {
   refresh: refreshClients,
 } = await useAsyncData<ClientListResponse>(
   `crm-clients-list:${organizationSlug.value}`,
-  () => $fetch<ClientListResponse>(crmApiPath('/clients'), { query: clientsQuery.value }),
+  () => requestFetch<ClientListResponse>(crmApiPath('/clients'), { query: clientsQuery.value }),
   {
     default: createEmptyList,
     watch: [organizationSlug, clientsQuery],

@@ -97,7 +97,11 @@ async function createTeam() {
 </script>
 
 <template>
-  <CrmShell title="Zespoły" eyebrow="Administracja organizacji · struktura zespołów">
+  <CrmShell
+    title="Zespoły"
+    eyebrow="Administracja organizacji"
+    description="Struktura zespołów, ich członkowie i relacje w organizacji."
+  >
     <template #actions>
       <UButton v-if="isAdmin" icon="i-lucide-plus" @click="openCreate">Nowy zespół</UButton>
     </template>

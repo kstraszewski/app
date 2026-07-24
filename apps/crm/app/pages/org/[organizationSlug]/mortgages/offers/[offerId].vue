@@ -52,21 +52,74 @@ import {
   percentageCostFormulaV2,
 } from '~/utils/mortgage-offer-draft'
 
-definePageMeta({ middleware: ['auth', 'organization'] })
+definePageMeta({
+  middleware: ['auth', 'organization'],
+  path: '/org/:organizationSlug/settings/products/:offerId',
+  alias: ['/org/:organizationSlug/mortgages/offers/:offerId'],
+})
+
+type OrganizationProductSettingsPayload = {
+  data: {
+    id: string
+    baseName: string
+    isEnabled: boolean
+    customName: string | null
+    notes: string | null
+    revision: number
+    isCustomized: boolean
+    bankEnabled: boolean
+    hasPublishedVersion: boolean
+    liveInCalculator: boolean
+    createdAt: string | null
+    updatedAt: string | null
+  }
+}
 
 const route = useRoute()
 const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const offerId = computed(() => String(route.params.offerId ?? ''))
-const listPath = computed(() => `/org/${organizationSlug.value}/mortgages/offers`)
+const listPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
+const calculatorPath = computed(() => `/org/${organizationSlug.value}/mortgages`)
 const endpoint = computed(() => `/api/backoffice/mortgages/offers/${encodeURIComponent(offerId.value)}`)
+const organizationSettingsEndpoint = computed(() => (
+  `/api/org/${organizationSlug.value}/mortgages/products/${encodeURIComponent(offerId.value)}`
+))
 
-const { data: rawDetail, status, error, refresh } = await useFetch<unknown>(endpoint, {
-  default: () => ({ data: null }),
-})
+const [
+  { data: rawDetail, status, error, refresh },
+  {
+    data: organizationSettings,
+    status: organizationSettingsStatus,
+    error: organizationSettingsError,
+    refresh: refreshOrganizationSettings,
+  },
+] = await Promise.all([
+  useFetch<unknown>(endpoint, {
+    default: () => ({ data: null }),
+  }),
+  useFetch<OrganizationProductSettingsPayload>(organizationSettingsEndpoint, {
+    default: () => ({
+      data: {
+        id: '',
+        baseName: '',
+        isEnabled: true,
+        customName: null,
+        notes: null,
+        revision: 0,
+        isCustomized: false,
+        bankEnabled: true,
+        hasPublishedVersion: false,
+        liveInCalculator: false,
+        createdAt: null,
+        updatedAt: null,
+      },
+    }),
+  }),
+])
 const detail = computed(() => normalizeMortgageOfferDetail<MortgageOfferDraftDataV2>(rawDetail.value))
 const bankPath = computed(() => detail.value?.bank?.id
-  ? `/org/${organizationSlug.value}/mortgages/institutions/${encodeURIComponent(detail.value.bank.id)}`
+  ? `/org/${organizationSlug.value}/settings/institutions/${encodeURIComponent(detail.value.bank.id)}`
   : '')
 
 const draft = ref<MortgageOfferDraftDataV2>(normalizeMortgageOfferDraftV2(null))
@@ -77,6 +130,13 @@ const saving = ref(false)
 const publishing = ref(false)
 const publishOpen = ref(false)
 const conflict = ref<string | null>(null)
+const savingOrganizationSettings = ref(false)
+const resettingOrganizationSettings = ref(false)
+const organizationForm = reactive({
+  isEnabled: organizationSettings.value.data.isEnabled,
+  customName: organizationSettings.value.data.customName ?? '',
+  notes: organizationSettings.value.data.notes ?? '',
+})
 const editorForm = useTemplateRef('editorForm')
 const legacyDraftNotice = computed(() => (
   detail.value?.draft.seededFromLegacy === true
@@ -86,6 +146,14 @@ const legacyDraftDescription = computed(() => (
   detail.value?.draft.seedWarnings[0]
   ?? 'Ta oferta została przeniesiona z wcześniejszego modelu danych. Sprawdź pola oznaczone jako nieznane, zapisz szkic i dopiero potem opublikuj nową wersję.'
 ))
+
+function syncOrganizationForm(payload = organizationSettings.value) {
+  organizationForm.isEnabled = payload.data.isEnabled
+  organizationForm.customName = payload.data.customName ?? ''
+  organizationForm.notes = payload.data.notes ?? ''
+}
+
+watch(organizationSettings, payload => syncOrganizationForm(payload), { immediate: true })
 
 const editorSteps = [
   { value: 'basics', slot: 'basics', title: 'Podstawy', description: 'Ważność i dostępność', icon: 'i-lucide-settings-2' },
@@ -339,6 +407,66 @@ async function reloadServerDraft() {
   if (refreshed) hydrateFromServer(refreshed)
 }
 
+function invalidateMortgageCatalog() {
+  clearNuxtData(`mortgage-catalog:${organizationSlug.value}`)
+}
+
+async function saveOrganizationSettings() {
+  savingOrganizationSettings.value = true
+  try {
+    await $fetch(organizationSettingsEndpoint.value, {
+      method: 'PATCH',
+      body: {
+        is_enabled: organizationForm.isEnabled,
+        custom_name: organizationForm.customName.trim() || null,
+        notes: organizationForm.notes.trim() || null,
+      },
+    })
+    await refreshOrganizationSettings()
+    invalidateMortgageCatalog()
+    toast.add({
+      title: 'Zapisano ustawienia produktu w organizacji',
+      description: organizationSettings.value.data.liveInCalculator
+        ? 'Produkt jest dostępny w porównywarce tej organizacji.'
+        : 'Produkt nie jest obecnie dostępny w porównywarce tej organizacji.',
+      color: 'success',
+      icon: 'i-lucide-circle-check',
+    })
+  } catch (caught: unknown) {
+    toast.add({
+      title: 'Nie udało się zapisać ustawień organizacji',
+      description: apiErrorMessage(caught),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    savingOrganizationSettings.value = false
+  }
+}
+
+async function resetOrganizationSettings() {
+  resettingOrganizationSettings.value = true
+  try {
+    await $fetch(organizationSettingsEndpoint.value, { method: 'DELETE' })
+    await refreshOrganizationSettings()
+    invalidateMortgageCatalog()
+    toast.add({
+      title: 'Przywrócono ustawienia domyślne produktu',
+      color: 'success',
+      icon: 'i-lucide-rotate-ccw',
+    })
+  } catch (caught: unknown) {
+    toast.add({
+      title: 'Nie udało się przywrócić ustawień',
+      description: apiErrorMessage(caught),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    resettingOrganizationSettings.value = false
+  }
+}
+
 function responseRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const source = value as Record<string, unknown>
@@ -471,10 +599,11 @@ async function publishDraft() {
     publishOpen.value = false
     toast.add({
       title: 'Oferta została opublikowana',
-      description: 'Kalkulator może już używać nowej, niezmiennej wersji.',
+      description: 'Kalkulatory organizacji, w których produkt jest włączony, mogą już używać nowej wersji.',
       color: 'success',
       icon: 'i-lucide-badge-check',
     })
+    invalidateMortgageCatalog()
     await reloadServerDraft()
   } catch (caught: unknown) {
     if (mortgageBackofficeErrorStatus(caught) === 409) {
@@ -787,9 +916,14 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 </script>
 
 <template>
-  <CrmShell :title="detail?.product.name ?? 'Edycja oferty'" eyebrow="Backoffice · wersjonowany szkic oferty">
+  <CrmShell
+    :title="detail?.product.name ?? 'Ustawienia produktu'"
+    eyebrow="Ustawienia administracyjne"
+    description="Konfiguracja produktu, wersji kalkulatora i publikacji."
+    :back-to="listPath"
+    back-label="Wróć do produktów"
+  >
     <template #actions>
-      <UButton :to="listPath" icon="i-lucide-arrow-left" color="neutral" variant="outline">Katalog</UButton>
       <UButton
         v-if="detail?.bank && bankPath"
         :to="bankPath"
@@ -832,6 +966,16 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
       />
 
       <UAlert
+        v-if="organizationSettingsError"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        title="Nie udało się pobrać ustawień produktu w organizacji"
+        :description="apiErrorMessage(organizationSettingsError)"
+        :actions="[{ label: 'Ponów', onClick: () => refreshOrganizationSettings() }]"
+      />
+
+      <UAlert
         v-if="conflict"
         color="warning"
         variant="subtle"
@@ -847,6 +991,88 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
       </div>
 
       <template v-else-if="detail">
+        <UCard
+          v-if="organizationSettingsStatus === 'success' && !organizationSettingsError"
+          class="organization-product-settings"
+        >
+          <template #header>
+            <div class="organization-product-settings__header">
+              <div>
+                <span>Ustawienia w tej organizacji</span>
+                <h2>Widoczność i nazwa produktu</h2>
+                <p>Te ustawienia działają tylko w bieżącej organizacji i są stosowane przez porównywarkę od razu po zapisie.</p>
+              </div>
+              <UBadge
+                :color="organizationSettings.data.liveInCalculator ? 'success' : 'warning'"
+                variant="subtle"
+              >
+                {{ organizationSettings.data.liveInCalculator ? 'Aktywny w kalkulatorze' : 'Poza kalkulatorem' }}
+              </UBadge>
+            </div>
+          </template>
+
+          <UAlert
+            v-if="!organizationSettings.data.bankEnabled"
+            class="organization-product-settings__notice"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-landmark"
+            title="Instytucja jest wyłączona"
+            description="Produkt pozostanie poza kalkulatorem, dopóki instytucja nie zostanie ponownie włączona w ustawieniach."
+          />
+
+          <form class="organization-product-settings__form" @submit.prevent="saveOrganizationSettings">
+            <UFormField
+              label="Widoczny w kalkulatorze"
+              description="Wyłączenie usuwa ten produkt z porównywarki wyłącznie w bieżącej organizacji."
+            >
+              <USwitch v-model="organizationForm.isEnabled" label="Produkt aktywny" />
+            </UFormField>
+            <UFormField
+              label="Nazwa w organizacji"
+              description="Puste pole zachowuje globalną nazwę produktu."
+            >
+              <UInput v-model="organizationForm.customName" :placeholder="organizationSettings.data.baseName" />
+            </UFormField>
+            <UFormField class="organization-product-settings__notes" label="Notatka administratora">
+              <UTextarea
+                v-model="organizationForm.notes"
+                :rows="2"
+                placeholder="Np. zakres współpracy lub powód wyłączenia produktu"
+              />
+            </UFormField>
+            <div class="organization-product-settings__actions">
+              <UButton
+                v-if="organizationSettings.data.isCustomized"
+                type="button"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-rotate-ccw"
+                :loading="resettingOrganizationSettings"
+                @click="resetOrganizationSettings"
+              >
+                Przywróć domyślne
+              </UButton>
+              <UButton
+                type="submit"
+                icon="i-lucide-save"
+                :loading="savingOrganizationSettings"
+              >
+                Zapisz dla organizacji
+              </UButton>
+            </div>
+          </form>
+        </UCard>
+
+        <UAlert
+          color="info"
+          variant="subtle"
+          icon="i-lucide-calculator"
+          title="Publikacja aktualizuje kalkulatory"
+          description="Zapis szkicu nie zmienia porównywarki. Po publikacji oprocentowanie, limity, warunki i koszty zaczną wpływać na wszystkie organizacje, w których ten produkt jest włączony."
+          :actions="detail.product.hasPublishedVersion ? [{ label: 'Otwórz kalkulator', to: calculatorPath }] : []"
+        />
+
         <UAlert
           v-if="legacyDraftNotice"
           color="warning"
@@ -1217,13 +1443,21 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
       </template>
     </div>
 
-    <UModal v-model:open="publishOpen" title="Opublikować nową wersję?" description="Powstanie niezmienna wersja używana przez porównywarkę i zapisane kalkulacje." :ui="{ footer: 'justify-end' }"><template #body><div class="publish-review"><UAlert color="success" variant="subtle" icon="i-lucide-circle-check" title="Walidacja silnika zakończona" description="Oferta przechodzi kontrolę kompletności i scenariusz można przeliczyć." /><dl><div><dt>Oferta</dt><dd>{{ detail?.product.name }}</dd></div><div><dt>Rewizja szkicu</dt><dd>{{ revision }}</dd></div><div><dt>Ważność</dt><dd>{{ draft.validity.effectiveFrom }} – {{ draft.validity.effectiveTo || 'bez daty końcowej' }}</dd></div><div><dt>Fazy / koszty / warianty</dt><dd>{{ draft.ratePlan.phases.length }} / {{ draft.costs.length }} / {{ draft.presets.length }}</dd></div></dl></div></template><template #footer="{ close }"><UButton color="neutral" variant="ghost" :disabled="publishing" @click="close">Anuluj</UButton><UButton icon="i-lucide-send" :loading="publishing" @click="publishDraft">Opublikuj wersję</UButton></template></UModal>
+    <UModal v-model:open="publishOpen" title="Opublikować nową wersję?" description="Powstanie niezmienna wersja używana przez porównywarki wszystkich organizacji, w których produkt jest włączony." :ui="{ footer: 'justify-end' }"><template #body><div class="publish-review"><UAlert color="success" variant="subtle" icon="i-lucide-circle-check" title="Walidacja silnika zakończona" description="Oferta przechodzi kontrolę kompletności i scenariusz można przeliczyć." /><dl><div><dt>Oferta</dt><dd>{{ detail?.product.name }}</dd></div><div><dt>Rewizja szkicu</dt><dd>{{ revision }}</dd></div><div><dt>Ważność</dt><dd>{{ draft.validity.effectiveFrom }} – {{ draft.validity.effectiveTo || 'bez daty końcowej' }}</dd></div><div><dt>Fazy / koszty / warianty</dt><dd>{{ draft.ratePlan.phases.length }} / {{ draft.costs.length }} / {{ draft.presets.length }}</dd></div></dl></div></template><template #footer="{ close }"><UButton color="neutral" variant="ghost" :disabled="publishing" @click="close">Anuluj</UButton><UButton icon="i-lucide-send" :loading="publishing" @click="publishDraft">Opublikuj wersję</UButton></template></UModal>
   </CrmShell>
 </template>
 
 <style scoped>
 .offer-editor { display: grid; gap: 16px; min-width: 0; }
 .offer-editor > *, .offer-editor form { min-width: 0; max-width: 100%; }
+.organization-product-settings__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.organization-product-settings__header span { color: var(--ui-primary); font-family: var(--font-mono); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.organization-product-settings__header h2, .organization-product-settings__header p { margin: 0; }
+.organization-product-settings__header h2 { margin-top: 4px; font-size: 19px; }
+.organization-product-settings__header p { max-width: 720px; margin-top: 5px; color: var(--ui-text-muted); font-size: 12px; }
+.organization-product-settings__notice { margin-bottom: 16px; }
+.organization-product-settings__form { display: grid; grid-template-columns: minmax(210px, .8fr) minmax(230px, 1fr) minmax(260px, 1.2fr); gap: 16px 20px; align-items: start; }
+.organization-product-settings__actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; }
 .offer-editor__loading { display: grid; gap: 16px; }
 .offer-editor__statusbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
 .offer-editor__statusbar > div { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 13px 16px; border-left: 1px solid var(--ui-border); }
@@ -1296,6 +1530,8 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 .publish-review dt { color: var(--ui-text-muted); }
 .publish-review dd { margin: 0; color: var(--ui-text-highlighted); font-weight: 600; text-align: right; }
 @media (max-width: 1200px) {
+  .organization-product-settings__form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .organization-product-settings__notes { grid-column: 1 / -1; }
   .offer-editor__stepper :deep([data-slot="header"]) {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1326,6 +1562,10 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
   .laboratory { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  .organization-product-settings__header { align-items: stretch; flex-direction: column; }
+  .organization-product-settings__form { grid-template-columns: 1fr; }
+  .organization-product-settings__notes, .organization-product-settings__actions { grid-column: auto; }
+  .organization-product-settings__actions { align-items: stretch; flex-direction: column-reverse; }
   .offer-editor__stepper :deep([data-slot="header"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .offer-editor__statusbar, .form-grid--2, .form-grid--3, .form-grid--4, .result-metrics { grid-template-columns: 1fr; }
   .offer-editor__statusbar > div { border-top: 1px solid var(--ui-border); border-left: 0; }

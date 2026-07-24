@@ -1464,17 +1464,13 @@ async function disconnectCalendar() {
 </script>
 
 <template>
-  <CrmShell title="Szczegóły placówki" eyebrow="Administracja organizacji · placówki">
-    <template #actions>
-      <UButton
-        :to="orgPath('/facilities')"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-arrow-left"
-      >
-        Wszystkie placówki
-      </UButton>
-    </template>
+  <CrmShell
+    :title="selectedFacility?.name || 'Szczegóły placówki'"
+    eyebrow="Administracja organizacji"
+    description="Zespół, dostępność, usługi, widget rezerwacji i kalendarze placówki."
+    :back-to="orgPath('/facilities')"
+    back-label="Wróć do placówek"
+  >
 
     <UAlert
       v-if="facilitiesError"

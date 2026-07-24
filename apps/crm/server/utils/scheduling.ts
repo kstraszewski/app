@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { useRuntimeConfig } from '#imports'
 import type { MortgageCapacityPolicy } from '@openexpert/mortgage'
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
-import { createHmac } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
   createError,
   getHeader,
@@ -339,6 +339,42 @@ export async function getPublicSchedulingClient(event: H3Event): Promise<any> {
   return serverSupabaseServiceRole(event) as any
 }
 
+export type BookingWidgetAnalyticsEvent =
+  | 'widget_view'
+  | 'availability_search'
+  | 'booking_attempt'
+
+export async function recordBookingWidgetEvent(
+  event: H3Event,
+  input: {
+    widgetKey: string
+    eventType: BookingWidgetAnalyticsEvent
+    serviceId?: string | null
+    isEmbedded?: boolean
+  },
+): Promise<void> {
+  try {
+    const supabase = await getPublicSchedulingClient(event)
+    const { error } = await supabase.rpc('record_booking_widget_event', {
+      p_widget_token: input.widgetKey,
+      p_event_type: input.eventType,
+      p_service_id: input.serviceId ?? null,
+      p_is_embedded: input.isEmbedded === true,
+    })
+    if (error) {
+      console.error('[booking] widget analytics event was not recorded', {
+        eventType: input.eventType,
+        code: error.code,
+      })
+    }
+  } catch (error) {
+    console.error('[booking] widget analytics event failed', {
+      eventType: input.eventType,
+      message: error instanceof Error ? error.message : 'unknown error',
+    })
+  }
+}
+
 export async function ensureGenericMeetingService(
   event: H3Event,
   organizationId: string,
@@ -439,6 +475,53 @@ export async function assertPublicBookingRateLimit(
     setHeader(event, 'Retry-After', retryAfter)
     throw createError({ statusCode: 429, statusMessage: 'Too many booking requests. Try again later.' })
   }
+}
+
+function bookingPreviewSecret(event: H3Event): string {
+  const config = useRuntimeConfig(event)
+  const bookingSecurity = config.bookingSecurity as { rateLimitSecret?: string }
+  const supabaseConfig = config.supabase as { secretKey?: string, serviceKey?: string }
+  const secret = bookingSecurity?.rateLimitSecret
+    || supabaseConfig.secretKey
+    || supabaseConfig.serviceKey
+  if (!secret) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Booking preview is temporarily unavailable',
+    })
+  }
+  return secret
+}
+
+export function createBookingWidgetPreviewToken(
+  event: H3Event,
+  widgetKey: string,
+): string {
+  const expiresAt = Math.floor(Date.now() / 1_000) + 15 * 60
+  const signature = createHmac('sha256', bookingPreviewSecret(event))
+    .update(`booking-preview:${widgetKey}:${expiresAt}`, 'utf8')
+    .digest('base64url')
+  return `${expiresAt}.${signature}`
+}
+
+export function verifyBookingWidgetPreviewToken(
+  event: H3Event,
+  widgetKey: string,
+  input: unknown,
+): boolean {
+  if (typeof input !== 'string') return false
+  const [expiresAtRaw, signature, ...rest] = input.split('.')
+  if (rest.length || !expiresAtRaw || !signature || !/^\d{10}$/.test(expiresAtRaw)) return false
+  const expiresAt = Number(expiresAtRaw)
+  const now = Math.floor(Date.now() / 1_000)
+  if (!Number.isSafeInteger(expiresAt) || expiresAt < now || expiresAt > now + 16 * 60) return false
+  const expected = createHmac('sha256', bookingPreviewSecret(event))
+    .update(`booking-preview:${widgetKey}:${expiresAt}`, 'utf8')
+    .digest('base64url')
+  const receivedBuffer = Buffer.from(signature)
+  const expectedBuffer = Buffer.from(expected)
+  return receivedBuffer.length === expectedBuffer.length
+    && timingSafeEqual(receivedBuffer, expectedBuffer)
 }
 
 export async function listAccessibleFacilityIds(session: CrmSession): Promise<string[] | null> {

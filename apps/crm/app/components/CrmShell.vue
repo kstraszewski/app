@@ -1,7 +1,19 @@
 <script setup lang="ts">
+import type { RouteLocationRaw } from 'vue-router'
+
 const props = defineProps<{
   title: string
   eyebrow?: string
+  description?: string
+  backTo?: string
+  backLabel?: string
+  tabs?: Array<{
+    label: string
+    to: RouteLocationRaw
+    icon?: string
+    count?: number
+    exact?: boolean
+  }>
 }>()
 
 const sidebarCollapsed = useCookie<boolean>('openexpert-crm-nav-collapsed', {
@@ -78,12 +90,31 @@ function expandSidebar() {
   sidebarCollapsed.value = false
 }
 
-function isNestedNavigationActive(to: string) {
-  const settingsPath = `${organizationBase.value}/settings`
-  return to === settingsPath && route.path.startsWith(`${settingsPath}/`)
+type NavigationItem = {
+  label: string
+  to: string
+  icon: string
+  activePaths?: string[]
+  exact?: boolean
 }
 
-const navGroups = computed(() => {
+type NavigationGroup = {
+  key: string
+  label: string
+  items: NavigationItem[]
+}
+
+function isNavigationActive(item: NavigationItem) {
+  const paths = item.activePaths ?? [item.to]
+
+  return paths.some(path => (
+    route.path === path
+    || route.path === `${path}/`
+    || (!item.exact && route.path.startsWith(`${path}/`))
+  ))
+}
+
+const navGroups = computed<NavigationGroup[]>(() => {
   const groups = [{
     key: 'calculators',
     label: 'Kalkulatory',
@@ -104,27 +135,54 @@ const navGroups = computed(() => {
     ],
   }]
 
-  if (isOrganizationAdmin.value) {
-    groups.push({
-      key: 'admin',
-      label: 'Administracja organizacji',
-      items: [
+  if (isOrganizationAdmin.value || isSuperAdmin.value) {
+    const adminItems: NavigationItem[] = []
+
+    if (isOrganizationAdmin.value) {
+      adminItems.push(
         { label: 'Placówki', to: `${organizationBase.value}/facilities`, icon: 'i-lucide-building-2' },
         { label: 'Zespoły', to: `${organizationBase.value}/teams`, icon: 'i-lucide-network' },
         { label: 'Zgody', to: `${organizationBase.value}/consents`, icon: 'i-lucide-shield-check' },
-        { label: 'Ustawienia', to: `${organizationBase.value}/settings`, icon: 'i-lucide-settings' },
-      ],
-    })
-  }
+        {
+          label: 'Konfiguracja CRM',
+          to: `${organizationBase.value}/settings`,
+          icon: 'i-lucide-sliders-horizontal',
+          exact: true,
+        },
+      )
+    }
 
-  if (isSuperAdmin.value) {
+    if (isSuperAdmin.value) {
+      adminItems.push({
+        label: 'Instytucje',
+        to: `${organizationBase.value}/settings/institutions`,
+        icon: 'i-lucide-landmark',
+        activePaths: [
+          `${organizationBase.value}/settings/institutions`,
+          `${organizationBase.value}/settings/products`,
+        ],
+      })
+    }
+
+    if (isOrganizationAdmin.value) {
+      adminItems.push(
+        {
+          label: 'Zdolność',
+          to: `${organizationBase.value}/settings/capacity`,
+          icon: 'i-lucide-calculator',
+        },
+        {
+          label: 'Design',
+          to: `${organizationBase.value}/settings/design`,
+          icon: 'i-lucide-component',
+        },
+      )
+    }
+
     groups.push({
-      key: 'super-admin',
-      label: 'SuperAdmin',
-      items: [
-        { label: 'Instytucje', to: `${organizationBase.value}/mortgages/institutions`, icon: 'i-lucide-landmark' },
-        { label: 'Oferty kredytowe', to: `${organizationBase.value}/mortgages/offers`, icon: 'i-lucide-badge-percent' },
-      ],
+      key: 'admin',
+      label: 'Administracja organizacji',
+      items: adminItems,
     })
   }
 
@@ -213,11 +271,10 @@ async function signOut() {
               v-for="item in group.items"
               :key="item.to"
               class="crm-link"
-              :class="{ 'crm-link--active': isNestedNavigationActive(item.to) }"
-              active-class="crm-link--active"
+              :class="{ 'crm-link--active': isNavigationActive(item) }"
               :to="item.to"
               :aria-label="item.label"
-              :aria-current="isNestedNavigationActive(item.to) ? 'page' : undefined"
+              :aria-current="isNavigationActive(item) ? 'page' : undefined"
               :title="sidebarCollapsed ? item.label : undefined"
               @click="mobileNavigationOpen = false"
             >
@@ -297,18 +354,21 @@ async function signOut() {
     </aside>
 
     <section class="crm-content">
-      <header class="crm-header">
-        <div class="crm-header__copy">
-          <p v-if="props.eyebrow" class="crm-eyebrow">{{ props.eyebrow }}</p>
-          <h1>{{ props.title }}</h1>
-          <div v-if="$slots.meta" class="crm-header__meta">
-            <slot name="meta" />
-          </div>
-        </div>
-        <div class="crm-header__actions">
+      <CrmPageHeader
+        :title="props.title"
+        :eyebrow="props.eyebrow"
+        :description="props.description"
+        :back-to="props.backTo"
+        :back-label="props.backLabel"
+        :tabs="props.tabs"
+      >
+        <template v-if="$slots.meta" #meta>
+          <slot name="meta" />
+        </template>
+        <template v-if="$slots.actions" #actions>
           <slot name="actions" />
-        </div>
-      </header>
+        </template>
+      </CrmPageHeader>
 
       <UAlert
         v-if="!hasSupabaseConfig"
@@ -411,7 +471,15 @@ async function signOut() {
 
 .crm-links {
   display: grid;
+  flex: 1 1 auto;
   gap: 20px;
+  min-height: 0;
+  margin-right: -4px;
+  padding-right: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .crm-link-group {
@@ -639,53 +707,6 @@ async function signOut() {
   padding: 32px;
 }
 
-.crm-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  min-width: 0;
-  margin-bottom: 24px;
-}
-
-.crm-header__copy {
-  flex: 1 1 320px;
-  min-width: 0;
-}
-
-.crm-header h1 {
-  margin: 4px 0 0;
-  color: var(--ui-text-highlighted);
-  font-size: 42px;
-  font-weight: var(--oe-heading-font-weight);
-  line-height: 1.1;
-}
-
-.crm-eyebrow {
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.crm-header__actions {
-  display: flex;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.crm-header__meta {
-  margin-top: 10px;
-}
-
 .crm-alert {
   margin-bottom: 24px;
 }
@@ -754,8 +775,13 @@ async function signOut() {
   }
 
   .crm-links {
+    flex: none;
     grid-template-columns: 1fr;
     gap: 16px;
+    min-height: auto;
+    margin-right: 0;
+    padding-right: 0;
+    overflow: visible;
   }
 
   .crm-link-group__items {
@@ -809,21 +835,5 @@ async function signOut() {
     padding: 18px 16px 28px;
   }
 
-  .crm-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .crm-header__copy {
-    flex-basis: auto;
-  }
-
-  .crm-header h1 {
-    font-size: 34px;
-  }
-
-  .crm-header__actions {
-    justify-content: flex-start;
-  }
 }
 </style>

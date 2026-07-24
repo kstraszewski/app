@@ -6,8 +6,12 @@ import {
   type MortgageCapacityPolicy,
 } from '@openexpert/mortgage'
 
-definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Założenia kalkulatora zdolności — OpenExpert' })
+definePageMeta({
+  middleware: ['auth', 'organization'],
+  path: '/org/:organizationSlug/settings/capacity',
+  alias: ['/org/:organizationSlug/mortgages/capacity/admin'],
+})
+useHead({ title: 'Zdolność — ustawienia administracyjne — OpenExpert' })
 
 type ConfigPayload = {
   settings: MortgageCapacityPolicy
@@ -139,12 +143,13 @@ async function resetSettings() {
 </script>
 
 <template>
-  <CrmShell title="Założenia kalkulatora" eyebrow="Administrator · polityka modelu · historia zmian">
-    <template #actions>
-      <UButton :to="`/org/${organizationSlug}/mortgages/capacity`" icon="i-lucide-arrow-left" variant="outline">
-        Wróć do kalkulatora
-      </UButton>
-    </template>
+  <CrmShell
+    title="Założenia kalkulatora zdolności"
+    eyebrow="Ustawienia administracyjne"
+    description="Polityka modelu, parametry obliczeń i historia zmian."
+    :back-to="`/org/${organizationSlug}/mortgages/capacity`"
+    back-label="Wróć do kalkulatora"
+  >
 
     <UAlert
       v-if="error"

@@ -46,7 +46,11 @@ function formatMetric(metric: DashboardMetric) {
 </script>
 
 <template>
-  <CrmShell title="Dashboard" eyebrow="Operacje">
+  <CrmShell
+    title="Dashboard"
+    eyebrow="Operacje"
+    description="Najważniejsze zadania, terminy i aktywność organizacji."
+  >
     <template #actions>
       <UButton :to="orgPath('/clients')" icon="i-lucide-user-plus" variant="solid">
         Dodaj klienta

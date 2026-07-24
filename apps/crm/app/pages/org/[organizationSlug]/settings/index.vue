@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Ustawienia — OpenExpert CRM' })
+useHead({ title: 'Ustawienia administracyjne — OpenExpert CRM' })
 
 const { crmApiPath } = useOrganizationContext()
 
@@ -80,7 +80,7 @@ async function createProvider() {
     providerForm.contact_email = ''
     providerForm.contact_phone = ''
     await refreshProviders()
-    toast.add({ title: 'Dodano instytucję', color: 'success' })
+    toast.add({ title: 'Dodano partnera CRM', color: 'success' })
   } finally {
     savingProvider.value = false
   }
@@ -88,17 +88,19 @@ async function createProvider() {
 </script>
 
 <template>
-  <CrmShell title="Ustawienia" eyebrow="Konfiguracja CRM">
-    <OrganizationSettingsNav />
-
+  <CrmShell
+    title="Ustawienia administracyjne"
+    eyebrow="Administracja organizacji"
+    description="Dostęp, struktura, procesy i wygląd CRM dla bieżącej organizacji."
+  >
     <div class="settings-grid">
       <div class="stack">
         <UCard>
           <template #header>
             <div class="panel-head">
               <div>
-                <h2>Typy produktów</h2>
-                <p>Katalog kredytów, ubezpieczeń i usług nieruchomościowych.</p>
+                <h2>Typy spraw i usług CRM</h2>
+                <p>Klasyfikują pozycje spraw. Nie konfigurują produktów w kalkulatorze hipotecznym.</p>
               </div>
             </div>
           </template>
@@ -148,8 +150,8 @@ async function createProvider() {
           <template #header>
             <div class="panel-head">
               <div>
-                <h2>Dodaj typ produktu</h2>
-                <p>Własny typ kredytu, polisy lub usługi.</p>
+                <h2>Dodaj typ sprawy lub usługi</h2>
+                <p>Własna kategoria używana w procesach CRM.</p>
               </div>
             </div>
           </template>
@@ -177,8 +179,8 @@ async function createProvider() {
           <template #header>
             <div class="panel-head">
               <div>
-                <h2>Instytucje</h2>
-                <p>Banki, ubezpieczyciele, agencje i partnerzy.</p>
+                <h2>Partnerzy CRM</h2>
+                <p>Ogólni usługodawcy i kontakty. Banki oraz ich produkty hipoteczne konfigurujesz w zakładce „Instytucje”.</p>
               </div>
             </div>
           </template>
@@ -188,7 +190,7 @@ async function createProvider() {
               <USelect v-model="providerForm.kind" :items="providerKindItems" />
             </UFormField>
             <UFormField label="Nazwa">
-              <UInput v-model="providerForm.name" required placeholder="Bank / ubezpieczyciel" />
+              <UInput v-model="providerForm.name" required placeholder="Partner / usługodawca" />
             </UFormField>
             <UFormField label="Email kontaktowy">
               <UInput v-model="providerForm.contact_email" type="email" />
@@ -197,7 +199,7 @@ async function createProvider() {
               <UInput v-model="providerForm.contact_phone" />
             </UFormField>
             <UButton type="submit" icon="i-lucide-save" variant="solid" :loading="savingProvider">
-              Zapisz instytucję
+              Zapisz partnera
             </UButton>
           </form>
 

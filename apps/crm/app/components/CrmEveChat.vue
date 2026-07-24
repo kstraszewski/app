@@ -9,6 +9,7 @@ import type {
 } from 'eve/vue'
 
 type ActionPart = EveAuthorizationPart | EveDynamicToolPart
+type AssistantAvailability = 'available' | 'checking' | 'unavailable'
 
 interface ActionSegmentItem {
   part: ActionPart
@@ -29,12 +30,16 @@ interface ReadinessResult {
 }
 
 const props = withDefaults(defineProps<{
+  availability?: AssistantAvailability
+  availabilityMessage?: string
   demo?: boolean
   error?: { message?: string } | null
   messages: readonly EveMessage[]
   presentation?: 'page' | 'slideover'
   status: UseEveAgentStatus
 }>(), {
+  availability: 'available',
+  availabilityMessage: '',
   demo: false,
   error: null,
   presentation: 'slideover',
@@ -44,13 +49,16 @@ const emit = defineEmits<{
   background: []
   inputResponses: [responses: readonly InputResponse[]]
   reset: []
+  retry: []
   send: [message: string]
   stop: []
 }>()
 
 const toast = useToast()
 const draft = ref('')
+const composerForm = ref<HTMLFormElement | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
+const shouldFollowLatest = ref(true)
 const planOpenByMessage = reactive<Record<string, boolean>>({})
 const selectedResponses = reactive<Record<string, InputResponse | undefined>>({})
 const { orgPath } = useOrganizationContext()
@@ -181,7 +189,8 @@ const authorizationRequired = computed(() => visibleActionParts.value.some(part 
 )))
 const hasBlockingInteraction = computed(() => pendingRequests.value.length > 0 || authorizationRequired.value)
 const isVisuallyBusy = computed(() => props.demo || isTransportBusy.value)
-const composerDisabled = computed(() => isTransportBusy.value || hasBlockingInteraction.value)
+const assistantReady = computed(() => props.demo || props.availability === 'available')
+const composerDisabled = computed(() => !assistantReady.value || isTransportBusy.value || hasBlockingInteraction.value)
 const batchReady = computed(() => (
   pendingRequests.value.length > 1
   && pendingRequests.value.every(({ request }) => Boolean(selectedResponses[request.requestId]))
@@ -191,6 +200,8 @@ const selectedResponseCount = computed(() => pendingRequests.value.filter(({ req
 )).length)
 
 const statusLabel = computed(() => {
+  if (props.availability === 'checking') return 'Sprawdzam połączenie…'
+  if (props.availability === 'unavailable') return 'Model niedostępny'
   if (authorizationRequired.value) return 'Wymaga połączenia'
   if (pendingRequests.value.length) return 'Czeka na decyzję'
   if (props.status === 'submitted') return 'Uruchamiam zadanie…'
@@ -200,10 +211,17 @@ const statusLabel = computed(() => {
 })
 
 const statusTone = computed(() => {
-  if (props.status === 'error') return 'error'
+  if (props.status === 'error' || props.availability === 'unavailable') return 'error'
   if (hasBlockingInteraction.value) return 'warning'
   if (isVisuallyBusy.value) return 'success'
   return 'neutral'
+})
+
+const composerPlaceholder = computed(() => {
+  if (props.availability === 'checking') return 'Sprawdzam połączenie z modelem AI…'
+  if (props.availability === 'unavailable') return 'Agent będzie dostępny po skonfigurowaniu modelu AI'
+  if (hasBlockingInteraction.value) return 'Najpierw odpowiedz na decyzję powyżej…'
+  return 'Napisz, co agent ma zrobić…'
 })
 
 function friendlyAssistantError(caught: { message?: string } | null | undefined) {
@@ -384,24 +402,51 @@ function submitResponseBatch() {
   emit('inputResponses', responses)
 }
 
-async function scrollToLatest() {
-  await nextTick()
+function updateScrollPreference() {
   const container = messagesContainer.value
-  if (container) container.scrollTop = container.scrollHeight
+  if (!container) return
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+  shouldFollowLatest.value = distanceFromBottom < 96
 }
 
-watch(() => [visibleMessages.value.length, props.status], () => { void scrollToLatest() })
+async function scrollToLatest(force = false) {
+  await nextTick()
+  const container = messagesContainer.value
+  if (!container || (!force && !shouldFollowLatest.value)) return
+  container.scrollTop = container.scrollHeight
+  shouldFollowLatest.value = true
+}
+
+watch(visibleMessages, () => { void scrollToLatest() }, { deep: true, flush: 'post' })
+watch(() => props.status, () => { void scrollToLatest() }, { flush: 'post' })
+
+onMounted(() => {
+  void scrollToLatest(true)
+})
 
 function sendMessage(prefilled?: string) {
   const message = (prefilled ?? draft.value).trim()
   if (!message || composerDisabled.value || props.demo) return
   draft.value = ''
+  shouldFollowLatest.value = true
   emit('send', message)
+}
+
+async function focusComposer() {
+  await nextTick()
+  composerForm.value?.querySelector('textarea')?.focus()
+}
+
+function onComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  sendMessage()
 }
 
 function newConversation() {
   draft.value = ''
   emit('reset')
+  void focusComposer()
 }
 
 function stopRun() {
@@ -419,6 +464,8 @@ function runInBackground() {
   }
   emit('background')
 }
+
+defineExpose({ focusComposer })
 </script>
 
 <template>
@@ -454,7 +501,17 @@ function runInBackground() {
 
     <p class="sr-only" aria-live="polite">{{ statusLabel }}</p>
 
-    <div ref="messagesContainer" class="assistant-chat__messages">
+    <div
+      ref="messagesContainer"
+      class="assistant-chat__messages"
+      data-testid="assistant-messages"
+      role="log"
+      aria-label="Wiadomości agenta AI"
+      aria-live="polite"
+      aria-relevant="additions text"
+      :aria-busy="isVisuallyBusy"
+      @scroll.passive="updateScrollPreference"
+    >
       <div v-if="!visibleMessages.length" class="assistant-chat__empty">
         <span class="assistant-chat__empty-icon" aria-hidden="true">
           <UIcon name="i-lucide-list-todo" />
@@ -464,7 +521,28 @@ function runInBackground() {
           <h2>Zleć agentowi pracę w CRM</h2>
           <p>Opisz rezultat. Eve dobierze narzędzia, pokaże postęp i poprosi o zgodę przed każdą zmianą danych.</p>
         </div>
-        <div class="assistant-chat__suggestions">
+        <UAlert
+          v-if="availability === 'unavailable'"
+          class="assistant-chat__availability"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-plug-zap"
+          title="Agent nie jest jeszcze dostępny"
+          :description="availabilityMessage || 'Administrator musi skonfigurować połączenie z modelem AI.'"
+        >
+          <template #actions>
+            <UButton
+              color="error"
+              variant="outline"
+              size="xs"
+              icon="i-lucide-refresh-cw"
+              label="Sprawdź ponownie"
+              @click="emit('retry')"
+            />
+          </template>
+        </UAlert>
+
+        <div v-else class="assistant-chat__suggestions">
           <button
             v-for="suggestion in suggestions"
             :key="suggestion"
@@ -476,7 +554,7 @@ function runInBackground() {
             <span>{{ suggestion }}</span>
           </button>
         </div>
-        <p class="assistant-chat__safety">
+        <p v-if="availability !== 'unavailable'" class="assistant-chat__safety">
           <UIcon name="i-lucide-shield-check" />
           Odczyty danych mogą działać automatycznie. Zapisy i działania wrażliwe zawsze wymagają Twojej decyzji.
         </p>
@@ -655,16 +733,54 @@ function runInBackground() {
       </template>
 
       <UAlert
-        v-if="error"
+        v-if="visibleMessages.length && availability === 'unavailable'"
+        class="assistant-chat__inline-alert"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-plug-zap"
+        title="Agent nie jest jeszcze dostępny"
+        :description="availabilityMessage || 'Administrator musi skonfigurować połączenie z modelem AI.'"
+      >
+        <template #actions>
+          <UButton
+            color="error"
+            variant="outline"
+            size="xs"
+            icon="i-lucide-refresh-cw"
+            label="Sprawdź ponownie"
+            @click="emit('retry')"
+          />
+        </template>
+      </UAlert>
+
+      <UAlert
+        v-else-if="error"
+        class="assistant-chat__inline-alert"
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
         title="Nie udało się uzyskać odpowiedzi"
         :description="friendlyAssistantError(error)"
-      />
+      >
+        <template #actions>
+          <UButton
+            color="error"
+            variant="outline"
+            size="xs"
+            icon="i-lucide-refresh-cw"
+            label="Spróbuj ponownie"
+            @click="emit('retry')"
+          />
+        </template>
+      </UAlert>
     </div>
 
-    <form class="assistant-composer" @submit.prevent="sendMessage()">
+    <form
+      ref="composerForm"
+      class="assistant-composer"
+      data-testid="assistant-composer"
+      @submit.prevent="sendMessage()"
+    >
       <UTextarea
         v-model="draft"
         class="w-full"
@@ -672,14 +788,15 @@ function runInBackground() {
         :rows="2"
         :maxrows="6"
         :disabled="composerDisabled || demo"
-        :placeholder="hasBlockingInteraction ? 'Najpierw odpowiedz na decyzję powyżej…' : 'Dodaj instrukcję…'"
+        :placeholder="composerPlaceholder"
         aria-label="Wiadomość do agenta AI"
-        @keydown.enter.exact.prevent="sendMessage()"
+        @keydown="onComposerKeydown"
       />
       <div class="assistant-composer__actions">
         <p>
           <UIcon :name="hasBlockingInteraction ? 'i-lucide-shield-alert' : 'i-lucide-shield-check'" />
           {{ hasBlockingInteraction ? 'Agent czeka na Twoją decyzję przed kontynuacją.' : 'Zmiany w CRM wymagają Twojego zatwierdzenia.' }}
+          <span v-if="availability === 'available'">Enter wysyła · Shift+Enter dodaje nową linię</span>
         </p>
         <div>
           <UButton
@@ -719,15 +836,19 @@ function runInBackground() {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
+  overflow: hidden;
   color: var(--ui-text);
 }
 
 .assistant-chat--page {
-  min-height: min(760px, calc(100vh - 170px));
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
   border-top: 1px solid var(--ui-border);
 }
 
 .assistant-chat--slideover {
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   height: min(760px, calc(100vh - 130px));
 }
@@ -808,6 +929,7 @@ function runInBackground() {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-padding-block: 20px;
   scrollbar-gutter: stable;
 }
 
@@ -825,10 +947,12 @@ function runInBackground() {
 .assistant-chat__empty {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
+  align-content: center;
   gap: 18px;
+  min-height: 100%;
   max-width: 900px;
-  margin: clamp(48px, 10vh, 110px) auto;
-  padding: 0 20px;
+  margin: 0 auto;
+  padding: 32px 20px;
 }
 
 .assistant-chat__empty-icon {
@@ -902,6 +1026,10 @@ function runInBackground() {
   margin-top: 2px;
 }
 
+.assistant-chat__availability {
+  grid-column: 2;
+}
+
 .assistant-chat__safety {
   display: flex;
   grid-column: 2;
@@ -910,6 +1038,10 @@ function runInBackground() {
   margin-top: 4px !important;
   color: var(--ui-text-dimmed) !important;
   font-size: 11px !important;
+}
+
+.assistant-chat__inline-alert {
+  margin: 16px 10px;
 }
 
 .assistant-turn {
@@ -1173,12 +1305,11 @@ function runInBackground() {
 .assistant-readiness > :deep(a) { align-self: center; margin: 16px; }
 
 .assistant-composer {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 3;
   display: grid;
   gap: 8px;
-  padding: 13px 0 max(4px, env(safe-area-inset-bottom));
+  padding: 13px 0 max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--ui-border);
   background: var(--ui-bg-muted);
 }
@@ -1203,6 +1334,11 @@ function runInBackground() {
   line-height: 1.35;
 }
 
+.assistant-composer__actions p > span {
+  padding-left: 7px;
+  border-left: 1px solid var(--ui-border-accented);
+}
+
 .assistant-composer__actions > div {
   display: flex;
   flex-wrap: wrap;
@@ -1225,8 +1361,7 @@ function runInBackground() {
   .assistant-chat__empty {
     grid-template-columns: 42px minmax(0, 1fr);
     gap: 12px;
-    margin-block: 36px;
-    padding-inline: 2px;
+    padding: 24px 2px;
   }
 
   .assistant-chat__empty-icon { width: 42px; height: 42px; border-radius: 13px; }
@@ -1246,14 +1381,16 @@ function runInBackground() {
 }
 
 @media (max-width: 640px) {
-  .assistant-chat--page { min-height: calc(100vh - 190px); }
+  .assistant-chat--page { height: 100%; min-height: 0; }
   .assistant-chat--slideover { height: calc(100vh - 120px); }
   .assistant-chat__toolbar { flex-wrap: wrap; }
   .assistant-chat__status { order: 3; width: 100%; }
   .assistant-chat__empty { grid-template-columns: 1fr; }
   .assistant-chat__empty-icon { display: none; }
+  .assistant-chat__availability,
   .assistant-chat__suggestions,
   .assistant-chat__safety { grid-column: 1; }
+  .assistant-composer__actions p > span { display: none; }
   .assistant-composer__actions { align-items: stretch; flex-direction: column; }
   .assistant-composer__actions > div { justify-content: stretch; }
   .assistant-composer__actions > div :deep(button) { flex: 1; }

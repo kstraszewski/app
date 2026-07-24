@@ -134,11 +134,15 @@ const constraintLabels: Record<CapacityBindingConstraint, { title: string, descr
 </script>
 
 <template>
-  <CrmShell title="Szacunkowa zdolność hipoteczna" eyebrow="Prosty model · PLN · nieruchomość mieszkalna">
+  <CrmShell
+    title="Szacunkowa zdolność hipoteczna"
+    eyebrow="Kalkulator hipoteczny"
+    description="Orientacyjny model zdolności dla kredytu mieszkaniowego w PLN."
+  >
     <template #actions>
       <UButton
         v-if="config.role === 'admin'"
-        :to="`/org/${organizationSlug}/mortgages/capacity/admin`"
+        :to="`/org/${organizationSlug}/settings/capacity`"
         icon="i-lucide-settings-2"
         variant="outline"
       >

@@ -164,11 +164,14 @@ export interface BookingWidget {
   created_by_user_id: string | null
   locale: string
   is_active: boolean
+  created_at: string
+  updated_at: string
   widgetKey: string
   publicUrl: string
   embedUrl: string
   embedCode: string
   serviceIds: string[]
+  bookings30Days?: number
 }
 
 export interface FacilityWidgetsPayload {
@@ -184,6 +187,56 @@ export interface PersonalWidgetFacility {
 export interface PersonalWidgetsPayload {
   currentUserId: string
   data: PersonalWidgetFacility[]
+}
+
+export interface PersonalWidgetDetailPayload {
+  currentUserId: string
+  facility: Facility | null
+  services: BookingService[]
+  previewToken: string
+  widget: BookingWidget | null
+}
+
+export interface BookingWidgetAnalyticsSummary {
+  views: number
+  embeddedViews: number
+  availabilitySearches: number
+  bookingAttempts: number
+  bookings: number
+  confirmedBookings: number
+  cancelledBookings: number
+  lastBookingAt: string | null
+}
+
+export interface BookingWidgetAnalyticsDay {
+  date: string
+  views: number
+  availabilitySearches: number
+  bookingAttempts: number
+  bookings: number
+}
+
+export interface BookingWidgetAnalyticsService {
+  serviceId: string
+  name: string
+  bookings: number
+}
+
+export interface BookingWidgetAnalytics {
+  period: {
+    from: string
+    to: string
+    timeZone: string
+    trackingStartedAt: string
+  }
+  summary: BookingWidgetAnalyticsSummary
+  daily: BookingWidgetAnalyticsDay[]
+  topServices: BookingWidgetAnalyticsService[]
+}
+
+export interface BookingWidgetAnalyticsPayload {
+  days: 7 | 30 | 90
+  data: BookingWidgetAnalytics
 }
 
 export interface CalendarConnection {

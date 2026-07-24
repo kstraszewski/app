@@ -233,8 +233,6 @@ async function copyTokens() {
       </UButton>
     </template>
 
-    <OrganizationSettingsNav />
-
     <UAlert
       v-if="designError"
       class="design-editor__alert"

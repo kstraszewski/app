@@ -693,7 +693,11 @@ const columns: TableColumn<ClientListItem>[] = [
 </script>
 
 <template>
-  <CrmShell title="Klienci" eyebrow="Baza relacji">
+  <CrmShell
+    title="Klienci"
+    eyebrow="Baza relacji"
+    description="Rejestr osób i firm wraz z kontaktem, zgodami oraz powiązanymi sprawami."
+  >
     <template #actions>
       <UButton icon="i-lucide-user-plus" @click="openCreateForm">
         Dodaj klienta

@@ -9,13 +9,17 @@ import {
 import { apiErrorMessage } from '~/utils/api-error'
 import { createDefaultMortgageOfferV2 } from '~/utils/mortgage-offer-draft'
 
-definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Oferty kredytowe — OpenExpert' })
+definePageMeta({
+  middleware: ['auth', 'organization'],
+  path: '/org/:organizationSlug/settings/products',
+  alias: ['/org/:organizationSlug/mortgages/offers'],
+})
+useHead({ title: 'Produkty kredytowe — ustawienia administracyjne — OpenExpert' })
 
 const route = useRoute()
 const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
-const listPath = computed(() => `/org/${organizationSlug.value}/mortgages/offers`)
+const listPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
 const { data: organizations } = await useOrganizations()
 const isSuperAdmin = computed(() => organizations.value.access.superAdmin)
 
@@ -103,7 +107,7 @@ function offerPath(offerId: string) {
 }
 
 function bankPath(bankId: string) {
-  return `/org/${organizationSlug.value}/mortgages/institutions/${encodeURIComponent(bankId)}`
+  return `/org/${organizationSlug.value}/settings/institutions/${encodeURIComponent(bankId)}`
 }
 
 function openCreate(bank?: MortgageOfferBankSummary) {
@@ -161,11 +165,11 @@ async function createOffer(event: FormSubmitEvent<CreateSchema>) {
       },
     )
     const offerId = extractCreatedMortgageOfferId(response)
-    if (!offerId) throw new Error('Serwer nie zwrócił identyfikatora nowej oferty.')
+    if (!offerId) throw new Error('Serwer nie zwrócił identyfikatora nowego produktu.')
 
     createOpen.value = false
     toast.add({
-      title: 'Utworzono szkic oferty',
+      title: 'Utworzono szkic produktu',
       description: 'Uzupełnij parametry i opublikuj wersję po sprawdzeniu kalkulacji.',
       color: 'success',
       icon: 'i-lucide-file-plus-2',
@@ -173,7 +177,7 @@ async function createOffer(event: FormSubmitEvent<CreateSchema>) {
     await navigateTo(offerPath(offerId))
   } catch (caught: unknown) {
     toast.add({
-      title: 'Nie udało się utworzyć oferty',
+      title: 'Nie udało się utworzyć produktu',
       description: apiErrorMessage(caught),
       color: 'error',
       icon: 'i-lucide-circle-alert',
@@ -201,10 +205,14 @@ function validityLabel(offer: MortgageOfferSummary) {
 </script>
 
 <template>
-  <CrmShell title="Oferty kredytowe" eyebrow="Centralny katalog · instytucja → oferta → wersja → kalkulator">
+  <CrmShell
+    title="Produkty kredytowe"
+    eyebrow="Ustawienia administracyjne"
+    description="Katalog produktów, ich wersji, statusów publikacji i ustawień kalkulatora."
+  >
     <template #actions>
       <UButton
-        :to="`/org/${organizationSlug}/mortgages/institutions`"
+        :to="`/org/${organizationSlug}/settings/institutions`"
         icon="i-lucide-landmark"
         color="neutral"
         variant="outline"
@@ -212,7 +220,7 @@ function validityLabel(offer: MortgageOfferSummary) {
         Instytucje
       </UButton>
       <UButton v-if="isSuperAdmin" icon="i-lucide-plus" @click="openCreate()">
-        Dodaj ofertę
+        Dodaj produkt
       </UButton>
     </template>
 
@@ -222,7 +230,7 @@ function validityLabel(offer: MortgageOfferSummary) {
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
-        title="Nie udało się pobrać katalogu ofert"
+        title="Nie udało się pobrać katalogu produktów"
         :description="apiErrorMessage(error)"
         :actions="[{ label: 'Ponów', onClick: () => refresh() }]"
       />
@@ -233,7 +241,7 @@ function validityLabel(offer: MortgageOfferSummary) {
         variant="subtle"
         icon="i-lucide-shield-alert"
         title="Panel tylko dla SuperAdmina"
-        description="Tworzenie i publikacja globalnych ofert wymagają roli SuperAdmin."
+        description="Tworzenie i publikacja globalnych produktów wymagają roli SuperAdmin."
       />
 
       <template v-else>
@@ -244,9 +252,9 @@ function validityLabel(offer: MortgageOfferSummary) {
             <small>Z co najmniej jednym miejscem w katalogu</small>
           </article>
           <article>
-            <span>Oferty</span>
+            <span>Produkty</span>
             <strong>{{ totalOffers }}</strong>
-            <small>Wszystkie oferty w katalogu</small>
+            <small>Wszystkie produkty w katalogu</small>
           </article>
           <article>
             <span>Opublikowane</span>
@@ -265,14 +273,14 @@ function validityLabel(offer: MortgageOfferSummary) {
             <div class="offer-catalog__toolbar">
               <div>
                 <h2>Katalog według instytucji</h2>
-                <p>Każda oferta ma niezależny szkic, historię publikacji i pełny model kosztów.</p>
+                <p>Każdy produkt ma niezależny szkic, historię publikacji i pełny model kosztów.</p>
               </div>
               <div class="offer-catalog__filters">
                 <UInput
                   v-model="search"
                   icon="i-lucide-search"
-                  placeholder="Szukaj instytucji lub oferty"
-                  aria-label="Szukaj instytucji lub oferty"
+                  placeholder="Szukaj instytucji lub produktu"
+                  aria-label="Szukaj instytucji lub produktu"
                 />
                 <USelect v-model="lifecycleFilter" :items="lifecycleItems" aria-label="Filtr statusu" />
               </div>
@@ -293,7 +301,7 @@ function validityLabel(offer: MortgageOfferSummary) {
                   </span>
                   <div>
                     <h3>{{ bank.name }}</h3>
-                    <p>{{ bank.offers.length }} {{ bank.offers.length === 1 ? 'oferta' : 'ofert' }}</p>
+                    <p>{{ bank.offers.length }} {{ bank.offers.length === 1 ? 'produkt' : 'produktów' }}</p>
                   </div>
                 </NuxtLink>
                 <div class="bank-group__actions">
@@ -313,7 +321,7 @@ function validityLabel(offer: MortgageOfferSummary) {
                     size="xs"
                     @click="openCreate(bank)"
                   >
-                    Dodaj ofertę
+                    Dodaj produkt
                   </UButton>
                 </div>
               </header>
@@ -328,7 +336,7 @@ function validityLabel(offer: MortgageOfferSummary) {
                   <span class="offer-row__icon"><UIcon name="i-lucide-house" /></span>
                   <span class="offer-row__identity">
                     <strong>{{ offer.name }}</strong>
-                    <small>{{ offer.code || 'Bez kodu oferty' }}</small>
+                    <small>{{ offer.code || 'Bez kodu produktu' }}</small>
                   </span>
                   <span class="offer-row__validity">
                     <small>Obowiązuje</small>
@@ -355,7 +363,7 @@ function validityLabel(offer: MortgageOfferSummary) {
 
               <button v-else type="button" class="bank-group__empty" @click="openCreate(bank)">
                 <UIcon name="i-lucide-file-plus-2" />
-                <span><strong>Brak ofert</strong><small>Dodaj pierwszą ofertę tej instytucji</small></span>
+                <span><strong>Brak produktów</strong><small>Dodaj pierwszy produkt tej instytucji</small></span>
                 <UIcon name="i-lucide-chevron-right" />
               </button>
             </section>
@@ -364,8 +372,8 @@ function validityLabel(offer: MortgageOfferSummary) {
           <div v-else class="offer-catalog__empty">
             <UIcon name="i-lucide-package-search" />
             <h3>{{ totalOffers ? 'Brak wyników' : 'Katalog jest pusty' }}</h3>
-            <p>{{ totalOffers ? 'Zmień frazę lub filtr statusu.' : 'Dodaj pierwszą ofertę, aby rozpocząć konfigurację kalkulatora.' }}</p>
-            <UButton v-if="!totalOffers" icon="i-lucide-plus" @click="openCreate()">Dodaj ofertę</UButton>
+            <p>{{ totalOffers ? 'Zmień frazę lub filtr statusu.' : 'Dodaj pierwszy produkt, aby rozpocząć konfigurację kalkulatora.' }}</p>
+            <UButton v-if="!totalOffers" icon="i-lucide-plus" @click="openCreate()">Dodaj produkt</UButton>
           </div>
         </UCard>
       </template>
@@ -373,7 +381,7 @@ function validityLabel(offer: MortgageOfferSummary) {
 
     <UModal
       v-model:open="createOpen"
-      title="Nowa oferta kredytowa"
+      title="Nowy produkt kredytowy"
       description="Najpierw utworzymy bezpieczny szkic. Publikacja nastąpi dopiero po walidacji kalkulacji."
       :ui="{ content: 'sm:max-w-2xl', footer: 'justify-end' }"
     >
@@ -388,11 +396,11 @@ function validityLabel(offer: MortgageOfferSummary) {
           <UFormField name="bankId" label="Instytucja" required class="sm:col-span-2">
             <USelectMenu v-model="createState.bankId" :items="bankItems" value-key="value" class="w-full" />
           </UFormField>
-          <UFormField name="name" label="Nazwa oferty" required class="sm:col-span-2">
+          <UFormField name="name" label="Nazwa produktu" required class="sm:col-span-2">
             <UInput
               v-model="createState.name"
               class="w-full"
-              placeholder="np. Kredyt mieszkaniowy — oferta standardowa"
+              placeholder="np. Kredyt mieszkaniowy — wariant standardowy"
               autofocus
               @blur="slugFromName"
             />

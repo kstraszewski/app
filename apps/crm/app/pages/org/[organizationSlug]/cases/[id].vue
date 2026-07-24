@@ -179,10 +179,10 @@ const currentView = computed<CaseView>(() => {
 })
 
 const caseTabs = computed(() => [
-  { id: 'overview' as const, label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard' },
-  { id: 'credit' as const, label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length },
-  { id: 'documents' as const, label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length },
-  { id: 'history' as const, label: 'Historia', icon: 'i-lucide-history' },
+  { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
+  { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
+  { label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length, to: viewLocation('documents') },
+  { label: 'Historia', icon: 'i-lucide-history', to: viewLocation('history') },
 ])
 
 const activeInsuranceItem = computed(() => data.value.data.items.find(item => (
@@ -304,8 +304,6 @@ const headerMenuItems = computed(() => [[
   { label: 'Zarządzaj klientami', icon: 'i-lucide-users-round', onSelect: openClients },
   { label: 'Dodaj nieruchomość', icon: 'i-lucide-house-plus', onSelect: addProperty },
   { label: 'Dodaj ofertę bankową', icon: 'i-lucide-bookmark-plus', to: { path: orgPath('/mortgages'), query: { caseId: caseId.value } } },
-], [
-  { label: 'Wróć do spraw', icon: 'i-lucide-arrow-left', to: orgPath('/cases') },
 ]])
 
 const workflowSteps = computed(() => [
@@ -708,7 +706,14 @@ watch(
 </script>
 
 <template>
-  <CrmShell :title="data.data.title || 'Sprawa'" eyebrow="Sprawa">
+  <CrmShell
+    :title="data.data.title || 'Sprawa'"
+    eyebrow="Karta sprawy"
+    description="Klienci, nieruchomości, oferty, dokumenty i historia procesu w jednym miejscu."
+    :back-to="orgPath('/cases')"
+    back-label="Wróć do spraw"
+    :tabs="pending ? [] : caseTabs"
+  >
     <template #meta>
       <div class="case-header-meta">
         <span class="case-header-meta__status"><span />{{ caseStatusLabel }}</span>
@@ -745,19 +750,6 @@ watch(
         <UButton color="error" variant="soft" size="sm" @click="refresh()">Odśwież</UButton>
       </template>
     </UAlert>
-
-    <nav v-if="!pending" class="case-tabs" aria-label="Sekcje sprawy">
-      <NuxtLink
-        v-for="tab in caseTabs"
-        :key="tab.id"
-        :to="viewLocation(tab.id)"
-        :class="{ 'case-tabs__link--active': currentView === tab.id }"
-      >
-        <UIcon class="case-tabs__icon" :name="tab.icon" />
-        <span>{{ tab.label }}</span>
-        <span v-if="tab.count" class="case-tabs__count">{{ tab.count }}</span>
-      </NuxtLink>
-    </nav>
 
     <nav v-if="!pending && currentView === 'credit'" class="case-workflow" aria-label="Etapy obsługi sprawy">
       <div class="case-workflow__intro">
@@ -1256,8 +1248,6 @@ watch(
 
 .case-header-meta,
 .case-header-meta__status,
-.case-tabs,
-.case-tabs a,
 .history-panel > header,
 .history-panel > header > div,
 .task-list li,
@@ -1296,65 +1286,6 @@ watch(
   width: 1px;
   height: 13px;
   background: var(--ui-border-accented);
-}
-
-.case-tabs {
-  gap: 4px;
-  margin: -2px 0 26px;
-  padding: 0 2px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--ui-border);
-}
-
-.case-tabs a {
-  position: relative;
-  gap: 8px;
-  min-height: 48px;
-  padding: 0 16px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  font-weight: 560;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.case-tabs a::after {
-  position: absolute;
-  right: 10px;
-  bottom: -1px;
-  left: 10px;
-  height: 2px;
-  border-radius: 999px 999px 0 0;
-  background: transparent;
-  content: '';
-}
-
-.case-tabs a:hover,
-.case-tabs a:focus-visible,
-.case-tabs__link--active {
-  color: var(--ui-text-highlighted)!important;
-  outline: none;
-}
-
-.case-tabs__link--active::after {
-  background: var(--ui-text-highlighted)!important;
-}
-
-.case-tabs__icon {
-  display: none;
-}
-
-.case-tabs__count {
-  display: grid;
-  place-items: center;
-  min-width: 21px;
-  height: 21px;
-  padding-inline: 6px;
-  border-radius: 999px;
-  background: var(--ui-bg-accented);
-  color: var(--ui-text);
-  font-family: var(--font-mono);
-  font-size: 9px;
 }
 
 .case-command-loading {
@@ -1959,18 +1890,6 @@ watch(
     align-items: flex-start;
     flex-direction: column;
     gap: 5px;
-  }
-
-  .case-tabs a {
-    padding-inline: 12px;
-  }
-
-  .case-tabs__icon {
-    display: block;
-  }
-
-  .case-tabs a > span:nth-child(2) {
-    display: none;
   }
 
   .saved-offer {

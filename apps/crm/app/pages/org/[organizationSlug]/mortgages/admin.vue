@@ -7,7 +7,7 @@ const organizationSlug = Array.isArray(rawOrganizationSlug)
   ? String(rawOrganizationSlug[0] ?? '')
   : String(rawOrganizationSlug ?? '')
 
-await navigateTo(`/org/${encodeURIComponent(organizationSlug)}/mortgages/offers`, {
+await navigateTo(`/org/${encodeURIComponent(organizationSlug)}/settings/institutions`, {
   replace: true,
   redirectCode: 302,
 })

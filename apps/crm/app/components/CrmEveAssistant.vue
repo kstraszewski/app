@@ -2,6 +2,8 @@
 import type { InputResponse } from 'eve/client'
 import { useEveAgent } from 'eve/vue'
 
+type AssistantAvailability = 'available' | 'checking' | 'unavailable'
+
 const props = withDefaults(defineProps<{
   demo?: boolean
   mode?: 'launcher' | 'page'
@@ -18,6 +20,9 @@ const route = useRoute()
 const supabase = useSupabaseClient()
 const toast = useToast()
 const open = ref(false)
+const chat = ref<{ focusComposer: () => Promise<void> | void } | null>(null)
+const availability = ref<AssistantAvailability>(props.demo ? 'available' : 'checking')
+const availabilityMessage = ref('')
 
 const organizationSlug = computed(() => {
   const value = route.params.organizationSlug
@@ -45,6 +50,10 @@ function friendlyAssistantError(caught: { message?: string } | null | undefined)
   return 'Asystent jest chwilowo niedostępny. Spróbuj ponownie.'
 }
 
+function isModelConfigurationError(caught: { message?: string } | null | undefined) {
+  return /AI Gateway|API[_ ]?KEY|VERCEL_OIDC_TOKEN|credentials/iu.test(caught?.message?.trim() ?? '')
+}
+
 async function assistantHeaders() {
   const { data: sessionResult, error: sessionError } = await supabase.auth.getSession()
   const authSession = sessionResult.session
@@ -58,6 +67,29 @@ async function assistantHeaders() {
   return {
     Authorization: `Bearer ${authSession.access_token}`,
     'x-openexpert-organization': organizationSlug.value,
+  }
+}
+
+async function checkAssistantAvailability() {
+  if (props.demo) {
+    availability.value = 'available'
+    availabilityMessage.value = ''
+    return
+  }
+
+  availability.value = 'checking'
+  availabilityMessage.value = ''
+
+  try {
+    const result = await $fetch<{ available: boolean, message?: string }>('/api/assistant/status', {
+      headers: await assistantHeaders(),
+    })
+    availability.value = result.available ? 'available' : 'unavailable'
+    availabilityMessage.value = result.message ?? ''
+  }
+  catch (caught) {
+    availability.value = 'unavailable'
+    availabilityMessage.value = friendlyAssistantError(caught as { message?: string })
   }
 }
 
@@ -81,16 +113,24 @@ const {
     },
   }),
   onError: caught => {
-    toast.add({
-      title: 'Agent AI nie odpowiedział',
-      description: friendlyAssistantError(caught),
-      color: 'error',
-      icon: 'i-lucide-triangle-alert',
-    })
+    if (isModelConfigurationError(caught)) {
+      availability.value = 'unavailable'
+      availabilityMessage.value = friendlyAssistantError(caught)
+    }
+    if (props.mode === 'launcher' && !open.value) {
+      toast.add({
+        title: 'Agent AI nie odpowiedział',
+        description: friendlyAssistantError(caught),
+        color: 'error',
+        icon: 'i-lucide-triangle-alert',
+      })
+    }
   },
 })
 
 const displayStatus = computed(() => {
+  if (availability.value === 'checking') return 'checking'
+  if (availability.value === 'unavailable') return 'unavailable'
   const parts = data.value.messages.flatMap(message => message.parts)
   if (parts.some(part => part.type === 'authorization' && part.state === 'required')) return 'authorization'
   if (parts.some(part => part.type === 'dynamic-tool' && part.state === 'approval-requested')) return 'waiting'
@@ -99,8 +139,13 @@ const displayStatus = computed(() => {
 
 watch(displayStatus, value => emit('statusChange', value), { immediate: true })
 
+onMounted(() => {
+  if (props.mode === 'page') void checkAssistantAvailability()
+})
+
 async function sendMessage(message: string) {
   open.value = true
+  if (availability.value !== 'available') return
   await send({ message })
 }
 
@@ -159,10 +204,13 @@ async function newConversation() {
     await cancelTurn({ silent: true })
   }
   reset()
+  await nextTick()
+  await chat.value?.focusComposer()
 }
 
 function openAssistant() {
   open.value = true
+  if (availability.value === 'checking') void checkAssistantAvailability()
 }
 
 defineExpose({ newConversation })
@@ -172,16 +220,20 @@ defineExpose({ newConversation })
   <div v-if="organizationSlug" class="crm-eve-assistant" :class="`crm-eve-assistant--${mode}`">
     <CrmEveChat
       v-if="mode === 'page'"
+      ref="chat"
       :messages="data.messages"
       :status="status"
       :error="error"
       :demo="props.demo"
+      :availability="availability"
+      :availability-message="availabilityMessage"
       presentation="page"
       @send="sendMessage"
       @stop="cancelTurn"
       @background="runInBackground"
       @input-responses="sendInputResponses"
       @reset="newConversation"
+      @retry="checkAssistantAvailability"
     />
 
     <template v-else>
@@ -204,14 +256,18 @@ defineExpose({ newConversation })
       >
         <template #body>
           <CrmEveChat
+            ref="chat"
             :messages="data.messages"
             :status="status"
             :error="error"
+            :availability="availability"
+            :availability-message="availabilityMessage"
             @send="sendMessage"
             @stop="cancelTurn"
             @background="runInBackground"
             @input-responses="sendInputResponses"
             @reset="newConversation"
+            @retry="checkAssistantAvailability"
           />
         </template>
       </USlideover>

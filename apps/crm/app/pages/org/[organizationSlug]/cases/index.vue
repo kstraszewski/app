@@ -331,11 +331,25 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 </script>
 
 <template>
-  <CrmShell title="Sprawy" eyebrow="Klienci i zapisane oferty">
+  <CrmShell
+    title="Sprawy"
+    eyebrow="Obsługa klientów"
+    description="Rejestr procesów klientów, zapisanych ofert i dokumentów prowadzonych przez zespół."
+  >
     <template #actions>
       <UButton icon="i-lucide-plus" @click="openCreateForm">
         Nowa sprawa
       </UButton>
+      <UButton
+        color="neutral"
+        variant="outline"
+        square
+        icon="i-lucide-refresh-cw"
+        :loading="casesPending || filtersPending"
+        aria-label="Odśwież sprawy"
+        title="Odśwież"
+        @click="refreshView"
+      />
     </template>
 
     <UAlert
@@ -353,17 +367,7 @@ function caseBanks(item: CaseListResponse['data'][number]) {
       </template>
     </UAlert>
 
-    <UCard class="cases-card">
-      <template #header>
-        <div class="cases-heading">
-          <div>
-            <h2>Wszystkie sprawy</h2>
-            <p>Jedno miejsce dla klientów i ofert zachowanych na konkretny moment.</p>
-          </div>
-          <span aria-live="polite">{{ totalCases }} {{ totalCases === 1 ? 'sprawa' : 'spraw' }}</span>
-        </div>
-      </template>
-
+    <section class="cases-register" aria-label="Rejestr spraw">
       <section class="filters" aria-label="Filtry listy spraw">
         <div class="filters-main">
           <UInput
@@ -421,6 +425,9 @@ function caseBanks(item: CaseListResponse['data'][number]) {
           >
             Daty
           </UButton>
+          <span class="cases-count" aria-live="polite">
+            {{ totalCases }} {{ totalCases === 1 ? 'sprawa' : 'spraw' }}
+          </span>
         </div>
 
         <div v-if="advancedFiltersOpen" class="filters-advanced">
@@ -454,7 +461,7 @@ function caseBanks(item: CaseListResponse['data'][number]) {
         <USkeleton v-for="index in 7" :key="index" class="h-18 w-full" />
       </div>
 
-      <div v-else-if="cases.data.length" data-testid="cases-results">
+      <div v-else-if="cases.data.length" class="case-results" data-testid="cases-results">
         <div class="case-table-head" aria-hidden="true">
           <span>Sprawa</span>
           <span>Klienci</span>
@@ -516,19 +523,17 @@ function caseBanks(item: CaseListResponse['data'][number]) {
         </div>
       </div>
 
-      <template v-if="totalCases > pageSize" #footer>
-        <div class="pagination-row">
-          <span>Strona {{ page }} z {{ totalPages }}</span>
-          <UPagination
-            v-model:page="page"
-            :total="totalCases"
-            :items-per-page="pageSize"
-            :sibling-count="1"
-            show-edges
-          />
-        </div>
-      </template>
-    </UCard>
+      <div v-if="totalCases > pageSize" class="pagination-row">
+        <span>Strona {{ page }} z {{ totalPages }}</span>
+        <UPagination
+          v-model:page="page"
+          :total="totalCases"
+          :items-per-page="pageSize"
+          :sibling-count="1"
+          show-edges
+        />
+      </div>
+    </section>
 
     <UModal
       v-model:open="createOpen"
@@ -595,7 +600,6 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   margin-bottom: 16px;
 }
 
-.cases-heading,
 .pagination-row,
 .filters-main,
 .active-filters,
@@ -604,40 +608,28 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   align-items: center;
 }
 
-.cases-heading,
 .pagination-row {
   justify-content: space-between;
   gap: 20px;
 }
 
-.cases-heading h2 {
-  margin: 0;
-  color: var(--ui-text-highlighted);
-  font-size: 18px;
-  font-weight: 650;
-}
-
-.cases-heading p,
-.cases-heading > span,
 .pagination-row > span {
   margin: 4px 0 0;
   color: var(--ui-text-muted);
   font-size: 13px;
 }
 
-.cases-heading > span {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--ui-bg-muted);
+.cases-register {
+  min-width: 0;
 }
 
 .filters {
   display: grid;
   gap: 12px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--ui-border);
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  background: var(--ui-bg);
 }
 
 .filters-main {
@@ -662,6 +654,16 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   width: 190px;
 }
 
+.cases-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-inline: 6px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .filters-advanced {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 220px));
@@ -678,14 +680,29 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 }
 
 .case-skeletons,
-.case-list,
 .create-form {
   display: grid;
   gap: 10px;
 }
 
 .case-skeletons {
-  padding-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-top: 0;
+  border-radius: 0 0 var(--ui-radius) var(--ui-radius);
+  background: var(--ui-bg);
+}
+
+.case-results {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-top: 0;
+  border-radius: 0 0 var(--ui-radius) var(--ui-radius);
+  background: var(--ui-bg);
+}
+
+.case-list {
+  display: grid;
 }
 
 .case-table-head,
@@ -697,8 +714,12 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 }
 
 .case-table-head {
-  padding: 18px 14px 10px;
-  color: var(--ui-text-dimmed);
+  min-height: 42px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: .05em;
@@ -707,18 +728,21 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 
 .case-row {
   min-height: 76px;
-  padding: 14px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--ui-border);
   color: inherit;
   text-decoration: none;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition: background-color var(--oe-motion-fast), box-shadow var(--oe-motion-fast);
+}
+
+.case-row:first-child {
+  border-top: 0;
 }
 
 .case-row:hover,
 .case-row:focus-visible {
-  border-color: var(--ui-border-accented);
-  background: var(--ui-bg-elevated);
+  background: var(--ui-bg-muted);
+  box-shadow: inset 3px 0 0 var(--ui-primary);
   outline: none;
 }
 
@@ -776,6 +800,10 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   justify-items: center;
   gap: 10px;
   padding: 70px 20px;
+  border: 1px dashed var(--ui-border-accented);
+  border-top: 0;
+  border-radius: 0 0 var(--ui-radius) var(--ui-radius);
+  background: var(--ui-bg);
   text-align: center;
 }
 
@@ -811,6 +839,14 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   margin-top: 4px;
 }
 
+.pagination-row {
+  padding: 14px 16px;
+  margin-top: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg);
+}
+
 @media (max-width: 1120px) {
   .search-input {
     flex-basis: 100%;
@@ -830,14 +866,18 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   }
 
   .case-list {
-    padding-top: 16px;
+    gap: 10px;
+    padding: 12px;
   }
 
   .case-row {
     grid-template-columns: 1fr auto;
     gap: 12px;
-    border-color: var(--ui-border);
+    border: 1px solid var(--ui-border);
+    border-radius: calc(var(--ui-radius) * .8);
   }
+
+  .case-row:first-child { border-top: 1px solid var(--ui-border); }
 
   .client-chips,
   .offer-summary {
@@ -851,7 +891,6 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 }
 
 @media (max-width: 640px) {
-  .cases-heading,
   .pagination-row {
     align-items: flex-start;
     flex-direction: column;
@@ -876,6 +915,10 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 
   .filters-advanced {
     grid-template-columns: 1fr;
+  }
+
+  .cases-count {
+    margin-left: 0;
   }
 }
 </style>

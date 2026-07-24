@@ -4,12 +4,14 @@ useHead({ title: 'Agent AI — OpenExpert CRM' })
 
 const route = useRoute()
 const historyOpen = ref(false)
-const assistantStatus = ref('ready')
+const assistantStatus = ref('checking')
 const assistant = ref<{ newConversation: () => Promise<void> | void } | null>(null)
 const showDemo = computed(() => import.meta.dev && route.query.preview === 'tool-run')
 
 const statusLabel = computed(() => {
   if (showDemo.value) return 'Pracuje'
+  if (assistantStatus.value === 'checking') return 'Sprawdzam połączenie'
+  if (assistantStatus.value === 'unavailable') return 'Model niedostępny'
   if (assistantStatus.value === 'waiting') return 'Czeka na decyzję'
   if (assistantStatus.value === 'authorization') return 'Wymaga połączenia'
   if (assistantStatus.value === 'submitted') return 'Uruchamia zadanie'
@@ -19,7 +21,7 @@ const statusLabel = computed(() => {
 })
 
 const statusTone = computed(() => {
-  if (assistantStatus.value === 'error') return 'error'
+  if (assistantStatus.value === 'error' || assistantStatus.value === 'unavailable') return 'error'
   if (assistantStatus.value === 'waiting' || assistantStatus.value === 'authorization') return 'warning'
   if (showDemo.value || assistantStatus.value === 'submitted' || assistantStatus.value === 'streaming') return 'success'
   return 'neutral'
@@ -50,12 +52,6 @@ function openHistory() {
     </template>
 
     <template #actions>
-      <img
-        class="assistant-page__mascot"
-        src="/assets/eve-avatar.png"
-        alt=""
-        aria-hidden="true"
-      >
       <UButton
         color="neutral"
         variant="outline"
@@ -120,7 +116,7 @@ function openHistory() {
   display: flex;
   flex-direction: column;
   width: min(100%, var(--ui-container));
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   padding: 24px 32px 0;
 }
@@ -172,13 +168,6 @@ function openHistory() {
 .assistant-page__status--error { color: var(--ui-error); }
 .assistant-page__status--error > span { background: var(--ui-error); }
 .assistant-page__model { color: var(--ui-text-dimmed); }
-
-.assistant-page__mascot {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  image-rendering: pixelated;
-}
 
 .assistant-page-shell :deep(.crm-eve-assistant--page) {
   min-height: 0;
@@ -239,16 +228,15 @@ function openHistory() {
 
 @media (max-width: 900px) {
   .assistant-page-shell :deep(.crm-content) {
-    height: auto;
-    min-height: calc(100vh - 70px);
-    overflow: visible;
+    height: calc(100dvh - 76px);
+    min-height: 0;
+    overflow: hidden;
     padding: 18px 16px 0;
   }
 
   .assistant-page-shell :deep(.crm-header) { align-items: stretch; }
   .assistant-page-shell :deep(.crm-header__actions) { align-items: center; }
-  .assistant-page__mascot { display: none; }
-  .assistant-page-shell :deep(.crm-eve-assistant--page) { flex: 1 0 auto; }
+  .assistant-page-shell :deep(.crm-eve-assistant--page) { flex: 1 1 auto; }
 }
 
 @media (max-width: 640px) {

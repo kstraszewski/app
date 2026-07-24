@@ -14,9 +14,11 @@ import {
   limitedText,
   optionalUuidValue,
   publicWidgetKey,
+  recordBookingWidgetEvent,
   sanitizePublicCatalog,
   throwBookingError,
   uuidValue,
+  verifyBookingWidgetPreviewToken,
 } from '~~/server/utils/scheduling'
 
 function canonicalJson(value: unknown, depth = 0): string {
@@ -215,6 +217,20 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 422,
       statusMessage: 'The calculator data is invalid. Recalculate and try again.',
+    })
+  }
+
+  const isAuthorizedPreview = verifyBookingWidgetPreviewToken(
+    event,
+    widgetKey,
+    body.previewToken ?? body.preview_token,
+  )
+  if (!isAuthorizedPreview) {
+    await recordBookingWidgetEvent(event, {
+      widgetKey,
+      eventType: 'booking_attempt',
+      serviceId,
+      isEmbedded: body.isEmbedded === true || body.is_embedded === true,
     })
   }
 

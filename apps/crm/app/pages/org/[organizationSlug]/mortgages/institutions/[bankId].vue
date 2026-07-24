@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '~/utils/api-error'
 
-definePageMeta({ middleware: ['auth', 'organization'] })
+definePageMeta({
+  middleware: ['auth', 'organization'],
+  path: '/org/:organizationSlug/settings/institutions/:bankId',
+  alias: ['/org/:organizationSlug/mortgages/institutions/:bankId'],
+})
 
 type ChecklistItem = {
   code: string
@@ -176,12 +180,20 @@ type BankProfilePayload = {
 }
 
 const route = useRoute()
+const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const bankId = computed(() => String(route.params.bankId ?? ''))
 const apiPath = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks/${encodeURIComponent(bankId.value)}`)
-const offersPath = computed(() => `/org/${organizationSlug.value}/mortgages/offers`)
-const settingsPath = computed(() => `/org/${organizationSlug.value}/mortgages/institutions?bank=${encodeURIComponent(bankId.value)}`)
-const createOfferPath = computed(() => `${offersPath.value}?createBank=${encodeURIComponent(bankId.value)}`)
+const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
+const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
+const profilePath = computed(() => `${institutionsPath.value}/${encodeURIComponent(bankId.value)}`)
+const settingsPath = computed(() => `${profilePath.value}?view=settings`)
+const createOfferPath = computed(() => `${productsPath.value}?createBank=${encodeURIComponent(bankId.value)}`)
+const settingsView = computed(() => route.query.view === 'settings')
+const tabs = computed(() => [
+  { label: 'Profil', to: profilePath.value, icon: 'i-lucide-layout-dashboard' },
+  { label: 'Ustawienia i historia', to: settingsPath.value, icon: 'i-lucide-settings-2' },
+])
 
 const { data, status, error, refresh } = await useFetch<BankProfilePayload>(apiPath)
 const bank = computed(() => data.value?.bank ?? null)
@@ -193,11 +205,144 @@ const checklistOffers = computed(() => offers.value.filter(offer => (
   offer.publishedChecklist.length || offer.draft?.configuration.checklist.length
 )))
 const expandedChecklists = ref<string[]>([])
+const saving = ref(false)
+const uploading = ref(false)
+const removingLogo = ref(false)
+const resetting = ref(false)
+const refreshing = ref(false)
+const resetArmed = ref(false)
+const logoFile = ref<File | null>(null)
+const hasCustomLogo = computed(() => Boolean(bank.value?.override?.hasCustomLogo))
+const settingsForm = reactive({
+  is_enabled: true,
+  custom_name: '',
+  custom_website_url: '',
+  notes: '',
+})
 
 useHead(() => ({ title: `${bank.value?.name ?? 'Profil instytucji'} — OpenExpert` }))
 
 function initials(name: string) {
   return name.split(/\s+/u).slice(0, 2).map(part => part[0]).join('').toUpperCase()
+}
+
+function loadSettingsForm() {
+  if (!bank.value) return
+  settingsForm.is_enabled = bank.value.override?.isEnabled ?? true
+  settingsForm.custom_name = bank.value.override?.customName ?? ''
+  settingsForm.custom_website_url = bank.value.override?.customWebsiteUrl ?? ''
+  settingsForm.notes = bank.value.override?.notes ?? ''
+  logoFile.value = null
+  resetArmed.value = false
+}
+
+function invalidateMortgageCatalog() {
+  clearNuxtData(`mortgage-catalog:${organizationSlug.value}`)
+}
+
+async function refreshProfile() {
+  refreshing.value = true
+  try {
+    await refresh()
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function armReset() {
+  resetArmed.value = true
+}
+
+function cancelReset() {
+  resetArmed.value = false
+}
+
+async function saveSettings() {
+  if (!bank.value) return
+  saving.value = true
+  try {
+    await $fetch(apiPath.value, {
+      method: 'PATCH',
+      body: {
+        is_enabled: Boolean(settingsForm.is_enabled),
+        custom_name: settingsForm.custom_name.trim() || null,
+        custom_website_url: settingsForm.custom_website_url.trim() || null,
+        notes: settingsForm.notes.trim() || null,
+      },
+    })
+    await refresh()
+    invalidateMortgageCatalog()
+    toast.add({ title: 'Zapisano ustawienia instytucji', color: 'success' })
+  } catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się zapisać',
+      description: caught?.data?.statusMessage ?? caught?.message ?? 'Sprawdź dane formularza.',
+      color: 'error',
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
+async function uploadLogo() {
+  if (!logoFile.value) return
+  uploading.value = true
+  try {
+    const body = new FormData()
+    body.append('logo', logoFile.value)
+    await $fetch(`${apiPath.value}/logo`, { method: 'POST', body })
+    logoFile.value = null
+    await refresh()
+    invalidateMortgageCatalog()
+    toast.add({ title: 'Logo zostało zapisane', color: 'success' })
+  } catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się przesłać logo',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+    })
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function removeLogo() {
+  if (!hasCustomLogo.value) return
+  removingLogo.value = true
+  try {
+    await $fetch(`${apiPath.value}/logo`, { method: 'DELETE' })
+    await refresh()
+    invalidateMortgageCatalog()
+    toast.add({ title: 'Przywrócono logo źródłowe', color: 'success' })
+  } catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się usunąć logo',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+    })
+  } finally {
+    removingLogo.value = false
+  }
+}
+
+async function performReset() {
+  if (!bank.value?.override) return
+  resetting.value = true
+  try {
+    await $fetch(apiPath.value, { method: 'DELETE' })
+    await refresh()
+    invalidateMortgageCatalog()
+    toast.add({ title: 'Przywrócono dane źródłowe instytucji', color: 'success' })
+  } catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się przywrócić danych',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+    })
+  } finally {
+    resetting.value = false
+    resetArmed.value = false
+  }
 }
 
 function formatDate(value: string | null, withTime = false) {
@@ -318,7 +463,7 @@ function historyActionLabel(action: string) {
 }
 
 function offerPath(offerId: string) {
-  return `${offersPath.value}/${encodeURIComponent(offerId)}`
+  return `${productsPath.value}/${encodeURIComponent(offerId)}`
 }
 
 function offerDocumentsPath(offerId: string) {
@@ -342,20 +487,33 @@ function toggleChecklist(key: string) {
     ? expandedChecklists.value.filter(item => item !== key)
     : [...expandedChecklists.value, key]
 }
+
+watch(bank, loadSettingsForm, { immediate: true })
 </script>
 
 <template>
-  <CrmShell title="Profil instytucji" eyebrow="Backoffice · bank i powiązane dane">
+  <CrmShell
+    :title="bank?.name ?? 'Instytucja'"
+    eyebrow="Ustawienia administracyjne"
+    description="Profil instytucji, jej produkty oraz ustawienia obowiązujące w organizacji."
+    :back-to="institutionsPath"
+    back-label="Wróć do instytucji"
+    :tabs="tabs"
+  >
     <template #actions>
-      <UButton :to="offersPath" color="neutral" variant="outline" icon="i-lucide-arrow-left">
-        Katalog ofert
-      </UButton>
-      <UButton :to="settingsPath" color="neutral" variant="outline" icon="i-lucide-settings-2">
-        Ustawienia banku
-      </UButton>
       <UButton v-if="bank" :to="createOfferPath" icon="i-lucide-plus">
-        Dodaj ofertę
+        Dodaj produkt
       </UButton>
+      <UButton
+        color="neutral"
+        variant="outline"
+        square
+        icon="i-lucide-refresh-cw"
+        aria-label="Odśwież profil instytucji"
+        title="Odśwież"
+        :loading="refreshing"
+        @click="refreshProfile"
+      />
     </template>
 
     <UAlert
@@ -376,7 +534,7 @@ function toggleChecklist(key: string) {
       <USkeleton class="h-96 w-full" />
     </div>
 
-    <div v-else-if="bank && metrics" class="bank-profile">
+    <div v-else-if="bank && metrics && !settingsView" class="bank-profile">
       <section class="bank-hero">
         <div
           class="bank-hero__logo"
@@ -425,7 +583,7 @@ function toggleChecklist(key: string) {
 
       <section class="profile-metrics" aria-label="Podsumowanie instytucji">
         <article>
-          <span>Wszystkie oferty</span>
+          <span>Wszystkie produkty</span>
           <strong>{{ metrics.offers }}</strong>
           <small>{{ metrics.versions }} {{ metrics.versions === 1 ? 'wersja' : 'wersji' }} w historii</small>
         </article>
@@ -458,7 +616,7 @@ function toggleChecklist(key: string) {
       </section>
 
       <nav class="profile-jump" aria-label="Sekcje profilu instytucji">
-        <a href="#bank-offers"><UIcon name="i-lucide-badge-percent" />Oferty <span>{{ offers.length }}</span></a>
+        <a href="#bank-offers"><UIcon name="i-lucide-badge-percent" />Produkty <span>{{ offers.length }}</span></a>
         <a href="#bank-checklists"><UIcon name="i-lucide-list-checks" />Checklisty <span>{{ metrics.publishedChecklistItems }}</span></a>
         <a href="#bank-sources"><UIcon name="i-lucide-files" />Źródła <span>{{ sources.length }}</span></a>
         <a href="#bank-settings"><UIcon name="i-lucide-history" />Ustawienia i historia <span>{{ history.length }}</span></a>
@@ -468,10 +626,10 @@ function toggleChecklist(key: string) {
         <div class="section-heading">
           <div>
             <span>01 · produkty</span>
-            <h2>Oferty i wersje kalkulatora</h2>
-            <p>Każda oferta zachowuje własną stopę, koszty, warianty, checklistę i historię publikacji.</p>
+            <h2>Produkty i wersje kalkulatora</h2>
+            <p>Każdy produkt zachowuje własną stopę, koszty, warianty, checklistę i historię publikacji.</p>
           </div>
-          <UButton :to="createOfferPath" icon="i-lucide-plus" variant="outline">Dodaj ofertę tego banku</UButton>
+          <UButton :to="createOfferPath" icon="i-lucide-plus" variant="outline">Dodaj produkt tej instytucji</UButton>
         </div>
 
         <div v-if="offers.length" class="offer-cards">
@@ -495,7 +653,7 @@ function toggleChecklist(key: string) {
                 </div>
               </div>
               <UButton :to="offerPath(offer.id)" color="neutral" variant="outline" trailing-icon="i-lucide-arrow-right">
-                Otwórz ofertę
+                Ustawienia produktu
               </UButton>
             </header>
 
@@ -574,9 +732,9 @@ function toggleChecklist(key: string) {
 
         <div v-else class="section-empty">
           <UIcon name="i-lucide-package-plus" />
-          <h3>Ten bank nie ma jeszcze oferty</h3>
+          <h3>Ta instytucja nie ma jeszcze produktu</h3>
           <p>Utwórz pierwszy szkic, skonfiguruj kalkulację i opublikuj go po walidacji.</p>
-          <UButton :to="createOfferPath" icon="i-lucide-plus">Dodaj pierwszą ofertę</UButton>
+          <UButton :to="createOfferPath" icon="i-lucide-plus">Dodaj pierwszy produkt</UButton>
         </div>
       </section>
 
@@ -585,7 +743,7 @@ function toggleChecklist(key: string) {
           <div>
             <span>02 · dokumenty</span>
             <h2>Checklisty wymagane przez bank</h2>
-            <p>Pozycje są przypisane do konkretnej oferty i wersji, dlatego nie tracą kontekstu wariantu kredytu.</p>
+            <p>Pozycje są przypisane do konkretnego produktu i wersji, dlatego nie tracą kontekstu wariantu kredytu.</p>
           </div>
         </div>
 
@@ -666,7 +824,7 @@ function toggleChecklist(key: string) {
         <div v-else class="section-empty section-empty--compact">
           <UIcon name="i-lucide-list-x" />
           <h3>Brak checklist dokumentów</h3>
-          <p>Dodaj wymagania dokumentowe w edytorze konkretnej oferty.</p>
+          <p>Dodaj wymagania dokumentowe w edytorze konkretnego produktu.</p>
         </div>
       </section>
 
@@ -721,7 +879,7 @@ function toggleChecklist(key: string) {
         <div v-else class="section-empty section-empty--compact">
           <UIcon name="i-lucide-file-x-2" />
           <h3>Brak materiałów źródłowych</h3>
-          <p>Źródła dodasz w zakładce Dokumenty wewnątrz edytora oferty.</p>
+          <p>Źródła dodasz w zakładce Dokumenty wewnątrz edytora produktu.</p>
         </div>
       </section>
 
@@ -773,11 +931,202 @@ function toggleChecklist(key: string) {
         </div>
       </section>
     </div>
+
+    <div v-else-if="bank && metrics" class="bank-settings-editor">
+      <section class="settings-notice" aria-label="Zakres ustawień">
+        <UIcon name="i-lucide-building-2" />
+        <div>
+          <strong>Edytujesz ustawienia tylko dla tej organizacji</strong>
+          <p>Nazwa, strona, logo i widoczność nadpisują dane źródłowe wyłącznie w bieżącym CRM.</p>
+        </div>
+        <UBadge v-if="bank.override" color="primary" variant="outline">
+          Rewizja {{ bank.override.revision }}
+        </UBadge>
+        <UBadge v-else color="neutral" variant="outline">Dane źródłowe</UBadge>
+      </section>
+
+      <form class="bank-settings-form" @submit.prevent="saveSettings">
+        <UCard>
+          <template #header>
+            <div class="settings-editor-head">
+              <div>
+                <span>Konfiguracja organizacji</span>
+                <h2>Widoczność i dane instytucji</h2>
+              </div>
+              <UBadge :color="settingsForm.is_enabled ? 'success' : 'warning'" variant="subtle">
+                {{ settingsForm.is_enabled ? 'Widoczna' : 'Ukryta' }}
+              </UBadge>
+            </div>
+          </template>
+
+          <div class="settings-form-grid">
+            <UFormField
+              label="Widoczna w porównywarce"
+              description="Wyłączenie ukrywa wszystkie produkty tej instytucji w organizacji."
+            >
+              <USwitch v-model="settingsForm.is_enabled" />
+            </UFormField>
+            <UFormField
+              label="Nazwa w organizacji"
+              description="Puste pole zachowuje nazwę źródłową."
+            >
+              <UInput v-model="settingsForm.custom_name" :placeholder="bank.baseName" />
+            </UFormField>
+            <UFormField
+              class="settings-form-grid__full"
+              label="Strona internetowa"
+              description="Puste pole zachowuje adres źródłowy."
+            >
+              <UInput
+                v-model="settingsForm.custom_website_url"
+                type="url"
+                :placeholder="bank.baseWebsiteUrl || 'https://'"
+                icon="i-lucide-globe"
+              />
+            </UFormField>
+            <UFormField class="settings-form-grid__full" label="Notatka administratora">
+              <UTextarea
+                v-model="settingsForm.notes"
+                :rows="4"
+                placeholder="Np. opiekun instytucji, zakres współpracy lub źródło zmiany"
+              />
+            </UFormField>
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="settings-editor-head">
+              <div>
+                <span>Identyfikacja wizualna</span>
+                <h2>Logo instytucji</h2>
+              </div>
+              <small>PNG, JPEG lub WebP · maks. 2 MB</small>
+            </div>
+          </template>
+
+          <div class="settings-logo-editor">
+            <div
+              class="settings-logo-preview"
+              :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
+            >
+              <img v-if="bank.logoUrl" :src="bank.logoUrl" :alt="`Aktualne logo ${bank.name}`">
+              <div v-else>
+                <UIcon name="i-lucide-image" />
+                <span>Brak logo</span>
+              </div>
+            </div>
+            <div class="settings-logo-upload">
+              <UFileUpload
+                v-model="logoFile"
+                accept="image/png,image/jpeg,image/webp"
+                icon="i-lucide-image-up"
+                label="Wybierz lub upuść logo"
+                description="Nowy plik zastąpi obecne logo po zatwierdzeniu."
+                :disabled="uploading"
+              />
+              <div class="settings-logo-actions">
+                <UButton
+                  type="button"
+                  icon="i-lucide-upload"
+                  :disabled="!logoFile"
+                  :loading="uploading"
+                  @click="uploadLogo"
+                >
+                  Prześlij logo
+                </UButton>
+                <UButton
+                  v-if="hasCustomLogo"
+                  type="button"
+                  color="error"
+                  variant="ghost"
+                  icon="i-lucide-trash-2"
+                  :loading="removingLogo"
+                  @click="removeLogo"
+                >
+                  Przywróć logo źródłowe
+                </UButton>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <div class="settings-sticky-actions">
+          <div>
+            <strong>{{ metrics.offers }}</strong> {{ metrics.offers === 1 ? 'produkt' : 'produktów' }}
+            <span v-if="bank.override?.updatedAt"> · aktualizacja {{ formatDate(bank.override.updatedAt, true) }}</span>
+          </div>
+          <UButton
+            v-if="resetArmed"
+            type="button"
+            color="neutral"
+            variant="ghost"
+            @click="cancelReset"
+          >
+            Anuluj
+          </UButton>
+          <UButton
+            v-if="bank.override && !resetArmed"
+            type="button"
+            color="error"
+            variant="ghost"
+            icon="i-lucide-rotate-ccw"
+            @click="armReset"
+          >
+            Przywróć źródło
+          </UButton>
+          <UButton
+            v-else-if="bank.override"
+            type="button"
+            color="error"
+            icon="i-lucide-rotate-ccw"
+            :loading="resetting"
+            @click="performReset"
+          >
+            Potwierdź przywrócenie
+          </UButton>
+          <UButton type="submit" icon="i-lucide-save" :loading="saving">
+            Zapisz ustawienia
+          </UButton>
+        </div>
+      </form>
+
+      <UCard class="settings-history-card">
+        <template #header>
+          <div class="settings-editor-head">
+            <div>
+              <span>Audyt</span>
+              <h2>Historia zmian</h2>
+            </div>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              square
+              icon="i-lucide-refresh-cw"
+              aria-label="Odśwież historię"
+              :loading="refreshing"
+              @click="refreshProfile"
+            />
+          </div>
+        </template>
+        <ol v-if="history.length" class="history-list history-list--full">
+          <li v-for="entry in history" :key="entry.id">
+            <span class="history-list__dot" />
+            <div>
+              <strong>{{ historyActionLabel(entry.action) }} · r{{ entry.revision }}</strong>
+              <p>{{ entry.actor?.name || entry.actor?.email || 'SuperAdmin' }}</p>
+              <small>{{ formatDate(entry.createdAt, true) }}</small>
+            </div>
+          </li>
+        </ol>
+        <div v-else class="settings-empty">Nie zapisano jeszcze zmian dla tej instytucji.</div>
+      </UCard>
+    </div>
   </CrmShell>
 </template>
 
 <style scoped>
-.profile-loading, .bank-profile { display: grid; gap: 22px; min-width: 0; }
+.profile-loading, .bank-profile, .bank-settings-editor { display: grid; gap: 22px; min-width: 0; }
 .profile-loading__metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
 .bank-hero { display: grid; grid-template-columns: 126px minmax(0, 1fr); gap: 24px; padding: 24px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: calc(var(--ui-radius) * 1.35); background: linear-gradient(135deg, var(--ui-bg) 55%, var(--ui-bg-muted)); }
 .bank-hero__logo { display: grid; place-items: center; width: 126px; height: 126px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 22px; color: var(--ui-color-neutral-900); background: white; font-size: 26px; font-weight: 800; }
@@ -888,6 +1237,30 @@ function toggleChecklist(key: string) {
 .history-list strong { font-size: 12px; }
 .history-list p { margin: 2px 0; color: var(--ui-text-muted); font-size: 11px; }
 .history-list small, .settings-empty { color: var(--ui-text-muted); font-size: 11px; }
+.settings-notice { display: flex; align-items: flex-start; gap: 14px; padding: 17px 19px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
+.settings-notice > svg { flex: 0 0 auto; width: 21px; height: 21px; margin-top: 1px; color: var(--ui-primary); }
+.settings-notice > div { flex: 1 1 auto; }
+.settings-notice strong { font-size: 14px; }
+.settings-notice p { margin: 4px 0 0; color: var(--ui-text-muted); font-size: 13px; }
+.bank-settings-form { display: grid; gap: 16px; }
+.settings-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.settings-editor-head > div > span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.settings-editor-head h2 { margin: 4px 0 0; font-size: 19px; }
+.settings-editor-head small { color: var(--ui-text-muted); }
+.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.settings-form-grid :deep(input), .settings-form-grid :deep(textarea) { width: 100%; }
+.settings-form-grid__full { grid-column: 1 / -1; }
+.settings-logo-editor { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 20px; }
+.settings-logo-preview { display: grid; place-items: center; min-height: 180px; padding: 24px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 12px; color: var(--ui-color-neutral-900); background: white; }
+.settings-logo-preview img { width: 100%; max-height: 120px; object-fit: contain; }
+.settings-logo-preview div { display: grid; place-items: center; gap: 8px; color: var(--ui-text-muted); font-size: 13px; }
+.settings-logo-preview svg { width: 28px; height: 28px; }
+.settings-logo-upload { display: grid; align-content: start; gap: 12px; }
+.settings-logo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-sticky-actions { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 14px; border: 1px solid var(--ui-border-accented); border-radius: var(--ui-radius); background: color-mix(in srgb, var(--ui-bg) 94%, transparent); box-shadow: 0 12px 30px rgb(0 0 0 / 9%); backdrop-filter: blur(14px); }
+.settings-sticky-actions > div { margin-right: auto; color: var(--ui-text-muted); font-size: 13px; }
+.settings-history-card { margin-top: 2px; }
+.history-list--full li:last-child { padding-bottom: 0; }
 @media (max-width: 1280px) {
   .profile-metrics, .profile-loading__metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .offer-card__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -900,6 +1273,7 @@ function toggleChecklist(key: string) {
   .bank-hero__logo img { padding: 12px; }
   .bank-hero__headline, .section-heading, .offer-card__header { align-items: stretch; flex-direction: column; }
   .settings-grid { grid-template-columns: 1fr; }
+  .settings-logo-editor { grid-template-columns: 220px minmax(0, 1fr); }
   .checklist-item { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .checklist-item__meta { display: none; }
   .version-row { grid-template-columns: 38px auto minmax(0, 1fr); }
@@ -920,5 +1294,10 @@ function toggleChecklist(key: string) {
   .source-item { grid-template-columns: 38px minmax(0, 1fr); }
   .source-item > :last-child { grid-column: 2; justify-self: start; }
   .settings-list > div { grid-template-columns: 1fr; gap: 5px; }
+  .settings-notice, .settings-editor-head { align-items: flex-start; flex-direction: column; }
+  .settings-form-grid, .settings-logo-editor { grid-template-columns: 1fr; }
+  .settings-form-grid__full { grid-column: 1; }
+  .settings-sticky-actions { align-items: stretch; flex-direction: column; }
+  .settings-sticky-actions > div { margin-right: 0; }
 }
 </style>

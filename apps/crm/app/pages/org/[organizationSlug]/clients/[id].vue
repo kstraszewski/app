@@ -121,12 +121,13 @@ async function createCase() {
 </script>
 
 <template>
-  <CrmShell :title="data.data?.display_name || 'Klient'" eyebrow="Karta klienta">
-    <template #actions>
-      <UButton :to="orgPath('/clients')" icon="i-lucide-arrow-left" variant="outline">
-        Klienci
-      </UButton>
-    </template>
+  <CrmShell
+    :title="data.data?.display_name || 'Klient'"
+    eyebrow="Karta klienta"
+    description="Dane kontaktowe, zgody i sprawy powiązane z klientem."
+    :back-to="orgPath('/clients')"
+    back-label="Wróć do klientów"
+  >
 
     <div v-if="pending" class="detail-grid">
       <USkeleton class="h-80 w-full" />

@@ -443,6 +443,54 @@ export type Database = {
           },
         ]
       }
+      booking_widget_events: {
+        Row: {
+          event_type: string
+          facility_id: string
+          id: number
+          is_embedded: boolean
+          occurred_at: string
+          organization_id: string
+          service_id: string | null
+          widget_id: string
+        }
+        Insert: {
+          event_type: string
+          facility_id: string
+          id?: never
+          is_embedded?: boolean
+          occurred_at?: string
+          organization_id: string
+          service_id?: string | null
+          widget_id: string
+        }
+        Update: {
+          event_type?: string
+          facility_id?: string
+          id?: never
+          is_embedded?: boolean
+          occurred_at?: string
+          organization_id?: string
+          service_id?: string | null
+          widget_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_widget_events_service_fkey"
+            columns: ["organization_id", "service_id"]
+            isOneToOne: false
+            referencedRelation: "booking_services"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "booking_widget_events_widget_fkey"
+            columns: ["organization_id", "facility_id", "widget_id"]
+            isOneToOne: false
+            referencedRelation: "booking_widgets"
+            referencedColumns: ["organization_id", "facility_id", "id"]
+          },
+        ]
+      }
       booking_widget_services: {
         Row: {
           created_at: string
@@ -486,6 +534,7 @@ export type Database = {
         Row: {
           accent_color: string
           allowed_origins: string[]
+          analytics_started_at: string
           booking_mode: string
           created_at: string
           created_by_user_id: string | null
@@ -507,6 +556,7 @@ export type Database = {
         Insert: {
           accent_color?: string
           allowed_origins?: string[]
+          analytics_started_at?: string
           booking_mode?: string
           created_at?: string
           created_by_user_id?: string | null
@@ -528,6 +578,7 @@ export type Database = {
         Update: {
           accent_color?: string
           allowed_origins?: string[]
+          analytics_started_at?: string
           booking_mode?: string
           created_at?: string
           created_by_user_id?: string | null
@@ -2195,6 +2246,38 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "crm_item_submissions"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_eve_sessions: {
+        Row: {
+          created_at: string
+          organization_id: string
+          session_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          session_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          session_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_eve_sessions_organization_member_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
           },
         ]
       }
@@ -4927,6 +5010,15 @@ export type Database = {
         }
         Returns: Json
       }
+      get_booking_widget_analytics: {
+        Args: {
+          p_from: string
+          p_organization_id: string
+          p_to: string
+          p_widget_id: string
+        }
+        Returns: Json
+      }
       get_booking_widget_catalog: {
         Args: { p_widget_token: string }
         Returns: Json
@@ -4944,6 +5036,17 @@ export type Database = {
           expert_name: string
           expert_user_id: string
           starts_at: string
+        }[]
+      }
+      get_personal_booking_widget_counts: {
+        Args: {
+          p_expert_user_id: string
+          p_organization_id: string
+          p_since: string
+        }
+        Returns: {
+          bookings: number
+          widget_id: string
         }[]
       }
       get_staff_booking_slots: {
@@ -4971,6 +5074,15 @@ export type Database = {
           version_id: string
           version_number: number
         }[]
+      }
+      record_booking_widget_event: {
+        Args: {
+          p_event_type: string
+          p_is_embedded?: boolean
+          p_service_id?: string
+          p_widget_token: string
+        }
+        Returns: undefined
       }
       replace_calendar_busy_blocks: {
         Args: {

@@ -379,7 +379,11 @@ function eventAccessibleLabel(appointment: Appointment) {
 </script>
 
 <template>
-  <CrmShell title="Kalendarz" eyebrow="Ekspert">
+  <CrmShell
+    title="Kalendarz"
+    eyebrow="Ekspert"
+    description="Spotkania, dostępność i terminy zespołu w jednym widoku."
+  >
     <template #meta>
       <div class="calendar-meta">
         <span><UIcon name="i-lucide-calendar-range" />{{ weekLabel }}</span>

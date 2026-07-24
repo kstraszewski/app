@@ -22,7 +22,16 @@ export default defineEventHandler(async (event) => {
     ensureGenericMeetingService(event, session.organizationId, facilityId)
   )))
 
-  const [facilitiesResult, facilityServicesResult, expertServicesResult, servicesResult, widgetsResult, widgetServicesResult]
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000).toISOString()
+  const [
+    facilitiesResult,
+    facilityServicesResult,
+    expertServicesResult,
+    servicesResult,
+    widgetsResult,
+    widgetServicesResult,
+    bookingCountsResult,
+  ]
     = await Promise.all([
       session.supabase
         .from('facilities')
@@ -49,7 +58,6 @@ export default defineEventHandler(async (event) => {
         .select('*')
         .eq('organization_id', session.organizationId)
         .eq('is_active', true)
-        .eq('slug', 'spotkanie')
         .order('name'),
       session.supabase
         .from('booking_widgets')
@@ -63,6 +71,11 @@ export default defineEventHandler(async (event) => {
         .select('facility_id, widget_id, service_id')
         .eq('organization_id', session.organizationId)
         .in('facility_id', facilityIds),
+      session.supabase.rpc('get_personal_booking_widget_counts', {
+        p_organization_id: session.organizationId,
+        p_expert_user_id: session.userId,
+        p_since: thirtyDaysAgo,
+      }),
     ])
 
   for (const result of [
@@ -72,6 +85,7 @@ export default defineEventHandler(async (event) => {
     servicesResult,
     widgetsResult,
     widgetServicesResult,
+    bookingCountsResult,
   ]) throwDbError(result.error)
 
   const activeFacilityServiceKeys = new Set((facilityServicesResult.data ?? []).map((link: any) => (
@@ -99,12 +113,21 @@ export default defineEventHandler(async (event) => {
     ])
   }
 
+  const bookings30DaysByWidget = new Map<string, number>()
+  for (const count of bookingCountsResult.data ?? []) {
+    bookings30DaysByWidget.set(String(count.widget_id), Number(count.bookings ?? 0))
+  }
+
   const widgetsByFacility = new Map<string, Record<string, any>[]>()
   for (const widget of widgetsResult.data ?? []) {
     const facilityId = String(widget.facility_id)
+    const widgetId = String(widget.id)
     widgetsByFacility.set(facilityId, [
       ...(widgetsByFacility.get(facilityId) ?? []),
-      decorateBookingWidget(event, widget, serviceIdsByWidget.get(String(widget.id)) ?? []),
+      {
+        ...decorateBookingWidget(event, widget, serviceIdsByWidget.get(widgetId) ?? []),
+        bookings30Days: bookings30DaysByWidget.get(widgetId) ?? 0,
+      },
     ])
   }
 

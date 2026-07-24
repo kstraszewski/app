@@ -217,12 +217,13 @@ async function deleteTeam() {
 </script>
 
 <template>
-  <CrmShell :title="team?.name || 'Szczegóły zespołu'" eyebrow="Administracja organizacji · zespoły">
-    <template #actions>
-      <UButton :to="orgPath('/teams')" color="neutral" variant="outline" icon="i-lucide-arrow-left">
-        Wszystkie zespoły
-      </UButton>
-    </template>
+  <CrmShell
+    :title="team?.name || 'Szczegóły zespołu'"
+    eyebrow="Administracja organizacji"
+    description="Członkowie, relacje i zakres odpowiedzialności zespołu."
+    :back-to="orgPath('/teams')"
+    back-label="Wróć do zespołów"
+  >
 
     <div v-if="status === 'pending'" class="team-detail__loading">
       <USkeleton class="h-28 w-full" />

@@ -16,6 +16,9 @@ definePageMeta({ layout: false })
 const route = useRoute()
 const widgetKey = computed(() => String(route.params.widgetKey ?? ''))
 const isEmbedded = computed(() => route.query.embed === '1')
+const previewToken = computed(() => (
+  typeof route.query.previewToken === 'string' ? route.query.previewToken : ''
+))
 const selectedServiceId = ref('')
 const selectedExpertId = ref('')
 const selectedDate = ref('')
@@ -65,6 +68,12 @@ const { data, status, error, refresh: refreshWidgetCatalog } = await useAsyncDat
   `booking-widget-${widgetKey.value}`,
   () => $fetch<PublicBookingWidgetPayload>(
     `/api/booking/widgets/${encodeURIComponent(widgetKey.value)}`,
+    {
+      query: {
+        embed: isEmbedded.value ? '1' : undefined,
+        previewToken: previewToken.value || undefined,
+      },
+    },
   ),
   {
     default: () => emptyWidgetPayload,
@@ -128,6 +137,10 @@ const expertItems = computed(() => [
   ...(expertRequired.value ? [] : [{ label: 'Dowolny dostępny ekspert', value: '' }]),
   ...matchingExperts.value.map(expert => ({ label: expert.name, value: expert.userId })),
 ])
+const serviceItems = computed(() => bookableServices.value.map(service => ({
+  label: `${service.name} · ${service.durationMinutes} min`,
+  value: service.id,
+})))
 
 const selectedService = computed(() => (
   data.value.services.find(service => service.id === selectedServiceId.value)
@@ -284,6 +297,8 @@ async function loadSlots() {
           date,
           serviceId,
           expertId: expertId || undefined,
+          embed: isEmbedded.value ? '1' : undefined,
+          previewToken: previewToken.value || undefined,
         },
       },
     )
@@ -348,6 +363,8 @@ async function submitBooking() {
         body: {
           ...bookingIntent,
           idempotencyKey: bookingIdempotencyKey.value,
+          isEmbedded: isEmbedded.value,
+          previewToken: previewToken.value || undefined,
         },
       },
     )
@@ -387,8 +404,16 @@ function postWidgetHeight() {
   }, '*')
 }
 
-watch([selectedServiceId, selectedExpertId, selectedDate], loadSlots)
-watch(selectedServiceId, () => {
+watch(selectedServiceId, (serviceId, previousServiceId) => {
+  if (previousServiceId && serviceId !== previousServiceId) {
+    slotsRequestId += 1
+    selectedExpertId.value = data.value.widget.fixedExpertUserId ?? ''
+    selectedDate.value = ''
+    selectedSlot.value = null
+    slots.value = []
+    slotsPending.value = false
+    slotsError.value = ''
+  }
   if (
     canChooseExpert.value
     && selectedExpertId.value
@@ -396,7 +421,8 @@ watch(selectedServiceId, () => {
   ) {
     selectedExpertId.value = ''
   }
-})
+}, { flush: 'sync' })
+watch([selectedServiceId, selectedExpertId, selectedDate], loadSlots)
 watch(canChooseExpert, (enabled) => {
   if (!enabled) selectedExpertId.value = data.value.widget.fixedExpertUserId ?? ''
 })
@@ -534,10 +560,27 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         <section class="booking-section" aria-labelledby="booking-details-title">
           <div class="booking-section__heading">
             <span>01</span>
-            <div><h2 id="booking-details-title">Wybierz spotkanie</h2><p>Ekspert i dzień.</p></div>
+            <div>
+              <h2 id="booking-details-title">Wybierz spotkanie</h2>
+              <p>{{ bookableServices.length > 1 ? 'Usługa, ekspert i dzień.' : 'Ekspert i dzień.' }}</p>
+            </div>
           </div>
 
           <div class="booking-fields">
+            <UFormField
+              v-if="bookableServices.length > 1"
+              name="service"
+              label="Rodzaj spotkania"
+              required
+            >
+              <USelect
+                v-model="selectedServiceId"
+                class="w-full"
+                :items="serviceItems"
+                placeholder="Wybierz usługę"
+                icon="i-lucide-briefcase-business"
+              />
+            </UFormField>
             <UFormField v-if="canChooseExpert" name="expert" label="Ekspert" :required="expertRequired">
               <USelect
                 v-model="selectedExpertId"

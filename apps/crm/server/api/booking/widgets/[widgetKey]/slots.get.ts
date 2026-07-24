@@ -8,9 +8,11 @@ import {
   getPublicSchedulingClient,
   optionalUuidValue,
   publicWidgetKey,
+  recordBookingWidgetEvent,
   sanitizePublicCatalog,
   throwBookingError,
   uuidValue,
+  verifyBookingWidgetPreviewToken,
 } from '~~/server/utils/scheduling'
 
 export default defineEventHandler(async (event) => {
@@ -48,6 +50,15 @@ export default defineEventHandler(async (event) => {
     if (!expert || (expert.serviceIds && !expert.serviceIds.includes(serviceId))) {
       throw createError({ statusCode: 400, statusMessage: 'Expert is not available for this service' })
     }
+  }
+  const isAuthorizedPreview = verifyBookingWidgetPreviewToken(event, widgetKey, query.previewToken)
+  if (!isAuthorizedPreview) {
+    await recordBookingWidgetEvent(event, {
+      widgetKey,
+      eventType: 'availability_search',
+      serviceId,
+      isEmbedded: query.embed === '1',
+    })
   }
 
   const { data, error } = await supabase.rpc('get_booking_widget_slots', {

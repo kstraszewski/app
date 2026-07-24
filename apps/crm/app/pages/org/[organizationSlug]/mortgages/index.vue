@@ -97,7 +97,10 @@ const toast = useToast()
 const requestFetch = useRequestFetch()
 const { data, pending, error, refresh } = await useFetch<Payload>(
   () => `/api/org/${organizationSlug.value}/mortgages/products`,
-  { default: () => ({ products: [], retrievedAt: null, role: 'expert' as const, superAdmin: false }) },
+  {
+    key: computed(() => `mortgage-catalog:${organizationSlug.value}`),
+    default: () => ({ products: [], retrievedAt: null, role: 'expert' as const, superAdmin: false }),
+  },
 )
 
 const {
@@ -515,16 +518,20 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
 </script>
 
 <template>
-  <CrmShell title="Porównywarka hipotek" :eyebrow="`Kalkulacja orientacyjna · Polska · ${banks.length} instytucji`">
+  <CrmShell
+    title="Porównywarka hipotek"
+    :eyebrow="`Kalkulacja orientacyjna · Polska · ${banks.length} instytucji`"
+    description="Porównaj dostępne produkty i zapisz wybrane warianty bezpośrednio w sprawie klienta."
+  >
     <template #actions>
       <UButton
         v-if="data.superAdmin"
-        :to="orgPath('/mortgages/offers')"
+        :to="orgPath('/settings/institutions')"
         icon="i-lucide-badge-percent"
         color="neutral"
         variant="outline"
       >
-        Oferty
+        Ustawienia produktów
       </UButton>
       <UButton
         v-if="caseId"

@@ -112,7 +112,11 @@ async function createFacility() {
 </script>
 
 <template>
-  <CrmShell title="Placówki" eyebrow="Administracja organizacji · miejsca pracy">
+  <CrmShell
+    title="Placówki"
+    eyebrow="Administracja organizacji"
+    description="Rejestr miejsc pracy, usług, dostępności i konfiguracji rezerwacji."
+  >
     <template #actions>
       <UButton v-if="payload.canCreate" icon="i-lucide-plus" @click="openCreate">
         Nowa placówka

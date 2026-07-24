@@ -341,15 +341,25 @@ export async function getPublicSchedulingClient(event: H3Event): Promise<any> {
 
 export type BookingWidgetAnalyticsEvent =
   | 'widget_view'
+  | 'widget_engaged'
+  | 'calculator_started'
+  | 'calculator_completed'
+  | 'service_selected'
   | 'availability_search'
+  | 'availability_found'
+  | 'slot_selected'
+  | 'contact_started'
   | 'booking_attempt'
+  | 'booking_completed'
 
 export async function recordBookingWidgetEvent(
   event: H3Event,
   input: {
     widgetKey: string
+    visitId: string
     eventType: BookingWidgetAnalyticsEvent
     serviceId?: string | null
+    eventId?: string | null
     isEmbedded?: boolean
   },
 ): Promise<void> {
@@ -357,8 +367,10 @@ export async function recordBookingWidgetEvent(
     const supabase = await getPublicSchedulingClient(event)
     const { error } = await supabase.rpc('record_booking_widget_event', {
       p_widget_token: input.widgetKey,
+      p_visit_id: input.visitId,
       p_event_type: input.eventType,
       p_service_id: input.serviceId ?? null,
+      p_event_id: input.eventId ?? null,
       p_is_embedded: input.isEmbedded === true,
     })
     if (error) {
@@ -439,7 +451,7 @@ export async function ensureGenericMeetingService(
 
 export async function assertPublicBookingRateLimit(
   event: H3Event,
-  scope: 'catalog' | 'slots' | 'booking',
+  scope: 'catalog' | 'slots' | 'booking' | 'analytics',
   widgetKey: string,
   limit: number,
   windowMs: number,
@@ -1011,6 +1023,7 @@ export function assertWidgetRequestOrigin(
   event: H3Event,
   allowedOrigins: string[],
   widgetKey: string,
+  options: { requireSource?: boolean } = {},
 ): void {
   const originHeader = getHeader(event, 'origin')
   const refererHeader = getHeader(event, 'referer')
@@ -1031,7 +1044,12 @@ export function assertWidgetRequestOrigin(
   // Server-side rendering and direct API navigation may omit both headers. The
   // public key remains an unguessable capability and the booking RPC still
   // performs all business validation.
-  if (!sourceOrigin) return
+  if (!sourceOrigin) {
+    if (options.requireSource) {
+      throw createError({ statusCode: 403, statusMessage: 'Widget request source is required' })
+    }
+    return
+  }
 
   if (sourceOrigin === requestUrl.origin) {
     if (!refererUrl || refererUrl.pathname.startsWith(`/book/${encodeURIComponent(widgetKey)}`)) return

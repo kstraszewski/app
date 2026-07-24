@@ -7,6 +7,7 @@ import {
 import type { BookingPaymentCalculatorSnapshot } from '#shared/types/booking-calculators'
 
 const emit = defineEmits<{
+  started: []
   continue: [snapshot: BookingPaymentCalculatorSnapshot]
 }>()
 
@@ -20,6 +21,13 @@ const form = reactive({
   annualInterestRatePct: 6.5,
   installmentType: 'equal' as InstallmentType,
 })
+let startedEmitted = false
+
+watch(form, () => {
+  if (startedEmitted) return
+  startedEmitted = true
+  emit('started')
+}, { deep: true })
 
 const installmentTypeItems: Array<{
   label: string

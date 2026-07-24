@@ -85,7 +85,11 @@ export default defineEventHandler(async (event) => {
   const widgetKey = publicWidgetKey(getRouterParam(event, 'widgetKey'))
   const body = asRecord(await readBody(event))
   const serviceId = uuidValue(body.serviceId ?? body.service_id, 'serviceId')
+  const visitId = optionalUuidValue(body.visitId ?? body.visit_id, 'visitId')
   const idempotencyKey = idempotencyKeyValue(body.idempotencyKey ?? body.idempotency_key)
+  const analyticsEventId = createHash('sha256')
+    .update(`booking-widget-analytics:${idempotencyKey}`, 'utf8')
+    .digest('hex')
   const requestedExpertUserId = optionalUuidValue(
     body.expertUserId ?? body.expert_user_id ?? body.expertId,
     'expertUserId',
@@ -135,6 +139,15 @@ export default defineEventHandler(async (event) => {
   if (!catalogResult.data) throw createError({ statusCode: 404, statusMessage: 'Booking widget not found' })
   assertWidgetRequestOrigin(event, catalogAllowedOrigins(catalogResult.data), widgetKey)
   await assertPublicBookingRateLimit(event, 'booking', widgetKey, 5, 10 * 60_000)
+  const isEmbedded = body.isEmbedded === true || body.is_embedded === true
+  const isAuthorizedPreview = verifyBookingWidgetPreviewToken(
+    event,
+    widgetKey,
+    body.previewToken ?? body.preview_token,
+  )
+  if (isAuthorizedPreview) {
+    throw createError({ statusCode: 403, statusMessage: 'Booking is disabled in preview mode' })
+  }
   const replayResult = await supabase.rpc('replay_widget_booking', {
     p_widget_token: widgetKey,
     p_idempotency_key: idempotencyKey,
@@ -142,6 +155,16 @@ export default defineEventHandler(async (event) => {
   })
   throwBookingError(replayResult.error)
   if (replayResult.data) {
+    if (!isAuthorizedPreview && visitId) {
+      await recordBookingWidgetEvent(event, {
+        widgetKey,
+        visitId,
+        eventType: 'booking_completed',
+        serviceId,
+        eventId: analyticsEventId,
+        isEmbedded,
+      })
+    }
     setHeader(event, 'Cache-Control', 'no-store')
     return bookingConfirmation(replayResult.data)
   }
@@ -220,17 +243,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const isAuthorizedPreview = verifyBookingWidgetPreviewToken(
-    event,
-    widgetKey,
-    body.previewToken ?? body.preview_token,
-  )
-  if (!isAuthorizedPreview) {
+  if (!isAuthorizedPreview && visitId) {
     await recordBookingWidgetEvent(event, {
       widgetKey,
+      visitId,
       eventType: 'booking_attempt',
       serviceId,
-      isEmbedded: body.isEmbedded === true || body.is_embedded === true,
+      eventId: analyticsEventId,
+      isEmbedded,
     })
   }
 
@@ -249,6 +269,16 @@ export default defineEventHandler(async (event) => {
     p_request_fingerprint: requestFingerprint,
   })
   throwBookingError(error)
+  if (!isAuthorizedPreview && visitId) {
+    await recordBookingWidgetEvent(event, {
+      widgetKey,
+      visitId,
+      eventType: 'booking_completed',
+      serviceId,
+      eventId: analyticsEventId,
+      isEmbedded,
+    })
+  }
   const rawAppointment = asRecord(asRecord(data).appointment ?? data)
   const expert = asRecord(rawAppointment.expert)
   const bookedExpertId = String(expert.userId ?? expert.user_id ?? rawAppointment.expertUserId ?? rawAppointment.expert_user_id ?? '')

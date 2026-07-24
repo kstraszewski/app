@@ -445,6 +445,7 @@ export type Database = {
       }
       booking_widget_events: {
         Row: {
+          event_id: string | null
           event_type: string
           facility_id: string
           id: number
@@ -452,9 +453,11 @@ export type Database = {
           occurred_at: string
           organization_id: string
           service_id: string | null
+          visit_id: string
           widget_id: string
         }
         Insert: {
+          event_id?: string | null
           event_type: string
           facility_id: string
           id?: never
@@ -462,9 +465,11 @@ export type Database = {
           occurred_at?: string
           organization_id: string
           service_id?: string | null
+          visit_id: string
           widget_id: string
         }
         Update: {
+          event_id?: string | null
           event_type?: string
           facility_id?: string
           id?: never
@@ -472,6 +477,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           service_id?: string | null
+          visit_id?: string
           widget_id?: string
         }
         Relationships: [
@@ -5077,9 +5083,11 @@ export type Database = {
       }
       record_booking_widget_event: {
         Args: {
+          p_event_id?: string
           p_event_type: string
           p_is_embedded?: boolean
           p_service_id?: string
+          p_visit_id: string
           p_widget_token: string
         }
         Returns: undefined

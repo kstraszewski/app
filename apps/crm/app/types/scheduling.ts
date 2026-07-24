@@ -200,8 +200,16 @@ export interface PersonalWidgetDetailPayload {
 export interface BookingWidgetAnalyticsSummary {
   views: number
   embeddedViews: number
+  engagedVisits: number
+  calculatorStarts: number
+  calculatorCompletions: number
+  serviceSelections: number
   availabilitySearches: number
+  availabilityFound: number
+  slotSelections: number
+  contactStarts: number
   bookingAttempts: number
+  bookingCompletions: number
   bookings: number
   confirmedBookings: number
   cancelledBookings: number
@@ -211,14 +219,21 @@ export interface BookingWidgetAnalyticsSummary {
 export interface BookingWidgetAnalyticsDay {
   date: string
   views: number
+  engagedVisits: number
+  calculatorCompletions: number
   availabilitySearches: number
+  availabilityFound: number
+  slotSelections: number
+  contactStarts: number
   bookingAttempts: number
+  bookingCompletions: number
   bookings: number
 }
 
 export interface BookingWidgetAnalyticsService {
   serviceId: string
   name: string
+  interest: number
   bookings: number
 }
 

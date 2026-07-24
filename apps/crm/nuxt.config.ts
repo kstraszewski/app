@@ -36,7 +36,13 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxt/ui', '@nuxtjs/supabase', 'eve/nuxt'],
+  modules: ['@nuxt/ui', '@nuxtjs/supabase', 'eve/nuxt', 'nuxt-charts'],
+  nuxtCharts: {
+    prefix: 'Nc',
+    include: ['LineChart'],
+    global: false,
+    autoImports: false,
+  },
   eve: {
     eveRoot: 'agent',
   },

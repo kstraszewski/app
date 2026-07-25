@@ -3144,13 +3144,11 @@ export type Database = {
       expert_brand_profiles: {
         Row: {
           bio: string
-          brand_name: string
           contact_email: string
           contact_phone: string
           created_at: string
           expert_name: string
           location: string
-          logo_path: string | null
           organization_id: string
           portrait_path: string | null
           professional_title: string
@@ -3163,13 +3161,11 @@ export type Database = {
         }
         Insert: {
           bio?: string
-          brand_name?: string
           contact_email?: string
           contact_phone?: string
           created_at?: string
           expert_name?: string
           location?: string
-          logo_path?: string | null
           organization_id: string
           portrait_path?: string | null
           professional_title?: string
@@ -3182,13 +3178,11 @@ export type Database = {
         }
         Update: {
           bio?: string
-          brand_name?: string
           contact_email?: string
           contact_phone?: string
           created_at?: string
           expert_name?: string
           location?: string
-          logo_path?: string | null
           organization_id?: string
           portrait_path?: string | null
           professional_title?: string

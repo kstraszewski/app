@@ -12,6 +12,8 @@ import {
 
 const props = defineProps<{
   profile: ExpertBrandProfile
+  brandName: string
+  logoUrl: string | null
   palette: BrandPalette
   type: BrandMaterialType
   content: BrandMaterialContent
@@ -36,7 +38,7 @@ const contactLine = computed(() => (
   [props.profile.phone, props.profile.email, props.profile.website].filter(Boolean).join(' · ')
 ))
 
-watch(() => props.profile.logoUrl, () => {
+watch(() => props.logoUrl, () => {
   logoFailed.value = false
 })
 watch(() => props.profile.portraitUrl, () => {
@@ -57,15 +59,15 @@ watch(() => props.profile.portraitUrl, () => {
         <header class="material-brand">
           <div class="material-brand__logo">
             <img
-              v-if="profile.logoUrl && !logoFailed"
-              :src="profile.logoUrl"
-              :alt="`Logo ${profile.brandName || profile.expertName}`"
+              v-if="logoUrl && !logoFailed"
+              :src="logoUrl"
+              :alt="`Logo ${brandName || profile.expertName}`"
               @error="logoFailed = true"
             >
             <span v-else aria-hidden="true">{{ initials }}</span>
           </div>
           <div>
-            <strong>{{ profile.brandName || profile.expertName || 'Twoja marka' }}</strong>
+            <strong>{{ brandName || profile.expertName || 'Twoja marka' }}</strong>
             <small>{{ content.eyebrow }}</small>
           </div>
         </header>
@@ -76,7 +78,7 @@ watch(() => props.profile.portraitUrl, () => {
           <p class="social-card__body">{{ content.body }}</p>
         </div>
         <footer class="social-card__footer">
-          <span>{{ profile.expertName || profile.brandName || 'Twój ekspert' }}</span>
+          <span>{{ profile.expertName || 'Twój ekspert' }}</span>
           <strong>{{ content.callToAction }}</strong>
         </footer>
       </article>
@@ -89,14 +91,14 @@ watch(() => props.profile.portraitUrl, () => {
         <header class="material-brand material-brand--inverse">
           <div class="material-brand__logo">
             <img
-              v-if="profile.logoUrl && !logoFailed"
-              :src="profile.logoUrl"
-              :alt="`Logo ${profile.brandName || profile.expertName}`"
+              v-if="logoUrl && !logoFailed"
+              :src="logoUrl"
+              :alt="`Logo ${brandName || profile.expertName}`"
               @error="logoFailed = true"
             >
             <span v-else aria-hidden="true">{{ initials }}</span>
           </div>
-          <strong>{{ profile.brandName || profile.expertName || 'Twoja marka' }}</strong>
+          <strong>{{ brandName || profile.expertName || 'Twoja marka' }}</strong>
         </header>
         <div class="instagram-copy">
           <p>{{ content.eyebrow }}</p>
@@ -127,14 +129,14 @@ watch(() => props.profile.portraitUrl, () => {
         <header class="story-card__header">
           <div class="material-brand__logo">
             <img
-              v-if="profile.logoUrl && !logoFailed"
-              :src="profile.logoUrl"
-              :alt="`Logo ${profile.brandName || profile.expertName}`"
+              v-if="logoUrl && !logoFailed"
+              :src="logoUrl"
+              :alt="`Logo ${brandName || profile.expertName}`"
               @error="logoFailed = true"
             >
             <span v-else aria-hidden="true">{{ initials }}</span>
           </div>
-          <span>{{ profile.brandName || profile.expertName || 'Twoja marka' }}</span>
+          <span>{{ brandName || profile.expertName || 'Twoja marka' }}</span>
         </header>
         <div class="story-card__copy">
           <p>{{ content.eyebrow }}</p>
@@ -150,15 +152,15 @@ watch(() => props.profile.portraitUrl, () => {
         <article class="business-card business-card--front">
           <div class="material-brand__logo material-brand__logo--large">
             <img
-              v-if="profile.logoUrl && !logoFailed"
-              :src="profile.logoUrl"
-              :alt="`Logo ${profile.brandName || profile.expertName}`"
+              v-if="logoUrl && !logoFailed"
+              :src="logoUrl"
+              :alt="`Logo ${brandName || profile.expertName}`"
               @error="logoFailed = true"
             >
             <span v-else aria-hidden="true">{{ initials }}</span>
           </div>
           <div>
-            <strong>{{ profile.brandName || profile.expertName || 'Twoja marka' }}</strong>
+            <strong>{{ brandName || profile.expertName || 'Twoja marka' }}</strong>
             <span>{{ profile.tagline || 'Finansowanie dopasowane do Twojego planu.' }}</span>
           </div>
         </article>
@@ -184,14 +186,14 @@ watch(() => props.profile.portraitUrl, () => {
           <div class="one-pager__brand">
             <div class="material-brand__logo">
               <img
-                v-if="profile.logoUrl && !logoFailed"
-                :src="profile.logoUrl"
-                :alt="`Logo ${profile.brandName || profile.expertName}`"
+                v-if="logoUrl && !logoFailed"
+                :src="logoUrl"
+                :alt="`Logo ${brandName || profile.expertName}`"
                 @error="logoFailed = true"
               >
               <span v-else aria-hidden="true">{{ initials }}</span>
             </div>
-            <span>{{ profile.brandName || profile.expertName || 'Twoja marka' }}</span>
+            <span>{{ brandName || profile.expertName || 'Twoja marka' }}</span>
           </div>
           <p>{{ content.eyebrow }}</p>
           <h2>{{ content.headline }}</h2>
@@ -222,7 +224,7 @@ watch(() => props.profile.portraitUrl, () => {
           <span v-if="profile.phone">{{ profile.phone }}</span>
           <span v-if="profile.email">{{ profile.email }}</span>
           <span v-if="profile.website">{{ profile.website }}</span>
-          <span v-if="!contactLine">Uzupełnij dane kontaktowe w Brand Core</span>
+          <span v-if="!contactLine">Uzupełnij dane kontaktowe w ustawieniach Design</span>
         </footer>
       </article>
     </template>

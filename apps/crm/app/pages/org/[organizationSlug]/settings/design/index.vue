@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  createEmptyExpertBrandProfile,
+  normalizeExpertBrandProfile,
+  type ExpertBrandProfile,
+} from '#shared/brand'
 import type { DesignColorTokens, OrganizationDesignSettings } from '#shared/design'
 import {
   buildOrganizationDesignCss,
@@ -6,17 +11,32 @@ import {
   fontFamilyOptions,
   normalizeOrganizationDesign,
 } from '#shared/design'
+import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Design — Ustawienia — OpenExpert CRM' })
 
-const { orgApiPath } = useOrganizationContext()
+type BrandResponse = {
+  data: {
+    profile: ExpertBrandProfile
+    design: OrganizationDesignSettings
+  }
+  permissions: {
+    canEditProfile: boolean
+    canEditVisualIdentity: boolean
+  }
+  updatedAt: string | null
+}
+
+const { orgApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
 const organizationDesign = useOrganizationDesignState()
 const activeSection = ref('brand')
 const activeColorMode = ref<'light' | 'dark'>('light')
 const previewSurface = ref<'app' | 'brand'>('app')
 const saving = ref(false)
+const uploadingPortrait = ref(false)
+const deletingPortrait = ref(false)
 const fontFamilyItems = [...fontFamilyOptions]
 
 const { data: response, error: designError } = await useFetch<{
@@ -25,8 +45,15 @@ const { data: response, error: designError } = await useFetch<{
   updatedAt: string | null
 }>(() => orgApiPath('/design'))
 
+const {
+  data: brandResponse,
+  error: profileError,
+} = await useFetch<BrandResponse>(() => orgApiPath('/brand'))
+
 const draft = reactive<OrganizationDesignSettings>(cloneDefaultOrganizationDesign())
 const saved = ref<OrganizationDesignSettings>(cloneDefaultOrganizationDesign())
+const expertProfile = reactive<ExpertBrandProfile>(createEmptyExpertBrandProfile())
+const savedExpertProfile = ref<ExpertBrandProfile>(createEmptyExpertBrandProfile())
 
 function replaceDraft(value: unknown) {
   const normalized = normalizeOrganizationDesign(value)
@@ -39,6 +66,13 @@ watch(() => response.value?.data, value => {
   if (value) replaceDraft(value)
 }, { immediate: true })
 
+watch(() => brandResponse.value?.data.profile, value => {
+  if (!value) return
+  const normalized = normalizeExpertBrandProfile(value)
+  Object.assign(expertProfile, normalized)
+  savedExpertProfile.value = normalized
+}, { immediate: true })
+
 watch(draft, value => {
   organizationDesign.value = normalizeOrganizationDesign(value)
 }, { deep: true })
@@ -47,9 +81,17 @@ onBeforeUnmount(() => {
   organizationDesign.value = normalizeOrganizationDesign(saved.value)
 })
 
-const isDirty = computed(() => (
+const isDesignDirty = computed(() => (
   JSON.stringify(normalizeOrganizationDesign(draft)) !== JSON.stringify(saved.value)
 ))
+const isProfileDirty = computed(() => (
+  JSON.stringify(normalizeExpertBrandProfile(expertProfile))
+  !== JSON.stringify(savedExpertProfile.value)
+))
+const isDirty = computed(() => isDesignDirty.value || isProfileDirty.value)
+const canEditDesign = computed(() => Boolean(response.value?.canEdit))
+const canEditProfile = computed(() => Boolean(brandResponse.value?.permissions.canEditProfile))
+const canEditAny = computed(() => canEditDesign.value || canEditProfile.value)
 const activeColors = computed(() => draft.colors[activeColorMode.value])
 const generatedCss = computed(() => buildOrganizationDesignCss(draft))
 
@@ -142,24 +184,37 @@ const typographyWeights = [
 ]
 
 async function saveDesign() {
-  if (!response.value?.canEdit || saving.value) return
+  if (!canEditAny.value || saving.value) return
   saving.value = true
   try {
-    const result = await $fetch<{ data: OrganizationDesignSettings, updatedAt: string }>(orgApiPath('/design'), {
-      method: 'PATCH',
-      body: normalizeOrganizationDesign(draft),
-    })
-    replaceDraft(result.data)
-    if (response.value) response.value.updatedAt = result.updatedAt
+    if (isDesignDirty.value && canEditDesign.value) {
+      const result = await $fetch<{ data: OrganizationDesignSettings, updatedAt: string }>(orgApiPath('/design'), {
+        method: 'PATCH',
+        body: normalizeOrganizationDesign(draft),
+      })
+      replaceDraft(result.data)
+      if (response.value) response.value.updatedAt = result.updatedAt
+    }
+    if (isProfileDirty.value && canEditProfile.value) {
+      const result = await $fetch<{ data: ExpertBrandProfile, updatedAt: string }>(orgApiPath('/brand'), {
+        method: 'PATCH',
+        body: normalizeExpertBrandProfile(expertProfile),
+      })
+      const normalized = normalizeExpertBrandProfile(result.data)
+      Object.assign(expertProfile, normalized)
+      savedExpertProfile.value = normalized
+      if (brandResponse.value) brandResponse.value.updatedAt = result.updatedAt
+    }
     toast.add({
-      title: 'Design zapisany',
-      description: 'Tokeny zostały zastosowane dla całej organizacji.',
+      title: 'Ustawienia Design zapisane',
+      description: 'Marka systemu i profil eksperta są gotowe dla aplikacji oraz materiałów.',
       color: 'success',
       icon: 'i-lucide-check',
     })
-  } catch {
+  } catch (saveError) {
     toast.add({
-      title: 'Nie udało się zapisać designu',
+      title: 'Nie udało się zapisać ustawień Design',
+      description: apiErrorMessage(saveError),
       color: 'error',
       icon: 'i-lucide-alert-triangle',
     })
@@ -169,6 +224,7 @@ async function saveDesign() {
 }
 
 function resetToDefault() {
+  if (!canEditDesign.value) return
   Object.assign(draft, cloneDefaultOrganizationDesign())
   toast.add({
     title: 'Przywrócono preset domyślny',
@@ -179,18 +235,80 @@ function resetToDefault() {
 
 function discardChanges() {
   Object.assign(draft, normalizeOrganizationDesign(saved.value))
+  Object.assign(expertProfile, normalizeExpertBrandProfile(savedExpertProfile.value))
 }
 
 async function copyTokens() {
   await navigator.clipboard.writeText(generatedCss.value)
   toast.add({ title: 'Skopiowano CSS tokenów', color: 'success' })
 }
+
+async function uploadPortrait(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || uploadingPortrait.value || !canEditProfile.value) return
+  uploadingPortrait.value = true
+  try {
+    const body = new FormData()
+    body.append('image', file)
+    const result = await $fetch<{ data: ExpertBrandProfile }>(orgApiPath('/brand/assets/portrait'), {
+      method: 'POST',
+      body,
+    })
+    expertProfile.portraitUrl = result.data.portraitUrl
+    savedExpertProfile.value = normalizeExpertBrandProfile({
+      ...savedExpertProfile.value,
+      portraitUrl: result.data.portraitUrl,
+    })
+    toast.add({
+      title: 'Portret został dodany',
+      description: 'Zdjęcie jest już dostępne w szablonach materiałów.',
+      color: 'success',
+      icon: 'i-lucide-image-check',
+    })
+  } catch (uploadError) {
+    toast.add({
+      title: 'Nie udało się przesłać portretu',
+      description: apiErrorMessage(uploadError),
+      color: 'error',
+      icon: 'i-lucide-alert-triangle',
+    })
+  } finally {
+    uploadingPortrait.value = false
+    input.value = ''
+  }
+}
+
+async function removePortrait() {
+  if (deletingPortrait.value || !canEditProfile.value) return
+  deletingPortrait.value = true
+  try {
+    const result = await $fetch<{ data: ExpertBrandProfile }>(orgApiPath('/brand/assets/portrait'), {
+      method: 'DELETE',
+    })
+    expertProfile.portraitUrl = result.data.portraitUrl
+    savedExpertProfile.value = normalizeExpertBrandProfile({
+      ...savedExpertProfile.value,
+      portraitUrl: result.data.portraitUrl,
+    })
+    toast.add({ title: 'Portret usunięty', color: 'success' })
+  } catch (deleteError) {
+    toast.add({
+      title: 'Nie udało się usunąć portretu',
+      description: apiErrorMessage(deleteError),
+      color: 'error',
+      icon: 'i-lucide-alert-triangle',
+    })
+  } finally {
+    deletingPortrait.value = false
+  }
+}
 </script>
 
 <template>
   <CrmShell class="design-system-shell" title="Design system">
     <template #meta>
-      <p class="design-header__description">Dopasuj wygląd aplikacji do swojej organizacji.</p>
+      <p class="design-header__description">Jedno miejsce dla marki aplikacji, profilu eksperta i materiałów.</p>
     </template>
 
     <template #actions>
@@ -209,7 +327,7 @@ async function copyTokens() {
         square
         aria-label="Przywróć domyślny preset"
         title="Przywróć domyślny preset"
-        :disabled="!response?.canEdit"
+        :disabled="!canEditDesign"
         @click="resetToDefault"
       />
       <UButton
@@ -226,7 +344,7 @@ async function copyTokens() {
         variant="solid"
         icon="i-lucide-save"
         :loading="saving"
-        :disabled="!response?.canEdit || !isDirty"
+        :disabled="!canEditAny || !isDirty"
         @click="saveDesign"
       >
         Zapisz zmiany
@@ -249,8 +367,18 @@ async function copyTokens() {
       color="warning"
       variant="subtle"
       icon="i-lucide-lock-keyhole"
-      title="Tryb tylko do odczytu"
-      description="Tylko administrator organizacji może zmieniać design system."
+      title="Design system tylko do odczytu"
+      description="Tylko administrator organizacji może zmieniać wspólne logo i tokeny. Nadal możesz uzupełnić swój profil eksperta."
+    />
+
+    <UAlert
+      v-if="profileError"
+      class="design-editor__alert"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-user-round-x"
+      title="Nie udało się pobrać profilu eksperta"
+      description="Wspólne ustawienia Design pozostają dostępne. Odśwież stronę, aby edytować dane do materiałów."
     />
 
     <div class="design-editor">
@@ -274,14 +402,18 @@ async function copyTokens() {
         </div>
 
         <div class="design-editor__panel">
-          <fieldset class="design-editor__fieldset" :disabled="!response?.canEdit">
+          <fieldset
+            class="design-editor__fieldset"
+            :disabled="activeSection === 'brand' ? false : !canEditDesign"
+          >
             <section v-if="activeSection === 'brand'" class="editor-section">
             <div class="editor-section__head">
               <p>Marka</p>
-              <h2>Tożsamość produktu</h2>
-              <span>Ustaw nazwę oraz warianty logo używane na jasnych i ciemnych powierzchniach.</span>
+              <h2>Tożsamość organizacji</h2>
+              <span>Wspólna nazwa, logo i profil eksperta zasilają aplikację oraz generator materiałów.</span>
             </div>
 
+            <fieldset class="brand-system-fields" :disabled="!canEditDesign">
             <div class="editor-field-group">
               <UFormField label="Nazwa produktu" description="Widoczna w navbarze i materiałach marki.">
                 <UInput v-model="draft.branding.productName" class="w-full" />
@@ -315,6 +447,17 @@ async function copyTokens() {
                 </div>
               </label>
             </div>
+            </fieldset>
+
+            <DesignExpertProfileSection
+              v-model="expertProfile"
+              :can-edit="canEditProfile && !profileError"
+              :materials-to="orgPath('/settings/design/materials')"
+              :uploading-portrait="uploadingPortrait"
+              :deleting-portrait="deletingPortrait"
+              @upload-portrait="uploadPortrait"
+              @remove-portrait="removePortrait"
+            />
             </section>
 
             <section v-else-if="activeSection === 'colors'" class="editor-section">
@@ -1113,6 +1256,15 @@ async function copyTokens() {
 
 .design-editor__fieldset:disabled {
   cursor: not-allowed;
+}
+
+.brand-system-fields {
+  display: grid;
+  gap: calc(22px * var(--oe-spacing-scale));
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .editor-field-group {

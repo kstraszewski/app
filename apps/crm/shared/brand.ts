@@ -16,7 +16,6 @@ export type BrandMaterialType = typeof brandMaterialTypes[number]
 
 export interface ExpertBrandProfile {
   version: typeof EXPERT_BRAND_PROFILE_VERSION
-  brandName: string
   expertName: string
   professionalTitle: string
   tagline: string
@@ -27,7 +26,6 @@ export interface ExpertBrandProfile {
   bio: string
   specializations: string[]
   visualStyle: BrandVisualStyle
-  logoUrl: string | null
   portraitUrl: string | null
 }
 
@@ -38,6 +36,11 @@ export interface BrandPalette {
   surface: string
   foreground: string
   muted: string
+}
+
+export interface MaterialBrandIdentity {
+  name: string
+  logoUrl: string | null
 }
 
 export interface BrandMaterialContent {
@@ -87,7 +90,6 @@ export const brandMaterialOptions: Array<{
 
 const emptyProfile: ExpertBrandProfile = {
   version: EXPERT_BRAND_PROFILE_VERSION,
-  brandName: '',
   expertName: '',
   professionalTitle: 'Ekspert kredytowy',
   tagline: '',
@@ -98,7 +100,6 @@ const emptyProfile: ExpertBrandProfile = {
   bio: '',
   specializations: [],
   visualStyle: 'minimal',
-  logoUrl: null,
   portraitUrl: null,
 }
 
@@ -150,7 +151,6 @@ export function normalizeExpertBrandProfile(
 
   return {
     version: EXPERT_BRAND_PROFILE_VERSION,
-    brandName: text(input.brandName, fallback.brandName, 80),
     expertName: text(input.expertName, fallback.expertName, 100),
     professionalTitle: text(input.professionalTitle, fallback.professionalTitle, 100),
     tagline: text(input.tagline, fallback.tagline, 140),
@@ -161,7 +161,6 @@ export function normalizeExpertBrandProfile(
     bio: text(input.bio, fallback.bio, 800),
     specializations: specializations(input.specializations, fallback.specializations),
     visualStyle,
-    logoUrl: optionalUrl(input.logoUrl, fallback.logoUrl),
     portraitUrl: optionalUrl(input.portraitUrl, fallback.portraitUrl),
   }
 }
@@ -174,12 +173,10 @@ export function brandProfileCompletion(profileValue: unknown): {
 } {
   const profile = normalizeExpertBrandProfile(profileValue)
   const fields = [
-    { label: 'nazwa marki', ready: Boolean(profile.brandName) },
     { label: 'imię i nazwisko', ready: Boolean(profile.expertName) },
     { label: 'dane kontaktowe', ready: Boolean(profile.email || profile.phone) },
     { label: 'bio', ready: Boolean(profile.bio) },
     { label: 'specjalizacje', ready: profile.specializations.length > 0 },
-    { label: 'logo', ready: Boolean(profile.logoUrl) },
     { label: 'zdjęcie portretowe', ready: Boolean(profile.portraitUrl) },
   ]
   const complete = fields.filter(field => field.ready).length
@@ -202,9 +199,19 @@ export function buildBrandPalette(design: OrganizationDesignSettings): BrandPale
   }
 }
 
+export function buildMaterialBrandIdentity(
+  design: OrganizationDesignSettings,
+): MaterialBrandIdentity {
+  return {
+    name: design.branding.productName,
+    logoUrl: design.branding.logoOnLight || null,
+  }
+}
+
 export function brandInitials(profileValue: unknown): string {
   const profile = normalizeExpertBrandProfile(profileValue)
-  const source = profile.brandName || profile.expertName || 'OE'
+  if (!profile.expertName) return 'OE'
+  const source = profile.expertName
   return source
     .split(/\s+/)
     .filter(Boolean)
@@ -267,7 +274,7 @@ export function buildBrandMaterialContent(
     return {
       ...common,
       eyebrow: profile.professionalTitle || 'Ekspert kredytowy',
-      headline: profile.expertName || profile.brandName || 'Twój ekspert',
+      headline: profile.expertName || 'Twój ekspert',
       body: profile.specializations.slice(0, 3).join(' · ') || 'Kredyty hipoteczne · Refinansowanie · Analiza zdolności',
     }
   }

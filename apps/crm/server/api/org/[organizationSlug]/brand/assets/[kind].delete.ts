@@ -11,15 +11,14 @@ import {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const kind = getRouterParam(event, 'kind')
-  if (kind !== 'logo' && kind !== 'portrait') {
-    throw createError({ statusCode: 404, statusMessage: 'Brand asset type not found' })
+  if (kind !== 'portrait') {
+    throw createError({ statusCode: 404, statusMessage: 'Expert profile asset type not found' })
   }
 
   const serviceRole = serverSupabaseServiceRole(event) as any
-  const field = kind === 'logo' ? 'logo_path' : 'portrait_path'
   const existing = await serviceRole
     .from('expert_brand_profiles')
-    .select(`${field}`)
+    .select('portrait_path')
     .eq('organization_id', session.organizationId)
     .eq('user_id', session.userId)
     .maybeSingle()
@@ -31,14 +30,14 @@ export default defineEventHandler(async (event) => {
 
   const result = await serviceRole
     .from('expert_brand_profiles')
-    .update({ [field]: null })
+    .update({ portrait_path: null })
     .eq('organization_id', session.organizationId)
     .eq('user_id', session.userId)
     .select(expertBrandProfileSelect)
     .single()
   throwDbError(result.error)
 
-  const oldPath = existing.data[field]
+  const oldPath = existing.data.portrait_path
   if (oldPath) {
     const cleanup = await serviceRole.storage.from(brandAssetBucket).remove([oldPath])
     if (cleanup.error) console.warn('[brand] failed to remove asset', cleanup.error.message)

@@ -4,6 +4,7 @@ import {
   brandMaterialOptions,
   brandProfileCompletion,
   buildBrandMaterialContent,
+  buildMaterialBrandIdentity,
   buildBrandPalette,
   createEmptyExpertBrandProfile,
   type BrandMaterialContent,
@@ -26,6 +27,9 @@ const toast = useToast()
 const selectedType = ref<BrandMaterialType>('linkedin')
 const { data: response, error, status } = await useFetch<BrandResponse>(() => orgApiPath('/brand'))
 const profile = computed(() => response.value?.data.profile ?? createEmptyExpertBrandProfile())
+const brandIdentity = computed(() => response.value
+  ? buildMaterialBrandIdentity(response.value.data.design)
+  : { name: 'Twoja marka', logoUrl: null })
 const palette = computed(() => response.value
   ? buildBrandPalette(response.value.data.design)
   : {
@@ -45,8 +49,8 @@ watch(generatedContent, value => {
 }, { immediate: true })
 
 const tabs = computed(() => [
-  { label: 'Brand Core', to: orgPath('/brand'), icon: 'i-lucide-fingerprint', exact: true },
-  { label: 'Generator materiałów', to: orgPath('/brand/materials'), icon: 'i-lucide-layout-template' },
+  { label: 'Ustawienia Design', to: orgPath('/settings/design'), icon: 'i-lucide-swatch-book' },
+  { label: 'Generator materiałów', to: orgPath('/settings/design/materials'), icon: 'i-lucide-layout-template' },
 ])
 const selectedOption = computed(() => brandMaterialOptions.find(item => item.value === selectedType.value)!)
 
@@ -71,8 +75,8 @@ async function copyMaterialText() {
 <template>
   <CrmShell
     title="Generator materiałów"
-    eyebrow="Marka osobista"
-    description="Deterministyczne szablony gotowe od razu — bez udawania zewnętrznego AI."
+    eyebrow="Administracja · Design"
+    description="Szablony korzystają bezpośrednio ze wspólnego logo, kolorów i typografii oraz profilu eksperta ustawionego w Design."
     :tabs="tabs"
   >
     <template #actions>
@@ -86,8 +90,8 @@ async function copyMaterialText() {
       color="error"
       variant="subtle"
       icon="i-lucide-cloud-alert"
-      title="Nie udało się pobrać marki"
-      description="Odśwież stronę, aby wygenerować materiały z aktualnego Brand Core."
+      title="Nie udało się pobrać ustawień Design"
+      description="Odśwież stronę, aby wygenerować materiały z aktualnej konfiguracji organizacji."
       class="materials-alert"
     />
 
@@ -132,7 +136,7 @@ async function copyMaterialText() {
             <span>02</span>
             <div>
               <h2>Dopasuj treść</h2>
-              <p>Punkt wyjścia powstał lokalnie z Brand Core.</p>
+              <p>Punkt wyjścia powstał lokalnie z profilu eksperta w Design.</p>
             </div>
           </div>
           <div class="copy-form">
@@ -159,12 +163,12 @@ async function copyMaterialText() {
           color="info"
           variant="subtle"
           icon="i-lucide-wand-sparkles"
-          :title="`Brand Core gotowy w ${completion.percentage}%`"
-          description="Brakujące logo lub portret zastępujemy czytelnym monogramem i neutralnym polem."
+          :title="`Profil eksperta gotowy w ${completion.percentage}%`"
+          description="Brakujące dane lub portret zastępujemy czytelnymi wartościami domyślnymi."
         >
           <template #actions>
-            <UButton :to="orgPath('/brand')" color="neutral" variant="outline" size="xs">
-              Uzupełnij markę
+            <UButton :to="orgPath('/settings/design')" color="neutral" variant="outline" size="xs">
+              Uzupełnij w Design
             </UButton>
           </template>
         </UAlert>
@@ -183,13 +187,15 @@ async function copyMaterialText() {
         <div class="stage-canvas">
           <BrandMaterialPreview
             :profile="profile"
+            :brand-name="brandIdentity.name"
+            :logo-url="brandIdentity.logoUrl"
             :palette="palette"
             :type="selectedType"
             :content="content"
           />
         </div>
         <div class="stage-foot">
-          <span><UIcon name="i-lucide-link" /> Dane i paleta pochodzą z Brand Core</span>
+          <span><UIcon name="i-lucide-link" /> Logo, dane i paleta pochodzą z ustawień Design</span>
           <span><UIcon name="i-lucide-shield-check" /> Podgląd generowany lokalnie</span>
         </div>
       </section>

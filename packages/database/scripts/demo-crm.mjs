@@ -1887,7 +1887,6 @@ export async function seedDemoCrm({
       .upsert({
         organization_id: organizationId,
         user_id: ownerUserId,
-        brand_name: 'Dobry Plan Finansowy',
         expert_name: String(profile.full_name ?? 'Anna Nowak'),
         professional_title: 'Ekspertka kredytowa',
         tagline: 'Spokojnie przeprowadzę Cię przez finansowanie domu.',
@@ -1905,7 +1904,7 @@ export async function seedDemoCrm({
       }, { onConflict: 'organization_id,user_id' })
       .select('organization_id, user_id')
       .single(),
-    'Seeding the expert Brand Core profile',
+    'Seeding the expert Design profile',
   )
   const consentCatalogue = await loadActiveConsentCatalogue(adminClient, organizationId)
   const clientResult = await ensureClientRecords({

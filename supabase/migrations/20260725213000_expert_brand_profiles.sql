@@ -1,7 +1,6 @@
 create table public.expert_brand_profiles (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
-  brand_name text not null default '',
   expert_name text not null default '',
   professional_title text not null default 'Ekspert kredytowy',
   tagline text not null default '',
@@ -12,7 +11,6 @@ create table public.expert_brand_profiles (
   bio text not null default '',
   specializations text[] not null default '{}',
   visual_style text not null default 'minimal',
-  logo_path text,
   portrait_path text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -25,8 +23,7 @@ create table public.expert_brand_profiles (
     check (visual_style in ('minimal', 'editorial', 'warm')),
   constraint expert_brand_profiles_lengths_check
     check (
-      char_length(brand_name) <= 80
-      and char_length(expert_name) <= 100
+      char_length(expert_name) <= 100
       and char_length(professional_title) <= 100
       and char_length(tagline) <= 140
       and char_length(contact_email) <= 160
@@ -35,11 +32,6 @@ create table public.expert_brand_profiles (
       and char_length(location) <= 100
       and char_length(bio) <= 800
       and cardinality(specializations) <= 8
-    ),
-  constraint expert_brand_profiles_logo_path_check
-    check (
-      logo_path is null
-      or logo_path like organization_id::text || '/' || user_id::text || '/logo/%'
     ),
   constraint expert_brand_profiles_portrait_path_check
     check (
@@ -96,4 +88,4 @@ set public = excluded.public,
     allowed_mime_types = excluded.allowed_mime_types;
 
 comment on table public.expert_brand_profiles is
-  'Personal expert identity and marketing brand assets. Visual tokens remain in organization_design_settings.';
+  'Expert profile content for materials. Product name, logos and visual tokens remain in organization_design_settings.';

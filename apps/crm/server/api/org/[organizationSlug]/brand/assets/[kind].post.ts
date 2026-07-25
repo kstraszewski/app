@@ -18,8 +18,8 @@ const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const kind = getRouterParam(event, 'kind')
-  if (kind !== 'logo' && kind !== 'portrait') {
-    throw createError({ statusCode: 404, statusMessage: 'Brand asset type not found' })
+  if (kind !== 'portrait') {
+    throw createError({ statusCode: 404, statusMessage: 'Expert profile asset type not found' })
   }
 
   const parts = await readMultipartFormData(event)
@@ -40,20 +40,18 @@ export default defineEventHandler(async (event) => {
       failOn: 'error',
       limitInputPixels: 40_000_000,
     }).rotate()
-    processed = await (kind === 'portrait'
-      ? pipeline.resize({ width: 1400, height: 1750, fit: 'cover', position: 'attention', withoutEnlargement: true })
-      : pipeline.resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }))
-      .webp({ quality: kind === 'portrait' ? 86 : 90, effort: 4 })
+    processed = await pipeline
+      .resize({ width: 1400, height: 1750, fit: 'cover', position: 'attention', withoutEnlargement: true })
+      .webp({ quality: 86, effort: 4 })
       .toBuffer()
   } catch {
     throw createError({ statusCode: 415, statusMessage: 'File is not a valid supported image' })
   }
 
   const serviceRole = serverSupabaseServiceRole(event) as any
-  const field = kind === 'logo' ? 'logo_path' : 'portrait_path'
   const existingResult = await serviceRole
     .from('expert_brand_profiles')
-    .select(`logo_path, portrait_path`)
+    .select('portrait_path')
     .eq('organization_id', session.organizationId)
     .eq('user_id', session.userId)
     .maybeSingle()
@@ -77,7 +75,7 @@ export default defineEventHandler(async (event) => {
       organization_id: session.organizationId,
       user_id: session.userId,
       ...(existingResult.data ? {} : profileToRow(defaultExpertBrandProfile(session))),
-      [field]: storagePath,
+      portrait_path: storagePath,
     }, { onConflict: 'organization_id,user_id' })
     .select(expertBrandProfileSelect)
     .single()
@@ -87,7 +85,7 @@ export default defineEventHandler(async (event) => {
     throwDbError(result.error)
   }
 
-  const oldPath = existingResult.data?.[field]
+  const oldPath = existingResult.data?.portrait_path
   if (oldPath && oldPath !== storagePath) {
     const cleanup = await serviceRole.storage.from(brandAssetBucket).remove([oldPath])
     if (cleanup.error) console.warn('[brand] failed to remove replaced asset', cleanup.error.message)

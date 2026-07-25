@@ -10,7 +10,6 @@ export const brandAssetBucket = 'expert-brand-assets'
 export interface ExpertBrandProfileRow {
   organization_id: string
   user_id: string
-  brand_name: string
   expert_name: string
   professional_title: string
   tagline: string
@@ -21,7 +20,6 @@ export interface ExpertBrandProfileRow {
   bio: string
   specializations: string[]
   visual_style: string
-  logo_path: string | null
   portrait_path: string | null
   updated_at: string
 }
@@ -29,7 +27,6 @@ export interface ExpertBrandProfileRow {
 export const expertBrandProfileSelect = [
   'organization_id',
   'user_id',
-  'brand_name',
   'expert_name',
   'professional_title',
   'tagline',
@@ -40,7 +37,6 @@ export const expertBrandProfileSelect = [
   'bio',
   'specializations',
   'visual_style',
-  'logo_path',
   'portrait_path',
   'updated_at',
 ].join(', ')
@@ -52,7 +48,6 @@ function publicAssetUrl(session: CrmSession, path: string | null): string | null
 
 export function defaultExpertBrandProfile(session: CrmSession): ExpertBrandProfile {
   return createEmptyExpertBrandProfile({
-    brandName: session.fullName || session.organizationName,
     expertName: session.fullName,
     email: session.email,
     phone: session.phone,
@@ -67,7 +62,6 @@ export function profileFromRow(
   if (!row) return fallback
 
   return normalizeExpertBrandProfile({
-    brandName: row.brand_name,
     expertName: row.expert_name,
     professionalTitle: row.professional_title,
     tagline: row.tagline,
@@ -78,7 +72,6 @@ export function profileFromRow(
     bio: row.bio,
     specializations: row.specializations,
     visualStyle: row.visual_style,
-    logoUrl: publicAssetUrl(session, row.logo_path),
     portraitUrl: publicAssetUrl(session, row.portrait_path),
   }, fallback)
 }
@@ -86,7 +79,6 @@ export function profileFromRow(
 export function profileToRow(profileValue: unknown) {
   const profile = normalizeExpertBrandProfile(profileValue)
   return {
-    brand_name: profile.brandName,
     expert_name: profile.expertName,
     professional_title: profile.professionalTitle,
     tagline: profile.tagline,

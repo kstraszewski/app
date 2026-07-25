@@ -4,6 +4,7 @@ import {
   brandInitials,
   brandProfileCompletion,
   buildBrandMaterialContent,
+  buildMaterialBrandIdentity,
   buildBrandPalette,
   contrastingTextColor,
   createEmptyExpertBrandProfile,
@@ -11,10 +12,9 @@ import {
 } from '../shared/brand.ts'
 import { cloneDefaultOrganizationDesign } from '../shared/design.ts'
 
-describe('expert Brand Core', () => {
+describe('expert profile and Design materials', () => {
   it('normalizes untrusted profile input and limits specializations', () => {
     const profile = normalizeExpertBrandProfile({
-      brandName: '  Dobry Plan Finansowy  ',
       expertName: ' Anna Nowak ',
       professionalTitle: 'Ekspertka kredytowa',
       email: 'anna@example.com',
@@ -30,13 +30,12 @@ describe('expert Brand Core', () => {
         'Inwestycje',
       ],
       visualStyle: 'unsupported',
-      logoUrl: 'javascript:alert(1)',
+      portraitUrl: 'javascript:alert(1)',
     })
 
-    assert.equal(profile.brandName, 'Dobry Plan Finansowy')
     assert.equal(profile.expertName, 'Anna Nowak')
     assert.equal(profile.visualStyle, 'minimal')
-    assert.equal(profile.logoUrl, null)
+    assert.equal(profile.portraitUrl, null)
     assert.equal(profile.specializations.length, 8)
     assert.equal(new Set(profile.specializations).size, 8)
   })
@@ -44,16 +43,13 @@ describe('expert Brand Core', () => {
   it('reports an actionable empty state and a complete profile', () => {
     const empty = brandProfileCompletion(createEmptyExpertBrandProfile())
     assert.equal(empty.percentage, 0)
-    assert.ok(empty.missing.includes('logo'))
     assert.ok(empty.missing.includes('zdjęcie portretowe'))
 
     const complete = brandProfileCompletion({
-      brandName: 'Dobry Plan',
       expertName: 'Anna Nowak',
       email: 'anna@example.com',
       bio: 'Pomagam klientom.',
       specializations: ['Hipoteki'],
-      logoUrl: 'https://cdn.example.com/logo.webp',
       portraitUrl: 'https://cdn.example.com/portrait.webp',
     })
     assert.equal(complete.percentage, 100)
@@ -62,7 +58,6 @@ describe('expert Brand Core', () => {
 
   it('builds deterministic content for all five material types', () => {
     const profile = normalizeExpertBrandProfile({
-      brandName: 'Dobry Plan',
       expertName: 'Anna Nowak',
       professionalTitle: 'Ekspertka kredytowa',
       tagline: 'Finansowanie z dobrym planem.',
@@ -89,6 +84,8 @@ describe('expert Brand Core', () => {
     const design = cloneDefaultOrganizationDesign()
     design.colors.light.primary = '#123456'
     design.colors.light.secondary = '#fedcba'
+    design.branding.productName = 'Dobry Plan Finansowy'
+    design.branding.logoOnLight = '/brand/dobry-plan.svg'
 
     assert.deepEqual(buildBrandPalette(design), {
       primary: '#123456',
@@ -100,10 +97,14 @@ describe('expert Brand Core', () => {
     })
     assert.equal(contrastingTextColor('#123456'), '#ffffff')
     assert.equal(contrastingTextColor('#fedcba'), '#111111')
+    assert.deepEqual(buildMaterialBrandIdentity(design), {
+      name: 'Dobry Plan Finansowy',
+      logoUrl: '/brand/dobry-plan.svg',
+    })
   })
 
   it('creates readable initials without requiring a logo', () => {
-    assert.equal(brandInitials({ brandName: 'Dobry Plan Finansowy' }), 'DP')
     assert.equal(brandInitials({ expertName: 'Anna Nowak' }), 'AN')
+    assert.equal(brandInitials({}), 'OE')
   })
 })

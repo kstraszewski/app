@@ -40,6 +40,7 @@ export default defineEventHandler(async (event) => {
   const acceptedSubmissions = ((submissionsResult.data ?? []) as Row[]).filter((item: Row) => item.status_code === 'zaakceptowane').length
 
   return {
+    currentUserId: session.userId,
     metrics: [
       { label: 'Aktywne sprawy', value: activeCases.length, icon: 'i-lucide-briefcase-business' },
       { label: 'Follow-up dziś', value: dueToday.length, icon: 'i-lucide-calendar-check' },

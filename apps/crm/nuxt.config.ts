@@ -129,7 +129,6 @@ export default defineNuxtConfig({
     },
   },
   app: {
-    pageTransition: { name: 'oe-page', mode: 'out-in' },
     head: {
       htmlAttrs: { lang: 'pl' },
       title: 'OpenExpert CRM',

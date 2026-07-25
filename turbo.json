@@ -2,7 +2,12 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
     "AI_GATEWAY_API_KEY",
-    "GOOGLE_GENERATIVE_AI_API_KEY"
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "OPENEXPERT_DEV_EMAIL",
+    "OPENEXPERT_DEV_PASSWORD",
+    "OPENEXPERT_DEV_ORGANIZATION",
+    "OPENEXPERT_DEV_ORGANIZATION_SLUG",
+    "OPENEXPERT_DEV_FULL_NAME"
   ],
   "tasks": {
     "db:reset": {
@@ -48,6 +53,7 @@
       "cache": false
     },
     "dev": {
+      "dependsOn": ["prepare"],
       "cache": false,
       "persistent": true
     },

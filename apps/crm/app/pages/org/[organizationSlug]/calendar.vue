@@ -19,6 +19,8 @@ type CalendarEventLayout = {
   laneCount: number
 }
 
+type CalendarEventDensity = 'compact' | 'standard' | 'expanded'
+
 type CalendarDay = {
   date: Date
   key: string
@@ -27,6 +29,11 @@ type CalendarDay = {
   accessibleLabel: string
   isToday: boolean
   events: CalendarEventLayout[]
+}
+
+type CreatedStaffAppointment = {
+  expertUserId: string
+  startsAt: string
 }
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -76,6 +83,7 @@ const selectedDate = ref(initialDate)
 const selectedExpertId = ref(typeof route.query.expert === 'string' ? route.query.expert : '')
 const selectedAppointment = ref<Appointment | null>(null)
 const appointmentOpen = ref(false)
+const createAppointmentOpen = ref(false)
 const browserTimezone = ref('Europe/Warsaw')
 
 onMounted(() => {
@@ -362,6 +370,13 @@ function eventStyle(event: CalendarEventLayout) {
   }
 }
 
+function eventDensity(event: CalendarEventLayout): CalendarEventDensity {
+  const duration = event.endMinute - event.startMinute
+  if (duration < 60) return 'compact'
+  if (duration < 75) return 'standard'
+  return 'expanded'
+}
+
 function hourMarkerStyle(hour: number) {
   return {
     top: `${(hour - calendarBounds.value.startHour) * hourHeight}px`,
@@ -371,6 +386,17 @@ function hourMarkerStyle(hour: number) {
 function openAppointment(appointment: Appointment) {
   selectedAppointment.value = appointment
   appointmentOpen.value = true
+}
+
+function openCreateAppointment() {
+  createAppointmentOpen.value = true
+}
+
+async function handleAppointmentCreated(appointment: CreatedStaffAppointment) {
+  selectedExpertId.value = appointment.expertUserId
+  selectedDate.value = dateKey(new Date(appointment.startsAt))
+  await nextTick()
+  await refreshAppointments()
 }
 
 function eventAccessibleLabel(appointment: Appointment) {
@@ -393,6 +419,12 @@ function eventAccessibleLabel(appointment: Appointment) {
     </template>
 
     <template #actions>
+      <UButton
+        icon="i-lucide-calendar-plus-2"
+        @click="openCreateAppointment"
+      >
+        Nowe spotkanie
+      </UButton>
       <USelect
         v-model="selectedExpertId"
         class="calendar-expert-select"
@@ -550,9 +582,13 @@ function eventAccessibleLabel(appointment: Appointment) {
                 :key="event.appointment.id"
                 type="button"
                 class="calendar-event"
-                :class="`calendar-event--${event.appointment.status}`"
+                :class="[
+                  `calendar-event--${event.appointment.status}`,
+                  `calendar-event--${eventDensity(event)}`,
+                ]"
                 :style="eventStyle(event)"
                 :aria-label="eventAccessibleLabel(event.appointment)"
+                :title="eventAccessibleLabel(event.appointment)"
                 @click="openAppointment(event.appointment)"
               >
                 <span class="calendar-event__time">
@@ -683,6 +719,13 @@ function eventAccessibleLabel(appointment: Appointment) {
         </UButton>
       </template>
     </UModal>
+
+    <CalendarCreateAppointmentModal
+      v-model:open="createAppointmentOpen"
+      :initial-date="selectedDate"
+      :initial-expert-id="selectedExpertId"
+      @created="handleAppointmentCreated"
+    />
   </CrmShell>
 </template>
 
@@ -942,7 +985,7 @@ function eventAccessibleLabel(appointment: Appointment) {
   gap: 2px;
   min-width: 0;
   overflow: hidden;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 1px solid;
   border-radius: 10px;
   color: var(--ui-text-highlighted);
@@ -971,11 +1014,23 @@ function eventAccessibleLabel(appointment: Appointment) {
   background: color-mix(in srgb, var(--ui-warning) 11%, var(--ui-bg));
 }
 
+.calendar-event--compact {
+  gap: 1px;
+  padding: 5px 7px;
+}
+
+.calendar-event--compact .calendar-event__service,
+.calendar-event--compact .calendar-event__facility,
+.calendar-event--standard .calendar-event__facility {
+  display: none;
+}
+
 .calendar-event__time {
   color: var(--ui-text-toned);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
+  line-height: 1.15;
 }
 
 .calendar-event strong,
@@ -987,9 +1042,13 @@ function eventAccessibleLabel(appointment: Appointment) {
 }
 
 .calendar-event strong {
-  margin-top: 1px;
   font-size: 12px;
   line-height: 1.3;
+}
+
+.calendar-event--compact strong {
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .calendar-event__service,

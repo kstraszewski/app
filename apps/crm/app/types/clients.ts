@@ -6,6 +6,16 @@ export type ClientConsentFilterDecision = ClientConsentDecision | 'unknown'
 export type ClientSortDirection = 'asc' | 'desc'
 export type ClientSortField = 'updated_at' | 'created_at' | 'display_name'
 
+export interface ClientListPrimaryPerson {
+  id: string
+  display_name: string
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  phone: string | null
+  pesel_last4: string | null
+}
+
 export interface ClientListItem {
   id: string
   organization_id?: string
@@ -19,6 +29,8 @@ export interface ClientListItem {
   notes?: string | null
   created_at: string
   updated_at: string
+  primaryPerson?: ClientListPrimaryPerson | null
+  matchedPerson?: ClientListPrimaryPerson | null
 }
 
 export interface ClientListQuery {
@@ -36,7 +48,7 @@ export interface ClientListQuery {
   updated_to?: string
   has_email?: boolean
   has_phone?: boolean
-  sort?: ClientSortField
+  sort?: ClientSortField | 'relevance'
   direction?: ClientSortDirection
   offset?: number
   limit?: number

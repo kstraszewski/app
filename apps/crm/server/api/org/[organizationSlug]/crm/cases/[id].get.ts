@@ -1,7 +1,7 @@
 import { createError } from 'h3'
 import { caseDocumentPublicSelect } from '~~/server/utils/case-documents'
+import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import { attachSignedPropertyImages, propertyPublicSelect } from '~~/server/utils/case-properties'
-import { caseUuidPattern } from '~~/server/utils/cases'
 import { getRequiredParam, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 
 type Row = Record<string, any>

@@ -97,7 +97,67 @@ function sourceFacts(product) {
   }
 }
 
-export async function syncMortgageCatalog(credentials = localCredentials()) {
+export function canonicalJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) {
+    return `[${value.map(item => canonicalJson(item) ?? 'null').join(',')}]`
+  }
+  const entries = Object.keys(value)
+    .filter(key => value[key] !== undefined)
+    .sort()
+    .map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+  return `{${entries.join(',')}}`
+}
+
+export function semanticVersionDigest(version) {
+  const { versionKey: _versionKey, ...semanticVersion } = version
+  return createHash('sha256')
+    .update(canonicalJson(semanticVersion))
+    .digest('hex')
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function localDeveloperSource(source, product, manifest) {
+  const localDirectory = resolve(archiveRoot, manifest.asOf)
+  const localPath = resolve(localDirectory, source.fileName)
+  mkdirSync(localDirectory, { recursive: true })
+  const fixture = {
+    fixture: 'openexpert-local-mortgage-source-v1',
+    asOf: manifest.asOf,
+    title: source.title,
+    sourceUrl: source.url,
+    sourceKind: source.kind,
+    bankSlug: source.bankSlug,
+    facts: product ? sourceFacts(product) : {},
+    note: 'Deterministyczny plik developerski. Uruchom pnpm mortgage:sync, aby pobrać bieżące źródło.',
+  }
+  const buffer = Buffer.from(
+    `<!doctype html><html lang="pl"><meta charset="utf-8"><title>${escapeHtml(source.title)}</title>`
+    + `<body><h1>${escapeHtml(source.title)}</h1><p>${escapeHtml(fixture.note)}</p>`
+    + `<pre>${escapeHtml(JSON.stringify(fixture, null, 2))}</pre></body></html>`,
+  )
+  writeFileSync(localPath, buffer)
+  return {
+    buffer,
+    localPath,
+    mimeType: 'text/html',
+    sha256: createHash('sha256').update(buffer).digest('hex'),
+    isFixture: true,
+  }
+}
+
+export async function syncMortgageCatalog(
+  credentials = localCredentials(),
+  { offline = false } = {},
+) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const client = createClient(credentials.url, credentials.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -135,21 +195,50 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
     products.set(item.version.versionKey, product.id)
   }
 
-  const sourceIds = new Map()
+  const sourceSnapshots = new Map()
   const retrievalSummary = []
   for (const source of manifest.sources) {
     const product = manifest.products.find((item) => item.sourceKey === source.sourceKey)
-    let downloaded = null
-    let failure = null
-    try {
-      downloaded = await downloadSource(source, manifest.asOf)
-    } catch (error) {
-      failure = detail(error)
-      console.warn(`[mortgages] ${source.bankSlug}: source download failed (${failure})`)
+    let downloaded
+    if (offline) {
+      downloaded = localDeveloperSource(source, product, manifest)
+    } else {
+      try {
+        downloaded = await downloadSource(source, manifest.asOf)
+      } catch (error) {
+        throw new Error(
+          `[mortgages] ${source.bankSlug}: live source download failed (${detail(error)}). `
+          + 'Local fixtures require explicit offline mode.',
+        )
+      }
     }
 
-    const storagePath = downloaded ? `${manifest.asOf}/${source.fileName}` : null
-    if (downloaded) {
+    const contentAddressedSourceKey = `${source.sourceKey}-${downloaded.sha256.slice(0, 16)}`
+    const { data: baseDocument, error: baseDocumentError } = await client
+      .from('mortgage_source_documents')
+      .select('id, source_key, sha256, storage_path')
+      .eq('source_key', source.sourceKey)
+      .maybeSingle()
+    assertResult(baseDocumentError, `Reading source ${source.sourceKey}`)
+
+    let document = baseDocument?.sha256 === downloaded.sha256 ? baseDocument : null
+    if (!document && baseDocument) {
+      const { data: snapshotDocument, error: snapshotDocumentError } = await client
+        .from('mortgage_source_documents')
+        .select('id, source_key, sha256, storage_path')
+        .eq('source_key', contentAddressedSourceKey)
+        .maybeSingle()
+      assertResult(snapshotDocumentError, `Reading source snapshot ${contentAddressedSourceKey}`)
+      if (snapshotDocument && snapshotDocument.sha256 !== downloaded.sha256) {
+        throw new Error(`Source snapshot key collision for ${contentAddressedSourceKey}`)
+      }
+      document = snapshotDocument
+    }
+    const reusedDocument = Boolean(document)
+
+    if (!document) {
+      const sourceKey = baseDocument ? contentAddressedSourceKey : source.sourceKey
+      const storagePath = `${manifest.asOf}/${downloaded.sha256}/${source.fileName}`
       const { error: uploadError } = await client.storage
         .from(bucket)
         .upload(storagePath, downloaded.buffer, {
@@ -157,40 +246,71 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
           upsert: true,
         })
       assertResult(uploadError, `Uploading ${source.fileName}`)
+
+      const { data: insertedDocument, error: documentError } = await client
+        .from('mortgage_source_documents')
+        .insert({
+          source_key: sourceKey,
+          bank_id: banks.get(source.bankSlug),
+          product_id: product ? products.get(product.version.versionKey) : null,
+          title: source.title,
+          source_url: source.url,
+          source_kind: source.kind,
+          mime_type: downloaded?.mimeType ?? null,
+          sha256: downloaded?.sha256 ?? null,
+          storage_path: storagePath,
+          retrieved_at: manifest.retrievedAt,
+          published_at: source.publishedAt ?? null,
+          retrieval_status: downloaded.isFixture ? 'pending' : 'downloaded',
+          extraction_status: downloaded.isFixture ? 'quarantined' : 'reviewed',
+          facts: product ? sourceFacts(product) : {},
+          error_message: downloaded.isFixture
+            ? 'Local deterministic developer fixture used in explicit offline mode.'
+            : null,
+        })
+        .select('id, source_key, sha256, storage_path')
+        .single()
+      assertResult(documentError, `Inserting source snapshot ${sourceKey}`)
+      document = insertedDocument
     }
 
-    const { data: document, error: documentError } = await client
-      .from('mortgage_source_documents')
-      .upsert({
-        source_key: source.sourceKey,
-        bank_id: banks.get(source.bankSlug),
-        product_id: product ? products.get(product.version.versionKey) : null,
-        title: source.title,
-        source_url: source.url,
-        source_kind: source.kind,
-        mime_type: downloaded?.mimeType ?? null,
-        sha256: downloaded?.sha256 ?? null,
-        storage_path: storagePath,
-        retrieved_at: manifest.retrievedAt,
-        published_at: source.publishedAt ?? null,
-        retrieval_status: downloaded ? 'downloaded' : 'failed',
-        extraction_status: 'reviewed',
-        facts: product ? sourceFacts(product) : {},
-        error_message: failure,
-      }, { onConflict: 'source_key' })
-      .select('id')
-      .single()
-    assertResult(documentError, `Upserting source ${source.sourceKey}`)
-    sourceIds.set(source.sourceKey, document.id)
-    retrievalSummary.push({ bank: source.bankSlug, status: downloaded ? 'downloaded' : 'failed' })
+    sourceSnapshots.set(source.sourceKey, {
+      id: document.id,
+      sha256: downloaded.sha256,
+    })
+    retrievalSummary.push({
+      bank: source.bankSlug,
+      status: downloaded.isFixture
+        ? (reusedDocument ? 'fixture-reused' : 'fixture')
+        : (reusedDocument ? 'downloaded-reused' : 'downloaded'),
+    })
   }
 
   for (const item of manifest.products) {
     const version = item.version
-    const { error } = await client.from('mortgage_product_versions').upsert({
-      version_key: version.versionKey,
-      product_id: products.get(version.versionKey),
-      source_document_id: sourceIds.get(item.sourceKey),
+    const sourceSnapshot = sourceSnapshots.get(item.sourceKey)
+    if (!sourceSnapshot) {
+      throw new Error(`Source snapshot is missing for ${item.sourceKey}`)
+    }
+    const semanticVersionKey =
+      `${version.versionKey}-${semanticVersionDigest(version).slice(0, 16)}`
+    const { data: existingVersion, error: existingVersionError } = await client
+      .from('mortgage_product_versions')
+      .select('id, version_key, product_id')
+      .eq('version_key', semanticVersionKey)
+      .maybeSingle()
+    assertResult(existingVersionError, `Reading version snapshot ${semanticVersionKey}`)
+    const productId = products.get(version.versionKey)
+    if (existingVersion && existingVersion.product_id !== productId) {
+      throw new Error(`Product version snapshot key collision for ${semanticVersionKey}`)
+    }
+
+    if (existingVersion) continue
+
+    const { error } = await client.from('mortgage_product_versions').insert({
+      version_key: semanticVersionKey,
+      product_id: productId,
+      source_document_id: sourceSnapshot.id,
       effective_from: version.effectiveFrom ?? null,
       effective_to: version.effectiveTo ?? null,
       retrieved_at: manifest.retrievedAt,
@@ -218,8 +338,8 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
       representative_example: version.representativeExample,
       assumptions: version.assumptions,
       unknown_fields: version.unknownFields,
-    }, { onConflict: 'version_key' })
-    assertResult(error, `Upserting version ${version.versionKey}`)
+    })
+    assertResult(error, `Inserting version snapshot ${semanticVersionKey}`)
   }
 
   console.log(`[mortgages] synchronized ${manifest.products.length} products as of ${manifest.asOf}`)
@@ -228,7 +348,9 @@ export async function syncMortgageCatalog(credentials = localCredentials()) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  syncMortgageCatalog().catch((error) => {
+  syncMortgageCatalog(undefined, {
+    offline: process.argv.includes('--offline'),
+  }).catch((error) => {
     console.error(detail(error))
     process.exitCode = 1
   })

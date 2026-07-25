@@ -3,7 +3,8 @@ import {
   asRecord,
   getRequiredParam,
   requireCrmSession,
-  requireOrganizationAdmin,
+  requireSafeTeamAdminRemoval,
+  requireTeamAdmin,
   requiredText,
   throwDbError,
 } from '~~/server/utils/crm'
@@ -11,18 +12,23 @@ import {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const teamId = getRequiredParam(event, 'teamId')
-  requireOrganizationAdmin(session)
   const body = asRecord(await readBody(event))
   const role = requiredText(body.role, 'role')
-  if (role !== 'member') {
-    throw createError({ statusCode: 400, statusMessage: 'Team membership role must be member' })
+  if (role !== 'member' && role !== 'admin') {
+    throw createError({ statusCode: 400, statusMessage: 'Team membership role must be admin or member' })
+  }
+  const userId = getRequiredParam(event, 'userId')
+  if (role === 'member') {
+    await requireSafeTeamAdminRemoval(session, teamId, userId)
+  } else {
+    await requireTeamAdmin(session, teamId)
   }
   const { data, error } = await session.supabase
     .from('team_memberships')
     .update({ role })
     .eq('organization_id', session.organizationId)
     .eq('team_id', teamId)
-    .eq('user_id', getRequiredParam(event, 'userId'))
+    .eq('user_id', userId)
     .select('*')
     .single()
 

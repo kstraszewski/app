@@ -1,4 +1,5 @@
 import { readBody } from 'h3'
+import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
   asRecord,
   recordCrmActivity,
@@ -8,7 +9,6 @@ import {
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
-import { caseUuidPattern } from '~~/server/utils/cases'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)

@@ -374,7 +374,7 @@ function caseBanks(item: CaseListResponse['data'][number]) {
             v-model="searchInput"
             class="search-input"
             icon="i-lucide-search"
-            placeholder="Nazwa sprawy, klient, bank lub oferta"
+            placeholder="Sprawa, klient, osoba, telefon, PESEL, produkt lub adres"
             aria-label="Przeszukaj sprawy"
             data-testid="cases-search"
           >
@@ -479,7 +479,12 @@ function caseBanks(item: CaseListResponse['data'][number]) {
           >
             <div class="case-title">
               <strong>{{ item.title }}</strong>
-              <span>Zmieniono {{ formatDate(item.updated_at) }}</span>
+              <span>
+                Zmieniono {{ formatDate(item.updated_at) }}
+                <template v-if="search && item.match_context">
+                  · Trafienie: {{ item.match_context.label }}
+                </template>
+              </span>
             </div>
             <div class="client-chips">
               <UBadge

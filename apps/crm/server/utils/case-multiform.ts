@@ -59,15 +59,24 @@ function nonEmptyString(value: unknown): string | undefined {
 
 function parseTemplateIds(catalogSnapshot: unknown, offerLabel: string): string[] {
   const version = asRecord(asRecord(catalogSnapshot).version)
-  if (!Array.isArray(version.multiform_template_ids)) return []
-  const ids = version.multiform_template_ids.map(nonEmptyString)
-  if (ids.some(id => !id)) {
+  const configured = version.multiform_template_ids === undefined
+    ? []
+    : Array.isArray(version.multiform_template_ids)
+      ? version.multiform_template_ids.map(nonEmptyString)
+      : [undefined]
+  const requirementIds = Array.isArray(version.document_requirements)
+    ? version.document_requirements.flatMap((entry) => {
+        const templateId = nonEmptyString(asRecord(entry).templateId)
+        return templateId ? [templateId] : []
+      })
+    : []
+  if (configured.some(id => !id)) {
     throw createError({
       statusCode: 409,
       statusMessage: `${offerLabel} ma nieprawidłową konfigurację formularzy bankowych.`,
     })
   }
-  return [...new Set(ids as string[])]
+  return [...new Set([...(configured as string[]), ...requirementIds])]
 }
 
 export async function requireCaseMultiformSelection(event: H3Event): Promise<CaseMultiformSelection> {

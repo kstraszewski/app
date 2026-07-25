@@ -186,14 +186,56 @@ const bankId = computed(() => String(route.params.bankId ?? ''))
 const apiPath = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks/${encodeURIComponent(bankId.value)}`)
 const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
 const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
-const profilePath = computed(() => `${institutionsPath.value}/${encodeURIComponent(bankId.value)}`)
+const settingsProfilePath = computed(() => `${institutionsPath.value}/${encodeURIComponent(bankId.value)}`)
+const mortgageProfilePath = computed(() => `/org/${organizationSlug.value}/mortgages/institutions/${encodeURIComponent(bankId.value)}`)
+const profilePath = computed(() => (
+  route.path === mortgageProfilePath.value
+    ? mortgageProfilePath.value
+    : settingsProfilePath.value
+))
+const productsViewPath = computed(() => `${profilePath.value}?view=products`)
+const checklistsPath = computed(() => `${profilePath.value}?view=checklists`)
+const pdfTemplatesPath = computed(() => `${profilePath.value}?view=templates`)
+const sourcesPath = computed(() => `${profilePath.value}?view=sources`)
 const settingsPath = computed(() => `${profilePath.value}?view=settings`)
+const historyPath = computed(() => `${profilePath.value}?view=history`)
 const createOfferPath = computed(() => `${productsPath.value}?createBank=${encodeURIComponent(bankId.value)}`)
-const settingsView = computed(() => route.query.view === 'settings')
-const tabs = computed(() => [
-  { label: 'Profil', to: profilePath.value, icon: 'i-lucide-layout-dashboard' },
-  { label: 'Ustawienia i historia', to: settingsPath.value, icon: 'i-lucide-settings-2' },
-])
+
+type InstitutionView = 'products' | 'checklists' | 'templates' | 'sources' | 'settings' | 'history'
+
+const legacyHashViews: Record<string, InstitutionView> = {
+  '#bank-offers': 'products',
+  '#bank-checklists': 'checklists',
+  '#bank-templates': 'templates',
+  '#bank-sources': 'sources',
+  '#bank-settings': 'settings',
+  '#bank-history': 'history',
+}
+
+function institutionView(value: unknown): InstitutionView | null {
+  if (
+    value === 'products'
+    || value === 'checklists'
+    || value === 'templates'
+    || value === 'sources'
+    || value === 'settings'
+    || value === 'history'
+  ) {
+    return value
+  }
+
+  return null
+}
+
+const activeView = computed<InstitutionView>(() => {
+  const requestedView = Array.isArray(route.query.view)
+    ? route.query.view[0]
+    : route.query.view
+
+  return institutionView(requestedView) ?? 'products'
+})
+const settingsView = computed(() => activeView.value === 'settings')
+const historyView = computed(() => activeView.value === 'history')
 
 const { data, status, error, refresh } = await useFetch<BankProfilePayload>(apiPath)
 const bank = computed(() => data.value?.bank ?? null)
@@ -204,6 +246,42 @@ const history = computed(() => data.value?.history ?? [])
 const checklistOffers = computed(() => offers.value.filter(offer => (
   offer.publishedChecklist.length || offer.draft?.configuration.checklist.length
 )))
+const tabs = computed(() => [
+  {
+    label: 'Produkty',
+    to: productsViewPath.value,
+    icon: 'i-lucide-badge-percent',
+    count: offers.value.length,
+  },
+  {
+    label: 'Checklisty',
+    to: checklistsPath.value,
+    icon: 'i-lucide-list-checks',
+    count: metrics.value?.publishedChecklistItems ?? 0,
+  },
+  {
+    label: 'Szablony PDF',
+    to: pdfTemplatesPath.value,
+    icon: 'i-lucide-file-json-2',
+  },
+  {
+    label: 'Źródła',
+    to: sourcesPath.value,
+    icon: 'i-lucide-files',
+    count: sources.value.length,
+  },
+  {
+    label: 'Ustawienia',
+    to: settingsPath.value,
+    icon: 'i-lucide-settings-2',
+  },
+  {
+    label: 'Historia',
+    to: historyPath.value,
+    icon: 'i-lucide-history',
+    count: history.value.length,
+  },
+])
 const expandedChecklists = ref<string[]>([])
 const saving = ref(false)
 const uploading = ref(false)
@@ -221,6 +299,31 @@ const settingsForm = reactive({
 })
 
 useHead(() => ({ title: `${bank.value?.name ?? 'Profil instytucji'} — OpenExpert` }))
+
+onMounted(() => {
+  watch(
+    () => route.fullPath,
+    () => {
+      const requestedView = Array.isArray(route.query.view)
+        ? route.query.view[0]
+        : route.query.view
+      const canonicalView = institutionView(requestedView)
+        ?? legacyHashViews[route.hash]
+        ?? 'products'
+      const canonicalQuery = typeof route.query.view === 'string'
+        && requestedView === canonicalView
+        && Object.keys(route.query).length === 1
+
+      if (route.path === profilePath.value && canonicalQuery && !route.hash) return
+
+      void navigateTo({
+        path: profilePath.value,
+        query: { view: canonicalView },
+      }, { replace: true })
+    },
+    { immediate: true },
+  )
+})
 
 function initials(name: string) {
   return name.split(/\s+/u).slice(0, 2).map(part => part[0]).join('').toUpperCase()
@@ -501,7 +604,7 @@ watch(bank, loadSettingsForm, { immediate: true })
     :tabs="tabs"
   >
     <template #actions>
-      <UButton v-if="bank" :to="createOfferPath" icon="i-lucide-plus">
+      <UButton v-if="bank && activeView === 'products'" :to="createOfferPath" icon="i-lucide-plus">
         Dodaj produkt
       </UButton>
       <UButton
@@ -515,6 +618,13 @@ watch(bank, loadSettingsForm, { immediate: true })
         @click="refreshProfile"
       />
     </template>
+
+    <span id="bank-offers" class="sr-only" aria-hidden="true" />
+    <span id="bank-checklists" class="sr-only" aria-hidden="true" />
+    <span id="bank-templates" class="sr-only" aria-hidden="true" />
+    <span id="bank-sources" class="sr-only" aria-hidden="true" />
+    <span id="bank-settings" class="sr-only" aria-hidden="true" />
+    <span id="bank-history" class="sr-only" aria-hidden="true" />
 
     <UAlert
       v-if="error"
@@ -534,8 +644,8 @@ watch(bank, loadSettingsForm, { immediate: true })
       <USkeleton class="h-96 w-full" />
     </div>
 
-    <div v-else-if="bank && metrics && !settingsView" class="bank-profile">
-      <section class="bank-hero">
+    <div v-else-if="bank && metrics && !settingsView && !historyView" class="bank-profile">
+      <section v-if="activeView === 'products'" class="bank-hero">
         <div
           class="bank-hero__logo"
           :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
@@ -581,7 +691,7 @@ watch(bank, loadSettingsForm, { immediate: true })
         </div>
       </section>
 
-      <section class="profile-metrics" aria-label="Podsumowanie instytucji">
+      <section v-if="activeView === 'products'" class="profile-metrics" aria-label="Podsumowanie instytucji">
         <article>
           <span>Wszystkie produkty</span>
           <strong>{{ metrics.offers }}</strong>
@@ -615,17 +725,10 @@ watch(bank, loadSettingsForm, { immediate: true })
         </article>
       </section>
 
-      <nav class="profile-jump" aria-label="Sekcje profilu instytucji">
-        <a href="#bank-offers"><UIcon name="i-lucide-badge-percent" />Produkty <span>{{ offers.length }}</span></a>
-        <a href="#bank-checklists"><UIcon name="i-lucide-list-checks" />Checklisty <span>{{ metrics.publishedChecklistItems }}</span></a>
-        <a href="#bank-sources"><UIcon name="i-lucide-files" />Źródła <span>{{ sources.length }}</span></a>
-        <a href="#bank-settings"><UIcon name="i-lucide-history" />Ustawienia i historia <span>{{ history.length }}</span></a>
-      </nav>
-
-      <section id="bank-offers" class="profile-section">
+      <section v-if="activeView === 'products'" class="profile-section">
         <div class="section-heading">
           <div>
-            <span>01 · produkty</span>
+            <span>Produkty</span>
             <h2>Produkty i wersje kalkulatora</h2>
             <p>Każdy produkt zachowuje własną stopę, koszty, warianty, checklistę i historię publikacji.</p>
           </div>
@@ -738,10 +841,10 @@ watch(bank, loadSettingsForm, { immediate: true })
         </div>
       </section>
 
-      <section id="bank-checklists" class="profile-section">
+      <section v-if="activeView === 'checklists'" class="profile-section">
         <div class="section-heading">
           <div>
-            <span>02 · dokumenty</span>
+            <span>Dokumenty</span>
             <h2>Checklisty wymagane przez bank</h2>
             <p>Pozycje są przypisane do konkretnego produktu i wersji, dlatego nie tracą kontekstu wariantu kredytu.</p>
           </div>
@@ -828,10 +931,10 @@ watch(bank, loadSettingsForm, { immediate: true })
         </div>
       </section>
 
-      <section id="bank-sources" class="profile-section">
+      <section v-if="activeView === 'sources'" class="profile-section">
         <div class="section-heading">
           <div>
-            <span>03 · pochodzenie danych</span>
+            <span>Pochodzenie danych</span>
             <h2>Dokumenty i strony źródłowe</h2>
             <p>Materiały, na podstawie których zdefiniowano oprocentowanie, koszty, warunki i checklisty.</p>
           </div>
@@ -883,56 +986,15 @@ watch(bank, loadSettingsForm, { immediate: true })
         </div>
       </section>
 
-      <section id="bank-settings" class="profile-section">
-        <div class="section-heading">
-          <div>
-            <span>04 · organizacja</span>
-            <h2>Ustawienia i historia banku</h2>
-            <p>Zmiany tutaj dotyczą wyłącznie bieżącej organizacji i nie modyfikują danych globalnych.</p>
-          </div>
-        </div>
+      <MortgagesInstitutionPdfTemplates
+        v-if="activeView === 'templates'"
+        :organization-slug="organizationSlug"
+        :bank-id="bankId"
+      />
 
-        <div class="settings-grid">
-          <UCard>
-            <template #header>
-              <div class="settings-card__head">
-                <div><span>Konfiguracja</span><h3>W tej organizacji</h3></div>
-                <UButton :to="settingsPath" color="neutral" variant="ghost" icon="i-lucide-settings-2">Edytuj</UButton>
-              </div>
-            </template>
-            <dl class="settings-list">
-              <div><dt>Widoczność</dt><dd><UBadge :color="bank.isEnabled ? 'success' : 'warning'" variant="subtle">{{ bank.isEnabled ? 'Włączona' : 'Wyłączona' }}</UBadge></dd></div>
-              <div><dt>Nazwa</dt><dd>{{ bank.name }}<small>{{ bank.override?.customName ? 'Własna' : 'Źródłowa' }}</small></dd></div>
-              <div><dt>Strona</dt><dd>{{ bank.websiteUrl || 'Nie podano' }}<small>{{ bank.override?.customWebsiteUrl ? 'Własna' : 'Źródłowa' }}</small></dd></div>
-              <div><dt>Logo</dt><dd>{{ bank.override?.hasCustomLogo ? 'Własne logo organizacji' : 'Logo źródłowe' }}</dd></div>
-              <div><dt>Rewizja</dt><dd>{{ bank.override ? `r${bank.override.revision}` : 'Brak zmian' }}</dd></div>
-            </dl>
-          </UCard>
-
-          <UCard>
-            <template #header>
-              <div class="settings-card__head">
-                <div><span>Audyt</span><h3>Historia zmian</h3></div>
-                <UButton color="neutral" variant="ghost" square icon="i-lucide-refresh-cw" aria-label="Odśwież profil" @click="() => refresh()" />
-              </div>
-            </template>
-            <ol v-if="history.length" class="history-list">
-              <li v-for="entry in history.slice(0, 8)" :key="entry.id">
-                <span class="history-list__dot" />
-                <div>
-                  <strong>{{ historyActionLabel(entry.action) }} · r{{ entry.revision }}</strong>
-                  <p>{{ entry.actor?.name || entry.actor?.email || 'SuperAdmin' }}</p>
-                  <small>{{ formatDate(entry.createdAt, true) }}</small>
-                </div>
-              </li>
-            </ol>
-            <div v-else class="settings-empty">Nie zapisano jeszcze zmian dla tej instytucji.</div>
-          </UCard>
-        </div>
-      </section>
     </div>
 
-    <div v-else-if="bank && metrics" class="bank-settings-editor">
+    <div v-else-if="bank && metrics && settingsView" class="bank-settings-editor">
       <section class="settings-notice" aria-label="Zakres ustawień">
         <UIcon name="i-lucide-building-2" />
         <div>
@@ -1091,6 +1153,9 @@ watch(bank, loadSettingsForm, { immediate: true })
         </div>
       </form>
 
+    </div>
+
+    <div v-else-if="bank && metrics && historyView" class="bank-settings-editor">
       <UCard class="settings-history-card">
         <template #header>
           <div class="settings-editor-head">
@@ -1142,14 +1207,10 @@ watch(bank, loadSettingsForm, { immediate: true })
 .bank-hero__meta span { display: inline-flex; align-items: center; gap: 6px; }
 .profile-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .profile-metrics article { display: grid; gap: 5px; min-width: 0; padding: 17px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.profile-metrics span, .section-heading > div > span, .settings-card__head span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.profile-metrics span, .section-heading > div > span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .profile-metrics strong { font-size: 28px; line-height: 1; }
 .profile-metrics small { overflow: hidden; color: var(--ui-text-muted); font-size: 11px; text-overflow: ellipsis; }
-.profile-jump { position: sticky; top: 10px; z-index: 4; display: flex; gap: 8px; padding: 8px; overflow-x: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: color-mix(in srgb, var(--ui-bg) 94%, transparent); backdrop-filter: blur(14px); }
-.profile-jump a { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; padding: 8px 11px; border-radius: calc(var(--ui-radius) * .7); color: var(--ui-text-toned); font-size: 12px; font-weight: 650; text-decoration: none; }
-.profile-jump a:hover { background: var(--ui-bg-muted); }
-.profile-jump a span { min-width: 20px; padding: 2px 6px; border-radius: 999px; color: var(--ui-text-muted); background: var(--ui-bg-elevated); font-size: 10px; text-align: center; }
-.profile-section { display: grid; gap: 16px; min-width: 0; scroll-margin-top: 80px; }
+.profile-section { display: grid; gap: 16px; min-width: 0; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 10px 2px 3px; }
 .section-heading h2 { margin: 5px 0 0; font-size: 25px; }
 .section-heading p { max-width: 760px; margin: 5px 0 0; color: var(--ui-text-muted); font-size: 13px; }
@@ -1221,15 +1282,6 @@ watch(bank, loadSettingsForm, { immediate: true })
 .source-item__meta, .source-item__roles { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .source-item__meta { color: var(--ui-text-muted); font-size: 11px; }
 .source-item__meta span { display: inline-flex; align-items: center; gap: 5px; }
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.settings-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.settings-card__head h3 { margin: 4px 0 0; font-size: 18px; }
-.settings-list { display: grid; gap: 0; margin: 0; }
-.settings-list > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 14px; padding: 11px 0; border-top: 1px solid var(--ui-border); }
-.settings-list > div:first-child { border-top: 0; }
-.settings-list dt { color: var(--ui-text-muted); font-size: 12px; }
-.settings-list dd { display: grid; justify-items: start; gap: 3px; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; }
-.settings-list dd small { color: var(--ui-text-muted); font-weight: 400; }
 .history-list { display: grid; margin: 0; padding: 0; list-style: none; }
 .history-list li { position: relative; display: flex; gap: 12px; padding: 0 0 17px; }
 .history-list li:not(:last-child)::before { position: absolute; top: 9px; bottom: 0; left: 4px; width: 1px; background: var(--ui-border); content: ''; }
@@ -1272,7 +1324,6 @@ watch(bank, loadSettingsForm, { immediate: true })
   .bank-hero__logo { width: 88px; height: 88px; border-radius: 17px; }
   .bank-hero__logo img { padding: 12px; }
   .bank-hero__headline, .section-heading, .offer-card__header { align-items: stretch; flex-direction: column; }
-  .settings-grid { grid-template-columns: 1fr; }
   .settings-logo-editor { grid-template-columns: 220px minmax(0, 1fr); }
   .checklist-item { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .checklist-item__meta { display: none; }
@@ -1293,7 +1344,6 @@ watch(bank, loadSettingsForm, { immediate: true })
   .checklist-item > .badge { grid-column: 2; justify-self: start; }
   .source-item { grid-template-columns: 38px minmax(0, 1fr); }
   .source-item > :last-child { grid-column: 2; justify-self: start; }
-  .settings-list > div { grid-template-columns: 1fr; gap: 5px; }
   .settings-notice, .settings-editor-head { align-items: flex-start; flex-direction: column; }
   .settings-form-grid, .settings-logo-editor { grid-template-columns: 1fr; }
   .settings-form-grid__full { grid-column: 1; }

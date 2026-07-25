@@ -34,6 +34,15 @@ const { data: payload, status, error, refresh } = await useFetch<FacilityListPay
 
 const facilities = computed(() => payload.value.data)
 const activeFacilities = computed(() => facilities.value.filter(facility => facility.is_active).length)
+const cityCount = computed(() => new Set(
+  facilities.value
+    .map(facility => facility.city?.trim())
+    .filter((city): city is string => Boolean(city)),
+).size)
+const pageTitle = computed(() => payload.value.role === 'admin' ? 'Placówki' : 'Moje placówki')
+const pageDescription = computed(() => payload.value.role === 'admin'
+  ? 'Pełny rejestr placówek organizacji, ich dostępności i konfiguracji obsługi klienta.'
+  : 'Placówki przypisane bezpośrednio do Ciebie lub do zespołów, którymi zarządzasz.')
 const visibleFacilities = computed(() => {
   const query = search.value.trim().toLocaleLowerCase('pl')
   if (!query) return facilities.value
@@ -113,10 +122,23 @@ async function createFacility() {
 
 <template>
   <CrmShell
-    title="Placówki"
-    eyebrow="Administracja organizacji"
-    description="Rejestr miejsc pracy, usług, dostępności i konfiguracji rezerwacji."
+    :title="pageTitle"
+    eyebrow="Administracja zespołu"
+    :description="pageDescription"
   >
+    <template #meta>
+      <div class="facility-index__scope">
+        <UBadge
+          color="neutral"
+          variant="outline"
+          :icon="payload.role === 'admin' ? 'i-lucide-building-2' : 'i-lucide-shield-check'"
+        >
+          {{ payload.role === 'admin' ? 'Cała organizacja' : 'Twój zakres dostępu' }}
+        </UBadge>
+        <span>Widok listy prowadzi do szczegółów placówki.</span>
+      </div>
+    </template>
+
     <template #actions>
       <UButton v-if="payload.canCreate" icon="i-lucide-plus" @click="openCreate">
         Nowa placówka
@@ -125,15 +147,37 @@ async function createFacility() {
 
     <section class="facility-index">
       <div class="facility-index__summary">
-        <article>
-          <span>Wszystkie placówki</span>
-          <strong>{{ facilities.length }}</strong>
-          <small>Miejsca pracy w organizacji</small>
+        <article class="facility-stat">
+          <span class="facility-stat__icon"><UIcon name="i-lucide-building-2" /></span>
+          <div>
+            <small>Dostępne placówki</small>
+            <strong>{{ facilities.length }}</strong>
+            <p>{{ payload.role === 'admin' ? 'w całej organizacji' : 'w Twoim zakresie' }}</p>
+          </div>
         </article>
-        <article>
-          <span>Aktywne</span>
-          <strong>{{ activeFacilities }}</strong>
-          <small>Dostępne w konfiguracji rezerwacji</small>
+        <article class="facility-stat">
+          <span class="facility-stat__icon"><UIcon name="i-lucide-circle-check-big" /></span>
+          <div>
+            <small>Aktywne</small>
+            <strong>{{ activeFacilities }}</strong>
+            <p>gotowe do obsługi</p>
+          </div>
+        </article>
+        <article class="facility-stat">
+          <span class="facility-stat__icon"><UIcon name="i-lucide-map-pinned" /></span>
+          <div>
+            <small>Miasta</small>
+            <strong>{{ cityCount }}</strong>
+            <p>lokalizacje operacyjne</p>
+          </div>
+        </article>
+        <article class="facility-stat">
+          <span class="facility-stat__icon"><UIcon name="i-lucide-clock-3" /></span>
+          <div>
+            <small>Strefa bazowa</small>
+            <strong class="facility-stat__text">Europe/Warsaw</strong>
+            <p>domyślna organizacji</p>
+          </div>
         </article>
       </div>
 
@@ -150,9 +194,10 @@ async function createFacility() {
       <UCard class="facility-index__card">
         <template #header>
           <div class="facility-index__toolbar">
-            <div>
-              <h2>Lista placówek</h2>
-              <p>Wybierz placówkę, aby otworzyć jej zespół, godziny, usługi, kalendarze i wizyty.</p>
+            <div class="facility-index__toolbar-copy">
+              <span>Rejestr operacyjny</span>
+              <h2>Dostępne placówki</h2>
+              <p>Otwórz placówkę, aby zobaczyć jej zespół, grafik, usługi i kalendarze.</p>
             </div>
             <UInput
               v-model="search"
@@ -174,19 +219,24 @@ async function createFacility() {
             :to="orgPath(`/facilities/${facility.id}`)"
             class="facility-row"
           >
-            <span class="facility-row__icon"><UIcon name="i-lucide-building-2" /></span>
+            <span class="facility-row__icon">
+              <UIcon name="i-lucide-building-2" />
+            </span>
             <span class="facility-row__identity">
               <strong>{{ facility.name }}</strong>
               <small>{{ facilityAddress(facility) || 'Adres nie został uzupełniony' }}</small>
             </span>
             <span class="facility-row__meta">
-              <span>{{ facility.timezone }}</span>
-              <code>{{ facility.slug }}</code>
+              <span><UIcon name="i-lucide-map-pin" /> {{ facility.city || 'Miasto nieuzupełnione' }}</span>
+              <span><UIcon name="i-lucide-clock-3" /> {{ facility.timezone }}</span>
             </span>
             <UBadge :color="facility.is_active ? 'success' : 'neutral'" variant="subtle">
               {{ facility.is_active ? 'Aktywna' : 'Nieaktywna' }}
             </UBadge>
-            <UIcon name="i-lucide-chevron-right" class="facility-row__arrow" />
+            <span class="facility-row__open">
+              Otwórz
+              <UIcon name="i-lucide-arrow-right" />
+            </span>
           </NuxtLink>
         </div>
 
@@ -263,33 +313,114 @@ async function createFacility() {
 </template>
 
 <style scoped>
-.facility-index { display: grid; gap: 22px; }
-.facility-index__summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.facility-index__summary article { display: grid; gap: 4px; padding: 18px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.facility-index__summary span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.facility-index__summary strong { color: var(--ui-text-highlighted); font-size: 30px; line-height: 1; }
-.facility-index__summary small { color: var(--ui-text-muted); }
+.facility-index {
+  display: grid;
+  gap: 22px;
+}
+
+.facility-index__scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ui-text-dimmed);
+  font-size: 11px;
+}
+
+.facility-index__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.facility-stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg);
+}
+
+.facility-stat__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+  font-size: 17px;
+}
+
+.facility-stat > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.facility-stat small,
+.facility-index__toolbar-copy > span {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.facility-stat strong {
+  color: var(--ui-text-highlighted);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.facility-stat strong.facility-stat__text {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facility-stat p {
+  margin: 0;
+  color: var(--ui-text-dimmed);
+  font-size: 10px;
+}
+
 .facility-index__card :deep(.divide-y) { border-color: var(--ui-border); }
 .facility-index__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .facility-index__toolbar h2 { margin: 0; }
 .facility-index__toolbar p { margin: 4px 0 0; color: var(--ui-text-muted); font-size: 13px; }
 .facility-index__toolbar > :last-child { width: min(360px, 100%); }
+.facility-index__toolbar-copy > span { display: block; margin-bottom: 5px; }
 .facility-index__rows { display: grid; gap: 8px; }
-.facility-row { display: grid; grid-template-columns: 42px minmax(220px, 1.5fr) minmax(150px, .8fr) auto 20px; align-items: center; gap: 14px; padding: 14px; border: 1px solid transparent; border-radius: var(--ui-radius); color: inherit; text-decoration: none; transition: background var(--oe-motion-fast), border-color var(--oe-motion-fast); }
+.facility-row { display: grid; grid-template-columns: 44px minmax(220px, 1.5fr) minmax(170px, .8fr) auto auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid transparent; border-radius: var(--ui-radius); color: inherit; text-decoration: none; transition: background var(--oe-motion-fast), border-color var(--oe-motion-fast); }
 .facility-row:hover { border-color: var(--ui-border-accented); background: var(--ui-bg-muted); }
-.facility-row__icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--ui-border); border-radius: 11px; background: var(--ui-bg-muted); color: var(--ui-text-highlighted); }
+.facility-row__icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-bg-muted); color: var(--ui-text-highlighted); }
 .facility-row__identity, .facility-row__meta { display: grid; gap: 3px; min-width: 0; }
 .facility-row__identity strong, .facility-row__identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .facility-row__identity strong { color: var(--ui-text-highlighted); }
-.facility-row__identity small, .facility-row__meta { color: var(--ui-text-muted); font-size: 12px; }
-.facility-row__meta code { overflow: hidden; text-overflow: ellipsis; }
-.facility-row__arrow { color: var(--ui-text-muted); }
+.facility-row__identity small, .facility-row__meta { color: var(--ui-text-muted); font-size: 11px; }
+.facility-row__meta span { display: flex; align-items: center; gap: 6px; }
+.facility-row__meta .iconify { flex: none; font-size: 12px; }
+.facility-row__open { display: inline-flex; align-items: center; gap: 7px; color: var(--ui-text-muted); font-size: 11px; font-weight: 600; transition: color var(--oe-motion-fast); }
+.facility-row:hover .facility-row__open { color: var(--ui-text-highlighted); }
 .facility-index__empty { display: grid; place-items: center; gap: 10px; min-height: 280px; text-align: center; }
 .facility-index__empty > .iconify { width: 34px; height: 34px; color: var(--ui-text-muted); }
 .facility-index__empty h3, .facility-index__empty p { margin: 0; }
 .facility-index__empty p { color: var(--ui-text-muted); }
 .facility-form { display: grid; gap: 18px; }
 .facility-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1180px) {
+  .facility-index__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 780px) {
   .facility-index__summary, .facility-form__grid { grid-template-columns: 1fr; }
   .facility-index__toolbar { align-items: stretch; flex-direction: column; }
@@ -297,5 +428,7 @@ async function createFacility() {
   .facility-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
   .facility-row__meta { display: none; }
   .facility-row > .badge { display: none; }
+  .facility-row__open { font-size: 0; }
+  .facility-row__open .iconify { font-size: 15px; }
 }
 </style>

@@ -21,15 +21,59 @@ export default defineEventHandler(async (event) => {
 
   throwDbError(error)
 
+  const memberships = ((data ?? []) as MembershipRow[])
+    .filter((membership) => membership.organization)
+  const organizationIds = memberships.map(membership => membership.organization!.id)
+  const [teamAdminsResult, facilityAdminsResult] = organizationIds.length
+    ? await Promise.all([
+        session.supabase
+          .from('team_memberships')
+          .select('organization_id')
+          .eq('user_id', session.userId)
+          .eq('role', 'admin')
+          .in('organization_id', organizationIds),
+        session.supabase
+          .from('facility_memberships')
+          .select('organization_id')
+          .eq('user_id', session.userId)
+          .eq('role', 'admin')
+          .in('organization_id', organizationIds),
+      ])
+    : [
+        { data: [], error: null },
+        { data: [], error: null },
+      ]
+  throwDbError(teamAdminsResult.error)
+  throwDbError(facilityAdminsResult.error)
+
+  const teamAdminOrganizationIds = new Set(
+    (teamAdminsResult.data ?? []).map((membership: { organization_id: unknown }) => String(membership.organization_id)),
+  )
+  const facilityAdminOrganizationIds = new Set(
+    (facilityAdminsResult.data ?? []).map((membership: { organization_id: unknown }) => String(membership.organization_id)),
+  )
+
   return {
     access: { superAdmin },
-    data: ((data ?? []) as MembershipRow[])
-      .filter((membership) => membership.organization)
-      .map((membership) => ({
-        ...membership.organization!,
-        role: membership.role,
-        isDefault: membership.organization!.id === session.defaultOrganizationId,
-      }))
+    data: memberships
+      .map((membership) => {
+        const organization = membership.organization!
+        const organizationAdmin = membership.role === 'admin'
+        const teamAdmin = teamAdminOrganizationIds.has(organization.id)
+        const facilityAdmin = facilityAdminOrganizationIds.has(organization.id)
+
+        return {
+          ...organization,
+          role: membership.role,
+          isDefault: organization.id === session.defaultOrganizationId,
+          capabilities: {
+            organizationAdmin,
+            teamAdmin,
+            facilityAdmin,
+            canManageTeams: organizationAdmin || teamAdmin,
+          },
+        }
+      })
       .sort((left, right) => Number(right.isDefault) - Number(left.isDefault)
         || left.name.localeCompare(right.name, 'pl')),
   }

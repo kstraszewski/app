@@ -1,7 +1,7 @@
 import { createError } from 'h3'
+import { caseUuidPattern } from './case-identifiers'
 import { textValue, throwDbError, type CrmSession } from './crm'
-
-export const caseUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { normalizeCrmSearchQuery } from './search'
 
 const caseSorts = new Set([
   'relevance',
@@ -108,8 +108,9 @@ export function parseCaseSearchFilters(
   query: QueryRecord,
   options: { forceFacets?: boolean } = {},
 ): CaseSearchFilters {
-  const q = textValue(Array.isArray(query.q) ? query.q[0] : query.q)
-  if (q && q.length > 200) validationError('q must not exceed 200 characters')
+  const rawQuery = textValue(Array.isArray(query.q) ? query.q[0] : query.q)
+  const q = normalizeCrmSearchQuery(rawQuery)
+  if (rawQuery && rawQuery.length > 200) validationError('q must not exceed 200 characters')
 
   const clientIds = queryValues(query, ['client_id', 'client_ids'], 'client_ids')
   const bankIds = queryValues(query, ['bank_id', 'bank_ids'], 'bank_ids')
@@ -170,7 +171,8 @@ export async function searchCrmCases(
   session: CrmSession,
   filters: CaseSearchFilters,
 ): Promise<CaseSearchPayload> {
-  const { data, error } = await session.supabase.rpc('search_crm_cases', {
+  const rpcName = filters.q ? 'search_crm_cases_with_context' : 'search_crm_cases'
+  const { data, error } = await session.supabase.rpc(rpcName, {
     p_organization_id: session.organizationId,
     p_filters: filters,
   })

@@ -13,6 +13,7 @@ import {
   loadCrmMultiformContext,
   parseCrmMultiformSelection,
 } from '../../../utils/multiform-crm'
+import { resolvePinnedMultiformTemplates } from '../../../utils/multiform-template-repository'
 import { createPdfBundle } from '../../../utils/multiform-pdf'
 
 interface FillBundleBody {
@@ -279,12 +280,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const templates = templateIds.map(id => getTemplate(id))
+  const templateOverrides = crmContext
+    ? await resolvePinnedMultiformTemplates(event, crmContext.applications)
+    : []
+  const overrideById = new Map(templateOverrides.map(template => [template.id, template]))
+  const templates = templateIds.map(id => overrideById.get(id) ?? getTemplate(id))
   if (templates.some(template => !template)) {
     throw createError({ statusCode: 400, statusMessage: 'Wybrano nieznany template dokumentu.' })
   }
 
-  const bundle = prepareBundle(templateIds)
+  const bundle = prepareBundle(templateIds, templateOverrides)
   if (bundle.warnings.length > 0) {
     throw createError({
       statusCode: 409,

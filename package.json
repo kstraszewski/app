@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.18.1",
+  "engines": {
+    "node": ">=24.11.0 <25"
+  },
   "scripts": {
     "build": "turbo run build",
     "db:reset": "turbo run db:reset --filter=@openexpert/database",
@@ -27,7 +30,7 @@
   },
   "pnpm": {
     "packageExtensions": {
-      "@nuxtjs/supabase@2.0.5": {
+      "@nuxtjs/supabase@2.0.9": {
         "dependencies": {
           "h3": "1.15.11"
         }

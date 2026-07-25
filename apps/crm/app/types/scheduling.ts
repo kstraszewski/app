@@ -42,6 +42,28 @@ export interface FacilityDetailPayload {
   access: FacilityAccess
 }
 
+export interface FacilityImage {
+  id: string
+  organization_id: string
+  facility_id: string
+  original_filename: string
+  mime_type: 'image/webp'
+  size_bytes: number
+  width_px: number
+  height_px: number
+  sort_order: number
+  alt_text: string | null
+  uploaded_by: string
+  created_at: string
+  updated_at: string
+  url: string | null
+}
+
+export interface FacilityImagesPayload {
+  data: FacilityImage[]
+  limit: number
+}
+
 export interface FacilityMember {
   organization_id: string
   facility_id: string

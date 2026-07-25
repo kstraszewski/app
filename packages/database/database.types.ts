@@ -3747,6 +3747,162 @@ export type Database = {
           },
         ]
       }
+      mortgage_document_template_revisions: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          revision: number
+          template_id: string
+          template_json: Json
+          validation_report: Json
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          revision: number
+          template_id: string
+          template_json: Json
+          validation_report: Json
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          revision?: number
+          template_id?: string
+          template_json?: Json
+          validation_report?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_document_template_revisions_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_template_revisions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_document_templates: {
+        Row: {
+          active_json: Json | null
+          active_published_at: string | null
+          active_published_by_user_id: string | null
+          active_revision: number
+          active_validation_report: Json | null
+          bank_id: string
+          created_at: string
+          created_by_user_id: string | null
+          current_published_revision_id: string | null
+          draft_json: Json | null
+          draft_revision: number
+          draft_updated_at: string | null
+          draft_updated_by_user_id: string | null
+          draft_validation_report: Json | null
+          id: string
+          label: string
+          registry_version: number
+          source_file_name: string
+          source_sha256: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          active_json?: Json | null
+          active_published_at?: string | null
+          active_published_by_user_id?: string | null
+          active_revision?: number
+          active_validation_report?: Json | null
+          bank_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_published_revision_id?: string | null
+          draft_json?: Json | null
+          draft_revision?: number
+          draft_updated_at?: string | null
+          draft_updated_by_user_id?: string | null
+          draft_validation_report?: Json | null
+          id?: string
+          label: string
+          registry_version: number
+          source_file_name: string
+          source_sha256: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          active_json?: Json | null
+          active_published_at?: string | null
+          active_published_by_user_id?: string | null
+          active_revision?: number
+          active_validation_report?: Json | null
+          bank_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_published_revision_id?: string | null
+          draft_json?: Json | null
+          draft_revision?: number
+          draft_updated_at?: string | null
+          draft_updated_by_user_id?: string | null
+          draft_validation_report?: Json | null
+          id?: string
+          label?: string
+          registry_version?: number
+          source_file_name?: string
+          source_sha256?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_document_templates_active_published_by_user_id_fkey"
+            columns: ["active_published_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_current_published_revision_id_fkey"
+            columns: ["current_published_revision_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_template_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_draft_updated_by_user_id_fkey"
+            columns: ["draft_updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mortgage_product_drafts: {
         Row: {
           base_version_id: string | null
@@ -3959,6 +4115,45 @@ export type Database = {
             columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_product_version_document_templates: {
+        Row: {
+          created_at: string
+          product_version_id: string
+          requirement_code: string
+          sort_order: number
+          template_revision_id: string
+        }
+        Insert: {
+          created_at?: string
+          product_version_id: string
+          requirement_code: string
+          sort_order?: number
+          template_revision_id: string
+        }
+        Update: {
+          created_at?: string
+          product_version_id?: string
+          requirement_code?: string
+          sort_order?: number
+          template_revision_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_product_version_document_tem_template_revision_id_fkey"
+            columns: ["template_revision_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_template_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_version_document_templ_product_version_id_fkey"
+            columns: ["product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -5070,6 +5265,15 @@ export type Database = {
           starts_at: string
         }[]
       }
+      publish_mortgage_document_template_draft: {
+        Args: {
+          p_actor_user_id: string
+          p_bank_id: string
+          p_expected_revision: number
+          p_template_key: string
+        }
+        Returns: Json
+      }
       publish_mortgage_product_draft: {
         Args: {
           p_actor_user_id: string
@@ -5127,6 +5331,21 @@ export type Database = {
         }
         Returns: Json
       }
+      save_mortgage_document_template_draft: {
+        Args: {
+          p_actor_user_id: string
+          p_bank_id: string
+          p_expected_revision: number
+          p_label: string
+          p_registry_version: number
+          p_source_file_name: string
+          p_source_sha256: string
+          p_template_json: Json
+          p_template_key: string
+          p_validation_report: Json
+        }
+        Returns: Json
+      }
       save_mortgage_product_draft_v2: {
         Args: {
           p_actor_user_id: string
@@ -5140,7 +5359,15 @@ export type Database = {
         Args: { p_filters?: Json; p_organization_id: string }
         Returns: Json
       }
+      search_crm_cases_with_context: {
+        Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
       search_crm_clients: {
+        Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
+      search_crm_clients_ranked: {
         Args: { p_filters?: Json; p_organization_id: string }
         Returns: Json
       }

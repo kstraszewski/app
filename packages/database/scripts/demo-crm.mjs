@@ -1881,6 +1881,32 @@ export async function seedDemoCrm({
     throw new Error('seedDemoCrm requires a profile with id and organization_id')
   }
   const referenceNow = asDate(seedNow)
+  assertResult(
+    await adminClient
+      .from('expert_brand_profiles')
+      .upsert({
+        organization_id: organizationId,
+        user_id: ownerUserId,
+        brand_name: 'Dobry Plan Finansowy',
+        expert_name: String(profile.full_name ?? 'Anna Nowak'),
+        professional_title: 'Ekspertka kredytowa',
+        tagline: 'Spokojnie przeprowadzę Cię przez finansowanie domu.',
+        contact_email: String(profile.email ?? 'kontakt@dobryplan.example.local'),
+        contact_phone: '+48 501 234 567',
+        website_url: 'https://dobryplan.example.local',
+        location: 'Szczecin i online',
+        bio: 'Pomagam porównać realne scenariusze finansowania, uporządkować dokumenty i bezpiecznie przejść przez cały proces kredytowy.',
+        specializations: [
+          'Kredyty hipoteczne',
+          'Pierwsze mieszkanie',
+          'Refinansowanie',
+        ],
+        visual_style: 'editorial',
+      }, { onConflict: 'organization_id,user_id' })
+      .select('organization_id, user_id')
+      .single(),
+    'Seeding the expert Brand Core profile',
+  )
   const consentCatalogue = await loadActiveConsentCatalogue(adminClient, organizationId)
   const clientResult = await ensureClientRecords({
     adminClient,

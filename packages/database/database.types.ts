@@ -3141,6 +3141,88 @@ export type Database = {
           },
         ]
       }
+      expert_brand_profiles: {
+        Row: {
+          bio: string
+          brand_name: string
+          contact_email: string
+          contact_phone: string
+          created_at: string
+          expert_name: string
+          location: string
+          logo_path: string | null
+          organization_id: string
+          portrait_path: string | null
+          professional_title: string
+          specializations: string[]
+          tagline: string
+          updated_at: string
+          user_id: string
+          visual_style: string
+          website_url: string
+        }
+        Insert: {
+          bio?: string
+          brand_name?: string
+          contact_email?: string
+          contact_phone?: string
+          created_at?: string
+          expert_name?: string
+          location?: string
+          logo_path?: string | null
+          organization_id: string
+          portrait_path?: string | null
+          professional_title?: string
+          specializations?: string[]
+          tagline?: string
+          updated_at?: string
+          user_id: string
+          visual_style?: string
+          website_url?: string
+        }
+        Update: {
+          bio?: string
+          brand_name?: string
+          contact_email?: string
+          contact_phone?: string
+          created_at?: string
+          expert_name?: string
+          location?: string
+          logo_path?: string | null
+          organization_id?: string
+          portrait_path?: string | null
+          professional_title?: string
+          specializations?: string[]
+          tagline?: string
+          updated_at?: string
+          user_id?: string
+          visual_style?: string
+          website_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_brand_profiles_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "expert_brand_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expert_brand_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expert_time_off: {
         Row: {
           all_day: boolean

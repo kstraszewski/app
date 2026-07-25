@@ -276,6 +276,12 @@ const navGroups = computed<NavigationGroup[]>(() => {
       { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
       { label: 'Spotkania', to: `${organizationBase.value}/meetings`, icon: 'i-lucide-video' },
       { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
+      {
+        label: 'Marka osobista',
+        to: `${organizationBase.value}/brand`,
+        icon: 'i-lucide-fingerprint',
+        activePaths: [`${organizationBase.value}/brand`],
+      },
       { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
     ],
   }]

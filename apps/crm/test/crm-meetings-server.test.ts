@@ -4,11 +4,36 @@ import {
   bookingContextWithCrmMeeting,
   createCrmMeetingContext,
   normalizeClientMeetingOffer,
+  parseExpertMeetingPreviewOrganizationSlug,
   parseCrmMeetingContext,
 } from '../server/utils/crm-meetings.ts'
 
 const caseId = '11111111-1111-4111-8111-111111111111'
 const offerId = '22222222-2222-4222-8222-222222222222'
+
+test('accepts expert preview only with a valid organization slug', () => {
+  assert.equal(
+    parseExpertMeetingPreviewOrganizationSlug({
+      preview: 'expert',
+      organizationSlug: 'openexpert-local',
+    }),
+    'openexpert-local',
+  )
+  assert.equal(
+    parseExpertMeetingPreviewOrganizationSlug({
+      preview: 'client',
+      organizationSlug: 'openexpert-local',
+    }),
+    null,
+  )
+  assert.throws(
+    () => parseExpertMeetingPreviewOrganizationSlug({
+      preview: 'expert',
+      organizationSlug: '../other',
+    }),
+    (error: any) => error?.statusCode === 400,
+  )
+})
 
 test('creates and parses the versioned meeting context without losing other booking data', () => {
   const context = createCrmMeetingContext(caseId, 'first')

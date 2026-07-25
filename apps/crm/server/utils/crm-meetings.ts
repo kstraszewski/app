@@ -133,6 +133,29 @@ export function isCrmMeetingUuid(value: unknown): value is string {
   return typeof value === 'string' && uuidPattern.test(value)
 }
 
+export function parseExpertMeetingPreviewOrganizationSlug(
+  query: Record<string, unknown>,
+): string | null {
+  const preview = Array.isArray(query.preview) ? query.preview[0] : query.preview
+  if (preview !== 'expert') return null
+
+  const rawOrganizationSlug = Array.isArray(query.organizationSlug)
+    ? query.organizationSlug[0]
+    : query.organizationSlug
+  const organizationSlug = typeof rawOrganizationSlug === 'string'
+    ? rawOrganizationSlug.trim()
+    : ''
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(organizationSlug)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Valid organizationSlug is required for expert preview',
+    })
+  }
+
+  return organizationSlug
+}
+
 export function emptyCrmMeetingSharedState(): CrmMeetingSharedState {
   return {
     kind: 'none',

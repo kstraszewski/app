@@ -40,6 +40,13 @@ const {
 )
 
 const meeting = computed(() => meetingPayload.value?.data ?? null)
+const clientPreviewRoute = computed(() => ({
+  path: `/client/meetings/${appointmentId.value}`,
+  query: {
+    preview: 'expert',
+    organizationSlug: organizationSlug.value,
+  },
+}))
 
 const {
   data: casePayload,
@@ -344,6 +351,16 @@ async function minimizeToCase() {
           </UBadge>
         </div>
         <div class="room-header__actions">
+          <UButton
+            :to="clientPreviewRoute"
+            target="_blank"
+            rel="noopener noreferrer"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-external-link"
+            label="Otwórz widok klienta"
+            data-testid="meeting-client-preview"
+          />
           <UButton
             v-if="meeting.status === 'live'"
             color="neutral"

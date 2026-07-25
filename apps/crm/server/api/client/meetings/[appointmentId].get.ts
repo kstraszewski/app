@@ -1,9 +1,10 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { setHeader } from 'h3'
+import { getQuery, setHeader } from 'h3'
 import { appointmentMatchesVerifiedContact } from '~~/server/utils/client-identity'
 import {
   getRequiredParam,
   requireAuthIdentity,
+  requireCrmSession,
   throwDbError,
 } from '~~/server/utils/crm'
 import {
@@ -11,24 +12,38 @@ import {
   crmMeetingOfferSelect,
   isCrmMeetingUuid,
   normalizeClientMeetingOffer,
+  parseExpertMeetingPreviewOrganizationSlug,
   parseCrmMeetingContext,
 } from '~~/server/utils/crm-meetings'
+import { requireFacilityPermission } from '~~/server/utils/scheduling'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
-  const identity = await requireAuthIdentity(event)
+  const previewOrganizationSlug = parseExpertMeetingPreviewOrganizationSlug(
+    getQuery(event) as Record<string, unknown>,
+  )
+  const previewSession = previewOrganizationSlug
+    ? await requireCrmSession(event, previewOrganizationSlug)
+    : null
+  const identity = previewSession ? null : await requireAuthIdentity(event)
   const appointmentId = getRequiredParam(event, 'appointmentId')
   if (!isCrmMeetingUuid(appointmentId)) {
     throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
   }
 
   const serviceRole = serverSupabaseServiceRole(event) as any
-  const appointmentResult = await serviceRole
+  let appointmentQuery = serviceRole
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('id', appointmentId)
     .contains('booking_context', { crmMeeting: { version: 1 } })
-    .maybeSingle()
+  if (previewSession) {
+    appointmentQuery = appointmentQuery.eq(
+      'organization_id',
+      previewSession.organizationId,
+    )
+  }
+  const appointmentResult = await appointmentQuery.maybeSingle()
   throwDbError(appointmentResult.error)
   const appointment = appointmentResult.data
   const context = parseCrmMeetingContext(appointment?.booking_context)
@@ -41,26 +56,34 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
   }
 
-  const linkResult = await serviceRole
-    .from('client_account_links')
-    .select('verification_method, verified_contact_normalized')
-    .eq('auth_user_id', identity.userId)
-    .eq('organization_id', appointment.organization_id)
-    .eq('client_id', appointment.client_id)
-    .eq('client_person_id', appointment.client_person_id)
-    .is('revoked_at', null)
-    .maybeSingle()
-  throwDbError(linkResult.error)
-  const link = linkResult.data
-  if (
-    !link
-    || link.verification_method !== 'email'
-    || !appointmentMatchesVerifiedContact(
-      link.verified_contact_normalized,
-      appointment.customer_email,
+  if (previewSession) {
+    await requireFacilityPermission(
+      previewSession,
+      String(appointment.facility_id),
+      'view',
     )
-  ) {
-    throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
+  } else {
+    const linkResult = await serviceRole
+      .from('client_account_links')
+      .select('verification_method, verified_contact_normalized')
+      .eq('auth_user_id', identity!.userId)
+      .eq('organization_id', appointment.organization_id)
+      .eq('client_id', appointment.client_id)
+      .eq('client_person_id', appointment.client_person_id)
+      .is('revoked_at', null)
+      .maybeSingle()
+    throwDbError(linkResult.error)
+    const link = linkResult.data
+    if (
+      !link
+      || link.verification_method !== 'email'
+      || !appointmentMatchesVerifiedContact(
+        link.verified_contact_normalized,
+        appointment.customer_email,
+      )
+    ) {
+      throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
+    }
   }
 
   const [organizationResult, serviceResult, expertResult, offersResult] = await Promise.all([

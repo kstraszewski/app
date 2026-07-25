@@ -89,6 +89,7 @@ const saving = ref(false)
 const setupError = ref('')
 const slotsError = ref('')
 const submitError = ref('')
+const idempotencyIntent = ref('')
 let contextRequestId = 0
 let slotsRequestId = 0
 
@@ -169,6 +170,7 @@ function resetScheduler(timing: MeetingTiming) {
   setupError.value = ''
   slotsError.value = ''
   submitError.value = ''
+  idempotencyIntent.value = ''
   Object.assign(form, {
     facilityId: '',
     serviceId: '',
@@ -307,31 +309,55 @@ function relationLabel(meeting: CrmMeetingRecord) {
 
 async function submitMeeting() {
   if (!canSubmit.value || saving.value) return
+  const requestBody = {
+    timing: scheduleTiming.value,
+    case: caseMode.value === 'create'
+      ? {
+          mode: 'create' as const,
+          clientId: selectedClient.value!.id,
+          title: form.caseTitle.trim() || `Sprawa — ${selectedClient.value!.display_name}`,
+        }
+      : {
+          mode: 'link' as const,
+          id: selectedCaseId.value,
+        },
+    facilityId: form.facilityId,
+    serviceId: form.serviceId,
+    expertUserId: form.expertUserId,
+    startsAt: scheduleTiming.value === 'scheduled' ? selectedSlot.value?.startsAt : undefined,
+    notes: form.notes.trim() || null,
+  }
+  const intent = JSON.stringify(requestBody)
+  if (idempotencyIntent.value !== intent) {
+    idempotencyIntent.value = intent
+    form.idempotencyKey = crypto.randomUUID()
+  }
+
   saving.value = true
   submitError.value = ''
   try {
-    const result = await $fetch<{ data: CrmMeetingRecord }>(crmApiPath('/meetings'), {
-      method: 'POST',
-      body: {
-        timing: scheduleTiming.value,
-        case: caseMode.value === 'create'
-          ? {
-              mode: 'create',
-              clientId: selectedClient.value!.id,
-              title: form.caseTitle.trim() || `Sprawa — ${selectedClient.value!.display_name}`,
-            }
-          : {
-              mode: 'link',
-              id: selectedCaseId.value,
-            },
-        facilityId: form.facilityId,
-        serviceId: form.serviceId,
-        expertUserId: form.expertUserId,
-        startsAt: scheduleTiming.value === 'scheduled' ? selectedSlot.value?.startsAt : undefined,
-        notes: form.notes.trim() || null,
-        idempotencyKey: form.idempotencyKey,
+    const createMeeting = () => $fetch<{ data: CrmMeetingRecord }>(
+      crmApiPath('/meetings'),
+      {
+        method: 'POST',
+        body: {
+          ...requestBody,
+          idempotencyKey: form.idempotencyKey,
+        },
       },
-    })
+    )
+
+    let result: { data: CrmMeetingRecord }
+    try {
+      result = await createMeeting()
+    } catch (caught: unknown) {
+      if (!/this meeting request key was already used/i.test(apiErrorMessage(caught))) {
+        throw caught
+      }
+      form.idempotencyKey = crypto.randomUUID()
+      result = await createMeeting()
+    }
+
     scheduleOpen.value = false
     await refresh()
     toast.add({

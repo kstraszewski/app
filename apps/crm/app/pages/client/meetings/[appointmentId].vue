@@ -15,10 +15,25 @@ definePageMeta({
 const route = useRoute()
 const authenticatedUser = useSupabaseUser()
 const appointmentId = computed(() => String(route.params.appointmentId))
+const previewOrganizationSlug = computed(() => {
+  const rawSlug = route.query.organizationSlug
+  const organizationSlug = Array.isArray(rawSlug)
+    ? String(rawSlug[0] ?? '')
+    : String(rawSlug ?? '')
+  return route.query.preview === 'expert' ? organizationSlug.trim() : ''
+})
+const isExpertPreview = computed(() => Boolean(previewOrganizationSlug.value))
 const accountCacheScope = String(authenticatedUser.value?.sub ?? 'anonymous')
-const meetingUrl = computed(
-  () => `/api/client/meetings/${encodeURIComponent(appointmentId.value)}`,
-)
+const meetingUrl = computed(() => {
+  const baseUrl = `/api/client/meetings/${encodeURIComponent(appointmentId.value)}`
+  if (!isExpertPreview.value) return baseUrl
+
+  const query = new URLSearchParams({
+    preview: 'expert',
+    organizationSlug: previewOrganizationSlug.value,
+  })
+  return `${baseUrl}?${query.toString()}`
+})
 
 const {
   data: meetingPayload,
@@ -26,7 +41,7 @@ const {
   error,
   refresh,
 } = await useFetch<ClientMeetingResponse>(meetingUrl, {
-  key: `client-meeting:${accountCacheScope}:${appointmentId.value}`,
+  key: `client-meeting:${accountCacheScope}:${appointmentId.value}:${previewOrganizationSlug.value || 'client'}`,
 })
 
 const meeting = computed(() => meetingPayload.value?.data ?? null)
@@ -154,12 +169,33 @@ function aprLabel(offer: ClientMeetingSharedOffer) {
 
 <template>
   <ClientPortalShell
-    eyebrow="Bezpieczne spotkanie"
+    :eyebrow="isExpertPreview ? 'Podgląd eksperta' : 'Bezpieczne spotkanie'"
     :title="meeting?.service?.name ?? 'Spotkanie z ekspertem'"
     :description="meeting
       ? `${meetingDateLabel(meeting)} · ${meeting.organization?.name ?? 'OpenExpert'}`
       : 'Ładowanie szczegółów spotkania.'"
   >
+    <UAlert
+      v-if="isExpertPreview"
+      class="meeting-preview-alert"
+      color="info"
+      variant="subtle"
+      icon="i-lucide-eye"
+      title="Podgląd widoku klienta"
+      description="Oglądasz dokładnie te materiały, które są obecnie dostępne dla klienta. Ten podgląd nie wymaga konta klienta i pozostaje tylko do odczytu."
+    >
+      <template #actions>
+        <UButton
+          :to="`/org/${previewOrganizationSlug}/meetings/${appointmentId}`"
+          color="info"
+          variant="soft"
+          icon="i-lucide-arrow-left"
+        >
+          Wróć do spotkania eksperta
+        </UButton>
+      </template>
+    </UAlert>
+
     <UAlert
       v-if="error"
       role="alert"
@@ -394,6 +430,10 @@ function aprLabel(offer: ClientMeetingSharedOffer) {
 </template>
 
 <style scoped>
+.meeting-preview-alert {
+  margin-bottom: 18px;
+}
+
 .meeting-loading {
   display: grid;
   gap: 18px;

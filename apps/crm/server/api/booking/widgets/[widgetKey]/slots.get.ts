@@ -1,11 +1,19 @@
 import { getQuery, setHeader } from 'h3'
 import { asRecord } from '~~/server/utils/crm'
 import {
+  addDaysToIsoDate,
+  BOOKING_WEEK_DAYS,
+  bookingDateRange,
+  isoDateForTimestamp,
+  NEXT_AVAILABLE_SLOT_SEARCH_DAYS,
+} from '~/utils/booking-slots'
+import {
   assertPublicBookingRateLimit,
   assertWidgetRequestOrigin,
   catalogAllowedOrigins,
   dateValue,
   getPublicSchedulingClient,
+  integerValue,
   optionalUuidValue,
   publicWidgetKey,
   recordBookingWidgetEvent,
@@ -22,6 +30,11 @@ export default defineEventHandler(async (event) => {
   const serviceId = uuidValue(query.serviceId ?? query.service_id, 'serviceId')
   const visitId = optionalUuidValue(query.visitId ?? query.visit_id, 'visitId')
   const requestedExpertUserId = optionalUuidValue(query.expertId ?? query.expertUserId ?? query.expert_user_id, 'expertId')
+  const findNextAvailable = query.nextAvailable === '1'
+  const days = query.days === undefined
+    ? 1
+    : integerValue(query.days, 'days', 1, BOOKING_WEEK_DAYS)
+  const requestedRange = bookingDateRange(date, days)
   const supabase = await getPublicSchedulingClient(event)
 
   const catalogResult = await supabase.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
@@ -44,7 +57,12 @@ export default defineEventHandler(async (event) => {
     ?? (catalog.widget.bookingMode === 'facility' ? null : requestedExpertUserId)
   if (!catalog.widget.fixedExpertUserId && catalog.widget.bookingMode === 'expert' && !expertUserId) {
     setHeader(event, 'Cache-Control', 'no-store')
-    return { date, timezone: catalog.facility.timezone, slots: [] }
+    return {
+      date: requestedRange.date,
+      endDate: requestedRange.endDate,
+      timezone: catalog.facility.timezone,
+      slots: [],
+    }
   }
   if (expertUserId) {
     const expert = catalog.experts.find(item => item.userId === expertUserId)
@@ -63,38 +81,60 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await supabase.rpc('get_booking_widget_slots', {
-    p_widget_token: widgetKey,
-    p_service_id: serviceId,
-    p_starts_on: date,
-    p_ends_on: date,
-    p_expert_user_id: expertUserId,
-  })
-  throwBookingError(error)
   const expertNames = new Map(catalog.experts.map(expert => [expert.userId, expert.name]))
-  const expertSlots = (Array.isArray(data) ? data : []).flatMap((input) => {
-    const row = asRecord(input)
-    const startsAt = row.starts_at ?? row.startsAt
-    const endsAt = row.ends_at ?? row.endsAt
-    const userId = row.expert_user_id ?? row.expertUserId
-    if (!startsAt || !endsAt || !userId) return []
-    return [{
-      startsAt: String(startsAt),
-      endsAt: String(endsAt),
-      expertUserId: String(userId),
-      expertName: String(row.expert_name ?? row.expertName ?? expertNames.get(String(userId)) ?? ''),
-    }]
+  async function loadExpertSlots(startsOn: string, endsOn: string) {
+    const { data, error } = await supabase.rpc('get_booking_widget_slots', {
+      p_widget_token: widgetKey,
+      p_service_id: serviceId,
+      p_starts_on: startsOn,
+      p_ends_on: endsOn,
+      p_expert_user_id: expertUserId,
+    })
+    throwBookingError(error)
+    return (Array.isArray(data) ? data : []).flatMap((input) => {
+      const row = asRecord(input)
+      const startsAt = row.starts_at ?? row.startsAt
+      const endsAt = row.ends_at ?? row.endsAt
+      const userId = row.expert_user_id ?? row.expertUserId
+      if (!startsAt || !endsAt || !userId) return []
+      return [{
+        startsAt: String(startsAt),
+        endsAt: String(endsAt),
+        expertUserId: String(userId),
+        expertName: String(row.expert_name ?? row.expertName ?? expertNames.get(String(userId)) ?? ''),
+      }]
+    })
+  }
+
+  const initialEndDate = findNextAvailable
+    ? addDaysToIsoDate(date, NEXT_AVAILABLE_SLOT_SEARCH_DAYS)
+    : requestedRange.endDate
+  let expertSlots = await loadExpertSlots(date, initialEndDate)
+  const resolvedDate = findNextAvailable && expertSlots[0]
+    ? isoDateForTimestamp(expertSlots[0].startsAt, catalog.facility.timezone)
+    : date
+  const resolvedRange = bookingDateRange(resolvedDate, days)
+  if (
+    findNextAvailable
+    && expertSlots.length > 0
+    && resolvedRange.endDate > initialEndDate
+  ) {
+    expertSlots = await loadExpertSlots(resolvedRange.date, resolvedRange.endDate)
+  }
+  const rangedExpertSlots = expertSlots.filter((slot) => {
+    const slotDate = isoDateForTimestamp(slot.startsAt, catalog.facility.timezone)
+    return slotDate >= resolvedRange.date && slotDate <= resolvedRange.endDate
   })
   const aggregateExperts = !catalog.widget.fixedExpertUserId && (
     catalog.widget.bookingMode === 'facility'
     || (catalog.widget.bookingMode === 'both' && !requestedExpertUserId)
   )
   const slots = aggregateExperts
-    ? [...new Map(expertSlots.map(slot => [
+    ? [...new Map(rangedExpertSlots.map(slot => [
         `${slot.startsAt}/${slot.endsAt}`,
         { ...slot, expertUserId: '', expertName: 'Dowolny dostępny ekspert' },
       ])).values()]
-    : expertSlots
+    : rangedExpertSlots
   if (!isAuthorizedPreview && visitId && slots.length > 0) {
     await recordBookingWidgetEvent(event, {
       widgetKey,
@@ -105,5 +145,10 @@ export default defineEventHandler(async (event) => {
     })
   }
   setHeader(event, 'Cache-Control', 'no-store')
-  return { date, timezone: catalog.facility.timezone, slots }
+  return {
+    date: resolvedRange.date,
+    endDate: resolvedRange.endDate,
+    timezone: catalog.facility.timezone,
+    slots,
+  }
 })

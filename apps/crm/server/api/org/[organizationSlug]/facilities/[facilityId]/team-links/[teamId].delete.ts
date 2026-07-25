@@ -1,16 +1,25 @@
-import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
-import { requireFacilityPermission, uuidValue } from '~~/server/utils/scheduling'
+import {
+  requireCrmSession,
+  requireFacilityAdminMembership,
+  requireTeamAdmin,
+  throwDbError,
+} from '~~/server/utils/crm'
+import { uuidValue } from '~~/server/utils/scheduling'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'manage')
+  const facilityId = uuidValue(getRouterParam(event, 'facilityId'), 'facilityId')
   const teamId = uuidValue(getRouterParam(event, 'teamId'), 'teamId')
+  await Promise.all([
+    requireTeamAdmin(session, teamId),
+    requireFacilityAdminMembership(session, facilityId),
+  ])
 
   const { data, error } = await session.supabase
     .from('team_facilities')
     .delete()
     .eq('organization_id', session.organizationId)
-    .eq('facility_id', access.facility.id)
+    .eq('facility_id', facilityId)
     .eq('team_id', teamId)
     .select('team_id')
     .maybeSingle()

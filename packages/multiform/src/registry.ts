@@ -74,10 +74,14 @@ function warningForCoverage(template: DocumentTemplate): BundleWarning | undefin
   }
 }
 
-export function prepareBundle(templateIds: readonly string[]): PreparedBundle {
+export function prepareBundle(
+  templateIds: readonly string[],
+  templateOverrides: readonly DocumentTemplate[] = [],
+): PreparedBundle {
   const uniqueIds = [...new Set(templateIds)]
+  const overrideById = new Map(templateOverrides.map(template => [template.id, template]))
   const documents = uniqueIds.map((id) => {
-    const template = getTemplate(id)
+    const template = overrideById.get(id) ?? getTemplate(id)
     if (!template) throw new Error(`Unknown multiform template: ${id}`)
     return template
   })

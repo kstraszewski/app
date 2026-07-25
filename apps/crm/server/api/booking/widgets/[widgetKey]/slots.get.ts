@@ -20,6 +20,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const date = dateValue(query.date)
   const serviceId = uuidValue(query.serviceId ?? query.service_id, 'serviceId')
+  const visitId = optionalUuidValue(query.visitId ?? query.visit_id, 'visitId')
   const requestedExpertUserId = optionalUuidValue(query.expertId ?? query.expertUserId ?? query.expert_user_id, 'expertId')
   const supabase = await getPublicSchedulingClient(event)
 
@@ -52,9 +53,10 @@ export default defineEventHandler(async (event) => {
     }
   }
   const isAuthorizedPreview = verifyBookingWidgetPreviewToken(event, widgetKey, query.previewToken)
-  if (!isAuthorizedPreview) {
+  if (!isAuthorizedPreview && visitId) {
     await recordBookingWidgetEvent(event, {
       widgetKey,
+      visitId,
       eventType: 'availability_search',
       serviceId,
       isEmbedded: query.embed === '1',
@@ -93,6 +95,15 @@ export default defineEventHandler(async (event) => {
         { ...slot, expertUserId: '', expertName: 'Dowolny dostępny ekspert' },
       ])).values()]
     : expertSlots
+  if (!isAuthorizedPreview && visitId && slots.length > 0) {
+    await recordBookingWidgetEvent(event, {
+      widgetKey,
+      visitId,
+      eventType: 'availability_found',
+      serviceId,
+      isEmbedded: query.embed === '1',
+    })
+  }
   setHeader(event, 'Cache-Control', 'no-store')
   return { date, timezone: catalog.facility.timezone, slots }
 })

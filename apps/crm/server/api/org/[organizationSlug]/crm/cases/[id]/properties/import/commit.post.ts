@@ -9,7 +9,7 @@ import {
   propertyPublicSelect,
   selectCasePropertyIfNone,
 } from '~~/server/utils/case-properties'
-import { caseUuidPattern } from '~~/server/utils/cases'
+import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
   getRequiredParam,
   recordCrmActivity,

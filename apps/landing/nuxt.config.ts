@@ -1,13 +1,17 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { fileURLToPath } from 'node:url'
 
-const databaseTypes = fileURLToPath(
-  new URL('../../packages/database/database.types.ts', import.meta.url),
-)
-
+const isProduction = process.env.NODE_ENV === 'production'
+const isPreviewDeployment = process.env.VERCEL_ENV === 'preview'
+  || process.env.VERCEL_ENV === 'development'
+const supabaseUrl = process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321'
+const supabaseKey = process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder'
 const hasSupabaseConfig = Boolean(
   process.env.NUXT_PUBLIC_SUPABASE_URL && process.env.NUXT_PUBLIC_SUPABASE_KEY,
 )
+const supabaseCookiePrefix = isProduction
+  ? `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`
+  : 'openexpert-local-auth'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -31,7 +35,7 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['eve/nuxt', '@nuxtjs/supabase', '@nuxt/icon'],
+  modules: ['eve/nuxt', '@nuxt/icon'],
   eve: {
     eveRoot: '../../multiform-agent',
   },
@@ -44,9 +48,11 @@ export default defineNuxtConfig({
         'lucide:arrow-right',
         'lucide:bot',
         'lucide:briefcase-business',
+        'lucide:building-2',
         'lucide:calendar-days',
         'lucide:check',
         'lucide:circle-check',
+        'lucide:clock-3',
         'lucide:eye',
         'lucide:file-check-2',
         'lucide:file-text',
@@ -55,12 +61,15 @@ export default defineNuxtConfig({
         'lucide:house',
         'lucide:landmark',
         'lucide:mail',
+        'lucide:map-pin',
         'lucide:menu',
         'lucide:message-square',
         'lucide:palette',
+        'lucide:phone',
         'lucide:rotate-ccw',
         'lucide:save',
         'lucide:scan-line',
+        'lucide:search',
         'lucide:settings',
         'lucide:shield-check',
         'lucide:sliders-horizontal',
@@ -75,6 +84,9 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    prerender: {
+      autoSubfolderIndex: false,
+    },
     externals: {
       traceInclude: [
         fileURLToPath(new URL('./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url)),
@@ -99,6 +111,12 @@ export default defineNuxtConfig({
     ],
   },
   runtimeConfig: {
+    supabase: {
+      secretKey: process.env.NUXT_SUPABASE_SECRET_KEY
+        || process.env.SUPABASE_SECRET_KEY
+        || process.env.SUPABASE_SERVICE_ROLE_KEY
+        || '',
+    },
     resend: {
       apiKey: '',
       from: '',
@@ -107,35 +125,102 @@ export default defineNuxtConfig({
     public: {
       openexpert: {
         hasSupabaseConfig,
-        crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL || 'http://127.0.0.1:3004',
+        crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL
+          || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004'),
+        siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://www.openexpert.app',
       },
       supabase: {
-        url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
-        key: process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder',
+        url: supabaseUrl,
+        key: supabaseKey,
+        cookiePrefix: supabaseCookiePrefix,
+        cookieOptions: {
+          sameSite: 'lax',
+          secure: isProduction,
+        },
       },
     },
   },
-  supabase: {
-    types: databaseTypes,
-    cookiePrefix: process.env.NODE_ENV === 'production' ? undefined : 'openexpert-local-auth',
-    cookieOptions: {
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+  routeRules: {
+    ...(isPreviewDeployment
+      ? {
+          '/**': {
+            headers: { 'x-robots-tag': 'noindex, nofollow' },
+          },
+        }
+      : {}),
+    '/': {
+      prerender: true,
     },
-    redirectOptions: {
-      login: '/login',
-      callback: '/confirm',
-      exclude: ['/', '/personalizacja', '/waitlist', '/multiform-eve', '/multiform-eve/admin', '/api/mcp'],
+    '/eksperci': {
+      headers: { 'cache-control': 'no-store' },
+    },
+    '/placowki': {
+      headers: { 'cache-control': 'no-store' },
+    },
+    '/placówki': {
+      redirect: {
+        to: '/placowki',
+        statusCode: 301,
+      },
+    },
+    '/personalizacja': {
+      prerender: true,
+    },
+    '/o-nas': {
+      prerender: true,
+    },
+    '/waitlist': {
+      headers: { 'x-robots-tag': 'noindex, follow' },
+    },
+    '/multiform-eve': {
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
+    '/multiform-eve/admin': {
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
+    '/api/**': {
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
+    '/eve/**': {
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
+    '/_eve_internal/**': {
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
+    '/fonts/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' },
+    },
+    '/assets/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' },
+    },
+    '/rive/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' },
+    },
+    '/openexpert-og.png': {
+      headers: { 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400' },
+    },
+    '/eksperci-og.png': {
+      headers: { 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400' },
+    },
+    '/placowki-og.png': {
+      headers: { 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400' },
+    },
+    '/o-nas-og.png': {
+      headers: { 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400' },
     },
   },
   css: ['~/assets/css/design.css'],
   app: {
     head: {
       htmlAttrs: { lang: 'pl' },
-      title: 'OpenExpert — Modułowa platforma dla ekspertów',
+      title: 'OpenExpert — system pracy i rezerwacji dla ekspertów',
       meta: [
-        { name: 'description', content: 'Modułowa platforma open source dla ekspertów. Dobieraj moduły, łącz je dowolnie i buduj własne. Obsługuje człowieka i agenta AI — przez UI, REST API i protokół MCP.' },
+        {
+          name: 'description',
+          content: 'Znajdź eksperta, umów konsultację lub prowadź klientów w jednym systemie wspieranym przez agentów AI.',
+        },
         { name: 'apple-mobile-web-app-title', content: 'OpenExpert' },
+        { name: 'theme-color', content: '#030303' },
       ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon-96x96.png', sizes: '96x96' },

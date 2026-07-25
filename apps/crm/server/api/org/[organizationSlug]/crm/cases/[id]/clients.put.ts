@@ -1,5 +1,5 @@
 import { readBody } from 'h3'
-import { caseUuidPattern } from '~~/server/utils/cases'
+import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
   asRecord,
   getRequiredParam,

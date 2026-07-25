@@ -19,7 +19,10 @@ import type {
 definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Klienci — OpenExpert CRM' })
 
+const route = useRoute()
+const router = useRouter()
 const { organizationSlug, crmApiPath, orgApiPath, orgPath } = useOrganizationContext()
+const requestFetch = useRequestFetch()
 const toast = useToast()
 
 type ConsentChoice = 'granted' | 'declined'
@@ -60,8 +63,12 @@ const createEmptyList = (): ClientListResponse => ({
   count: 0,
 })
 
-const searchInput = ref('')
-const search = ref('')
+function queryText(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+const searchInput = ref(queryText(route.query.q))
+const search = ref(searchInput.value.trim())
 const ownerFilter = ref('all')
 const tagFilter = ref('all')
 const contactFilter = ref('all')
@@ -72,8 +79,10 @@ const createdTo = ref('')
 const updatedFrom = ref('')
 const updatedTo = ref('')
 const advancedFiltersOpen = ref(false)
-const sortValue = ref('updated_at:desc')
-const page = ref(1)
+const sortValue = ref(
+  queryText(route.query.sort) || (search.value ? 'relevance' : 'updated_at:desc'),
+)
+const page = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = ref(25)
 const createOpen = ref(false)
 const saving = ref(false)
@@ -99,6 +108,11 @@ watch(searchInput, (value) => {
   }, 300)
 })
 
+watch(search, (value, previous) => {
+  if (value && !previous) sortValue.value = 'relevance'
+  if (!value && sortValue.value === 'relevance') sortValue.value = 'updated_at:desc'
+})
+
 onBeforeUnmount(() => {
   if (searchDebounce) clearTimeout(searchDebounce)
 })
@@ -110,7 +124,7 @@ const {
   refresh: refreshFilters,
 } = await useAsyncData<ClientFiltersResponse>(
   `crm-clients-filters:${organizationSlug.value}`,
-  () => $fetch<ClientFiltersResponse>(crmApiPath('/clients/filters')),
+  () => requestFetch<ClientFiltersResponse>(crmApiPath('/clients/filters')),
   {
     default: createEmptyFilters,
     watch: [organizationSlug],
@@ -124,7 +138,7 @@ const {
   refresh: refreshMembers,
 } = await useAsyncData<ClientMembersResponse>(
   `crm-clients-members:${organizationSlug.value}`,
-  () => $fetch<ClientMembersResponse>(orgApiPath('/members')),
+  () => requestFetch<ClientMembersResponse>(orgApiPath('/members')),
   {
     default: createEmptyMembers,
     watch: [organizationSlug],
@@ -132,6 +146,12 @@ const {
 )
 
 const sortParts = computed(() => {
+  if (sortValue.value === 'relevance') {
+    return {
+      field: 'relevance' as const,
+      direction: undefined,
+    }
+  }
   const [field = 'updated_at', direction = 'desc'] = sortValue.value.split(':')
   return {
     field: field as ClientSortField,
@@ -195,7 +215,7 @@ const {
   refresh: refreshClients,
 } = await useAsyncData<ClientListResponse>(
   `crm-clients-list:${organizationSlug.value}`,
-  () => $fetch<ClientListResponse>(crmApiPath('/clients'), { query: clientsQuery.value }),
+  () => requestFetch<ClientListResponse>(crmApiPath('/clients'), { query: clientsQuery.value }),
   {
     default: createEmptyList,
     watch: [organizationSlug, clientsQuery],
@@ -217,6 +237,22 @@ watch([
   pageSize,
 ], () => {
   page.value = 1
+})
+
+watch([search, sortValue, page], () => {
+  const query = { ...route.query }
+  const defaultSort = search.value ? 'relevance' : 'updated_at:desc'
+
+  if (search.value) query.q = search.value
+  else delete query.q
+
+  if (sortValue.value !== defaultSort) query.sort = sortValue.value
+  else delete query.sort
+
+  if (page.value > 1) query.page = String(page.value)
+  else delete query.page
+
+  void router.replace({ query })
 })
 
 watch(consentFilter, (value) => {
@@ -309,14 +345,15 @@ const ownerFilterItems = computed(() => {
   return ownerOptions
 })
 
-const sortItems = [
+const sortItems = computed(() => [
+  ...(search.value ? [{ label: 'Najlepsze dopasowanie', value: 'relevance' }] : []),
   { label: 'Ostatnio aktualizowani', value: 'updated_at:desc' },
   { label: 'Najdawniej aktualizowani', value: 'updated_at:asc' },
   { label: 'Najnowsi klienci', value: 'created_at:desc' },
   { label: 'Najstarsi klienci', value: 'created_at:asc' },
   { label: 'Nazwa A–Z', value: 'display_name:asc' },
   { label: 'Nazwa Z–A', value: 'display_name:desc' },
-]
+])
 
 const pageSizeItems = [
   { label: '10 na stronę', value: 10 },
@@ -722,7 +759,7 @@ const columns: TableColumn<ClientListItem>[] = [
           v-model="searchInput"
           class="client-search"
           icon="i-lucide-search"
-          placeholder="Nazwa, e-mail lub telefon"
+          placeholder="Nazwa, osoba, telefon, PESEL lub NIP"
           :maxlength="200"
           aria-label="Szukaj klienta"
         >
@@ -902,6 +939,12 @@ const columns: TableColumn<ClientListItem>[] = [
                     {{ row.original.display_name }}
                   </NuxtLink>
                   <small>Dodano {{ formatDate(row.original.created_at) }}</small>
+                  <small
+                    v-if="search && row.original.matchedPerson
+                      && row.original.matchedPerson.display_name !== row.original.display_name"
+                  >
+                    Trafienie: {{ row.original.matchedPerson.display_name }}
+                  </small>
                   <UBadge
                     v-if="row.original.tags?.includes('possible-duplicate')"
                     color="warning"
@@ -964,6 +1007,12 @@ const columns: TableColumn<ClientListItem>[] = [
                 <div>
                   <strong>{{ client.display_name }}</strong>
                   <small>{{ client.primary_email || client.primary_phone || 'Brak kontaktu' }}</small>
+                  <small
+                    v-if="search && client.matchedPerson
+                      && client.matchedPerson.display_name !== client.display_name"
+                  >
+                    Trafienie: {{ client.matchedPerson.display_name }}
+                  </small>
                   <UBadge
                     v-if="client.tags?.includes('possible-duplicate')"
                     color="warning"

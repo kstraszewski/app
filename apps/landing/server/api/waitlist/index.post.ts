@@ -1,5 +1,5 @@
 import { createEmailService, type EmailDeliveryResult } from '@openexpert/email'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole } from '../../utils/supabase'
 import { createError, getRequestURL, readBody } from 'h3'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

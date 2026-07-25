@@ -5,6 +5,7 @@ import {
   loadCrmMultiformContext,
   parseCrmMultiformSelection,
 } from '../../../utils/multiform-crm'
+import { resolvePinnedMultiformTemplates } from '../../../utils/multiform-template-repository'
 
 function sameStringSet(left: readonly string[], right: readonly string[]) {
   if (left.length !== right.length) return false
@@ -43,7 +44,10 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const bundle = prepareBundle(templateIds)
+    const templateOverrides = crmContext
+      ? await resolvePinnedMultiformTemplates(event, crmContext.applications)
+      : []
+    const bundle = prepareBundle(templateIds, templateOverrides)
     if (bundle.warnings.length > 0) {
       throw createError({
         statusCode: 409,

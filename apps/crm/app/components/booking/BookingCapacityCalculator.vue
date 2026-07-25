@@ -13,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  started: []
   continue: [snapshot: BookingCapacityCalculatorSnapshot]
 }>()
 
@@ -35,6 +36,13 @@ const form = reactive({
     Math.max(5, Math.round(props.policy.defaultFixedRatePeriodMonths / 12)),
   ),
 })
+let startedEmitted = false
+
+watch(form, () => {
+  if (startedEmitted) return
+  startedEmitted = true
+  emit('started')
+}, { deep: true })
 
 const interestTypeItems: Array<{ label: string, value: CapacityInterestType }> = [
   { label: 'Okresowo stałe', value: 'periodically_fixed' },

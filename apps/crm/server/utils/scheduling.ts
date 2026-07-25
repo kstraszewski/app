@@ -13,6 +13,7 @@ import {
 } from 'h3'
 import {
   asRecord,
+  resolveTeamAdminScope,
   type CrmSession,
   textValue,
   throwDbError,
@@ -341,15 +342,25 @@ export async function getPublicSchedulingClient(event: H3Event): Promise<any> {
 
 export type BookingWidgetAnalyticsEvent =
   | 'widget_view'
+  | 'widget_engaged'
+  | 'calculator_started'
+  | 'calculator_completed'
+  | 'service_selected'
   | 'availability_search'
+  | 'availability_found'
+  | 'slot_selected'
+  | 'contact_started'
   | 'booking_attempt'
+  | 'booking_completed'
 
 export async function recordBookingWidgetEvent(
   event: H3Event,
   input: {
     widgetKey: string
+    visitId: string
     eventType: BookingWidgetAnalyticsEvent
     serviceId?: string | null
+    eventId?: string | null
     isEmbedded?: boolean
   },
 ): Promise<void> {
@@ -357,8 +368,10 @@ export async function recordBookingWidgetEvent(
     const supabase = await getPublicSchedulingClient(event)
     const { error } = await supabase.rpc('record_booking_widget_event', {
       p_widget_token: input.widgetKey,
+      p_visit_id: input.visitId,
       p_event_type: input.eventType,
       p_service_id: input.serviceId ?? null,
+      p_event_id: input.eventId ?? null,
       p_is_embedded: input.isEmbedded === true,
     })
     if (error) {
@@ -439,7 +452,7 @@ export async function ensureGenericMeetingService(
 
 export async function assertPublicBookingRateLimit(
   event: H3Event,
-  scope: 'catalog' | 'slots' | 'booking',
+  scope: 'catalog' | 'slots' | 'booking' | 'analytics',
   widgetKey: string,
   limit: number,
   windowMs: number,
@@ -527,7 +540,7 @@ export function verifyBookingWidgetPreviewToken(
 export async function listAccessibleFacilityIds(session: CrmSession): Promise<string[] | null> {
   if (session.role === 'admin') return null
 
-  const [facilityMemberships, teamMemberships] = await Promise.all([
+  const [facilityMemberships, teamMemberships, teamAdminScope] = await Promise.all([
     session.supabase
       .from('facility_memberships')
       .select('facility_id')
@@ -538,6 +551,7 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
       .select('team_id')
       .eq('organization_id', session.organizationId)
       .eq('user_id', session.userId),
+    resolveTeamAdminScope(session),
   ])
   throwDbError(facilityMemberships.error)
   throwDbError(teamMemberships.error)
@@ -545,7 +559,10 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
   const facilityIds = new Set<string>(
     (facilityMemberships.data ?? []).map((row: any) => String(row.facility_id)),
   )
-  const teamIds = (teamMemberships.data ?? []).map((row: any) => String(row.team_id))
+  const teamIds = [...new Set([
+    ...(teamMemberships.data ?? []).map((row: any) => String(row.team_id)),
+    ...teamAdminScope.managedTeamIds,
+  ])]
   if (teamIds.length) {
     const { data, error } = await session.supabase
       .from('team_facilities')
@@ -638,7 +655,15 @@ export async function requireFacilityPermission(
     }
   }
 
-  throw createError({ statusCode: 404, statusMessage: 'Facility not found' })
+  // The facility query above is evaluated with the authenticated user's RLS.
+  // If it succeeded, an inherited team scope may be the access source even
+  // when no direct membership/link was found by the metadata queries.
+  return {
+    facility,
+    source: 'team',
+    role: 'member',
+    canManage: false,
+  }
 }
 
 export async function assertOrganizationMemberIds(
@@ -883,7 +908,33 @@ export function bookingWidgetValues(
     const input = body.isActive ?? body.is_active
     values.is_active = input === undefined ? true : booleanValue(input, 'isActive')
   }
+  if (options.create || 'isDirectoryListed' in body || 'is_directory_listed' in body) {
+    const input = body.isDirectoryListed ?? body.is_directory_listed
+    values.is_directory_listed = input === undefined
+      ? false
+      : booleanValue(input, 'isDirectoryListed')
+  }
   return values
+}
+
+export function assertBookingWidgetDirectoryEligibility(input: {
+  isActive: boolean
+  isDirectoryListed: boolean
+  widgetType: BookingWidgetType
+}): void {
+  if (!input.isDirectoryListed) return
+  if (!input.isActive) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Only an active widget can be listed in the OpenExpert directory',
+    })
+  }
+  if (input.widgetType !== 'calendar') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Only a calendar widget can be listed in the OpenExpert directory',
+    })
+  }
 }
 
 export function decorateBookingWidget(
@@ -1011,6 +1062,7 @@ export function assertWidgetRequestOrigin(
   event: H3Event,
   allowedOrigins: string[],
   widgetKey: string,
+  options: { requireSource?: boolean } = {},
 ): void {
   const originHeader = getHeader(event, 'origin')
   const refererHeader = getHeader(event, 'referer')
@@ -1031,7 +1083,12 @@ export function assertWidgetRequestOrigin(
   // Server-side rendering and direct API navigation may omit both headers. The
   // public key remains an unguessable capability and the booking RPC still
   // performs all business validation.
-  if (!sourceOrigin) return
+  if (!sourceOrigin) {
+    if (options.requireSource) {
+      throw createError({ statusCode: 403, statusMessage: 'Widget request source is required' })
+    }
+    return
+  }
 
   if (sourceOrigin === requestUrl.origin) {
     if (!refererUrl || refererUrl.pathname.startsWith(`/book/${encodeURIComponent(widgetKey)}`)) return

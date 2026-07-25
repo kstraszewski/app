@@ -112,13 +112,12 @@ function openHistory() {
 </template>
 
 <style scoped>
-.assistant-page-shell :deep(.crm-content) {
+.assistant-page-shell {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  width: min(100%, var(--ui-container));
-  height: 100dvh;
-  overflow: hidden;
-  padding: 24px 32px 0;
+  min-height: 0;
+  width: 100%;
 }
 
 .assistant-page-shell :deep(.crm-header) {
@@ -227,13 +226,6 @@ function openHistory() {
 .assistant-history__empty p { max-width: 280px; margin: 0; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 900px) {
-  .assistant-page-shell :deep(.crm-content) {
-    height: calc(100dvh - 76px);
-    min-height: 0;
-    overflow: hidden;
-    padding: 18px 16px 0;
-  }
-
   .assistant-page-shell :deep(.crm-header) { align-items: stretch; }
   .assistant-page-shell :deep(.crm-header__actions) { align-items: center; }
   .assistant-page-shell :deep(.crm-eve-assistant--page) { flex: 1 1 auto; }

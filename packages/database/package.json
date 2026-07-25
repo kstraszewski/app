@@ -14,6 +14,6 @@
     "mortgage:sync": "node ./scripts/sync-mortgage-catalog.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.104.0"
+    "@supabase/supabase-js": "2.110.8"
   }
 }

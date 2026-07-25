@@ -63,3 +63,150 @@ No actionable P0, P1, or P2 findings remain.
 - [x] Verify desktop, mobile, interactions, browser logs, typecheck, build, and visual fidelity.
 
 final result: passed
+
+---
+
+# Design QA — status spotkania w kalendarzu
+
+## Evidence
+
+- Source visual truth: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-7f0d1a5e-0ea8-42b5-89c1-65ee99e11376.png`
+- Browser-rendered implementation: `/private/tmp/openexpert-design-qa/calendar-status-after-final-exact.png`
+- Normalized source: `/private/tmp/openexpert-design-qa/calendar-status-source-normalized.png`
+- Focused side-by-side comparison: `/private/tmp/openexpert-design-qa/calendar-status-comparison.png`
+- Responsive implementation: `/private/tmp/openexpert-design-qa/calendar-status-mobile.png`
+- Local route: `http://127.0.0.1:3004/org/openexpert-local/calendar`
+- Source dimensions: `1268 × 1388` pixels, normalized from DPR 2 to `634 × 694` pixels.
+- Implementation viewport and pixels: `634 × 694` CSS pixels at DPR 1, captured as `634 × 694` pixels.
+- Responsive viewport and pixels: `390 × 700` CSS pixels at DPR 1, captured as `390 × 700` pixels.
+- State: authenticated local administrator, dark theme, Jan Kowalski appointment detail modal open, confirmed appointment.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+- **Fonts and typography:** the status uses the existing compact Nuxt UI badge typography. The full label remains visible and is no longer clipped.
+- **Spacing and layout rhythm:** the appointment summary uses an explicit three-column grid, so the date occupies the flexible track and the status keeps its intrinsic width. At the mobile breakpoint the status moves below the date without horizontal overflow.
+- **Colors and visual tokens:** the badge uses the semantic `success` color and `soft` variant, matching the existing dark-theme tokens while reading as status rather than an action.
+- **Image quality and asset fidelity:** this component contains no raster assets. The status uses the installed Lucide circle-check icon; no custom SVG, CSS illustration, emoji, or placeholder asset was introduced.
+- **Copy and content:** `Potwierdzone` is preserved as the appointment-state label and paired with a check icon for faster recognition.
+- **Accessibility:** the status remains visible text in the DOM; the icon is decorative and hidden from assistive technology by the icon component.
+- **Responsive behavior:** at `390 × 700`, the dialog remains within the viewport, the status is `92.7 × 20` CSS pixels, and the document has no horizontal overflow.
+
+## Focused comparison evidence
+
+- The normalized side-by-side comparison shows the broken `38 × 38` clipped square in the source and the corrected `92.7 × 20` status pill in the implementation.
+- The modal content, appointment data, actions, typography, and surrounding layout remain otherwise unchanged.
+- A separate mobile capture confirms the badge wraps to a dedicated row under the date without colliding with the icon or appointment metadata.
+
+## Comparison history
+
+### Iteration 1 — prevent flex shrinking
+
+- Earlier finding `[P1]`: the status collapsed into a square and clipped most of `Potwierdzone`.
+- Initial fix: replaced the flexible hero row with an explicit grid, prevented status wrapping, and added a semantic status icon.
+- Post-fix evidence: the badge still measured `38 × 38`, revealing that layout shrinking was not the only cause.
+
+### Iteration 2 — use the badge label contract
+
+- Earlier finding `[P1]`: passing text through the default slot together with an icon allowed Nuxt UI to infer an icon-only badge.
+- Fix: passed the status through the `label` prop and retained the semantic icon.
+- Post-fix evidence: runtime DOM exposed the label slot correctly, but the badge still inherited the icon-container dimensions.
+
+### Iteration 3 — scope icon-container styles
+
+- Earlier finding `[P1]`: `.appointment-detail__hero > span` styled every direct span, including the rendered `UBadge` root, forcing `width: 38px; height: 38px`.
+- Fix: added `.appointment-detail__icon` to the calendar icon wrapper and scoped fixed dimensions only to that class.
+- Post-fix evidence: the final browser capture and measured DOM show a `92.7 × 20` badge with full text, correct color, and no overflow.
+
+## Functional verification
+
+- Opened the real Jan Kowalski appointment from the seeded calendar.
+- Verified confirmed, pending, and cancelled states retain their existing label/color mapping in code.
+- Verified the final desktop-equivalent state at `634 × 694` and responsive state at `390 × 700`.
+- Checked browser console errors after the final render: none.
+- CRM typecheck and `git diff --check` pass.
+
+## Open questions
+
+- None for the requested scope.
+
+## Implementation checklist
+
+- [x] Stop the status from inheriting fixed icon dimensions.
+- [x] Use the Nuxt UI badge label contract.
+- [x] Add a semantic status icon.
+- [x] Keep the status readable in desktop and mobile modal layouts.
+- [x] Verify the real appointment state, browser logs, types, and visual comparison.
+
+final result: passed
+
+---
+
+# Design QA — karta klienta CRM
+
+## Evidence
+
+- Source visual truth: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-d75c2c8d-4a42-44a1-bc98-633e988aca39.png`
+- Browser-rendered overview: `/private/tmp/client-detail-redesign-2262x1546.png`
+- Browser-rendered history: `/private/tmp/client-detail-history-2262x1546.png`
+- Browser-rendered mobile state: `/private/tmp/client-detail-mobile-390x844.png`
+- Focused before/after comparison: `/private/tmp/client-detail-before-after-2262x1546.png`
+- Local route: `http://127.0.0.1:3004/org/openexpert-local-04b35ead/clients/aa14d03a-2ec4-4f21-ba12-0ee5ae160c8b`
+- Desktop viewport and implementation pixels: `2262 × 1546` CSS pixels at DPR 1, captured as `2262 × 1546` pixels.
+- Source dimensions: `2262 × 1546` pixels. Its CSS viewport and density metadata are unavailable, so the comparison aligns equal pixel dimensions and treats the source as the documented pre-redesign state rather than a pixel-fidelity target.
+- Mobile viewport and implementation pixels: `390 × 844` CSS pixels at DPR 1, captured as `390 × 844` pixels.
+- State: authenticated organization administrator, dark theme, collapsed desktop sidebar, real Jan Kowalski demo record.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+- **Information architecture:** the dominant permanent “Nowa sprawa” form and long consent stack were replaced by five route-backed views: `Podsumowanie`, `Sprawy`, `Zgody`, `Wizyty`, and `Historia`. The new hierarchy keeps the client identity and primary action stable while each data domain gets a focused workspace.
+- **Fonts and typography:** heading scale, mono eyebrows, metadata, badges, body copy, and compact labels reuse the existing OpenExpert tokens. The page retains the same display/body family as the source while introducing a clearer type hierarchy inside metrics and panels.
+- **Spacing and layout rhythm:** the source's large empty right column and vertically unbounded card stack are removed. The implementation uses a consistent 12/18/22/26-pixel rhythm, aligned metric cards, balanced overview columns, and the shared PageHeader tabs on the bottom edge.
+- **Colors and visual tokens:** all surfaces, borders, text, states, and timeline tones use semantic Nuxt UI/OpenExpert tokens. The dark palette remains visually consistent with the source and neighboring CRM detail pages.
+- **Image quality and asset fidelity:** this screen contains no photographic or illustrative assets. It reuses the existing application logo and Lucide icon collection; no emoji, placeholder imagery, handcrafted SVG, CSS illustration, or fake asset was introduced.
+- **Copy and content:** headings describe user goals rather than storage structures. Counts and labels come from real API data, and the History feed combines real CRM activity, related-case activity, consent events, dates, and actor names.
+- **Responsive behavior:** at `390 × 844`, the PageHeader actions fit on one row, tab navigation remains horizontally scrollable, content collapses to one column, and no horizontal document overflow is visible.
+- **Accessibility:** the page has one H1, labelled regions, route-backed links, visible active tab state, semantic `dl` content, timeline dates, keyboard-operable buttons, and labelled modals.
+
+## Focused comparison evidence
+
+- **Header:** the combined comparison shows that client identity remains prominent, while status, owner, last update, tabs, and actions now form one reusable CRM PageHeader rather than disconnected content.
+- **Primary workspace:** the comparison shows the permanent creation form removed from the reading flow. Summary metrics, contact data, relationship context, and recent activity now occupy aligned, scan-friendly regions.
+- **History:** a separate browser capture verifies a full chronological feed with four real events and source counts, replacing the small source “Timeline” card.
+- **Mobile:** the focused mobile capture verifies the header, three actions, scrollable tabs, and empty appointment state without desktop-only fixed columns.
+
+## Comparison history
+
+### Iteration 1 — final redesign pass
+
+- No P0/P1/P2 mismatch was found after aligning the source and implementation to `2262 × 1546` pixels.
+- The visual differences are intentional product improvements requested by the user: shared PageHeader, route-backed tabs, reduced form dominance, and a complete History surface.
+- No visual fix loop was required after the first browser-rendered comparison.
+
+## Functional verification
+
+- Verified all five tabs navigate to distinct, shareable query states.
+- Verified the History view renders one CRM activity plus three consent decisions from the local database, including the organization-scoped actor.
+- Verified `Nowa sprawa` opens a modal with the current client preassigned; no record was created during QA.
+- Verified the overflow menu opens the populated client edit form; no customer data was changed during QA.
+- Verified the desktop overview, desktop History, and mobile appointment state.
+- Checked browser logs after the interaction pass: no warnings or errors.
+- CRM typecheck and `git diff --check` pass.
+
+## Open questions
+
+- A future unified cursor endpoint could paginate activities, consent events, and appointments as one feed. The current redesign intentionally uses the existing bounded API payload.
+
+## Implementation checklist
+
+- [x] Use the shared CRM PageHeader with back navigation, metadata, bottom tabs, and right-side actions.
+- [x] Move “Nowa sprawa” into a modal action.
+- [x] Add focused views for summary, cases, consents, appointments, and history.
+- [x] Build History from real CRM and consent events.
+- [x] Include activity from related cases and organization-scoped actors.
+- [x] Verify desktop, mobile, primary actions, browser logs, types, and visual quality.
+
+final result: passed

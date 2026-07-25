@@ -1,6 +1,7 @@
 import { readBody } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
+  assertBookingWidgetDirectoryEligibility,
   assertFacilityBookableMemberIds,
   bookingWidgetValues,
   decorateBookingWidget,
@@ -31,6 +32,11 @@ export default defineEventHandler(async (event) => {
   const widgetValues = bookingWidgetValues(body, {
     create: true,
     facilityName: String(access.facility.name),
+  })
+  assertBookingWidgetDirectoryEligibility({
+    isActive: Boolean(widgetValues.is_active),
+    isDirectoryListed: Boolean(widgetValues.is_directory_listed),
+    widgetType: widgetValues.widget_type as 'calendar' | 'mortgage_capacity' | 'mortgage_payment',
   })
   const requestedFixedExpertUserId = widgetValues.fixed_expert_user_id as string | null
   const fixedExpertUserId = isSelfServiceExpert

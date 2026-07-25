@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
-import { getTemplate, prepareBundle } from '@openexpert/multiform'
+import { serverSupabaseClient, serverSupabaseUser } from './supabase'
+import {
+  getTemplate,
+  prepareBundle,
+  type DocumentTemplate,
+} from '@openexpert/multiform'
 import { useRuntimeConfig } from '#imports'
 import { createError, setHeader, type H3Event } from 'h3'
+import { resolvePinnedMultiformTemplates } from './multiform-template-repository'
 
 export const CRM_DOCUMENT_BUCKET = 'crm-case-documents'
 export const MAX_CRM_ATTACHMENT_COUNT = 50
@@ -625,9 +630,11 @@ function buildTemplateValidation(
   templateIds: readonly string[],
   requirements: readonly CrmMultiformDocumentRequirement[],
   sources: readonly RequirementApplicationSource[],
+  templateOverrides: readonly DocumentTemplate[] = [],
 ) {
+  const overrideById = new Map(templateOverrides.map(template => [template.id, template]))
   const templates = templateIds.map((templateId) => {
-    const template = getTemplate(templateId)
+    const template = overrideById.get(templateId) ?? getTemplate(templateId)
     if (!template) {
       return {
         templateId,
@@ -636,7 +643,7 @@ function buildTemplateValidation(
         warnings: ['Template wskazany przez ofertę nie istnieje w rejestrze Multiform.'],
       }
     }
-    const warnings = prepareBundle([templateId]).warnings.map(warning => warning.reason)
+    const warnings = prepareBundle([templateId], templateOverrides).warnings.map(warning => warning.reason)
     return {
       templateId,
       found: true,
@@ -921,12 +928,21 @@ export async function loadCrmMultiformContext(
       throw createError({ statusCode: 409, statusMessage: 'Wniosek bankowy nie odpowiada zapisanej ofercie.' })
     }
     const version = asRecord(asRecord(offer.catalog_snapshot).version)
+    const requirementTemplateIds = Array.isArray(version.document_requirements)
+      ? version.document_requirements.flatMap((entry) => {
+          const templateId = nonEmptyString(asRecord(entry).templateId, 120)
+          return templateId ? [templateId] : []
+        })
+      : []
     return {
       applicationId,
       offerId,
       bankId: offer.bank_id ? String(offer.bank_id) : null,
       bankName: String(offer.bank_name),
-      templateIds: parseTemplateIds(version.multiform_template_ids),
+      templateIds: [...new Set([
+        ...parseTemplateIds(version.multiform_template_ids),
+        ...requirementTemplateIds,
+      ])],
       requirements: parseDocumentRequirements(
         version.document_requirements,
         application.scenario_snapshot ?? offer.scenario_snapshot,
@@ -1042,7 +1058,26 @@ export async function loadCrmMultiformContext(
       ...(blocker ? { blocker } : {}),
     }
   })
-  const validation = buildTemplateValidation(templateIds, documentRequirements, requirementSources)
+  const templateOverrides = await resolvePinnedMultiformTemplates(
+    event,
+    selectedApplications.map((application) => {
+      const offer = offerById.get(String(application.offer_id))
+      return {
+        productVersionId: offer?.mortgage_product_version_id
+          ? String(offer.mortgage_product_version_id)
+          : null,
+        templateIds: requirementSources.find(source => (
+          source.applicationId === String(application.submission_id)
+        ))?.templateIds ?? [],
+      }
+    }),
+  )
+  const validation = buildTemplateValidation(
+    templateIds,
+    documentRequirements,
+    requirementSources,
+    templateOverrides,
+  )
 
   const applications = selectedApplications.map((application) => {
     const applicationId = String(application.submission_id)

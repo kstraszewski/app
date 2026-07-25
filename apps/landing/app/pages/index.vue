@@ -1,13 +1,69 @@
 <script setup lang="ts">
-useSeoMeta({
+const { siteOrigin } = useLandingSeo({
   title: 'OpenExpert — Agentowy system pracy dla ekspertów',
   description: 'Prowadź klienta przez nieruchomość, kredyt i ubezpieczenie. Agenci AI pracują na jednej sprawie: porządkują CRM, aktualizują proces i pomagają przygotować wnioski.',
-  ogTitle: 'OpenExpert — Jeden ekspert. Zespół agentów AI.',
-  ogDescription: 'Ty prowadzisz relację i podejmujesz decyzje. Agenci AI pracują bezpośrednio na sprawie klienta i wykonują konkretne zadania w CRM, procesie i dokumentach.',
-  ogType: 'website',
-  twitterCard: 'summary',
-  twitterTitle: 'OpenExpert — Jeden ekspert. Zespół agentów AI.',
-  twitterDescription: 'Agentowy system pracy dla ekspertów nieruchomości, kredytów i ubezpieczeń.',
+  path: '/',
+  socialImageAlt: 'OpenExpert — jeden ekspert i zespół agentów AI pracujących na wspólnej sprawie',
+})
+
+const homeUrl = new URL('/', `${siteOrigin}/`).toString()
+const organizationId = `${homeUrl}#organization`
+const websiteId = `${homeUrl}#website`
+const homePageId = `${homeUrl}#webpage`
+const primaryImageId = `${homeUrl}#primaryimage`
+
+useHead({
+  script: [{
+    key: 'structured-data:home',
+    type: 'application/ld+json',
+    innerHTML: serializeLandingStructuredData({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'Organization',
+          '@id': organizationId,
+          name: 'OpenExpert',
+          url: homeUrl,
+          logo: {
+            '@type': 'ImageObject',
+            url: new URL('/web-app-manifest-512x512.png', `${siteOrigin}/`).toString(),
+            width: 512,
+            height: 512,
+          },
+          email: 'hello@openexpert.app',
+          sameAs: ['https://github.com/OpenExpertApp/OpenExpert'],
+          description: 'System pracy, publiczny katalog i rezerwacje konsultacji dla ekspertów wspieranych przez agentów AI.',
+        },
+        {
+          '@type': 'WebSite',
+          '@id': websiteId,
+          url: homeUrl,
+          name: 'OpenExpert',
+          alternateName: 'Open Expert',
+          publisher: { '@id': organizationId },
+          inLanguage: 'pl-PL',
+        },
+        {
+          '@type': 'ImageObject',
+          '@id': primaryImageId,
+          url: new URL('/openexpert-og.png', `${siteOrigin}/`).toString(),
+          width: 1200,
+          height: 630,
+        },
+        {
+          '@type': 'WebPage',
+          '@id': homePageId,
+          url: homeUrl,
+          name: 'OpenExpert — Agentowy system pracy dla ekspertów',
+          description: 'Prowadź klienta przez nieruchomość, kredyt i ubezpieczenie z pomocą agentów AI pracujących na jednej sprawie.',
+          isPartOf: { '@id': websiteId },
+          about: { '@id': organizationId },
+          primaryImageOfPage: { '@id': primaryImageId },
+          inLanguage: 'pl-PL',
+        },
+      ],
+    }),
+  }],
 })
 
 const router = useRouter()
@@ -105,6 +161,8 @@ async function submitWaitlist() {
 
 <template>
   <div class="oe-redesign" @keydown.esc="closeMobileMenu">
+    <a class="home-skip-link" href="#main-content">Przejdź do treści</a>
+
     <div class="dark-shell">
       <header class="site-header">
         <a href="#poczatek" class="brand" aria-label="OpenExpert — strona główna" @click="closeMobileMenu">
@@ -115,8 +173,8 @@ async function submitWaitlist() {
         <nav class="desktop-nav" aria-label="Główna nawigacja">
           <a href="#jak-to-dziala">Jak to działa</a>
           <a href="#agenci-ai">Agenci AI</a>
-          <a href="#personalizuj">Personalizuj</a>
-          <a href="#dla-ekspertow">Dla ekspertów</a>
+          <NuxtLink to="/eksperci">Eksperci</NuxtLink>
+          <NuxtLink to="/placowki">Placówki</NuxtLink>
         </nav>
 
         <a href="#dolacz" class="button button--light header-cta">Dołącz do waitlisty</a>
@@ -137,13 +195,16 @@ async function submitWaitlist() {
           <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
             <a href="#jak-to-dziala" @click="closeMobileMenu">Jak to działa</a>
             <a href="#agenci-ai" @click="closeMobileMenu">Agenci AI</a>
-            <a href="#personalizuj" @click="closeMobileMenu">Personalizuj</a>
-            <a href="#dla-ekspertow" @click="closeMobileMenu">Dla ekspertów</a>
+            <NuxtLink to="/eksperci" @click="closeMobileMenu">Eksperci</NuxtLink>
+            <NuxtLink to="/placowki" @click="closeMobileMenu">Placówki</NuxtLink>
             <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Dołącz do waitlisty</a>
           </nav>
         </Transition>
       </header>
+    </div>
 
+    <main id="main-content" tabindex="-1">
+      <div class="dark-shell">
       <section id="poczatek" class="hero" aria-labelledby="hero-title">
         <div class="hero-grid">
           <div class="hero-copy">
@@ -160,7 +221,7 @@ async function submitWaitlist() {
             </div>
           </div>
 
-          <LandingExpertCasePreview class="hero-preview" />
+          <LazyLandingExpertCasePreview class="hero-preview" hydrate-never />
         </div>
       </section>
 
@@ -198,21 +259,20 @@ async function submitWaitlist() {
 
         <p class="speed-results__disclaimer">Czas wdrożenia i przygotowania sprawy zależy od zakresu konfiguracji oraz kompletności danych i dokumentów.</p>
       </section>
-    </div>
+      </div>
 
-    <main>
-      <LandingJourneySection />
+      <LazyLandingJourneySection hydrate-never />
 
       <section id="personalizuj" class="personalize-section" aria-labelledby="personalize-title">
         <div class="personalize-inner">
           <div class="personalize-copy">
             <p class="section-label">CRM w identyfikacji Twojej organizacji</p>
-            <h2 id="personalize-title">Ten sam system.<br><em>W pełni w Twojej marce.</em></h2>
+            <h2 id="personalize-title">Ten sam system.{{ ' ' }}<br><em>W pełni w Twojej marce.</em></h2>
             <p>Dopasuj kolory, typografię i charakter interfejsu do swojej organizacji. Wybierz gotowy kierunek lub zbuduj własny motyw i od razu zobacz go na przykładowej sprawie klienta.</p>
           </div>
 
           <div class="personalize-panel">
-            <LandingPersonalizationPreview />
+            <LazyLandingPersonalizationPreview hydrate-on-visible />
 
             <NuxtLink to="/personalizacja" class="button personalize-panel__cta">
               Przetestuj personalizację
@@ -226,7 +286,7 @@ async function submitWaitlist() {
         <div class="platform-inner">
           <div class="platform-intro">
             <p class="section-label section-label--dark">Agentowy rdzeń OpenExpert</p>
-            <h2 id="platform-title">Nie kolejny czat.<br><em>Agenci, którzy pracują na sprawie.</em></h2>
+            <h2 id="platform-title">Nie kolejny czat.{{ ' ' }}<br><em>Agenci, którzy pracują na sprawie.</em></h2>
             <p>OpenExpert udostępnia agentom dane i konkretne narzędzia przez MCP. Dzięki temu mogą wyszukiwać, zapisywać i aktualizować informacje w tym samym kontekście, który widzisz w CRM — a decyzje pozostają po Twojej stronie.</p>
           </div>
 
@@ -243,13 +303,13 @@ async function submitWaitlist() {
         </div>
       </section>
 
-      <LandingAnalyticsSection />
+      <LazyLandingAnalyticsSection hydrate-never />
 
       <section id="dla-ekspertow" class="experts-section" aria-labelledby="experts-title">
         <div class="experts-inner">
           <div class="experts-heading">
             <p class="section-label">Ekspert + zespół agentów AI</p>
-            <h2 id="experts-title">Ty prowadzisz relację.<br><em>Agenci wykonują pracę.</em></h2>
+            <h2 id="experts-title">Ty prowadzisz relację.{{ ' ' }}<br><em>Agenci wykonują pracę.</em></h2>
             <p>OpenExpert nie usuwa eksperta z procesu. Daje mu agentów, którzy pracują na wspólnych danych i przejmują konkretne zadania, podczas gdy odpowiedzialność i kontakt z klientem pozostają po Twojej stronie.</p>
           </div>
 
@@ -266,13 +326,13 @@ async function submitWaitlist() {
         </div>
       </section>
 
-      <LandingSettlementsSection />
+      <LazyLandingSettlementsSection hydrate-never />
 
       <section id="dolacz" class="join-section" aria-labelledby="join-title">
         <div class="join-inner">
           <div class="join-copy">
             <p class="section-label section-label--dark">Wczesny dostęp do systemu agentowego</p>
-            <h2 id="join-title">Pracuj z agentami,<br>którzy <em>znają całą sprawę.</em></h2>
+            <h2 id="join-title">Pracuj z agentami,{{ ' ' }}<br>którzy <em>znają całą sprawę.</em></h2>
             <p>Dołącz do pierwszych ekspertów testujących OpenExpert i pomóż ustalić, które zadania agenci powinni przejąć jako następne.</p>
           </div>
 
@@ -314,6 +374,9 @@ async function submitWaitlist() {
         </a>
         <p>© 2026 OpenExpert. Jeden ekspert. Zespół agentów AI.</p>
         <nav aria-label="Linki w stopce">
+          <NuxtLink to="/eksperci">Eksperci</NuxtLink>
+          <NuxtLink to="/placowki">Placówki</NuxtLink>
+          <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
           <NuxtLink to="/waitlist">Waitlista</NuxtLink>
           <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
             GitHub <Icon name="lucide:github" aria-hidden="true" />
@@ -330,6 +393,26 @@ async function submitWaitlist() {
   background: #f7f7f5;
   color: #111;
   font-family: var(--font-sans);
+}
+
+.home-skip-link {
+  position: fixed;
+  top: 10px;
+  left: 16px;
+  z-index: 100;
+  padding: 9px 13px;
+  background: #fff;
+  color: #111;
+  text-decoration: none;
+  transform: translateY(-180%);
+}
+
+.home-skip-link:focus {
+  transform: translateY(0);
+}
+
+#main-content:focus {
+  outline: none;
 }
 
 .dark-shell {
@@ -583,7 +666,7 @@ async function submitWaitlist() {
 }
 
 .speed-result__meta span {
-  color: #666;
+  color: #999;
 }
 
 .speed-result__meta strong {
@@ -624,7 +707,7 @@ async function submitWaitlist() {
 .speed-results__disclaimer {
   border-top: 1px solid #242424;
   padding-top: 16px;
-  color: #666;
+  color: #999;
   font-size: 10.5px;
   line-height: 1.55;
 }
@@ -774,7 +857,7 @@ async function submitWaitlist() {
 .platform-row__index {
   align-self: start;
   padding-top: 28px;
-  color: #777;
+  color: #999;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
 }
@@ -961,7 +1044,7 @@ async function submitWaitlist() {
 }
 
 .join-form input::placeholder {
-  color: #777;
+  color: #999;
 }
 
 .join-form input:hover {
@@ -986,7 +1069,7 @@ async function submitWaitlist() {
 }
 
 .join-form__note {
-  color: #777;
+  color: #aaa;
   font-size: 11.5px;
   line-height: 1.55;
 }
@@ -995,7 +1078,7 @@ async function submitWaitlist() {
   width: 100%;
   border-top: 1px solid #292929;
   background: #030303;
-  color: #777;
+  color: #aaa;
 }
 
 .site-footer__inner {
@@ -1393,8 +1476,8 @@ async function submitWaitlist() {
   .site-footer__inner {
     width: calc(100% - 40px);
     min-height: 0;
-    grid-template-columns: 1fr auto;
-    gap: 24px;
+    grid-template-columns: 1fr;
+    gap: 10px;
     padding: 34px 0;
   }
 
@@ -1403,7 +1486,9 @@ async function submitWaitlist() {
   }
 
   .site-footer nav {
-    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0 18px;
   }
 }
 

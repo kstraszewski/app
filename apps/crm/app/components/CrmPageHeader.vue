@@ -7,6 +7,7 @@ type PageHeaderTab = {
   icon?: string
   count?: number
   exact?: boolean
+  active?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -28,6 +29,7 @@ const route = useRoute()
 const router = useRouter()
 
 function tabIsActive(tab: PageHeaderTab) {
+  if (tab.active !== undefined) return tab.active
   const target = router.resolve(tab.to)
   if (tab.exact !== false) {
     return route.path === target.path

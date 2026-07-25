@@ -1,9 +1,17 @@
+export interface OrganizationCapabilities {
+  organizationAdmin: boolean
+  teamAdmin: boolean
+  facilityAdmin: boolean
+  canManageTeams: boolean
+}
+
 export interface OrganizationSummary {
   id: string
   name: string
   slug: string
   role: 'expert' | 'admin'
   isDefault: boolean
+  capabilities: OrganizationCapabilities
 }
 
 export interface OrganizationMember {
@@ -22,6 +30,7 @@ export interface TeamNode {
   description: string | null
   created_at: string
   updated_at: string
+  accessLevel?: 'organization_admin' | 'team_admin' | 'inherited'
 }
 
 export interface TeamEdge {
@@ -46,4 +55,42 @@ export interface TeamGraphPayload {
   edges: TeamEdge[]
   memberships: TeamMembership[]
   members: OrganizationMember[]
+  access: {
+    canCreate: boolean
+    managedTeamIds: string[]
+    directAdminTeamIds: string[]
+  }
 }
+
+export interface TeamDetailMember {
+  membership: TeamMembership
+  user: {
+    id: string
+    email: string
+    fullName: string
+  }
+}
+
+export interface TeamDetailPayload {
+  data: {
+    team: TeamNode
+    members: TeamDetailMember[]
+    facilities: Facility[]
+    parents: TeamNode[]
+    children: TeamNode[]
+    stats: {
+      memberCount: number
+      adminCount: number
+      facilityCount: number
+      childTeamCount: number
+    }
+  }
+  access: {
+    canView: true
+    canManage: boolean
+    canDelete: boolean
+    canManageStructure: boolean
+  }
+  organization: OrganizationSummary
+}
+import type { Facility } from './scheduling'

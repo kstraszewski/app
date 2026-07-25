@@ -95,21 +95,6 @@ type CalendarCard = {
   connection: CalendarConnection | null
 }
 
-type AppointmentClientOption = {
-  id: string
-  display_name: string
-  primary_email: string | null
-  primary_phone: string | null
-  status_code: string
-}
-
-type StaffAppointmentSlot = {
-  startsAt: string
-  endsAt: string
-  expertUserId: string
-  expertName: string
-}
-
 type FacilityWorkspace = {
   detail: FacilityDetailPayload | null
   members: FacilityMembersPayload
@@ -126,7 +111,7 @@ useHead({ title: 'Szczegóły placówki — OpenExpert CRM' })
 
 const route = useRoute()
 const router = useRouter()
-const { organizationSlug, crmApiPath, orgApiPath, orgPath } = useOrganizationContext()
+const { organizationSlug, orgApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
 const currentUrl = useRequestURL()
 
@@ -134,7 +119,6 @@ const selectedFacilityId = ref(Array.isArray(route.params.facilityId)
   ? String(route.params.facilityId[0] ?? '')
   : String(route.params.facilityId ?? ''))
 const facilitySearch = ref('')
-const activeSection = ref(typeof route.query.section === 'string' ? route.query.section : 'overview')
 const createFacilityOpen = ref(false)
 const createWidgetOpen = ref(false)
 const createAppointmentOpen = ref(false)
@@ -146,7 +130,6 @@ const savingMember = ref(false)
 const savingHours = ref(false)
 const savingExpertSchedule = ref(false)
 const savingWidget = ref(false)
-const savingAppointment = ref(false)
 const syncingConnectionId = ref('')
 const teamToLink = ref('')
 const selectedExpertId = ref('')
@@ -157,21 +140,11 @@ const appointmentStatus = ref('all')
 const appointmentExpertId = ref('all')
 const appointmentOffset = ref(0)
 const appointmentPageSize = 50
-const appointmentClientSearch = ref('')
-const appointmentClientResults = ref<AppointmentClientOption[]>([])
-const appointmentClientPending = ref(false)
-const selectedAppointmentClient = ref<AppointmentClientOption | null>(null)
-const staffAppointmentSlots = ref<StaffAppointmentSlot[]>([])
-const selectedStaffAppointmentSlot = ref<StaffAppointmentSlot | null>(null)
-const staffAppointmentSlotsPending = ref(false)
-const staffAppointmentSlotsError = ref('')
-const staffAppointmentIdempotencyIntent = ref('')
-let staffSlotsRequestId = 0
-let appointmentClientRequestId = 0
 let expertScheduleRequestId = 0
 
 const weekdayLabels = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela']
-const sectionItems = [
+type FacilitySection = 'overview' | 'people' | 'hours' | 'experts' | 'widget' | 'calendars' | 'appointments'
+const sectionItems: Array<{ label: string, value: FacilitySection, icon: string }> = [
   { label: 'Dane', value: 'overview', icon: 'i-lucide-building-2' },
   { label: 'Zespół', value: 'people', icon: 'i-lucide-users' },
   { label: 'Godziny', value: 'hours', icon: 'i-lucide-clock-3' },
@@ -180,11 +153,15 @@ const sectionItems = [
   { label: 'Kalendarze', value: 'calendars', icon: 'i-lucide-calendar-sync' },
   { label: 'Wizyty', value: 'appointments', icon: 'i-lucide-calendar-check-2' },
 ]
-if (!sectionItems.some(item => item.value === activeSection.value)) activeSection.value = 'overview'
-watch(activeSection, (section) => {
-  if (!import.meta.client || route.query.section === section) return
-  void router.replace({ query: { ...route.query, section } })
-})
+
+function facilitySectionFromQuery(value: unknown): FacilitySection {
+  const section = Array.isArray(value) ? value[0] : value
+  return sectionItems.some(item => item.value === section)
+    ? section as FacilitySection
+    : 'overview'
+}
+
+const activeSection = computed(() => facilitySectionFromQuery(route.query.section))
 const timezoneItems = [
   'Europe/Warsaw',
   'Europe/London',
@@ -260,19 +237,19 @@ const expertOverrideForm = reactive<ExpertOverrideEditor>({
 })
 const widgetDraft = reactive<WidgetDraft>(blankWidgetDraft())
 const widgetForm = reactive<WidgetDraft>(blankWidgetDraft())
-const staffAppointmentForm = reactive({
-  serviceId: '',
-  expertUserId: '',
-  localDate: '',
-  notes: '',
-  idempotencyKey: '',
-})
 const requestFetch = useRequestFetch()
 
 const facilitiesRequest = useAsyncData<FacilityListPayload>(
   `facilities-${organizationSlug.value}`,
   () => requestFetch(orgApiPath('/facilities')),
-  { default: (): FacilityListPayload => ({ data: [], role: 'expert', canCreate: false }) },
+  {
+    default: (): FacilityListPayload => ({
+      data: [],
+      role: 'expert',
+      canCreate: false,
+      defaultFacilityId: null,
+    }),
+  },
 )
 const teamsRequest = useAsyncData<Pick<TeamGraphPayload, 'teams'>>(
   `facility-teams-${organizationSlug.value}`,
@@ -422,15 +399,6 @@ const bookableExpertIds = computed(() => new Set(bookableExperts.value.map(membe
 const staffAppointmentServices = computed(() => activeServices.value.filter(service => (
   service.expertUserIds.some(userId => bookableExpertIds.value.has(userId))
 )))
-const selectedStaffAppointmentService = computed(() => activeServices.value.find(service => (
-  service.id === staffAppointmentForm.serviceId
-)) ?? null)
-const staffAppointmentExpertItems = computed(() => {
-  const allowedExpertIds = new Set(selectedStaffAppointmentService.value?.expertUserIds ?? [])
-  return bookableExperts.value
-    .filter(member => allowedExpertIds.has(member.user_id))
-    .map(member => ({ label: facilityMemberLabel(member), value: member.user_id }))
-})
 const selectedWidget = computed(() => workspace.value.widgets.data.find(widget => widget.id === selectedWidgetId.value) ?? null)
 const canEditSelectedWidget = computed(() => Boolean(selectedWidget.value) && (
   canManage.value || (
@@ -469,6 +437,29 @@ const appointmentPageEnd = computed(() => Math.min(
 ))
 const facilityCalendarCards = computed<CalendarCard[]>(() => buildCalendarCards(workspace.value.facilityCalendar))
 const expertCalendarCards = computed<CalendarCard[]>(() => buildCalendarCards(workspace.value.expertCalendar))
+const sectionTabs = computed(() => sectionItems.map((item) => {
+  const query = { ...route.query }
+  if (item.value === 'overview') delete query.section
+  else query.section = item.value
+
+  let count: number | undefined
+  if (item.value === 'people') count = facilityMembers.value.length
+  if (item.value === 'experts') count = bookableExperts.value.length
+  if (item.value === 'widget') count = workspace.value.widgets.data.length
+  if (item.value === 'calendars') {
+    count = [...facilityCalendarCards.value, ...expertCalendarCards.value]
+      .filter(card => card.connection).length
+  }
+  if (item.value === 'appointments') count = appointmentsPayload.value.count
+
+  return {
+    label: item.label,
+    icon: item.icon,
+    to: { path: route.path, query },
+    active: activeSection.value === item.value,
+    ...(count !== undefined ? { count } : {}),
+  }
+}))
 
 watch(() => workspace.value.detail?.data, (facility) => {
   if (!facility) return
@@ -478,34 +469,6 @@ watch(() => workspace.value.detail?.data, (facility) => {
 watch([selectedFacilityId, appointmentStatus, appointmentExpertId], () => {
   appointmentOffset.value = 0
 })
-
-watch([selectedFacilityId, createAppointmentOpen], ([, isOpen]) => {
-  if (!isOpen) return
-  if (!staffAppointmentServices.value.some(service => service.id === staffAppointmentForm.serviceId)) {
-    staffAppointmentForm.serviceId = staffAppointmentServices.value[0]?.id ?? ''
-  }
-})
-
-watch(staffAppointmentExpertItems, (items) => {
-  if (items.some(item => item.value === staffAppointmentForm.expertUserId)) return
-  staffAppointmentForm.expertUserId = items[0]?.value ?? ''
-}, { immediate: true })
-
-watch(appointmentClientSearch, (value) => {
-  const selected = selectedAppointmentClient.value
-  if (selected && value.trim() !== selected.display_name) selectedAppointmentClient.value = null
-})
-
-watch(
-  () => [
-    createAppointmentOpen.value,
-    selectedFacilityId.value,
-    staffAppointmentForm.serviceId,
-    staffAppointmentForm.expertUserId,
-    staffAppointmentForm.localDate,
-  ],
-  () => { void loadStaffAppointmentSlots() },
-)
 
 watch(facilityMembers, (members) => {
   for (const key of Object.keys(memberDrafts)) delete memberDrafts[key]
@@ -727,178 +690,24 @@ function hydrateExpertSchedule(payload: { rules: Array<Record<string, any>>, ove
 
 function selectFacility(facilityId: string) {
   selectedFacilityId.value = facilityId
-  activeSection.value = 'overview'
+  const query = { ...route.query }
+  delete query.section
+  void router.replace({
+    path: orgPath(`/facilities/${encodeURIComponent(facilityId)}`),
+    query,
+  })
 }
 
 function changeAppointmentPage(delta: number) {
   appointmentOffset.value = Math.max(0, appointmentOffset.value + delta * appointmentPageSize)
 }
 
-function dateInTimezone(timezone: string) {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
-  return `${values.year}-${values.month}-${values.day}`
-}
-
-function staffSlotTime(slot: StaffAppointmentSlot) {
-  return new Intl.DateTimeFormat('pl-PL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: selectedFacility.value?.timezone || 'Europe/Warsaw',
-  }).format(new Date(slot.startsAt))
-}
-
 function openCreateAppointment() {
-  const timezone = selectedFacility.value?.timezone || 'Europe/Warsaw'
-  staffAppointmentForm.serviceId = staffAppointmentServices.value[0]?.id ?? ''
-  staffAppointmentForm.expertUserId = ''
-  staffAppointmentForm.localDate = dateInTimezone(timezone)
-  staffAppointmentForm.notes = ''
-  staffAppointmentForm.idempotencyKey = ''
-  staffAppointmentIdempotencyIntent.value = ''
-  appointmentClientSearch.value = ''
-  appointmentClientResults.value = []
-  selectedAppointmentClient.value = null
-  selectedStaffAppointmentSlot.value = null
-  staffAppointmentSlots.value = []
-  staffAppointmentSlotsError.value = ''
   createAppointmentOpen.value = true
-  void searchAppointmentClients()
 }
 
-async function searchAppointmentClients() {
-  const requestId = ++appointmentClientRequestId
-  appointmentClientPending.value = true
-  try {
-    const result = await $fetch<{ data: AppointmentClientOption[] }>(crmApiPath('/clients'), {
-      query: {
-        q: appointmentClientSearch.value.trim() || undefined,
-        limit: 12,
-      },
-    })
-    if (requestId !== appointmentClientRequestId) return
-    appointmentClientResults.value = result.data ?? []
-  } catch (error: unknown) {
-    if (requestId !== appointmentClientRequestId) return
-    appointmentClientResults.value = []
-    showActionError('Nie udało się wyszukać klientów', error)
-  } finally {
-    if (requestId === appointmentClientRequestId) appointmentClientPending.value = false
-  }
-}
-
-function chooseAppointmentClient(client: AppointmentClientOption) {
-  selectedAppointmentClient.value = client
-  appointmentClientSearch.value = client.display_name
-}
-
-async function loadStaffAppointmentSlots() {
-  const requestId = ++staffSlotsRequestId
-  selectedStaffAppointmentSlot.value = null
-  staffAppointmentSlots.value = []
-  staffAppointmentSlotsError.value = ''
-  if (
-    !createAppointmentOpen.value
-    || !selectedFacilityId.value
-    || !staffAppointmentForm.serviceId
-    || !staffAppointmentForm.expertUserId
-    || !staffAppointmentForm.localDate
-  ) {
-    staffAppointmentSlotsPending.value = false
-    return
-  }
-  staffAppointmentSlotsPending.value = true
-  try {
-    const result = await $fetch<{ slots: StaffAppointmentSlot[] }>(
-      orgApiPath(`/facilities/${encodeURIComponent(selectedFacilityId.value)}/appointment-slots`),
-      {
-        query: {
-          serviceId: staffAppointmentForm.serviceId,
-          expertUserId: staffAppointmentForm.expertUserId,
-          date: staffAppointmentForm.localDate,
-        },
-      },
-    )
-    if (requestId !== staffSlotsRequestId) return
-    staffAppointmentSlots.value = result.slots ?? []
-  } catch (error: unknown) {
-    if (requestId !== staffSlotsRequestId) return
-    staffAppointmentSlotsError.value = apiErrorMessage(error)
-  } finally {
-    if (requestId === staffSlotsRequestId) staffAppointmentSlotsPending.value = false
-  }
-}
-
-async function createStaffAppointment() {
-  const client = selectedAppointmentClient.value
-  const slot = selectedStaffAppointmentSlot.value
-  if (
-    !client
-    || !slot
-    || !selectedFacilityId.value
-    || !staffAppointmentForm.serviceId
-    || !staffAppointmentForm.expertUserId
-  ) return
-
-  const intent = JSON.stringify({
-    facilityId: selectedFacilityId.value,
-    serviceId: staffAppointmentForm.serviceId,
-    expertUserId: staffAppointmentForm.expertUserId,
-    clientId: client.id,
-    startsAt: slot.startsAt,
-    notes: staffAppointmentForm.notes.trim() || null,
-  })
-  if (staffAppointmentIdempotencyIntent.value !== intent) {
-    staffAppointmentIdempotencyIntent.value = intent
-    staffAppointmentForm.idempotencyKey = crypto.randomUUID()
-  }
-
-  savingAppointment.value = true
-  try {
-    await $fetch(orgApiPath('/appointments'), {
-      method: 'POST',
-      body: {
-        facilityId: selectedFacilityId.value,
-        serviceId: staffAppointmentForm.serviceId,
-        expertUserId: staffAppointmentForm.expertUserId,
-        clientId: client.id,
-        startsAt: slot.startsAt,
-        notes: staffAppointmentForm.notes.trim() || null,
-        idempotencyKey: staffAppointmentForm.idempotencyKey,
-      },
-    })
-    createAppointmentOpen.value = false
-    await refreshAppointments()
-    toast.add({
-      title: 'Wizyta została umówiona',
-      description: `${client.display_name} · ${staffSlotTime(slot)}`,
-      color: 'success',
-      icon: 'i-lucide-calendar-check-2',
-    })
-  } catch (error: unknown) {
-    showActionError('Nie udało się umówić wizyty', error)
-    const candidate = error as {
-      statusCode?: number
-      status?: number
-      response?: { status?: number }
-      data?: { statusMessage?: string }
-      message?: string
-    }
-    const statusCode = Number(
-      candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 0,
-    )
-    const detail = candidate.data?.statusMessage || candidate.message || ''
-    if (statusCode === 409 && /slot|termin|available/i.test(detail)) {
-      await loadStaffAppointmentSlots()
-    }
-  } finally {
-    savingAppointment.value = false
-  }
+async function handleAppointmentCreated() {
+  await refreshAppointments()
 }
 
 function facilityAddress(facility: Facility | null) {
@@ -917,10 +726,19 @@ function memberRoleLabel(role: 'admin' | 'member') {
 }
 
 function accessSourceLabel(source: string | undefined) {
-  if (source === 'organization_admin') return 'administrator organizacji'
-  if (source === 'facility') return 'członkostwo placówki'
-  if (source === 'team') return 'dostęp przez zespół'
-  return 'dostęp do placówki'
+  if (source === 'organization_admin') return 'Cała organizacja'
+  if (source === 'facility') return 'Członkostwo placówki'
+  if (source === 'team') return 'Dostęp przez zespół'
+  return 'Dostęp do placówki'
+}
+
+function showGoogleBusinessProfilePlanned() {
+  toast.add({
+    title: 'Połączenie z Google Business Profile — do implementacji',
+    description: 'Konto Google połączymy raz dla całej organizacji. W tej placówce wybierzesz później właściwą lokalizację z dostępnych profili Google.',
+    color: 'info',
+    icon: 'i-lucide-store',
+  })
 }
 
 function appointmentStatusLabel(status: Appointment['status']) {
@@ -1466,11 +1284,45 @@ async function disconnectCalendar() {
 <template>
   <CrmShell
     :title="selectedFacility?.name || 'Szczegóły placówki'"
-    eyebrow="Administracja organizacji"
-    description="Zespół, dostępność, usługi, widget rezerwacji i kalendarze placówki."
+    eyebrow="Administracja zespołu"
+    :description="selectedFacility
+      ? facilityAddress(selectedFacility) || 'Adres placówki nie został jeszcze uzupełniony.'
+      : 'Zespół, dostępność, usługi, widget rezerwacji i kalendarze placówki.'"
     :back-to="orgPath('/facilities')"
     back-label="Wróć do placówek"
+    :tabs="selectedFacility ? sectionTabs : []"
   >
+    <template v-if="selectedFacility" #meta>
+      <div class="facility-page-meta">
+        <UBadge
+          :color="selectedFacility.is_active ? 'success' : 'neutral'"
+          variant="subtle"
+          :icon="selectedFacility.is_active ? 'i-lucide-circle-check' : 'i-lucide-circle-pause'"
+        >
+          {{ selectedFacility.is_active ? 'Aktywna' : 'Nieaktywna' }}
+        </UBadge>
+        <UBadge color="neutral" variant="outline" icon="i-lucide-clock-3">
+          {{ selectedFacility.timezone }}
+        </UBadge>
+        <UBadge
+          :color="canManage ? 'primary' : 'neutral'"
+          variant="outline"
+          :icon="canManage ? 'i-lucide-shield-check' : 'i-lucide-eye'"
+        >
+          {{ canManage ? 'Zarządzanie' : 'Tylko odczyt' }} · {{ accessSourceLabel(access?.source) }}
+        </UBadge>
+      </div>
+    </template>
+
+    <template v-if="selectedFacility" #actions>
+      <UButton
+        icon="i-lucide-calendar-plus-2"
+        :disabled="!staffAppointmentServices.length"
+        @click="openCreateAppointment"
+      >
+        Umów wizytę
+      </UButton>
+    </template>
 
     <UAlert
       v-if="facilitiesError"
@@ -1502,31 +1354,6 @@ async function disconnectCalendar() {
         />
 
         <template v-else-if="selectedFacility">
-          <header class="workspace-header">
-            <div class="workspace-header__identity">
-              <div class="workspace-header__mark">
-                <UIcon name="i-lucide-building-2" />
-              </div>
-              <div>
-                <div class="workspace-header__title">
-                  <h2>{{ selectedFacility.name }}</h2>
-                  <UBadge :color="selectedFacility.is_active ? 'success' : 'neutral'" variant="subtle">
-                    {{ selectedFacility.is_active ? 'Aktywna' : 'Nieaktywna' }}
-                  </UBadge>
-                </div>
-                <p>{{ facilityAddress(selectedFacility) || 'Adres nie został jeszcze uzupełniony' }}</p>
-              </div>
-            </div>
-            <div class="workspace-header__meta">
-              <span>{{ selectedFacility.timezone }}</span>
-              <span>·</span>
-              <span>{{ accessSourceLabel(access?.source) }}</span>
-              <UBadge :color="canManage ? 'primary' : 'neutral'" variant="outline">
-                {{ canManage ? 'Możesz zarządzać' : 'Tylko odczyt' }}
-              </UBadge>
-            </div>
-          </header>
-
           <UAlert
             v-if="!canManage"
             color="neutral"
@@ -1536,18 +1363,33 @@ async function disconnectCalendar() {
             description="Dane placówki zmienia jej administrator. Nadal możesz zarządzać własnym grafikiem i kalendarzem, jeśli jesteś członkiem tej placówki."
           />
 
-          <div class="workspace-tabs">
-            <UTabs v-model="activeSection" :items="sectionItems" class="w-full" />
-          </div>
-
           <section v-if="activeSection === 'overview'" class="workspace-section">
-            <div class="section-heading">
+            <div class="section-heading section-heading--actions">
               <div>
                 <p class="section-kicker">Dane placówki</p>
                 <h3>Tożsamość i dane kontaktowe</h3>
                 <p>Informacje widoczne w rezerwacjach i komunikacji z klientem.</p>
               </div>
+              <div v-if="canManage" class="flex flex-wrap items-center justify-end gap-2">
+                <UBadge color="neutral" variant="subtle">
+                  Do implementacji
+                </UBadge>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-store"
+                  @click="showGoogleBusinessProfilePlanned"
+                >
+                  Połącz z Google Business Profile
+                </UButton>
+              </div>
             </div>
+
+            <FacilityPhotoGallery
+              :endpoint="orgApiPath(`/facilities/${encodeURIComponent(selectedFacility.id)}/images`)"
+              :facility-name="selectedFacility.name"
+              :can-manage="canManage"
+            />
 
             <form class="form-stack" @submit.prevent="saveFacility">
               <div class="form-grid form-grid--two">
@@ -2386,13 +2228,6 @@ async function disconnectCalendar() {
                 <p>{{ appointmentsPayload.count }} wizyt dla bieżących filtrów.</p>
               </div>
               <div class="appointment-filters">
-                <UButton
-                  icon="i-lucide-calendar-plus-2"
-                  :disabled="!staffAppointmentServices.length"
-                  @click="openCreateAppointment"
-                >
-                  Umów wizytę
-                </UButton>
                 <USelect
                   v-model="appointmentStatus"
                   :items="appointmentStatusItems"
@@ -2472,158 +2307,12 @@ async function disconnectCalendar() {
         </template>
       </section>
 
-    <UModal
+    <CalendarCreateAppointmentModal
       v-model:open="createAppointmentOpen"
-      title="Umów wizytę z klientem"
-      description="Wybierz klienta CRM, eksperta i dostępny termin."
-      :ui="{ content: 'sm:max-w-4xl', footer: 'justify-end' }"
-    >
-      <template #body>
-        <form id="create-appointment-form" class="form-stack" @submit.prevent="createStaffAppointment">
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>1</span>
-              <div>
-                <h3>Klient</h3>
-                <p>Każda wizyta musi wskazywać istniejący obiekt klienta.</p>
-              </div>
-            </div>
-            <UFormField name="appointmentClient" label="Wyszukaj klienta" required>
-              <UFieldGroup class="w-full">
-                <UInput
-                  v-model="appointmentClientSearch"
-                  class="w-full"
-                  icon="i-lucide-search"
-                  placeholder="Nazwa, e-mail lub telefon"
-                  @keydown.enter.prevent="searchAppointmentClients"
-                />
-                <UButton
-                  type="button"
-                  color="neutral"
-                  variant="outline"
-                  :loading="appointmentClientPending"
-                  @click="searchAppointmentClients"
-                >
-                  Szukaj
-                </UButton>
-              </UFieldGroup>
-            </UFormField>
-            <div v-if="appointmentClientPending" class="appointment-client-results">
-              <USkeleton v-for="index in 3" :key="index" class="h-14 w-full" />
-            </div>
-            <div v-else-if="appointmentClientResults.length" class="appointment-client-results">
-              <button
-                v-for="client in appointmentClientResults"
-                :key="client.id"
-                type="button"
-                class="appointment-client-option"
-                :class="{ 'appointment-client-option--selected': selectedAppointmentClient?.id === client.id }"
-                :aria-pressed="selectedAppointmentClient?.id === client.id"
-                @click="chooseAppointmentClient(client)"
-              >
-                <span>
-                  <strong>{{ client.display_name }}</strong>
-                  <small>{{ client.primary_email || client.primary_phone || 'Brak danych kontaktowych' }}</small>
-                </span>
-                <CrmStatusBadge :status="client.status_code" />
-              </button>
-            </div>
-            <UAlert
-              v-else
-              color="neutral"
-              variant="subtle"
-              icon="i-lucide-user-search"
-              title="Nie znaleziono klienta"
-              description="Dodaj klienta wraz ze zgodami w module klientów, a następnie wróć do umawiania wizyty."
-              :actions="[{ label: 'Przejdź do klientów', to: orgPath('/clients') }]"
-            />
-          </section>
-
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>2</span>
-              <div>
-                <h3>Ekspert i dzień</h3>
-                <p>Dostępność uwzględnia godziny placówki, grafik eksperta i kalendarze zewnętrzne.</p>
-              </div>
-            </div>
-            <div class="form-grid form-grid--two">
-              <UFormField name="appointmentExpert" label="Ekspert" required>
-                <USelect
-                  v-model="staffAppointmentForm.expertUserId"
-                  class="w-full"
-                  :items="staffAppointmentExpertItems"
-                  value-key="value"
-                  placeholder="Wybierz eksperta"
-                />
-              </UFormField>
-              <UFormField name="appointmentDate" label="Data" required>
-                <UInput
-                  v-model="staffAppointmentForm.localDate"
-                  class="w-full"
-                  type="date"
-                  :min="dateInTimezone(selectedFacility?.timezone || 'Europe/Warsaw')"
-                />
-              </UFormField>
-            </div>
-          </section>
-
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>3</span>
-              <div>
-                <h3>Dostępny termin</h3>
-                <p>Wybierz konkretną godzinę spotkania.</p>
-              </div>
-            </div>
-            <div v-if="staffAppointmentSlotsPending" class="staff-slot-grid">
-              <USkeleton v-for="index in 6" :key="index" class="h-14 w-full" />
-            </div>
-            <UAlert
-              v-else-if="staffAppointmentSlotsError"
-              color="error"
-              variant="subtle"
-              :description="staffAppointmentSlotsError"
-            />
-            <div v-else-if="staffAppointmentSlots.length" class="staff-slot-grid" role="radiogroup" aria-label="Dostępne terminy">
-              <button
-                v-for="slot in staffAppointmentSlots"
-                :key="`${slot.startsAt}-${slot.expertUserId}`"
-                type="button"
-                class="staff-slot"
-                :class="{ 'staff-slot--selected': selectedStaffAppointmentSlot?.startsAt === slot.startsAt && selectedStaffAppointmentSlot?.expertUserId === slot.expertUserId }"
-                role="radio"
-                :aria-checked="selectedStaffAppointmentSlot?.startsAt === slot.startsAt && selectedStaffAppointmentSlot?.expertUserId === slot.expertUserId"
-                @click="selectedStaffAppointmentSlot = slot"
-              >
-                <strong>{{ staffSlotTime(slot) }}</strong>
-                <small>{{ slot.expertName }}</small>
-              </button>
-            </div>
-            <div v-else class="workspace-empty workspace-empty--small">
-              <UIcon name="i-lucide-calendar-x-2" />
-              <p>Brak wolnych terminów dla wybranego dnia.</p>
-            </div>
-          </section>
-
-          <UFormField name="appointmentNotes" label="Notatka do wizyty" hint="Opcjonalnie">
-            <UTextarea v-model="staffAppointmentForm.notes" class="w-full" :rows="3" autoresize :maxrows="6" />
-          </UFormField>
-        </form>
-      </template>
-      <template #footer="{ close }">
-        <UButton color="neutral" variant="ghost" @click="close">Anuluj</UButton>
-        <UButton
-          type="submit"
-          form="create-appointment-form"
-          icon="i-lucide-calendar-check-2"
-          :disabled="appointmentClientPending || !selectedAppointmentClient || !selectedStaffAppointmentSlot || !staffAppointmentForm.serviceId || !staffAppointmentForm.expertUserId"
-          :loading="savingAppointment"
-        >
-          Umów wizytę
-        </UButton>
-      </template>
-    </UModal>
+      :facility-id="selectedFacilityId"
+      :initial-expert-id="currentUserId"
+      @created="handleAppointmentCreated"
+    />
 
     <UModal
       v-model:open="createFacilityOpen"
@@ -2767,6 +2456,13 @@ async function disconnectCalendar() {
 </template>
 
 <style scoped>
+.facility-page-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .facility-layout {
   display: grid;
   grid-template-columns: minmax(240px, 296px) minmax(0, 1fr);
@@ -2794,10 +2490,6 @@ async function disconnectCalendar() {
 }
 
 .facility-sidebar__head,
-.workspace-header,
-.workspace-header__identity,
-.workspace-header__title,
-.workspace-header__meta,
 .section-heading,
 .section-heading--actions,
 .subsection-heading,
@@ -2825,7 +2517,6 @@ async function disconnectCalendar() {
 }
 
 .facility-sidebar__head,
-.workspace-header,
 .section-heading--actions,
 .subsection-heading--actions,
 .panel-card__head,
@@ -2883,7 +2574,6 @@ async function disconnectCalendar() {
 }
 
 .facility-list-item__icon,
-.workspace-header__mark,
 .compact-row__icon,
 .calendar-context__icon,
 .calendar-card__provider {
@@ -2979,41 +2669,12 @@ async function disconnectCalendar() {
 }
 
 .facility-workspace {
+  display: grid;
+  gap: 20px;
   min-width: 0;
   padding: clamp(18px, 3vw, 30px);
 }
 
-.workspace-header {
-  gap: 20px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--ui-border);
-}
-
-.workspace-header__identity {
-  gap: 14px;
-  min-width: 0;
-}
-
-.workspace-header__mark {
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-}
-
-.workspace-header__title {
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.workspace-header h2 {
-  margin: 0;
-  color: var(--ui-text-highlighted);
-  font-size: clamp(22px, 3vw, 30px);
-  font-weight: 550;
-  letter-spacing: -.025em;
-}
-
-.workspace-header p,
 .section-heading p,
 .subsection-heading p,
 .calendar-context__head p,
@@ -3021,19 +2682,6 @@ async function disconnectCalendar() {
   margin: 4px 0 0;
   color: var(--ui-text-muted);
   font-size: 13px;
-}
-
-.workspace-header__meta {
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: var(--ui-text-muted);
-  font-size: 12px;
-}
-
-.workspace-tabs {
-  margin: 20px 0 28px;
-  overflow-x: auto;
 }
 
 .workspace-section,
@@ -3517,48 +3165,6 @@ async function disconnectCalendar() {
   font-size: 12px;
 }
 
-.appointment-client-results {
-  display: grid;
-  gap: 8px;
-  max-height: 250px;
-  overflow-y: auto;
-}
-
-.appointment-client-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 11px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 11px;
-  background: var(--ui-bg);
-  color: var(--ui-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.appointment-client-option:hover,
-.appointment-client-option--selected {
-  border-color: var(--ui-primary);
-  background: var(--ui-bg-muted);
-}
-
-.appointment-client-option span,
-.appointment-client-option strong,
-.appointment-client-option small {
-  display: block;
-}
-
-.appointment-client-option strong {
-  color: var(--ui-text-highlighted);
-}
-
-.appointment-client-option small {
-  margin-top: 2px;
-  color: var(--ui-text-muted);
-}
-
 .staff-slot-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3705,7 +3311,6 @@ async function disconnectCalendar() {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .workspace-header,
   .section-heading--actions,
   .subsection-heading--actions,
   .panel-card__head--actions {
@@ -3713,7 +3318,6 @@ async function disconnectCalendar() {
     flex-direction: column;
   }
 
-  .workspace-header__meta,
   .panel-card__controls,
   .appointment-filters {
     justify-content: flex-start;

@@ -1,6 +1,8 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
 import { readBody } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
+  assertBookingWidgetDirectoryEligibility,
   bookingWidgetValues,
   decorateBookingWidget,
   requireFacilityPermission,
@@ -48,10 +50,82 @@ export default defineEventHandler(async (event) => {
 
   const patch = bookingWidgetValues(body, { create: false, facilityName: String(access.facility.name) })
   const hasServiceIds = 'serviceIds' in body || 'service_ids' in body
-  if (!Object.keys(patch).length && !hasServiceIds) {
+  const hasDirectoryListing = 'isDirectoryListed' in body || 'is_directory_listed' in body
+  const requestedDirectoryListing = hasDirectoryListing
+    ? Boolean(patch.is_directory_listed)
+    : Boolean(
+        existing.is_directory_listed
+        && existing.is_active
+        && existing.widget_type === 'calendar',
+      )
+  delete patch.is_directory_listed
+
+  if (!Object.keys(patch).length && !hasServiceIds && !hasDirectoryListing) {
     throw createError({ statusCode: 400, statusMessage: 'No supported widget fields provided' })
   }
   if (existing.fixed_expert_user_id) patch.booking_mode = 'expert'
+
+  const effectiveIsActive = patch.is_active === undefined
+    ? Boolean(existing.is_active)
+    : Boolean(patch.is_active)
+  const effectiveWidgetType = String(
+    patch.widget_type ?? existing.widget_type ?? 'calendar',
+  ) as 'calendar' | 'mortgage_capacity' | 'mortgage_payment'
+  const directoryEligible = effectiveIsActive && effectiveWidgetType === 'calendar'
+  if (hasDirectoryListing && requestedDirectoryListing) {
+    assertBookingWidgetDirectoryEligibility({
+      isActive: effectiveIsActive,
+      isDirectoryListed: true,
+      widgetType: effectiveWidgetType,
+    })
+  }
+
+  let directoryListingUpdate: boolean | null = hasDirectoryListing
+    ? requestedDirectoryListing
+    : null
+  if (!directoryEligible && Boolean(existing.is_directory_listed)) {
+    directoryListingUpdate = false
+  } else if (
+    !hasDirectoryListing
+    && !Boolean(existing.is_active)
+    && Boolean(existing.is_directory_listed)
+    && patch.is_active === true
+  ) {
+    // Do not silently restore a stale legacy listing when a widget is re-enabled.
+    directoryListingUpdate = false
+  }
+
+  // This is deliberately created only after the organization/facility scope
+  // and either admin access or fixed-expert ownership plus bookable membership
+  // checks above have passed.
+  // The authenticated RLS write path also requires fixed experts to have
+  // created the widget themselves, while this endpoint already permits them
+  // to manage an admin-created widget assigned permanently to their profile.
+  const updateDirectoryListing = async (isDirectoryListed: boolean) => {
+    const serviceRole = serverSupabaseServiceRole(event) as any
+    const { data, error } = await serviceRole
+      .from('booking_widgets')
+      .update({ is_directory_listed: isDirectoryListed })
+      .eq('organization_id', session.organizationId)
+      .eq('facility_id', access.facility.id)
+      .eq('id', widgetId)
+      .select('id')
+      .maybeSingle()
+    throwDbError(error)
+    if (!data) {
+      throw createError({ statusCode: 404, statusMessage: 'Booking widget not found' })
+    }
+  }
+
+  const disableDirectoryBeforeConfigurationUpdate = (
+    directoryListingUpdate === false
+    && Boolean(existing.is_directory_listed)
+  )
+  if (disableDirectoryBeforeConfigurationUpdate) {
+    // Privacy-safe ordering ensures an explicit opt-out takes effect even if
+    // another requested configuration change is later rejected.
+    await updateDirectoryListing(false)
+  }
 
   let serviceIds: string[] | null = null
   if (hasServiceIds) {
@@ -99,6 +173,14 @@ export default defineEventHandler(async (event) => {
     p_service_ids: serviceIds ?? [],
   })
   throwDbError(updateError)
+
+  if (
+    directoryListingUpdate !== null
+    && !disableDirectoryBeforeConfigurationUpdate
+    && directoryListingUpdate !== Boolean(existing.is_directory_listed)
+  ) {
+    await updateDirectoryListing(directoryListingUpdate)
+  }
 
   const [widgetResult, servicesResult] = await Promise.all([
     session.supabase

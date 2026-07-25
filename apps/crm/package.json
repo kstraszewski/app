@@ -3,38 +3,45 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "24.x"
+    "node": ">=24.11.0 <25"
   },
   "scripts": {
     "build": "nuxt build",
+    "predev": "nuxt prepare",
     "dev": "nuxt dev --host 127.0.0.1 --port 3004",
     "generate": "nuxt generate",
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3004",
+    "test:client-identity": "node --test --experimental-strip-types test/client-identity.test.ts",
     "test:property-import": "node --test --experimental-strip-types test/property-import.test.ts",
+    "test:team-scope": "node --test --experimental-strip-types test/team-scope.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
     "@ai-sdk/gateway": "4.0.26",
     "@ai-sdk/google": "4.0.21",
-    "@nuxt/icon": "2.2.1",
-    "@nuxt/ui": "^4.6.1",
-    "@nuxtjs/supabase": "^2.0.5",
+    "@nuxt/icon": "^2.3.1",
+    "@nuxt/ui": "^4.10.0",
+    "@nuxtjs/supabase": "2.0.9",
     "@openexpert/mortgage": "workspace:*",
-    "@supabase/supabase-js": "2.104.0",
+    "@openexpert/multiform": "workspace:*",
+    "@supabase/supabase-js": "2.110.8",
+    "@unovis/ts": "1.6.7",
     "ai": "7.0.34",
     "eve": "0.25.1",
     "h3": "1.15.11",
-    "nuxt": "^4.4.2",
+    "nuxt": "^4.5.0",
+    "nuxt-charts": "2.2.1",
+    "pdfjs-dist": "^6.1.200",
     "sharp": "0.35.3",
-    "tailwindcss": "^4.2.4",
-    "vue": "^3.5.32",
-    "vue-router": "^5.0.4",
+    "tailwindcss": "^4.3.3",
+    "vue": "^3.5.40",
+    "vue-router": "^5.2.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.102",
+    "@iconify-json/lucide": "^1.2.119",
     "typescript": "^6.0.3",
-    "vue-tsc": "^3.3.7"
+    "vue-tsc": "^3.3.8"
   }
 }

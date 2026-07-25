@@ -23,7 +23,7 @@ Każdy moduł eksponuje trzy interfejsy: **UI** (dla ludzi), **REST API** (dla d
 
 ### Wymagania
 
-- Node.js 24 (wymagany przez agenta Eve w aplikacji CRM)
+- Node.js 24.11+ (wymagany przez Nuxt 4.5 i agenta Eve)
 - pnpm 10
 - runtime zgodny z Docker API: Docker Desktop, Colima, OrbStack lub Rancher Desktop
 
@@ -43,8 +43,11 @@ pnpm dev
 ```
 
 `pnpm db:setup` uruchamia lokalny Supabase, odtwarza bazę z migracji, generuje
-ignorowane pliki `apps/*/.env`, tworzy konto developerskie i sprawdza prawdziwe
-logowanie hasłem oraz izolację RLS.
+ignorowane pliki `apps/*/.env`, tworzy konto i bogaty, powtarzalny workspace
+developerski oraz sprawdza prawdziwe logowanie hasłem, relacje danych i izolację
+RLS. Seed zawiera między innymi klientów z różnymi zgodami, sprawy, zadania,
+dokumenty, historię aktywności, placówkę, usługi, widgety, spotkania i wolne
+terminy.
 
 Konto lokalne:
 
@@ -52,7 +55,12 @@ Konto lokalne:
 email:    admin@openexpert.local
 hasło:    OpenExpert123!
 role:     SuperAdmin + administrator organizacji
+organizacja: openexpert-local
 ```
+
+Po uruchomieniu CRM możesz wejść bezpośrednio pod
+`http://127.0.0.1:3004/org/openexpert-local`. Slug jest stabilny również po
+`pnpm db:reset`.
 
 Usługi:
 
@@ -86,6 +94,7 @@ pnpm db:status   # stan i lokalne adresy
 pnpm db:verify   # test hasła, profilu, organizacji i RLS
 pnpm db:types    # regeneruje packages/database/database.types.ts
 pnpm db:reset    # kasuje dane lokalne, migruje i odtwarza konto developerskie
+pnpm db:seed-demo # uzupełnia lub naprawia demo dane bez ich dublowania
 pnpm db:stop     # zatrzymuje kontenery, zachowując lokalny wolumen
 pnpm mortgage:sync # ponownie pobiera i wersjonuje katalog 5 banków
 ```
@@ -93,9 +102,11 @@ pnpm mortgage:sync # ponownie pobiera i wersjonuje katalog 5 banków
 ### Porównywarka hipotek
 
 Po `pnpm db:setup` katalog pięciu banków jest automatycznie importowany do
-PostgreSQL, a oficjalne strony/PDF-y trafiają do prywatnego bucketu Supabase
-Storage. Lokalna kopia źródeł znajduje się w ignorowanym katalogu
-`.data/mortgage-sources`. Ekran jest dostępny pod
+PostgreSQL, a deterministyczne pliki developerskie trafiają do prywatnego
+bucketu Supabase Storage. Dzięki temu reset bazy nie zależy od internetu.
+Lokalna kopia źródeł znajduje się w ignorowanym katalogu
+`.data/mortgage-sources`. `pnpm mortgage:sync` służy do jawnego pobrania
+bieżących, oficjalnych stron i PDF-ów. Ekran jest dostępny pod
 `/org/<organizationSlug>/mortgages`.
 
 Administrator organizacji może otworzyć

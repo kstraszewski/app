@@ -2,9 +2,13 @@
 import type {
   Appointment,
   AppointmentStatus,
+  ExpertTimeOff,
+  ExpertTimeOffPayload,
+  FacilityListPayload,
   FacilityAppointmentsPayload,
   OrganizationMembersPayload,
 } from '~/types/scheduling'
+import { instantDateKeyInTimezone } from '#shared/utils/zoned-date'
 
 type CalendarPayload = {
   data: Appointment[]
@@ -19,6 +23,8 @@ type CalendarEventLayout = {
   laneCount: number
 }
 
+type CalendarEventDensity = 'compact' | 'standard' | 'expanded'
+
 type CalendarDay = {
   date: Date
   key: string
@@ -27,6 +33,13 @@ type CalendarDay = {
   accessibleLabel: string
   isToday: boolean
   events: CalendarEventLayout[]
+  timeOff: ExpertTimeOff[]
+}
+
+type CreatedCalendarEntry = {
+  kind: 'appointment' | 'vacation'
+  expertUserId: string
+  startsAt: string
 }
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -36,6 +49,7 @@ const route = useRoute()
 const router = useRouter()
 const { organizationSlug, orgApiPath, orgPath } = useOrganizationContext()
 const requestFetch = useRequestFetch()
+const toast = useToast()
 const hourHeight = 72
 
 function isDateKey(value: unknown): value is string {
@@ -75,8 +89,14 @@ const initialDate = isDateKey(route.query.date) ? route.query.date : dateKey(new
 const selectedDate = ref(initialDate)
 const selectedExpertId = ref(typeof route.query.expert === 'string' ? route.query.expert : '')
 const selectedAppointment = ref<Appointment | null>(null)
+const selectedTimeOff = ref<ExpertTimeOff | null>(null)
 const appointmentOpen = ref(false)
+const timeOffOpen = ref(false)
+const createAppointmentOpen = ref(false)
 const browserTimezone = ref('Europe/Warsaw')
+const defaultFacilitySelection = ref('')
+const savingDefaultFacility = ref(false)
+const deletingTimeOff = ref(false)
 
 onMounted(() => {
   browserTimezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Warsaw'
@@ -87,6 +107,12 @@ const weekEnd = computed(() => addDays(weekStart.value, 6))
 const rangeStartIso = computed(() => weekStart.value.toISOString())
 const rangeEndIso = computed(() => {
   const end = addDays(weekStart.value, 7)
+  end.setHours(0, 0, 0, 0)
+  return end.toISOString()
+})
+const timeOffRangeStartIso = computed(() => addDays(weekStart.value, -2).toISOString())
+const timeOffRangeEndIso = computed(() => {
+  const end = addDays(weekStart.value, 9)
   end.setHours(0, 0, 0, 0)
   return end.toISOString()
 })
@@ -107,6 +133,37 @@ const {
     }),
   },
 )
+
+const {
+  data: facilitiesPayload,
+  status: facilitiesStatus,
+  error: facilitiesError,
+  refresh: refreshFacilities,
+} = await useAsyncData<FacilityListPayload>(
+  `calendar-facilities-${organizationSlug.value}`,
+  () => requestFetch(orgApiPath('/facilities')),
+  {
+    default: (): FacilityListPayload => ({
+      data: [],
+      role: 'expert',
+      canCreate: false,
+      defaultFacilityId: null,
+    }),
+  },
+)
+
+const activeFacilities = computed(() => facilitiesPayload.value.data.filter(facility => (
+  facility.is_active
+)))
+const defaultFacilityItems = computed(() => activeFacilities.value.map(facility => ({
+  label: facility.city ? `${facility.name} · ${facility.city}` : facility.name,
+  value: facility.id,
+})))
+
+watch(() => facilitiesPayload.value.defaultFacilityId, (facilityId) => {
+  defaultFacilitySelection.value = facilityId
+    ?? (activeFacilities.value.length === 1 ? activeFacilities.value[0]?.id ?? '' : '')
+}, { immediate: true })
 
 const expertItems = computed(() => membersPayload.value.members.map(member => ({
   label: member.userId === membersPayload.value.currentUserId
@@ -167,6 +224,29 @@ const {
   },
 )
 
+const {
+  data: timeOffPayload,
+  status: timeOffStatus,
+  error: timeOffError,
+  refresh: refreshTimeOff,
+} = await useAsyncData<ExpertTimeOffPayload>(
+  `expert-time-off-${organizationSlug.value}`,
+  async () => {
+    if (!selectedExpertId.value) return { data: [] }
+    return requestFetch<ExpertTimeOffPayload>(orgApiPath('/time-off'), {
+      query: {
+        expertUserId: selectedExpertId.value,
+        startsFrom: timeOffRangeStartIso.value,
+        startsBefore: timeOffRangeEndIso.value,
+      },
+    })
+  },
+  {
+    watch: [selectedExpertId, timeOffRangeStartIso, timeOffRangeEndIso],
+    default: (): ExpertTimeOffPayload => ({ data: [] }),
+  },
+)
+
 watch([selectedExpertId, weekStart], ([expertId, start]) => {
   if (!import.meta.client || !expertId) return
   const date = dateKey(start)
@@ -181,7 +261,9 @@ watch([selectedExpertId, weekStart], ([expertId, start]) => {
 }, { flush: 'post' })
 
 const appointments = computed(() => appointmentsPayload.value.data)
+const timeOff = computed(() => timeOffPayload.value.data)
 const confirmedCount = computed(() => appointments.value.filter(item => item.status === 'confirmed').length)
+const vacationCount = computed(() => timeOff.value.length)
 const selectedExpert = computed(() => expertItems.value.find(item => item.value === selectedExpertId.value) ?? null)
 const today = computed(() => dateKey(new Date()))
 const isCurrentWeek = computed(() => {
@@ -278,6 +360,27 @@ function positionAppointmentsForDay(key: string) {
   return positioned
 }
 
+function timeOffForDay(key: string) {
+  const matchingAllDay = timeOff.value.filter((item) => {
+    if (!item.all_day) return false
+    const startsOn = instantDateKeyInTimezone(item.starts_at, item.timezone)
+    const inclusiveEnd = new Date(new Date(item.ends_at).getTime() - 1)
+    const endsOn = instantDateKeyInTimezone(inclusiveEnd, item.timezone)
+    return key >= startsOn && key <= endsOn
+  })
+  const day = dateFromKey(key)
+  day.setHours(0, 0, 0, 0)
+  const dayStart = day.getTime()
+  const dayEnd = addDays(day, 1).getTime()
+  const matchingTimed = timeOff.value.filter((item) => {
+    if (item.all_day) return false
+    const startsAt = new Date(item.starts_at).getTime()
+    const endsAt = new Date(item.ends_at).getTime()
+    return startsAt < dayEnd && endsAt > dayStart
+  })
+  return [...matchingAllDay, ...matchingTimed]
+}
+
 const calendarDays = computed<CalendarDay[]>(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(weekStart.value, index)
   const key = dateKey(date)
@@ -297,6 +400,7 @@ const calendarDays = computed<CalendarDay[]>(() => Array.from({ length: 7 }, (_,
     }).format(date),
     isToday: key === today.value,
     events: positionAppointmentsForDay(key),
+    timeOff: timeOffForDay(key),
   }
 }))
 
@@ -340,12 +444,12 @@ function statusColor(status: AppointmentStatus): 'success' | 'warning' | 'neutra
   return 'neutral'
 }
 
-function meetingCountLabel(count: number) {
-  if (count === 1) return '1 spotkanie'
+function calendarEntryCountLabel(count: number) {
+  if (count === 1) return '1 zdarzenie'
   const lastTwo = count % 100
   const last = count % 10
-  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return `${count} spotkania`
-  return `${count} spotkań`
+  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return `${count} zdarzenia`
+  return `${count} zdarzeń`
 }
 
 function eventStyle(event: CalendarEventLayout) {
@@ -362,6 +466,13 @@ function eventStyle(event: CalendarEventLayout) {
   }
 }
 
+function eventDensity(event: CalendarEventLayout): CalendarEventDensity {
+  const duration = event.endMinute - event.startMinute
+  if (duration < 60) return 'compact'
+  if (duration < 75) return 'standard'
+  return 'expanded'
+}
+
 function hourMarkerStyle(hour: number) {
   return {
     top: `${(hour - calendarBounds.value.startHour) * hourHeight}px`,
@@ -373,8 +484,106 @@ function openAppointment(appointment: Appointment) {
   appointmentOpen.value = true
 }
 
+function openTimeOff(item: ExpertTimeOff) {
+  selectedTimeOff.value = item
+  timeOffOpen.value = true
+}
+
+function openCreateAppointment() {
+  createAppointmentOpen.value = true
+}
+
+async function handleCalendarEntryCreated(entry: CreatedCalendarEntry) {
+  selectedExpertId.value = entry.expertUserId
+  selectedDate.value = dateKey(new Date(entry.startsAt))
+  await nextTick()
+  await Promise.all([refreshAppointments(), refreshTimeOff()])
+}
+
 function eventAccessibleLabel(appointment: Appointment) {
-  return `${formatTime(appointment.starts_at)}–${formatTime(appointment.ends_at)}, ${appointment.customer_name}, ${appointment.serviceName}, ${statusLabel(appointment.status)}`
+  return `${formatTime(appointment.starts_at)}–${formatTime(appointment.ends_at)}, ${appointment.customer_name}, ${appointment.serviceName}, ${appointment.meeting_mode === 'online' ? 'online' : appointment.facilityName}, ${statusLabel(appointment.status)}`
+}
+
+function timeOffAccessibleLabel(item: ExpertTimeOff) {
+  return `Urlop: ${formatTimeOffRange(item)}`
+}
+
+function formatTimeOffRange(item: ExpertTimeOff) {
+  const startsAt = new Date(item.starts_at)
+  const inclusiveEnd = new Date(new Date(item.ends_at).getTime() - 1)
+  const formatter = new Intl.DateTimeFormat('pl-PL', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: item.timezone,
+  })
+  const startLabel = formatter.format(startsAt)
+  const endLabel = formatter.format(inclusiveEnd)
+  return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+}
+
+async function saveDefaultFacility(facilityId: string) {
+  if (!facilityId || savingDefaultFacility.value) return
+  const previous = facilitiesPayload.value.defaultFacilityId
+  facilitiesPayload.value.defaultFacilityId = facilityId
+  savingDefaultFacility.value = true
+  try {
+    await $fetch(orgApiPath('/me/scheduling-preferences'), {
+      method: 'PATCH',
+      body: { defaultFacilityId: facilityId },
+    })
+    await refreshFacilities()
+    const facility = activeFacilities.value.find(item => item.id === facilityId)
+    toast.add({
+      title: 'Domyślna placówka została zapisana',
+      description: facility?.name,
+      color: 'success',
+      icon: 'i-lucide-building-2',
+    })
+  } catch (error: unknown) {
+    facilitiesPayload.value.defaultFacilityId = previous
+    defaultFacilitySelection.value = previous ?? ''
+    toast.add({
+      title: 'Nie udało się zapisać placówki',
+      description: apiErrorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    savingDefaultFacility.value = false
+  }
+}
+
+async function refreshCalendar() {
+  await Promise.all([refreshAppointments(), refreshTimeOff(), refreshFacilities()])
+}
+
+async function deleteSelectedTimeOff() {
+  const item = selectedTimeOff.value
+  if (!item?.canManage || deletingTimeOff.value) return
+  deletingTimeOff.value = true
+  try {
+    await $fetch(orgApiPath(`/time-off/${encodeURIComponent(item.id)}`), {
+      method: 'DELETE',
+    })
+    timeOffOpen.value = false
+    selectedTimeOff.value = null
+    await refreshTimeOff()
+    toast.add({
+      title: 'Urlop został usunięty',
+      color: 'success',
+      icon: 'i-lucide-calendar-check-2',
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Nie udało się usunąć urlopu',
+      description: apiErrorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    deletingTimeOff.value = false
+  }
 }
 </script>
 
@@ -393,6 +602,13 @@ function eventAccessibleLabel(appointment: Appointment) {
     </template>
 
     <template #actions>
+      <UButton
+        icon="i-lucide-calendar-plus-2"
+        :disabled="savingDefaultFacility"
+        @click="openCreateAppointment"
+      >
+        Nowe zdarzenie
+      </UButton>
       <USelect
         v-model="selectedExpertId"
         class="calendar-expert-select"
@@ -402,6 +618,19 @@ function eventAccessibleLabel(appointment: Appointment) {
         :loading="membersStatus === 'pending'"
         :disabled="!expertItems.length"
         aria-label="Ekspert wyświetlany w kalendarzu"
+      />
+      <USelect
+        v-if="activeFacilities.length > 1"
+        v-model="defaultFacilitySelection"
+        class="calendar-facility-select"
+        :items="defaultFacilityItems"
+        value-key="value"
+        icon="i-lucide-building-2"
+        placeholder="Domyślna placówka"
+        :loading="facilitiesStatus === 'pending' || savingDefaultFacility"
+        :disabled="savingDefaultFacility"
+        aria-label="Domyślna placówka użytkownika"
+        @update:model-value="saveDefaultFacility"
       />
       <UInput
         v-model="selectedDate"
@@ -448,17 +677,18 @@ function eventAccessibleLabel(appointment: Appointment) {
         </div>
 
         <div class="calendar-toolbar__summary">
-          <div class="calendar-legend" aria-label="Legenda statusów spotkań">
+          <div class="calendar-legend" aria-label="Legenda zdarzeń kalendarza">
             <span><i class="calendar-legend__dot calendar-legend__dot--confirmed" />Potwierdzone {{ confirmedCount }}</span>
+            <span><i class="calendar-legend__dot calendar-legend__dot--vacation" />Urlopy {{ vacationCount }}</span>
           </div>
           <UButton
             icon="i-lucide-refresh-cw"
             color="neutral"
             variant="ghost"
             square
-            :loading="appointmentsStatus === 'pending'"
-            aria-label="Odśwież spotkania"
-            @click="refreshAppointments()"
+            :loading="appointmentsStatus === 'pending' || timeOffStatus === 'pending'"
+            aria-label="Odśwież kalendarz"
+            @click="refreshCalendar"
           />
         </div>
       </header>
@@ -482,31 +712,35 @@ function eventAccessibleLabel(appointment: Appointment) {
         description="Dodaj członka organizacji, aby wyświetlić jego spotkania."
       />
       <UAlert
-        v-else-if="appointmentsError"
+        v-else-if="appointmentsError || timeOffError || facilitiesError"
         class="calendar-message"
         color="error"
         variant="subtle"
         icon="i-lucide-calendar-x-2"
-        title="Nie udało się pobrać spotkań"
-        :description="apiErrorMessage(appointmentsError)"
+        title="Nie udało się pobrać kalendarza"
+        :description="apiErrorMessage(appointmentsError || timeOffError || facilitiesError)"
       >
         <template #actions>
-          <UButton color="neutral" variant="ghost" icon="i-lucide-refresh-cw" @click="refreshAppointments()">
+          <UButton color="neutral" variant="ghost" icon="i-lucide-refresh-cw" @click="refreshCalendar">
             Spróbuj ponownie
           </UButton>
         </template>
       </UAlert>
 
-      <div v-if="appointmentsStatus === 'pending' && !appointments.length" class="calendar-loading" aria-label="Ładowanie kalendarza">
+      <div
+        v-if="(appointmentsStatus === 'pending' || timeOffStatus === 'pending') && !appointments.length && !timeOff.length"
+        class="calendar-loading"
+        aria-label="Ładowanie kalendarza"
+      >
         <div class="calendar-loading__head">
           <USkeleton v-for="index in 7" :key="index" class="h-14 w-full" />
         </div>
         <USkeleton class="h-[520px] w-full" />
       </div>
 
-      <template v-else-if="!membersError && !appointmentsError && expertItems.length">
+      <template v-else-if="!membersError && !appointmentsError && !timeOffError && expertItems.length">
         <div class="calendar-grid-wrap">
-          <div class="calendar-grid" role="grid" :aria-label="`Spotkania: ${weekLabel}`">
+          <div class="calendar-grid" role="grid" :aria-label="`Kalendarz: ${weekLabel}`">
             <div class="calendar-grid__corner">Czas</div>
             <div
               v-for="day in calendarDays"
@@ -518,7 +752,27 @@ function eventAccessibleLabel(appointment: Appointment) {
             >
               <span>{{ day.weekday }}</span>
               <strong>{{ day.dayNumber }}</strong>
-              <small>{{ meetingCountLabel(day.events.length) }}</small>
+              <small>{{ calendarEntryCountLabel(day.events.length + day.timeOff.length) }}</small>
+            </div>
+
+            <div class="calendar-all-day-label">Cały dzień</div>
+            <div
+              v-for="day in calendarDays"
+              :key="`time-off-${day.key}`"
+              class="calendar-all-day-cell"
+              :class="{ 'calendar-all-day-cell--today': day.isToday }"
+            >
+              <button
+                v-for="item in day.timeOff"
+                :key="item.id"
+                type="button"
+                class="calendar-time-off"
+                :aria-label="timeOffAccessibleLabel(item)"
+                @click="openTimeOff(item)"
+              >
+                <UIcon name="i-lucide-plane" />
+                <span>Urlop</span>
+              </button>
             </div>
 
             <div class="calendar-time-rail" :style="{ height: `${gridHeight}px` }" aria-hidden="true">
@@ -550,9 +804,14 @@ function eventAccessibleLabel(appointment: Appointment) {
                 :key="event.appointment.id"
                 type="button"
                 class="calendar-event"
-                :class="`calendar-event--${event.appointment.status}`"
+                :class="[
+                  `calendar-event--${event.appointment.status}`,
+                  { 'calendar-event--online': event.appointment.meeting_mode === 'online' },
+                  `calendar-event--${eventDensity(event)}`,
+                ]"
                 :style="eventStyle(event)"
                 :aria-label="eventAccessibleLabel(event.appointment)"
+                :title="eventAccessibleLabel(event.appointment)"
                 @click="openAppointment(event.appointment)"
               >
                 <span class="calendar-event__time">
@@ -560,13 +819,15 @@ function eventAccessibleLabel(appointment: Appointment) {
                 </span>
                 <strong>{{ event.appointment.customer_name }}</strong>
                 <span class="calendar-event__service">{{ event.appointment.serviceName }}</span>
-                <span class="calendar-event__facility">{{ event.appointment.facilityName }}</span>
+                <span class="calendar-event__facility">
+                  {{ event.appointment.meeting_mode === 'online' ? 'Online' : event.appointment.facilityName }}
+                </span>
               </button>
             </section>
           </div>
         </div>
 
-        <div class="calendar-agenda" aria-label="Spotkania w widoku listy">
+        <div class="calendar-agenda" aria-label="Kalendarz w widoku listy">
           <section
             v-for="day in calendarDays"
             :key="`agenda-${day.key}`"
@@ -578,9 +839,25 @@ function eventAccessibleLabel(appointment: Appointment) {
                 <span>{{ day.weekday }}</span>
                 <strong>{{ day.dayNumber }}</strong>
               </div>
-              <small>{{ meetingCountLabel(day.events.length) }}</small>
+              <small>{{ calendarEntryCountLabel(day.events.length + day.timeOff.length) }}</small>
             </header>
-            <div v-if="day.events.length" class="calendar-agenda-day__events">
+            <div v-if="day.events.length || day.timeOff.length" class="calendar-agenda-day__events">
+              <button
+                v-for="item in day.timeOff"
+                :key="`vacation-${item.id}`"
+                type="button"
+                class="calendar-agenda-event calendar-agenda-event--vacation"
+                @click="openTimeOff(item)"
+              >
+                <span class="calendar-agenda-event__time">
+                  Cały dzień
+                </span>
+                <span class="calendar-agenda-event__copy">
+                  <strong>Urlop</strong>
+                  <small>{{ formatTimeOffRange(item) }}</small>
+                </span>
+                <UIcon name="i-lucide-chevron-right" />
+              </button>
               <button
                 v-for="event in day.events"
                 :key="event.appointment.id"
@@ -595,20 +872,23 @@ function eventAccessibleLabel(appointment: Appointment) {
                 </span>
                 <span class="calendar-agenda-event__copy">
                   <strong>{{ event.appointment.customer_name }}</strong>
-                  <small>{{ event.appointment.serviceName }} · {{ event.appointment.facilityName }}</small>
+                  <small>
+                    {{ event.appointment.serviceName }}
+                    · {{ event.appointment.meeting_mode === 'online' ? 'Online' : event.appointment.facilityName }}
+                  </small>
                 </span>
                 <UIcon name="i-lucide-chevron-right" />
               </button>
             </div>
-            <p v-else>Brak spotkań</p>
+            <p v-else>Brak zdarzeń</p>
           </section>
         </div>
 
-        <div v-if="!appointments.length" class="calendar-empty-note">
+        <div v-if="!appointments.length && !timeOff.length" class="calendar-empty-note">
           <UIcon name="i-lucide-calendar-check-2" />
           <div>
             <strong>Ten tydzień jest wolny</strong>
-            <span>Nie ma potwierdzonych spotkań dla wybranego eksperta.</span>
+            <span>Nie ma spotkań ani urlopów dla wybranego eksperta.</span>
           </div>
         </div>
       </template>
@@ -623,14 +903,23 @@ function eventAccessibleLabel(appointment: Appointment) {
       <template v-if="selectedAppointment" #body>
         <div class="appointment-detail">
           <div class="appointment-detail__hero">
-            <span><UIcon name="i-lucide-calendar-clock" /></span>
+            <span class="appointment-detail__icon"><UIcon name="i-lucide-calendar-clock" /></span>
             <div>
               <strong>{{ formatAppointmentDate(selectedAppointment) }}</strong>
               <p>{{ formatTime(selectedAppointment.starts_at) }}–{{ formatTime(selectedAppointment.ends_at) }}</p>
             </div>
-            <UBadge :color="statusColor(selectedAppointment.status)" variant="subtle">
-              {{ statusLabel(selectedAppointment.status) }}
-            </UBadge>
+            <UBadge
+              class="appointment-detail__status"
+              :color="statusColor(selectedAppointment.status)"
+              :label="statusLabel(selectedAppointment.status)"
+              variant="soft"
+              size="sm"
+              :icon="selectedAppointment.status === 'confirmed'
+                ? 'i-lucide-circle-check'
+                : selectedAppointment.status === 'hold'
+                  ? 'i-lucide-clock-3'
+                  : 'i-lucide-circle-x'"
+            />
           </div>
 
           <dl class="appointment-detail__grid">
@@ -639,8 +928,12 @@ function eventAccessibleLabel(appointment: Appointment) {
               <dd>{{ selectedAppointment.serviceName || 'Spotkanie' }}</dd>
             </div>
             <div>
-              <dt>Placówka</dt>
-              <dd>{{ selectedAppointment.facilityName || 'Brak placówki' }}</dd>
+              <dt>Forma spotkania</dt>
+              <dd>
+                {{ selectedAppointment.meeting_mode === 'online'
+                  ? 'Online'
+                  : `W biurze · ${selectedAppointment.facilityName || 'Brak placówki'}` }}
+              </dd>
             </div>
             <div>
               <dt>Ekspert</dt>
@@ -669,6 +962,18 @@ function eventAccessibleLabel(appointment: Appointment) {
             <span>Notatka</span>
             <p>{{ selectedAppointment.notes }}</p>
           </div>
+
+          <UButton
+            v-if="selectedAppointment.meeting_mode === 'online' && selectedAppointment.meeting_url"
+            :href="selectedAppointment.meeting_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            external
+            block
+            icon="i-lucide-video"
+          >
+            Otwórz spotkanie online
+          </UButton>
         </div>
       </template>
       <template #footer="{ close }">
@@ -683,6 +988,48 @@ function eventAccessibleLabel(appointment: Appointment) {
         </UButton>
       </template>
     </UModal>
+
+    <UModal
+      v-model:open="timeOffOpen"
+      title="Urlop"
+      :description="selectedTimeOff ? formatTimeOffRange(selectedTimeOff) : undefined"
+      :dismissible="!deletingTimeOff"
+      :ui="{ content: 'sm:max-w-lg', footer: 'justify-between' }"
+    >
+      <template v-if="selectedTimeOff" #body>
+        <div class="time-off-detail">
+          <span><UIcon name="i-lucide-plane" /></span>
+          <div>
+            <small>Cały dzień</small>
+            <strong>{{ formatTimeOffRange(selectedTimeOff) }}</strong>
+            <p v-if="selectedTimeOff.notes">{{ selectedTimeOff.notes }}</p>
+            <p v-else>W tym okresie ekspert jest niedostępny dla nowych rezerwacji.</p>
+          </div>
+        </div>
+      </template>
+      <template #footer="{ close }">
+        <UButton color="neutral" variant="ghost" :disabled="deletingTimeOff" @click="close">
+          Zamknij
+        </UButton>
+        <UButton
+          v-if="selectedTimeOff?.canManage"
+          color="error"
+          variant="soft"
+          icon="i-lucide-trash-2"
+          :loading="deletingTimeOff"
+          @click="deleteSelectedTimeOff"
+        >
+          Usuń urlop
+        </UButton>
+      </template>
+    </UModal>
+
+    <CalendarCreateAppointmentModal
+      v-model:open="createAppointmentOpen"
+      :initial-date="selectedDate"
+      :initial-expert-id="selectedExpertId"
+      @created="handleCalendarEntryCreated"
+    />
   </CrmShell>
 </template>
 
@@ -714,6 +1061,10 @@ function eventAccessibleLabel(appointment: Appointment) {
 
 .calendar-expert-select {
   min-width: 240px;
+}
+
+.calendar-facility-select {
+  min-width: 220px;
 }
 
 .calendar-date-input {
@@ -801,6 +1152,10 @@ function eventAccessibleLabel(appointment: Appointment) {
 
 .calendar-legend__dot--confirmed {
   background: var(--ui-success);
+}
+
+.calendar-legend__dot--vacation {
+  background: var(--ui-primary);
 }
 
 .calendar-message {
@@ -897,6 +1252,71 @@ function eventAccessibleLabel(appointment: Appointment) {
   color: var(--ui-text-inverted);
 }
 
+.calendar-all-day-label,
+.calendar-all-day-cell {
+  min-height: 44px;
+  border-bottom: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 97%, var(--ui-bg-muted));
+}
+
+.calendar-all-day-label {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: var(--ui-text-dimmed);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendar-all-day-cell {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 5px;
+  border-left: 1px solid var(--ui-border);
+}
+
+.calendar-all-day-cell--today {
+  background: color-mix(in srgb, var(--ui-primary) 3.5%, var(--ui-bg));
+}
+
+.calendar-time-off {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 35%, var(--ui-border));
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--ui-primary) 11%, var(--ui-bg)) 0 5px,
+      color-mix(in srgb, var(--ui-primary) 6%, var(--ui-bg)) 5px 10px
+    );
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.calendar-time-off .iconify {
+  flex: 0 0 auto;
+  color: var(--ui-primary);
+}
+
+.calendar-time-off span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .calendar-time-rail {
   position: sticky;
   left: 0;
@@ -942,7 +1362,7 @@ function eventAccessibleLabel(appointment: Appointment) {
   gap: 2px;
   min-width: 0;
   overflow: hidden;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 1px solid;
   border-radius: 10px;
   color: var(--ui-text-highlighted);
@@ -971,11 +1391,28 @@ function eventAccessibleLabel(appointment: Appointment) {
   background: color-mix(in srgb, var(--ui-warning) 11%, var(--ui-bg));
 }
 
+.calendar-event--online {
+  border-color: color-mix(in srgb, var(--ui-primary) 38%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-primary) 9%, var(--ui-bg));
+}
+
+.calendar-event--compact {
+  gap: 1px;
+  padding: 5px 7px;
+}
+
+.calendar-event--compact .calendar-event__service,
+.calendar-event--compact .calendar-event__facility,
+.calendar-event--standard .calendar-event__facility {
+  display: none;
+}
+
 .calendar-event__time {
   color: var(--ui-text-toned);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
+  line-height: 1.15;
 }
 
 .calendar-event strong,
@@ -987,9 +1424,13 @@ function eventAccessibleLabel(appointment: Appointment) {
 }
 
 .calendar-event strong {
-  margin-top: 1px;
   font-size: 12px;
   line-height: 1.3;
+}
+
+.calendar-event--compact strong {
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .calendar-event__service,
@@ -1049,6 +1490,9 @@ function eventAccessibleLabel(appointment: Appointment) {
 }
 
 .appointment-detail__hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--ui-border);
@@ -1056,7 +1500,7 @@ function eventAccessibleLabel(appointment: Appointment) {
   background: var(--ui-bg-muted);
 }
 
-.appointment-detail__hero > span {
+.appointment-detail__icon {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -1069,7 +1513,11 @@ function eventAccessibleLabel(appointment: Appointment) {
 
 .appointment-detail__hero > div {
   min-width: 0;
-  margin-right: auto;
+}
+
+.appointment-detail__status {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .appointment-detail__hero strong,
@@ -1161,9 +1609,60 @@ function eventAccessibleLabel(appointment: Appointment) {
   font-size: 13px;
 }
 
+.time-off-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 28%, var(--ui-border));
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-bg-muted));
+}
+
+.time-off-detail > span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--ui-bg);
+  color: var(--ui-primary);
+}
+
+.time-off-detail > div {
+  display: grid;
+  gap: 3px;
+}
+
+.time-off-detail small {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.time-off-detail strong {
+  color: var(--ui-text-highlighted);
+  font-size: 14px;
+}
+
+.time-off-detail p {
+  margin: 7px 0 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
 @media (max-width: 900px) {
   .calendar-expert-select {
     flex: 1 1 230px;
+    min-width: 0;
+  }
+
+  .calendar-facility-select {
+    flex: 1 1 220px;
     min-width: 0;
   }
 
@@ -1267,6 +1766,11 @@ function eventAccessibleLabel(appointment: Appointment) {
     border-left: 3px solid var(--ui-warning);
   }
 
+  .calendar-agenda-event--vacation {
+    border-left: 3px solid var(--ui-primary);
+    background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-bg-muted));
+  }
+
   .calendar-agenda-event__time {
     display: grid;
     flex: 0 0 48px;
@@ -1314,6 +1818,7 @@ function eventAccessibleLabel(appointment: Appointment) {
 
 @media (max-width: 560px) {
   .calendar-expert-select,
+  .calendar-facility-select,
   .calendar-date-input {
     flex-basis: 100%;
     width: 100%;
@@ -1343,8 +1848,13 @@ function eventAccessibleLabel(appointment: Appointment) {
   }
 
   .appointment-detail__hero {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .appointment-detail__status {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .appointment-detail__grid {

@@ -99,7 +99,7 @@ export type Database = {
       }
       appointment_resource_reservations: {
         Row: {
-          appointment_id: string
+          appointment_id: string | null
           busy_period: unknown
           created_at: string
           hold_expires_at: string | null
@@ -108,10 +108,11 @@ export type Database = {
           resource_id: string
           resource_type: string
           status: string
+          time_off_id: string | null
           updated_at: string
         }
         Insert: {
-          appointment_id: string
+          appointment_id?: string | null
           busy_period: unknown
           created_at?: string
           hold_expires_at?: string | null
@@ -120,10 +121,11 @@ export type Database = {
           resource_id: string
           resource_type: string
           status: string
+          time_off_id?: string | null
           updated_at?: string
         }
         Update: {
-          appointment_id?: string
+          appointment_id?: string | null
           busy_period?: unknown
           created_at?: string
           hold_expires_at?: string | null
@@ -132,6 +134,7 @@ export type Database = {
           resource_id?: string
           resource_type?: string
           status?: string
+          time_off_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -140,6 +143,13 @@ export type Database = {
             columns: ["organization_id", "appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "appointment_resource_reservations_time_off_fkey"
+            columns: ["organization_id", "time_off_id"]
+            isOneToOne: false
+            referencedRelation: "expert_time_off"
             referencedColumns: ["organization_id", "id"]
           },
         ]
@@ -165,6 +175,8 @@ export type Database = {
           id: string
           idempotency_key: string | null
           manage_token: string
+          meeting_mode: string
+          meeting_url: string | null
           notes: string | null
           organization_id: string
           request_fingerprint: string | null
@@ -196,6 +208,8 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           manage_token?: string
+          meeting_mode?: string
+          meeting_url?: string | null
           notes?: string | null
           organization_id: string
           request_fingerprint?: string | null
@@ -227,6 +241,8 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           manage_token?: string
+          meeting_mode?: string
+          meeting_url?: string | null
           notes?: string | null
           organization_id?: string
           request_fingerprint?: string | null
@@ -445,6 +461,7 @@ export type Database = {
       }
       booking_widget_events: {
         Row: {
+          event_id: string | null
           event_type: string
           facility_id: string
           id: number
@@ -452,9 +469,11 @@ export type Database = {
           occurred_at: string
           organization_id: string
           service_id: string | null
+          visit_id: string
           widget_id: string
         }
         Insert: {
+          event_id?: string | null
           event_type: string
           facility_id: string
           id?: never
@@ -462,9 +481,11 @@ export type Database = {
           occurred_at?: string
           organization_id: string
           service_id?: string | null
+          visit_id: string
           widget_id: string
         }
         Update: {
+          event_id?: string | null
           event_type?: string
           facility_id?: string
           id?: never
@@ -472,6 +493,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           service_id?: string | null
+          visit_id?: string
           widget_id?: string
         }
         Relationships: [
@@ -542,6 +564,7 @@ export type Database = {
           fixed_expert_user_id: string | null
           id: string
           is_active: boolean
+          is_directory_listed: boolean
           locale: string
           name: string
           organization_id: string
@@ -564,6 +587,7 @@ export type Database = {
           fixed_expert_user_id?: string | null
           id?: string
           is_active?: boolean
+          is_directory_listed?: boolean
           locale?: string
           name: string
           organization_id: string
@@ -586,6 +610,7 @@ export type Database = {
           fixed_expert_user_id?: string | null
           id?: string
           is_active?: boolean
+          is_directory_listed?: boolean
           locale?: string
           name?: string
           organization_id?: string
@@ -724,6 +749,67 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organization_memberships"
             referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
+      client_account_links: {
+        Row: {
+          auth_user_id: string
+          client_id: string
+          client_person_id: string
+          created_at: string
+          organization_id: string
+          revoked_at: string | null
+          source_appointment_id: string | null
+          verification_method: string
+          verified_at: string
+          verified_contact_normalized: string
+        }
+        Insert: {
+          auth_user_id: string
+          client_id: string
+          client_person_id: string
+          created_at?: string
+          organization_id: string
+          revoked_at?: string | null
+          source_appointment_id?: string | null
+          verification_method: string
+          verified_at: string
+          verified_contact_normalized: string
+        }
+        Update: {
+          auth_user_id?: string
+          client_id?: string
+          client_person_id?: string
+          created_at?: string
+          organization_id?: string
+          revoked_at?: string | null
+          source_appointment_id?: string | null
+          verification_method?: string
+          verified_at?: string
+          verified_contact_normalized?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_account_links_appointment_fkey"
+            columns: ["organization_id", "source_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "client_account_links_auth_user_id_fkey"
+            columns: ["auth_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_account_links_person_fkey"
+            columns: ["organization_id", "client_id", "client_person_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_people"
+            referencedColumns: ["organization_id", "client_id", "id"]
           },
         ]
       }
@@ -2988,6 +3074,75 @@ export type Database = {
           },
         ]
       }
+      expert_time_off: {
+        Row: {
+          all_day: boolean
+          cancelled_at: string | null
+          created_at: string
+          created_by_user_id: string
+          ends_at: string
+          expert_user_id: string
+          id: string
+          kind: string
+          notes: string | null
+          organization_id: string
+          starts_at: string
+          status: string
+          time_off_period: unknown
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by_user_id: string
+          ends_at: string
+          expert_user_id: string
+          id?: string
+          kind?: string
+          notes?: string | null
+          organization_id: string
+          starts_at: string
+          status?: string
+          time_off_period?: unknown
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by_user_id?: string
+          ends_at?: string
+          expert_user_id?: string
+          id?: string
+          kind?: string
+          notes?: string | null
+          organization_id?: string
+          starts_at?: string
+          status?: string
+          time_off_period?: unknown
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_time_off_creator_membership_fkey"
+            columns: ["organization_id", "created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "expert_time_off_expert_membership_fkey"
+            columns: ["organization_id", "expert_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
       external_busy_blocks: {
         Row: {
           busy_period: unknown
@@ -3090,6 +3245,85 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facility_images: {
+        Row: {
+          alt_text: string | null
+          created_at: string
+          facility_id: string
+          height_px: number
+          id: string
+          mime_type: string
+          organization_id: string
+          original_filename: string
+          sha256: string
+          size_bytes: number
+          sort_order: number
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          uploaded_by: string
+          width_px: number
+        }
+        Insert: {
+          alt_text?: string | null
+          created_at?: string
+          facility_id: string
+          height_px: number
+          id?: string
+          mime_type?: string
+          organization_id: string
+          original_filename: string
+          sha256: string
+          size_bytes: number
+          sort_order?: number
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          uploaded_by: string
+          width_px: number
+        }
+        Update: {
+          alt_text?: string | null
+          created_at?: string
+          facility_id?: string
+          height_px?: number
+          id?: string
+          mime_type?: string
+          organization_id?: string
+          original_filename?: string
+          sha256?: string
+          size_bytes?: number
+          sort_order?: number
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string
+          width_px?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_images_facility_fkey"
+            columns: ["organization_id", "facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "facility_images_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facility_images_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -3741,6 +3975,162 @@ export type Database = {
           },
         ]
       }
+      mortgage_document_template_revisions: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          revision: number
+          template_id: string
+          template_json: Json
+          validation_report: Json
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          revision: number
+          template_id: string
+          template_json: Json
+          validation_report: Json
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          revision?: number
+          template_id?: string
+          template_json?: Json
+          validation_report?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_document_template_revisions_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_template_revisions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_document_templates: {
+        Row: {
+          active_json: Json | null
+          active_published_at: string | null
+          active_published_by_user_id: string | null
+          active_revision: number
+          active_validation_report: Json | null
+          bank_id: string
+          created_at: string
+          created_by_user_id: string | null
+          current_published_revision_id: string | null
+          draft_json: Json | null
+          draft_revision: number
+          draft_updated_at: string | null
+          draft_updated_by_user_id: string | null
+          draft_validation_report: Json | null
+          id: string
+          label: string
+          registry_version: number
+          source_file_name: string
+          source_sha256: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          active_json?: Json | null
+          active_published_at?: string | null
+          active_published_by_user_id?: string | null
+          active_revision?: number
+          active_validation_report?: Json | null
+          bank_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_published_revision_id?: string | null
+          draft_json?: Json | null
+          draft_revision?: number
+          draft_updated_at?: string | null
+          draft_updated_by_user_id?: string | null
+          draft_validation_report?: Json | null
+          id?: string
+          label: string
+          registry_version: number
+          source_file_name: string
+          source_sha256: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          active_json?: Json | null
+          active_published_at?: string | null
+          active_published_by_user_id?: string | null
+          active_revision?: number
+          active_validation_report?: Json | null
+          bank_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_published_revision_id?: string | null
+          draft_json?: Json | null
+          draft_revision?: number
+          draft_updated_at?: string | null
+          draft_updated_by_user_id?: string | null
+          draft_validation_report?: Json | null
+          id?: string
+          label?: string
+          registry_version?: number
+          source_file_name?: string
+          source_sha256?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_document_templates_active_published_by_user_id_fkey"
+            columns: ["active_published_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_current_published_revision_id_fkey"
+            columns: ["current_published_revision_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_template_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_draft_updated_by_user_id_fkey"
+            columns: ["draft_updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mortgage_product_drafts: {
         Row: {
           base_version_id: string | null
@@ -3953,6 +4343,45 @@ export type Database = {
             columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_product_version_document_templates: {
+        Row: {
+          created_at: string
+          product_version_id: string
+          requirement_code: string
+          sort_order: number
+          template_revision_id: string
+        }
+        Insert: {
+          created_at?: string
+          product_version_id: string
+          requirement_code: string
+          sort_order?: number
+          template_revision_id: string
+        }
+        Update: {
+          created_at?: string
+          product_version_id?: string
+          requirement_code?: string
+          sort_order?: number
+          template_revision_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_product_version_document_tem_template_revision_id_fkey"
+            columns: ["template_revision_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_document_template_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_product_version_document_templ_product_version_id_fkey"
+            columns: ["product_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_product_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -4498,6 +4927,45 @@ export type Database = {
           },
         ]
       }
+      organization_user_preferences: {
+        Row: {
+          created_at: string
+          default_facility_id: string | null
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_facility_id?: string | null
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          default_facility_id?: string | null
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_preferences_default_facility_fkey"
+            columns: ["organization_id", "default_facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "organization_user_preferences_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string
@@ -4537,6 +5005,30 @@ export type Database = {
           granted_by?: string | null
           role?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          locale: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+          locale?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          locale?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -4978,21 +5470,43 @@ export type Database = {
         }
         Returns: Json
       }
-      create_staff_appointment: {
-        Args: {
-          p_client_id: string
-          p_client_person_id: string
-          p_created_by_user_id: string
-          p_expert_user_id: string
-          p_facility_id: string
-          p_idempotency_key: string
-          p_notes: string
-          p_organization_id: string
-          p_service_id: string
-          p_starts_at: string
-        }
+      create_organization_with_admin: {
+        Args: { full_name?: string; organization_name: string }
         Returns: Json
       }
+      create_staff_appointment:
+        | {
+            Args: {
+              p_client_id: string
+              p_client_person_id: string
+              p_created_by_user_id: string
+              p_expert_user_id: string
+              p_facility_id: string
+              p_idempotency_key: string
+              p_notes: string
+              p_organization_id: string
+              p_service_id: string
+              p_starts_at: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_client_id: string
+              p_client_person_id: string
+              p_created_by_user_id: string
+              p_expert_user_id: string
+              p_facility_id: string
+              p_idempotency_key: string
+              p_meeting_mode: string
+              p_meeting_url: string
+              p_notes: string
+              p_organization_id: string
+              p_service_id: string
+              p_starts_at: string
+            }
+            Returns: Json
+          }
       create_widget_booking: {
         Args: {
           p_booking_context: Json
@@ -5064,6 +5578,15 @@ export type Database = {
           starts_at: string
         }[]
       }
+      publish_mortgage_document_template_draft: {
+        Args: {
+          p_actor_user_id: string
+          p_bank_id: string
+          p_expected_revision: number
+          p_template_key: string
+        }
+        Returns: Json
+      }
       publish_mortgage_product_draft: {
         Args: {
           p_actor_user_id: string
@@ -5077,9 +5600,11 @@ export type Database = {
       }
       record_booking_widget_event: {
         Args: {
+          p_event_id?: string
           p_event_type: string
           p_is_embedded?: boolean
           p_service_id?: string
+          p_visit_id: string
           p_widget_token: string
         }
         Returns: undefined
@@ -5119,6 +5644,21 @@ export type Database = {
         }
         Returns: Json
       }
+      save_mortgage_document_template_draft: {
+        Args: {
+          p_actor_user_id: string
+          p_bank_id: string
+          p_expected_revision: number
+          p_label: string
+          p_registry_version: number
+          p_source_file_name: string
+          p_source_sha256: string
+          p_template_json: Json
+          p_template_key: string
+          p_validation_report: Json
+        }
+        Returns: Json
+      }
       save_mortgage_product_draft_v2: {
         Args: {
           p_actor_user_id: string
@@ -5132,7 +5672,15 @@ export type Database = {
         Args: { p_filters?: Json; p_organization_id: string }
         Returns: Json
       }
+      search_crm_cases_with_context: {
+        Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
       search_crm_clients: {
+        Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
+      search_crm_clients_ranked: {
         Args: { p_filters?: Json; p_organization_id: string }
         Returns: Json
       }
@@ -5143,6 +5691,14 @@ export type Database = {
           p_organization_id: string
         }
         Returns: Json
+      }
+      set_facility_cover_image: {
+        Args: {
+          p_facility_id: string
+          p_image_id: string
+          p_organization_id: string
+        }
+        Returns: undefined
       }
       sign_crm_case_contract: {
         Args: {

@@ -2,8 +2,14 @@
 const MIN_VISIBLE_MS = 350
 const LOAD_TIMEOUT_MS = 8000
 
+const LoaderAnimation = defineAsyncComponent(() => import('~/components/RiveAnimation.vue'))
 const router = useRouter()
-const isLoading = ref(true)
+const route = useRoute()
+const loaderRoutePrefixes = ['/personalizacja', '/multiform-eve']
+const routeUsesLoader = (path: string) => loaderRoutePrefixes.some(prefix => (
+  path === prefix || path.startsWith(`${prefix}/`)
+))
+const isLoading = ref(routeUsesLoader(route.path))
 const isDark = ref(false)
 let animationReady = false
 let pageReady = false
@@ -20,9 +26,11 @@ const loaderSrc = computed(() => isDark.value
 
 function showLoader() {
   clearTimeout(hideTimer)
+  clearTimeout(safetyTimer)
   isLoading.value = true
   pageReady = false
   shownAt = Date.now()
+  safetyTimer = setTimeout(onAnimationSettled, LOAD_TIMEOUT_MS)
 }
 
 function hideLoaderWhenReady() {
@@ -41,8 +49,13 @@ function onAnimationSettled() {
   if (pageReady) hideLoaderWhenReady()
 }
 
-const removeBeforeEach = router.beforeEach(() => showLoader())
-const removeAfterEach = router.afterEach(() => hideLoaderWhenReady())
+const removeBeforeEach = router.beforeEach((to) => {
+  if (routeUsesLoader(to.path)) showLoader()
+  else isLoading.value = false
+})
+const removeAfterEach = router.afterEach((to) => {
+  if (routeUsesLoader(to.path)) hideLoaderWhenReady()
+})
 
 onMounted(() => {
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
@@ -50,8 +63,10 @@ onMounted(() => {
   mediaQuery.addEventListener('change', updateTheme)
 
   // The first route is already resolved by the time the root component mounts.
-  hideLoaderWhenReady()
-  safetyTimer = setTimeout(onAnimationSettled, LOAD_TIMEOUT_MS)
+  if (routeUsesLoader(route.path)) {
+    hideLoaderWhenReady()
+    safetyTimer = setTimeout(onAnimationSettled, LOAD_TIMEOUT_MS)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -71,7 +86,7 @@ onBeforeUnmount(() => {
     <Transition name="app-loader">
       <div v-if="isLoading" class="app-loader" role="status" aria-live="polite">
         <ClientOnly>
-          <RiveAnimation
+          <LoaderAnimation
             class="app-loader__animation"
             :src="loaderSrc"
             :auto-bind="false"

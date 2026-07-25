@@ -13,6 +13,11 @@ export interface CaseBankSummary {
   name: string
 }
 
+export interface CaseSearchMatchContext {
+  type: 'person' | 'client' | 'product' | 'property'
+  label: string
+}
+
 export interface CaseListItem {
   id: string
   title: string
@@ -21,6 +26,7 @@ export interface CaseListItem {
   clients: CaseClient[]
   offer_count: number
   banks: CaseBankSummary[]
+  match_context?: CaseSearchMatchContext | null
 }
 
 export interface CaseListResponse {

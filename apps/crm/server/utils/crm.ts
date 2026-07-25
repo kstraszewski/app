@@ -1,14 +1,19 @@
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 import { useRuntimeConfig } from '#imports'
 import { createError, getRouterParam, type H3Event } from 'h3'
+import { expandManagedTeamIds, type TeamScopeEdge } from './team-scope'
 
 type CrmSupabaseClient = any
 
-export interface AuthenticatedSession {
+export interface AuthIdentity {
   supabase: CrmSupabaseClient
   userId: string
   email: string
+  phone: string
   fullName: string
+}
+
+export interface AuthenticatedSession extends AuthIdentity {
   defaultOrganizationId: string
 }
 
@@ -19,7 +24,13 @@ export interface CrmSession extends AuthenticatedSession {
   role: string
 }
 
-export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
+export interface TeamAdminScope {
+  organizationAdmin: boolean
+  directAdminTeamIds: string[]
+  managedTeamIds: string[]
+}
+
+export async function requireAuthIdentity(event: H3Event): Promise<AuthIdentity> {
   const supabaseConfig = useRuntimeConfig(event).public.supabase as { url?: string; key?: string }
   if (!supabaseConfig.url || !supabaseConfig.key || supabaseConfig.key === 'local-development-placeholder') {
     throw createError({
@@ -35,10 +46,34 @@ export async function requireAuthenticatedSession(event: H3Event): Promise<Authe
   }
 
   const supabase = await serverSupabaseClient(event) as CrmSupabaseClient
-  const { data: profile, error } = await supabase
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle()
+
+  throwDbError(profileError)
+
+  const claimRecord = asRecord(claims)
+  const metadata = asRecord(claimRecord.user_metadata)
+
+  return {
+    supabase,
+    userId,
+    email: textValue(claimRecord.email) ?? '',
+    phone: textValue(claimRecord.phone) ?? '',
+    fullName: textValue(profile?.display_name)
+      ?? textValue(metadata.full_name)
+      ?? '',
+  }
+}
+
+export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
+  const identity = await requireAuthIdentity(event)
+  const { data: profile, error } = await identity.supabase
     .from('users')
     .select('id, organization_id, email, full_name')
-    .eq('id', userId)
+    .eq('id', identity.userId)
     .single()
 
   if (error || !profile?.organization_id) {
@@ -49,10 +84,9 @@ export async function requireAuthenticatedSession(event: H3Event): Promise<Authe
   }
 
   return {
-    supabase,
-    userId,
-    email: String(profile.email ?? ''),
-    fullName: String(profile.full_name ?? ''),
+    ...identity,
+    email: String(profile.email ?? identity.email),
+    fullName: String(profile.full_name ?? identity.fullName),
     defaultOrganizationId: String(profile.organization_id),
   }
 }
@@ -104,19 +138,144 @@ export function requireOrganizationAdmin(session: CrmSession): void {
   }
 }
 
-export async function requireTeamAdmin(session: CrmSession, teamId: string): Promise<void> {
-  if (session.role === 'admin') return
-  const { data, error } = await session.supabase
+export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAdminScope> {
+  const directMembershipsResult = await session.supabase
     .from('team_memberships')
     .select('team_id')
     .eq('organization_id', session.organizationId)
-    .eq('team_id', teamId)
+    .eq('user_id', session.userId)
+    .eq('role', 'admin')
+  throwDbError(directMembershipsResult.error)
+
+  const directAdminTeamIds: string[] = Array.from(new Set<string>(
+    ((directMembershipsResult.data ?? []) as Array<{ team_id: unknown }>)
+      .map(membership => String(membership.team_id)),
+  )).sort()
+
+  if (session.role === 'admin') {
+    const teamsResult = await session.supabase
+      .from('teams')
+      .select('id')
+      .eq('organization_id', session.organizationId)
+    throwDbError(teamsResult.error)
+
+    return {
+      organizationAdmin: true,
+      directAdminTeamIds,
+      managedTeamIds: (teamsResult.data ?? [])
+        .map((team: { id: unknown }) => String(team.id))
+        .sort(),
+    }
+  }
+
+  if (!directAdminTeamIds.length) {
+    return {
+      organizationAdmin: false,
+      directAdminTeamIds: [],
+      managedTeamIds: [],
+    }
+  }
+
+  const edgesResult = await session.supabase
+    .from('team_edges')
+    .select('parent_team_id, child_team_id')
+    .eq('organization_id', session.organizationId)
+  throwDbError(edgesResult.error)
+
+  const edges = (edgesResult.data ?? []).map((edge: Record<string, unknown>): TeamScopeEdge => ({
+    parent_team_id: String(edge.parent_team_id),
+    child_team_id: String(edge.child_team_id),
+  }))
+
+  return {
+    organizationAdmin: false,
+    directAdminTeamIds,
+    managedTeamIds: expandManagedTeamIds(directAdminTeamIds, edges).sort(),
+  }
+}
+
+export async function requireTeamAdmin(
+  session: CrmSession,
+  teamId: string,
+): Promise<TeamAdminScope> {
+  const scope = await resolveTeamAdminScope(session)
+  if (!scope.organizationAdmin && !scope.directAdminTeamIds.includes(teamId)) {
+    throw createError({ statusCode: 403, statusMessage: 'Team admin required' })
+  }
+  return scope
+}
+
+export async function requireTeamView(
+  session: CrmSession,
+  teamId: string,
+): Promise<TeamAdminScope> {
+  const scope = await resolveTeamAdminScope(session)
+  if (!scope.managedTeamIds.includes(teamId)) {
+    throw createError({ statusCode: 404, statusMessage: 'Team not found' })
+  }
+  return scope
+}
+
+export async function requireFacilityAdminMembership(
+  session: CrmSession,
+  facilityId: string,
+): Promise<void> {
+  if (session.role === 'admin') return
+
+  const { data, error } = await session.supabase
+    .from('facility_memberships')
+    .select('facility_id')
+    .eq('organization_id', session.organizationId)
+    .eq('facility_id', facilityId)
     .eq('user_id', session.userId)
     .eq('role', 'admin')
     .maybeSingle()
-  if (error || !data) {
-    throw createError({ statusCode: 403, statusMessage: 'Team admin required' })
+  throwDbError(error)
+
+  if (!data) {
+    throw createError({ statusCode: 403, statusMessage: 'Facility admin membership required' })
   }
+}
+
+export async function requireSafeTeamAdminRemoval(
+  session: CrmSession,
+  teamId: string,
+  userId: string,
+): Promise<{ role: string }> {
+  await requireTeamAdmin(session, teamId)
+
+  const membershipResult = await session.supabase
+    .from('team_memberships')
+    .select('role')
+    .eq('organization_id', session.organizationId)
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  throwDbError(membershipResult.error)
+
+  if (!membershipResult.data) {
+    throw createError({ statusCode: 404, statusMessage: 'Team membership not found' })
+  }
+
+  const role = String(membershipResult.data.role ?? 'member')
+  if (session.role !== 'admin' && role === 'admin') {
+    const adminCountResult = await session.supabase
+      .from('team_memberships')
+      .select('*', { count: 'exact', head: true })
+      .eq('organization_id', session.organizationId)
+      .eq('team_id', teamId)
+      .eq('role', 'admin')
+    throwDbError(adminCountResult.error)
+
+    if ((adminCountResult.count ?? 0) <= 1) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Team must keep at least one direct administrator',
+      })
+    }
+  }
+
+  return { role }
 }
 
 export async function hasSuperAdminRole(session: AuthenticatedSession): Promise<boolean> {

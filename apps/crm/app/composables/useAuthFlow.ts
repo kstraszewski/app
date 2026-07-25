@@ -1,3 +1,5 @@
+import type { AccountContexts } from '~/types/account'
+
 interface AuthErrorLike {
   message?: string
   code?: string
@@ -6,10 +8,16 @@ interface AuthErrorLike {
 export function useAuthFlow() {
   const supabase = useSupabaseClient()
   const user = useSupabaseUser()
+  const requestFetch = useRequestFetch()
 
   function safeRedirect(value: unknown, fallback = '/dashboard') {
     if (typeof value !== 'string') return fallback
-    if (!value.startsWith('/') || value.startsWith('//')) return fallback
+    if (
+      !value.startsWith('/')
+      || value.startsWith('//')
+      || value.includes('\\')
+      || /%5c/iu.test(value)
+    ) return fallback
     return value
   }
 
@@ -22,25 +30,23 @@ export function useAuthFlow() {
 
   async function resolvePostAuthPath(value?: unknown) {
     const requested = safeRedirect(value, '')
-    if (requested.startsWith('/org/')) return requested
 
     const legacyOrganizationPath = /^\/(dashboard|clients|cases|facilities|mortgages|settings|teams)(\/|$)/.test(requested)
     if (requested && !legacyOrganizationPath) return requested
 
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('organization_id')
-      .single()
-    if (profileError || !profile?.organization_id) throw profileError ?? new Error('Brak organizacji użytkownika.')
+    const contexts = await requestFetch<AccountContexts>('/api/me/contexts')
+    const defaultOrganization = contexts.staffOrganizations.find(organization => organization.isDefault)
+      ?? contexts.staffOrganizations[0]
 
-    const { data: organization, error: organizationError } = await supabase
-      .from('organizations')
-      .select('slug')
-      .eq('id', profile.organization_id)
-      .single()
-    if (organizationError || !organization?.slug) throw organizationError ?? new Error('Brak organizacji użytkownika.')
-    const suffix = legacyOrganizationPath ? requested : '/dashboard'
-    return `/org/${encodeURIComponent(organization.slug)}${suffix}`
+    if (legacyOrganizationPath && defaultOrganization) {
+      return `/org/${encodeURIComponent(defaultOrganization.slug)}${requested}`
+    }
+    if (contexts.hasStaff && contexts.hasClient) return '/account'
+    if (defaultOrganization) {
+      return `/org/${encodeURIComponent(defaultOrganization.slug)}/dashboard`
+    }
+    if (contexts.hasClient) return '/client'
+    return '/onboarding'
   }
 
   function passwordIssue(password: string) {

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-useHead({ title: 'Dołącz do waitlisty — OpenExpert' })
+useLandingSeo({
+  title: 'Dołącz do waitlisty — OpenExpert',
+  description: 'Zapisz się na wczesny dostęp do OpenExpert.',
+  path: '/waitlist',
+  robots: 'noindex, follow',
+})
 
 interface SurveyStep {
   id: string

@@ -1,11 +1,13 @@
 import { createError } from 'h3'
 import { textValue, throwDbError, type CrmSession } from './crm'
+import { normalizeCrmSearchQuery } from './search'
 
 export const clientUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const ownerModes = new Set(['all', 'assigned', 'unassigned'])
 const consentDecisions = new Set(['granted', 'declined', 'withdrawn', 'unknown'])
 const clientSorts = new Set([
+  'relevance',
   'updated_desc',
   'updated_asc',
   'created_desc',
@@ -37,7 +39,7 @@ export interface ClientSearchFilters {
   hasPhone?: boolean
   consentDefinitionId?: string
   consentDecision?: 'granted' | 'declined' | 'withdrawn' | 'unknown'
-  sort: 'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc' | 'name_asc' | 'name_desc'
+  sort: 'relevance' | 'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc' | 'name_asc' | 'name_desc'
   limit: number
   offset: number
   cursor?: ClientSearchCursor
@@ -146,7 +148,9 @@ function parseCursor(input: unknown): ClientSearchCursor | undefined {
 }
 
 function parseSort(query: QueryRecord): ClientSearchFilters['sort'] {
-  const rawSort = textValue(Array.isArray(query.sort) ? query.sort[0] : query.sort) ?? 'updated_at'
+  const hasQuery = Boolean(textValue(Array.isArray(query.q) ? query.q[0] : query.q))
+  const rawSort = textValue(Array.isArray(query.sort) ? query.sort[0] : query.sort)
+    ?? (hasQuery ? 'relevance' : 'updated_at')
   if (clientSorts.has(rawSort)) return rawSort as ClientSearchFilters['sort']
 
   const direction = textValue(Array.isArray(query.direction) ? query.direction[0] : query.direction) ?? 'desc'
@@ -175,8 +179,9 @@ export function parseClientSearchFilters(
   session: Pick<CrmSession, 'userId'>,
   options: { forceFacets?: boolean } = {},
 ): ClientSearchFilters {
-  const q = textValue(Array.isArray(query.q) ? query.q[0] : query.q)
-  if (q && q.length > 200) validationError('q must not exceed 200 characters')
+  const rawQuery = textValue(Array.isArray(query.q) ? query.q[0] : query.q)
+  const q = normalizeCrmSearchQuery(rawQuery)
+  if (rawQuery && rawQuery.length > 200) validationError('q must not exceed 200 characters')
 
   const statusCodes = queryValues(query, ['status_code', 'status_codes', 'status'], 'status_code', 50, 80)
   const tagsAny = queryValues(query, ['tags_any', 'tags', 'tag'], 'tags_any', 50, 80)
@@ -303,7 +308,10 @@ export async function searchCrmClients(
   session: CrmSession,
   filters: ClientSearchFilters,
 ): Promise<ClientSearchPayload> {
-  const { data, error } = await session.supabase.rpc('search_crm_clients', {
+  const rpcName = filters.q && filters.sort === 'relevance'
+    ? 'search_crm_clients_ranked'
+    : 'search_crm_clients'
+  const { data, error } = await session.supabase.rpc(rpcName, {
     p_organization_id: session.organizationId,
     p_filters: filters,
   })

@@ -15,21 +15,12 @@ import {
   themeFontOptions,
   themeToCssVariables,
 } from '~/utils/personalization-theme'
+import { loadThemeFonts } from '~/utils/theme-fonts'
 
-useSeoMeta({
+useLandingSeo({
   title: 'Personalizacja CRM — OpenExpert',
   description: 'Porównaj neutralne warianty kolorystyczne i typograficzne CRM albo zbuduj własny motyw.',
-  ogTitle: 'Personalizacja CRM — OpenExpert',
-  ogDescription: 'Interaktywny konfigurator kolorów, fontów i kształtu interfejsu OpenExpert CRM.',
-  ogType: 'website',
-})
-
-useHead({
-  link: [
-    { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-    { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: 'anonymous' },
-    { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap' },
-  ],
+  path: '/personalizacja',
 })
 
 const STORAGE_KEY = 'openexpert-personalization-theme-v2'
@@ -143,6 +134,7 @@ function saveTheme() {
 }
 
 onMounted(() => {
+  loadThemeFonts()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return
@@ -194,7 +186,7 @@ onBeforeUnmount(() => {
       <section class="personalization-intro" aria-labelledby="personalization-title">
         <div>
           <p class="personalization-eyebrow">Personalizacja organizacji</p>
-          <h1 id="personalization-title">CRM w rytmie<br><em>Twojej marki.</em></h1>
+          <h1 id="personalization-title">CRM w rytmie{{ ' ' }}<br><em>Twojej marki.</em></h1>
         </div>
         <div class="personalization-intro__copy">
           <p>Wybierz gotową identyfikację lub zbuduj własną. Kolory, fonty i kształt aktualizują się od razu na żywym podglądzie sprawy obsługiwanej przez ekspertów i agentów AI.</p>

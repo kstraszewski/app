@@ -40,6 +40,8 @@ type AppointmentRow = {
   ends_at: string
   timezone: string
   status: string
+  meeting_mode: 'office' | 'online'
+  meeting_url: string | null
 }
 
 type FacilityInfo = {
@@ -155,9 +157,11 @@ export default defineEventHandler(async (event) => {
           }
 
           const facility = facilities.get(appointment.facility_id)
-          const location = facility
-            ? [facility.name, facility.address_line1, facility.address_line2, facility.postal_code, facility.city].filter(Boolean).join(', ')
-            : null
+          const location = appointment.meeting_mode === 'online'
+            ? appointment.meeting_url || 'Spotkanie online'
+            : facility
+              ? [facility.name, facility.address_line1, facility.address_line2, facility.postal_code, facility.city].filter(Boolean).join(', ')
+              : null
           const sourceFingerprint = appointmentFingerprint(appointment, location)
           if (link?.sync_status === 'synced' && link.source_fingerprint === sourceFingerprint) {
             eventsUnchanged += 1
@@ -168,7 +172,9 @@ export default defineEventHandler(async (event) => {
             calendarId: selectedCalendarId,
             externalEventId: link?.sync_status === 'deleted' ? null : link?.external_event_id,
             etag: link?.sync_status === 'deleted' ? null : link?.provider_etag,
-            title: 'OpenExpert: spotkanie',
+            title: appointment.meeting_mode === 'online'
+              ? 'OpenExpert: spotkanie online'
+              : 'OpenExpert: spotkanie',
             startsAt: new Date(appointment.starts_at).toISOString(),
             endsAt: new Date(appointment.ends_at).toISOString(),
             timezone: appointment.timezone,
@@ -242,7 +248,7 @@ async function loadConnectionAppointments(
   for (let offset = 0; ; offset += pageSize) {
     let query = serviceRole
       .from('appointments')
-      .select('id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status')
+      .select('id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status, meeting_mode, meeting_url')
       .eq('organization_id', organizationId)
       .gte('ends_at', startsAt)
       .lte('starts_at', endsAt)

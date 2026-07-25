@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
+import { seedDemoCrm } from './demo-crm.mjs'
+import { seedDemoFacilityImages } from './demo-facility-images.mjs'
+import { seedDemoScheduling } from './demo-scheduling.mjs'
 import { syncMortgageCatalog } from './sync-mortgage-catalog.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -13,6 +16,7 @@ const devAccount = {
   email: process.env.OPENEXPERT_DEV_EMAIL ?? 'admin@openexpert.local',
   password: process.env.OPENEXPERT_DEV_PASSWORD ?? 'OpenExpert123!',
   organizationName: process.env.OPENEXPERT_DEV_ORGANIZATION ?? 'OpenExpert Local',
+  organizationSlug: process.env.OPENEXPERT_DEV_ORGANIZATION_SLUG ?? 'openexpert-local',
   fullName: process.env.OPENEXPERT_DEV_FULL_NAME ?? 'Local Administrator',
 }
 
@@ -98,6 +102,24 @@ function assertNoError(error, operation) {
   if (error) throw new Error(operation + ': ' + errorDetail(error))
 }
 
+async function countOrganizationRows(client, table, organizationId) {
+  const { count, error } = await client
+    .from(table)
+    .select('*', { count: 'exact', head: true })
+    .eq('organization_id', organizationId)
+  assertNoError(error, 'Counting ' + table)
+  return count ?? 0
+}
+
+function warsawTime(instant) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Warsaw',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(instant))
+}
+
 async function waitForAuthHealth(credentials, attempts) {
   let lastError = 'unknown error'
 
@@ -118,15 +140,47 @@ async function waitForAuthHealth(credentials, attempts) {
   return lastError
 }
 
+async function waitForRestHealth(credentials, attempts) {
+  let lastError = 'unknown error'
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(credentials.url + '/rest/v1/users?select=id&limit=1', {
+        headers: {
+          apikey: credentials.serviceRoleKey,
+          authorization: 'Bearer ' + credentials.serviceRoleKey,
+        },
+      })
+      if (response.ok) return
+      const body = await response.text()
+      lastError = 'HTTP ' + response.status + (body ? ': ' + body : '')
+    }
+    catch (error) {
+      lastError = errorDetail(error)
+    }
+
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 500))
+  }
+
+  return lastError
+}
+
+async function waitForLocalHealth(credentials, attempts) {
+  const authError = await waitForAuthHealth(credentials, attempts)
+  if (authError) return 'Auth: ' + authError
+  const restError = await waitForRestHealth(credentials, attempts)
+  return restError ? 'REST: ' + restError : undefined
+}
+
 async function waitForLocalServices(credentials, { restartOnFailure = false } = {}) {
-  let lastError = await waitForAuthHealth(credentials, 10)
+  let lastError = await waitForLocalHealth(credentials, 40)
   if (!lastError) return
 
   if (restartOnFailure) {
     console.warn('Supabase API is not ready (' + lastError + '); refreshing the local stack...')
     runSupabase(['stop', '--yes'])
     runSupabase(['start'])
-    lastError = await waitForAuthHealth(credentials, 60)
+    lastError = await waitForLocalHealth(credentials, 60)
     if (!lastError) return
   }
 
@@ -192,9 +246,36 @@ function adminClient(credentials) {
   })
 }
 
-async function ensureLocalDemoWorkspace(supabase, profile) {
+async function authenticatedDevClient(credentials) {
+  const client = createClient(credentials.url, credentials.publicKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+  const { data, error } = await client.auth.signInWithPassword({
+    email: devAccount.email,
+    password: devAccount.password,
+  })
+  assertNoError(error, 'Signing in for the authenticated demo seed')
+  if (!data.session || !data.user) {
+    throw new Error('The authenticated demo seed received no user session.')
+  }
+  return client
+}
+
+async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
   const organizationId = profile.organization_id
   const userId = profile.id
+
+  const { error: organizationError } = await supabase
+    .from('organizations')
+    .update({
+      name: devAccount.organizationName,
+      slug: devAccount.organizationSlug,
+    })
+    .eq('id', organizationId)
+  assertNoError(organizationError, 'Stabilizing the local organization route')
 
   const { data: facility, error: facilityError } = await supabase
     .from('facilities')
@@ -215,6 +296,13 @@ async function ensureLocalDemoWorkspace(supabase, profile) {
     .select('id, name, slug')
     .single()
   assertNoError(facilityError, 'Seeding the Szczecin facility')
+
+  const facilityImages = await seedDemoFacilityImages({
+    adminClient: supabase,
+    profile,
+    facility,
+    repoRoot,
+  })
 
   const teamSeeds = [
     {
@@ -274,7 +362,7 @@ async function ensureLocalDemoWorkspace(supabase, profile) {
       organization_id: organizationId,
       team_id: team.id,
       user_id: userId,
-      role: 'member',
+      role: team.id === branch.id ? 'admin' : 'member',
     })),
     { onConflict: 'organization_id,team_id,user_id' },
   )
@@ -326,7 +414,34 @@ async function ensureLocalDemoWorkspace(supabase, profile) {
   }, { onConflict: 'organization_id,facility_id,service_id,user_id' })
   assertNoError(expertServiceError, 'Assigning the generic meeting service to the local expert')
 
-  return { facility, teams: [branch, mortgage, service] }
+  const userClient = await authenticatedDevClient(credentials)
+  try {
+    const seedNow = new Date()
+    const crm = await seedDemoCrm({
+      adminClient: supabase,
+      userClient,
+      profile,
+      seedNow,
+    })
+    const scheduling = await seedDemoScheduling({
+      adminClient: supabase,
+      profile,
+      facility,
+      meetingService,
+      clients: crm.clients,
+      seedNow,
+    })
+    return {
+      facility,
+      facilityImages,
+      teams: [branch, mortgage, service],
+      crm,
+      scheduling,
+    }
+  }
+  finally {
+    await userClient.auth.signOut({ scope: 'local' })
+  }
 }
 
 async function ensureDevAccount(credentials) {
@@ -362,12 +477,37 @@ async function ensureDevAccount(credentials) {
     userId = data.user.id
   }
 
-  const { data: profile, error: profileError } = await supabase
+  let { data: profile, error: profileError } = await supabase
     .from('users')
     .select('id, organization_id, email, role, full_name')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
   assertNoError(profileError, 'Reading the provisioned local profile')
+
+  if (!profile) {
+    const userClient = await authenticatedDevClient(credentials)
+    try {
+      const { error: onboardingError } = await userClient.rpc(
+        'create_organization_with_admin',
+        {
+          organization_name: devAccount.organizationName,
+          full_name: devAccount.fullName,
+        },
+      )
+      assertNoError(onboardingError, 'Creating the local admin organization')
+    } finally {
+      await userClient.auth.signOut({ scope: 'local' })
+    }
+
+    const refreshedProfile = await supabase
+      .from('users')
+      .select('id, organization_id, email, role, full_name')
+      .eq('id', userId)
+      .single()
+    assertNoError(refreshedProfile.error, 'Reading the onboarded local profile')
+    profile = refreshedProfile.data
+  }
+
   if (profile.role !== 'admin' || !profile.organization_id) {
     throw new Error('The local account was created without an admin organization profile.')
   }
@@ -377,7 +517,7 @@ async function ensureDevAccount(credentials) {
     .upsert({ user_id: userId, role: 'super_admin' }, { onConflict: 'user_id,role' })
   assertNoError(platformRoleError, 'Assigning the local SuperAdmin role')
 
-  await ensureLocalDemoWorkspace(supabase, profile)
+  await ensureLocalDemoWorkspace(supabase, profile, credentials)
 
   return profile
 }
@@ -407,10 +547,219 @@ async function verifyPasswordLogin(credentials) {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name')
+    .select('id, name, slug')
     .eq('id', profile.organization_id)
     .single()
   assertNoError(organizationError, 'Reading the organization through authenticated RLS')
+  if (organization.slug !== devAccount.organizationSlug) {
+    throw new Error(
+      `Expected local organization slug ${devAccount.organizationSlug}, received ${organization.slug}.`,
+    )
+  }
+
+  const { data: teamAdminMembership, error: teamAdminMembershipError } = await supabase
+    .from('team_memberships')
+    .select('team_id, role')
+    .eq('organization_id', profile.organization_id)
+    .eq('user_id', profile.id)
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle()
+  assertNoError(teamAdminMembershipError, 'Reading the local team administrator membership')
+  if (!teamAdminMembership) {
+    throw new Error('The local account must have at least one direct team administrator membership.')
+  }
+
+  const { data: phoneSearch, error: phoneSearchError } = await supabase.rpc(
+    'search_crm_clients_ranked',
+    {
+      p_organization_id: profile.organization_id,
+      p_filters: { q: '+48 501 210-101', limit: 10 },
+    },
+  )
+  assertNoError(phoneSearchError, 'Searching demo clients by a formatted phone number')
+  const phoneRows = Array.isArray(phoneSearch?.data) ? phoneSearch.data : []
+  if (!phoneRows.some(client => client.display_name === 'Jan Kowalski')) {
+    throw new Error('Formatted phone search did not return the seeded Jan Kowalski client.')
+  }
+
+  const { data: peselSearch, error: peselSearchError } = await supabase.rpc(
+    'search_crm_clients_ranked',
+    {
+      p_organization_id: profile.organization_id,
+      p_filters: { q: '85010112345', limit: 10 },
+    },
+  )
+  assertNoError(peselSearchError, 'Searching demo clients by PESEL')
+  const peselRows = Array.isArray(peselSearch?.data) ? peselSearch.data : []
+  if (!peselRows.some(client => client.display_name === 'Jan Kowalski')) {
+    throw new Error('PESEL search did not return the seeded Jan Kowalski client.')
+  }
+
+  const { data: personSearch, error: personSearchError } = await supabase.rpc(
+    'search_crm_clients_ranked',
+    {
+      p_organization_id: profile.organization_id,
+      p_filters: { q: 'Pawel Krol', limit: 10 },
+    },
+  )
+  assertNoError(personSearchError, 'Searching a company client by a contact person')
+  const personRows = Array.isArray(personSearch?.data) ? personSearch.data : []
+  const balticClient = personRows.find(client => client.display_name === 'Baltic Homes sp. z o.o.')
+  if (!balticClient || balticClient.matchedPerson?.display_name !== 'Paweł Król') {
+    throw new Error('Contact-person search did not explain the Baltic Homes match.')
+  }
+
+  const { data: companyIdSearch, error: companyIdSearchError } = await supabase.rpc(
+    'search_crm_clients_ranked',
+    {
+      p_organization_id: profile.organization_id,
+      p_filters: { q: '851-000-00-00', limit: 10 },
+    },
+  )
+  assertNoError(companyIdSearchError, 'Searching a company client by a formatted NIP')
+  const companyIdRows = Array.isArray(companyIdSearch?.data) ? companyIdSearch.data : []
+  if (!companyIdRows.some(client => client.display_name === 'Baltic Homes sp. z o.o.')) {
+    throw new Error('Formatted NIP search did not return the seeded Baltic Homes client.')
+  }
+
+  const caseSearchExpectations = [
+    {
+      query: 'Pawel Krol',
+      title: 'Finansowanie etapu inwestycji Baltic Homes',
+      contextType: 'person',
+    },
+    {
+      query: '508 980-809',
+      title: 'Finansowanie etapu inwestycji Baltic Homes',
+      contextType: 'person',
+    },
+    {
+      query: 'Kredyt firmowy',
+      title: 'Finansowanie etapu inwestycji Baltic Homes',
+      contextType: 'product',
+    },
+    {
+      query: 'Maciejkowa',
+      title: 'Zakup mieszkania — Warszewo',
+      contextType: 'property',
+    },
+  ]
+  for (const expectation of caseSearchExpectations) {
+    const { data: caseSearch, error: caseSearchError } = await supabase.rpc(
+      'search_crm_cases_with_context',
+      {
+        p_organization_id: profile.organization_id,
+        p_filters: { q: expectation.query, sort: 'relevance', limit: 10, offset: 0 },
+      },
+    )
+    assertNoError(caseSearchError, `Searching demo cases by ${expectation.query}`)
+    const caseRows = Array.isArray(caseSearch?.data) ? caseSearch.data : []
+    const matchingCase = caseRows.find(crmCase => crmCase.title === expectation.title)
+    if (!matchingCase || matchingCase.match_context?.type !== expectation.contextType) {
+      throw new Error(
+        `Case search for ${expectation.query} did not return an explained ${expectation.contextType} match.`,
+      )
+    }
+  }
+
+  const serviceClient = adminClient(credentials)
+  const minimumCounts = {
+    crm_clients: 9,
+    crm_client_people: 11,
+    crm_cases: 8,
+    crm_case_items: 8,
+    crm_properties: 1,
+    crm_tasks: 1,
+    crm_documents: 1,
+    crm_activities: 1,
+    facilities: 1,
+    facility_images: 3,
+    facility_opening_hours: 5,
+    expert_availability_rules: 5,
+    booking_services: 4,
+    booking_widgets: 3,
+    appointments: 6,
+  }
+  const demoCountEntries = await Promise.all(
+    Object.entries(minimumCounts).map(async ([table, minimum]) => {
+      const count = await countOrganizationRows(serviceClient, table, profile.organization_id)
+      if (count < minimum) {
+        throw new Error(`Expected at least ${minimum} rows in ${table}, received ${count}.`)
+      }
+      return [table, count]
+    }),
+  )
+  const demoCounts = Object.fromEntries(demoCountEntries)
+
+  const { data: facility, error: facilityError } = await serviceClient
+    .from('facilities')
+    .select('id')
+    .eq('organization_id', profile.organization_id)
+    .eq('slug', 'szczecin-centrum')
+    .single()
+  assertNoError(facilityError, 'Reading the seeded facility')
+
+  const { data: facilityImages, error: facilityImagesError } = await supabase
+    .from('facility_images')
+    .select('id, storage_bucket, storage_path, sort_order')
+    .eq('organization_id', profile.organization_id)
+    .eq('facility_id', facility.id)
+    .order('sort_order')
+  assertNoError(facilityImagesError, 'Reading facility images through authenticated RLS')
+  if (
+    facilityImages.length !== 3
+    || facilityImages.some((image, index) => (
+      image.storage_bucket !== 'facility-images'
+      || image.sort_order !== index
+    ))
+  ) {
+    throw new Error('The Szczecin demo facility must have three ordered gallery images.')
+  }
+
+  const { data: signedFacilityImage, error: signedFacilityImageError } = await supabase.storage
+    .from('facility-images')
+    .createSignedUrl(facilityImages[0].storage_path, 60)
+  assertNoError(signedFacilityImageError, 'Creating a signed URL for a facility image')
+  if (!signedFacilityImage?.signedUrl) {
+    throw new Error('The seeded facility image did not produce a signed URL.')
+  }
+
+  const { data: service, error: serviceError } = await serviceClient
+    .from('booking_services')
+    .select('id')
+    .eq('organization_id', profile.organization_id)
+    .eq('slug', 'spotkanie')
+    .single()
+  assertNoError(serviceError, 'Reading the seeded generic service')
+  const { data: availabilityOverride, error: availabilityOverrideError } = await serviceClient
+    .from('expert_availability_overrides')
+    .select('local_date')
+    .eq('id', 'd3100005-1000-4000-8000-000000000001')
+    .eq('organization_id', profile.organization_id)
+    .eq('facility_id', facility.id)
+    .eq('user_id', profile.id)
+    .single()
+  assertNoError(availabilityOverrideError, 'Reading tomorrow demo availability')
+  const { data: freeSlots, error: freeSlotsError } = await serviceClient.rpc(
+    'get_staff_booking_slots',
+    {
+      p_organization_id: profile.organization_id,
+      p_facility_id: facility.id,
+      p_service_id: service.id,
+      p_expert_user_id: profile.id,
+      p_local_date: availabilityOverride.local_date,
+    },
+  )
+  assertNoError(freeSlotsError, 'Verifying tomorrow demo availability')
+  if (
+    !Array.isArray(freeSlots)
+    || freeSlots.length === 0
+    || freeSlots.some(slot => warsawTime(slot.starts_at) === '09:00')
+    || !freeSlots.some(slot => warsawTime(slot.starts_at) === '10:00')
+  ) {
+    throw new Error('Demo availability must keep 09:00 occupied and 10:00 available.')
+  }
 
   const { data: mortgageProducts, error: mortgageProductsError } = await supabase
     .from('mortgage_products')
@@ -452,7 +801,7 @@ async function verifyPasswordLogin(credentials) {
     throw new Error('Baseline consent definitions must have a published, hashed and optional version 1.')
   }
 
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   const { data: anonymousProducts, error: anonymousProductsError } = await supabase
     .from('mortgage_products')
     .select('id')
@@ -479,6 +828,10 @@ async function verifyPasswordLogin(credentials) {
     mortgageProducts: mortgageProducts.length,
     mortgageFiles: mortgageFiles.length,
     consentDefinitions: consentDefinitions.length,
+    facilityImages: facilityImages.length,
+    demoCounts,
+    availableSlots: freeSlots.length,
+    availabilityDate: availabilityOverride.local_date,
   }
 }
 
@@ -493,6 +846,9 @@ function printAccount(result, credentials) {
   console.log('  Mailpit:  ' + (credentials.mailpitUrl ?? 'disabled'))
   console.log('  Mortgage catalogue: ' + result.mortgageProducts + ' products / ' + result.mortgageFiles + ' source files')
   console.log('  Consent catalogue:  ' + result.consentDefinitions + ' published definitions')
+  console.log('  Facility gallery:   ' + result.facilityImages + ' images')
+  console.log('  Demo CRM:           ' + result.demoCounts.crm_clients + ' clients / ' + result.demoCounts.crm_cases + ' cases')
+  console.log('  Demo calendar:      ' + result.demoCounts.appointments + ' appointments / ' + result.availableSlots + ' free slots on ' + result.availabilityDate)
 }
 
 async function configureAndVerify({ createAccount, syncCatalog = false, restartOnFailure = false }) {
@@ -504,7 +860,7 @@ async function configureAndVerify({ createAccount, syncCatalog = false, restartO
     await syncMortgageCatalog({
       url: credentials.url,
       serviceRoleKey: credentials.serviceRoleKey,
-    })
+    }, { offline: true })
   }
   const result = await verifyPasswordLogin(credentials)
   printAccount(result, credentials)
@@ -526,6 +882,7 @@ async function main() {
   }
 
   if (command === 'reset') {
+    runSupabase(['start'])
     runSupabase(['db', 'reset', '--local', '--yes'])
     await configureAndVerify({ createAccount: true, syncCatalog: true, restartOnFailure: true })
     return
@@ -546,10 +903,13 @@ async function main() {
       .eq('email', devAccount.email)
       .single()
     assertNoError(error, 'Reading the local profile for demo seed')
-    const result = await ensureLocalDemoWorkspace(supabase, profile)
+    const result = await ensureLocalDemoWorkspace(supabase, profile, credentials)
     console.log('OpenExpert demo workspace is ready:')
     console.log('  Facility: ' + result.facility.name)
+    console.log('  Gallery:  ' + result.facilityImages.length + ' images')
     console.log('  Teams:    ' + result.teams.map(team => team.name).join(', '))
+    console.log('  CRM:      ' + result.crm.counts.clients + ' clients / ' + result.crm.counts.cases + ' cases')
+    console.log('  Calendar: ' + result.scheduling.availableSlotCount + ' free slots on ' + result.scheduling.demoDate)
     return
   }
 

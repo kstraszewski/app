@@ -40,8 +40,16 @@ const emptyDetail: PersonalWidgetDetailPayload = {
 const emptySummary: BookingWidgetAnalyticsSummary = {
   views: 0,
   embeddedViews: 0,
+  engagedVisits: 0,
+  calculatorStarts: 0,
+  calculatorCompletions: 0,
+  serviceSelections: 0,
   availabilitySearches: 0,
+  availabilityFound: 0,
+  slotSelections: 0,
+  contactStarts: 0,
   bookingAttempts: 0,
+  bookingCompletions: 0,
   bookings: 0,
   confirmedBookings: 0,
   cancelledBookings: 0,
@@ -128,6 +136,7 @@ const form = reactive({
   accentColor: '#2563eb',
   allowedOrigins: '',
   serviceIds: [] as string[],
+  isDirectoryListed: false,
 })
 
 const themeItems = [
@@ -140,24 +149,82 @@ const summary = computed<BookingWidgetAnalyticsSummary>(() => ({
   ...(analyticsPayload.value.data?.summary ?? {}),
 }))
 const conversionRate = computed(() => summary.value.views
-  ? Math.min(100, (summary.value.bookings / summary.value.views) * 100)
+  ? (summary.value.bookingCompletions / summary.value.views) * 100
   : 0)
-const searchRate = computed(() => summary.value.views
-  ? Math.min(100, (summary.value.availabilitySearches / summary.value.views) * 100)
+const engagementRate = computed(() => summary.value.views
+  ? (summary.value.engagedVisits / summary.value.views) * 100
   : 0)
-const attemptRate = computed(() => summary.value.views
-  ? Math.min(100, (summary.value.bookingAttempts / summary.value.views) * 100)
+const availabilitySuccessRate = computed(() => summary.value.availabilitySearches
+  ? (summary.value.availabilityFound / summary.value.availabilitySearches) * 100
   : 0)
-const dailyMax = computed(() => Math.max(
-  1,
-  ...analyticsPayload.value.data.daily.flatMap(day => [day.views, day.bookings]),
-))
+const submitSuccessRate = computed(() => summary.value.bookingAttempts
+  ? (summary.value.bookingCompletions / summary.value.bookingAttempts) * 100
+  : 0)
+const calculatorCompletionRate = computed(() => summary.value.calculatorStarts
+  ? (summary.value.calculatorCompletions / summary.value.calculatorStarts) * 100
+  : 0)
+const embeddedShare = computed(() => summary.value.views
+  ? (summary.value.embeddedViews / summary.value.views) * 100
+  : 0)
 const hasAnalytics = computed(() => (
   summary.value.views
-  || summary.value.availabilitySearches
+  || summary.value.engagedVisits
+  || summary.value.slotSelections
   || summary.value.bookingAttempts
   || summary.value.bookings
 ))
+const isCalculatorWidget = computed(() => widget.value?.widget_type !== 'calendar')
+const canListInDirectory = computed(() => (
+  Boolean(widget.value?.is_active)
+  && form.widgetType === 'calendar'
+))
+const directoryListingDescription = computed(() => {
+  if (!widget.value?.is_active) {
+    return 'Najpierw włącz widget. Wyłączony widget jest automatycznie usuwany z katalogu.'
+  }
+  if (form.widgetType !== 'calendar') {
+    return 'W katalogu można publikować wyłącznie widget typu Kalendarz.'
+  }
+  return 'Włączenie tej opcji pozwala publicznie pokazać powiązanego eksperta, placówkę, wybrane usługi i link do rezerwacji. Wyłączenie usuwa wpis z katalogu. Dane klientów i szczegóły rezerwacji nie są publikowane.'
+})
+const funnelStages = computed(() => {
+  const stages = [
+    { key: 'views', label: 'Wizyty', value: summary.value.views },
+  ]
+  if (isCalculatorWidget.value) {
+    stages.push(
+      { key: 'calculatorStarts', label: 'Start kalkulatora', value: summary.value.calculatorStarts },
+      { key: 'calculatorCompletions', label: 'Ukończony kalkulator', value: summary.value.calculatorCompletions },
+    )
+  } else {
+    stages.push({
+      key: 'engagedVisits',
+      label: 'Zaangażowane wizyty',
+      value: summary.value.engagedVisits,
+    })
+  }
+  stages.push(
+    { key: 'slotSelections', label: 'Wybrany termin', value: summary.value.slotSelections },
+    { key: 'contactStarts', label: 'Rozpoczęte dane', value: summary.value.contactStarts },
+    { key: 'bookingAttempts', label: 'Wysłane rezerwacje', value: summary.value.bookingAttempts },
+    { key: 'bookingCompletions', label: 'Udane rezerwacje', value: summary.value.bookingCompletions },
+  )
+  return stages
+})
+const funnelMax = computed(() => Math.max(1, ...funnelStages.value.map(stage => stage.value)))
+const biggestDrop = computed(() => funnelStages.value
+  .slice(1)
+  .map((stage, index) => {
+    const previous = funnelStages.value[index]!
+    const loss = Math.max(0, previous.value - stage.value)
+    return {
+      from: previous.label,
+      to: stage.label,
+      loss,
+      rate: previous.value ? loss / previous.value * 100 : 0,
+    }
+  })
+  .sort((left, right) => right.loss - left.loss)[0] ?? null)
 const previewUrl = computed(() => {
   if (!widget.value) return ''
   const separator = widget.value.embedUrl.includes('?') ? '&' : '?'
@@ -173,6 +240,10 @@ watch(widget, (value) => {
   loadWidget(value)
   loadedWidgetId.value = value.id
 }, { immediate: true })
+
+watch(() => form.widgetType, (widgetType) => {
+  if (widgetType !== 'calendar') form.isDirectoryListed = false
+})
 
 onBeforeRouteLeave(() => {
   if (!isDirty.value || !import.meta.client) return true
@@ -198,6 +269,25 @@ function serializeForm() {
     accentColor: form.accentColor.toLowerCase(),
     allowedOrigins: parseOrigins(form.allowedOrigins),
     serviceIds: [...form.serviceIds].sort(),
+    isDirectoryListed: form.isDirectoryListed,
+  })
+}
+
+function serializeWidget(value: BookingWidget) {
+  return JSON.stringify({
+    name: value.name.trim(),
+    title: value.title.trim(),
+    subtitle: (value.subtitle ?? '').trim(),
+    widgetType: value.widget_type,
+    theme: value.theme,
+    accentColor: (value.accent_color || '#2563eb').toLowerCase(),
+    allowedOrigins: [...value.allowed_origins],
+    serviceIds: [...value.serviceIds].sort(),
+    isDirectoryListed: Boolean(
+      value.is_directory_listed
+      && value.is_active
+      && value.widget_type === 'calendar',
+    ),
   })
 }
 
@@ -211,6 +301,11 @@ function loadWidget(value: BookingWidget) {
     accentColor: value.accent_color || '#2563eb',
     allowedOrigins: value.allowed_origins.join('\n'),
     serviceIds: [...value.serviceIds],
+    isDirectoryListed: Boolean(
+      value.is_directory_listed
+      && value.is_active
+      && value.widget_type === 'calendar',
+    ),
   })
   nextTick(() => {
     savedSnapshot.value = serializeForm()
@@ -266,6 +361,14 @@ async function saveWidget() {
     })
     return
   }
+  if (form.isDirectoryListed && !canListInDirectory.value) {
+    toast.add({
+      title: 'Widget nie może być pokazany w katalogu',
+      description: directoryListingDescription.value,
+      color: 'error',
+    })
+    return
+  }
   saving.value = true
   try {
     const result = await $fetch<{ data: BookingWidget }>(
@@ -284,6 +387,7 @@ async function saveWidget() {
           allowedOrigins: parseOrigins(form.allowedOrigins),
           bookingMode: 'expert',
           serviceIds: form.serviceIds,
+          isDirectoryListed: form.isDirectoryListed,
         },
       },
     )
@@ -304,6 +408,7 @@ async function saveWidget() {
 
 async function updateStatus(isActive: boolean) {
   if (!widget.value || !facility.value || statusSaving.value) return
+  const hadUnsavedChanges = isDirty.value
   statusSaving.value = true
   try {
     const result = await $fetch<{ data: BookingWidget }>(
@@ -313,12 +418,22 @@ async function updateStatus(isActive: boolean) {
       { method: 'PATCH', body: { isActive } },
     )
     detail.value = { ...detail.value, widget: result.data }
+    if (hadUnsavedChanges) {
+      form.isDirectoryListed = Boolean(
+        result.data.is_directory_listed
+        && result.data.is_active
+        && result.data.widget_type === 'calendar',
+      )
+      savedSnapshot.value = serializeWidget(result.data)
+    } else {
+      loadWidget(result.data)
+    }
     disableOpen.value = false
     toast.add({
       title: isActive ? 'Widget został włączony' : 'Widget został wyłączony',
       description: isActive
         ? 'Publiczny link znów przyjmuje rezerwacje.'
-        : 'Zachowaliśmy konfigurację, historię i analitykę.',
+        : 'Zachowaliśmy konfigurację, historię i analitykę. Widget został też usunięty z katalogu.',
       color: isActive ? 'success' : 'neutral',
       icon: isActive ? 'i-lucide-circle-play' : 'i-lucide-circle-pause',
     })
@@ -360,11 +475,10 @@ function formatDate(value: string | null | undefined) {
   }).format(date)
 }
 
-function shortDay(value: string, index: number, total: number) {
-  if (total > 31 && index % 7 !== 0 && index !== total - 1) return ''
-  const date = new Date(`${value}T12:00:00Z`)
-  return new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: '2-digit' }).format(date)
+function percentage(value: number, total: number) {
+  return total ? value / total * 100 : 0
 }
+
 </script>
 
 <template>
@@ -383,6 +497,14 @@ function shortDay(value: string, index: number, total: number) {
         </UBadge>
         <UBadge color="neutral" variant="outline" :icon="typeMeta.icon">
           {{ typeMeta.label }}
+        </UBadge>
+        <UBadge
+          v-if="widget.is_directory_listed"
+          color="primary"
+          variant="subtle"
+          icon="i-lucide-search-check"
+        >
+          W katalogu
         </UBadge>
         <UBadge color="neutral" variant="outline" icon="i-lucide-building-2">
           {{ facility.name }}
@@ -515,6 +637,29 @@ function shortDay(value: string, index: number, total: number) {
                   <UIcon :name="type.icon" />
                   <span><strong>{{ type.label }}</strong><small>{{ type.description }}</small></span>
                 </button>
+              </div>
+            </UFormField>
+
+            <UFormField name="isDirectoryListed" label="Widoczność w katalogu">
+              <div
+                class="directory-listing-setting"
+                :class="{ 'directory-listing-setting--disabled': !canListInDirectory }"
+              >
+                <div class="directory-listing-setting__control">
+                  <span>
+                    <strong>Pokaż w katalogu OpenExpert</strong>
+                    <small>Ta publikacja jest niezależna od publicznego linku i kodu osadzenia.</small>
+                  </span>
+                  <USwitch
+                    v-model="form.isDirectoryListed"
+                    :disabled="!canListInDirectory"
+                    aria-label="Pokaż w katalogu OpenExpert"
+                  />
+                </div>
+                <p>
+                  <UIcon name="i-lucide-shield-check" />
+                  {{ directoryListingDescription }}
+                </p>
               </div>
             </UFormField>
 
@@ -731,7 +876,8 @@ function shortDay(value: string, index: number, total: number) {
           <div>
             <h2>Skuteczność widgetu</h2>
             <p>
-              Lejek nie przechowuje adresów IP, danych kontaktowych ani pełnych adresów stron.
+              Etapy łączy losowy identyfikator jednej wizyty, usuwany po odświeżeniu.
+              Nie zapisujemy cookies, IP, danych kontaktowych ani adresów stron.
               <template v-if="analyticsPayload.data.period.trackingStartedAt">
                 Dane od {{ formatDate(analyticsPayload.data.period.trackingStartedAt) }}.
               </template>
@@ -766,14 +912,14 @@ function shortDay(value: string, index: number, total: number) {
 
         <div class="analytics-cards">
           <article>
-            <span><UIcon name="i-lucide-eye" />Wyświetlenia</span>
+            <span><UIcon name="i-lucide-eye" />Wizyty</span>
             <strong>{{ summary.views }}</strong>
             <small>{{ summary.embeddedViews }} przez osadzenie</small>
           </article>
           <article>
-            <span><UIcon name="i-lucide-calendar-search" />Wyszukania terminów</span>
-            <strong>{{ summary.availabilitySearches }}</strong>
-            <small>{{ searchRate.toFixed(1) }}% wyświetleń</small>
+            <span><UIcon name="i-lucide-mouse-pointer-click" />Zaangażowane</span>
+            <strong>{{ summary.engagedVisits }}</strong>
+            <small>{{ engagementRate.toFixed(1) }}% wszystkich wizyt</small>
           </article>
           <article>
             <span><UIcon name="i-lucide-calendar-check-2" />Rezerwacje</span>
@@ -783,7 +929,7 @@ function shortDay(value: string, index: number, total: number) {
           <article class="analytics-card--accent">
             <span><UIcon name="i-lucide-chart-no-axes-combined" />Konwersja</span>
             <strong>{{ conversionRate.toFixed(1) }}%</strong>
-            <small>wyświetlenie → rezerwacja</small>
+            <small>wizyta → udana rezerwacja</small>
           </article>
         </div>
 
@@ -793,76 +939,108 @@ function shortDay(value: string, index: number, total: number) {
         </div>
 
         <template v-else-if="hasAnalytics">
+          <section class="analytics-diagnostics" aria-label="Wskaźniki diagnostyczne">
+            <article>
+              <span><UIcon name="i-lucide-calendar-search" />Dostępność terminów</span>
+              <strong>{{ availabilitySuccessRate.toFixed(1) }}%</strong>
+              <small>{{ summary.availabilityFound }} z {{ summary.availabilitySearches }} wizyt z wczytanym kalendarzem zobaczyło wolny termin</small>
+            </article>
+            <article v-if="isCalculatorWidget">
+              <span><UIcon name="i-lucide-calculator" />Ukończenie kalkulatora</span>
+              <strong>{{ calculatorCompletionRate.toFixed(1) }}%</strong>
+              <small>{{ summary.calculatorCompletions }} z {{ summary.calculatorStarts }} rozpoczęć</small>
+            </article>
+            <article>
+              <span><UIcon name="i-lucide-send" />Skuteczność wysłania</span>
+              <strong>{{ submitSuccessRate.toFixed(1) }}%</strong>
+              <small>{{ summary.bookingCompletions }} z {{ summary.bookingAttempts }} prób zakończyło się sukcesem</small>
+            </article>
+            <article>
+              <span><UIcon name="i-lucide-panel-top" />Ruch osadzony</span>
+              <strong>{{ embeddedShare.toFixed(1) }}%</strong>
+              <small>{{ summary.embeddedViews }} z {{ summary.views }} wizyt</small>
+            </article>
+          </section>
+
           <section class="widget-panel funnel-panel">
             <header class="widget-panel__header">
               <div>
-                <p>Lejek</p>
+                <p>Lejek unikalnych wizyt</p>
                 <h2>Od wejścia do rezerwacji</h2>
               </div>
-              <span>Ostatnia rezerwacja: {{ formatDateTime(summary.lastBookingAt) }}</span>
+              <span v-if="biggestDrop?.loss">
+                Największy spadek: {{ biggestDrop.from }} → {{ biggestDrop.to }}
+                ({{ biggestDrop.rate.toFixed(1) }}%)
+              </span>
             </header>
             <div class="funnel">
-              <div>
-                <span><strong>{{ summary.views }}</strong>Wyświetlenia</span>
-                <div><i style="width: 100%" /></div>
-                <small>100%</small>
-              </div>
-              <div>
-                <span><strong>{{ summary.availabilitySearches }}</strong>Wyszukania</span>
-                <div><i :style="{ width: `${searchRate}%` }" /></div>
-                <small>{{ searchRate.toFixed(1) }}%</small>
-              </div>
-              <div>
-                <span><strong>{{ summary.bookingAttempts }}</strong>Próby rezerwacji</span>
-                <div><i :style="{ width: `${attemptRate}%` }" /></div>
-                <small>{{ attemptRate.toFixed(1) }}%</small>
-              </div>
-              <div>
-                <span><strong>{{ summary.bookings }}</strong>Rezerwacje</span>
-                <div><i :style="{ width: `${conversionRate}%` }" /></div>
-                <small>{{ conversionRate.toFixed(1) }}%</small>
+              <div v-for="(stage, index) in funnelStages" :key="stage.key">
+                <span><strong>{{ stage.value }}</strong>{{ stage.label }}</span>
+                <div>
+                  <i
+                    :style="{
+                      width: `${percentage(stage.value, funnelMax)}%`,
+                      minWidth: stage.value ? '2px' : '0',
+                    }"
+                  />
+                </div>
+                <small>
+                  {{ index === 0
+                    ? '100%'
+                    : `${percentage(stage.value, funnelStages[index - 1]?.value ?? 0).toFixed(1)}%` }}
+                </small>
               </div>
             </div>
+            <footer class="funnel-panel__footer">
+              <span>Procent przy etapie pokazuje przejście z poprzedniego kroku.</span>
+              <span>Ostatnia rezerwacja w okresie: {{ formatDateTime(summary.lastBookingAt) }}</span>
+            </footer>
           </section>
 
           <section class="widget-panel trend-panel">
             <header class="widget-panel__header">
               <div>
                 <p>Trend dzienny</p>
-                <h2>Wyświetlenia i rezerwacje</h2>
+                <h2>Wizyty, wybrane terminy i rezerwacje</h2>
               </div>
               <span>{{ analyticsPayload.data.period.from }} — {{ analyticsPayload.data.period.to }}</span>
             </header>
-            <div class="trend-legend">
-              <span><i />Wyświetlenia</span>
-              <span><i />Rezerwacje</span>
-            </div>
-            <div class="trend-chart" role="img" aria-label="Dzienny wykres wyświetleń i rezerwacji">
-              <div
-                v-for="(day, index) in analyticsPayload.data.daily"
-                :key="day.date"
-                class="trend-chart__day"
-                :title="`${day.date}: ${day.views} wyświetleń, ${day.bookings} rezerwacji`"
-              >
-                <div class="trend-chart__bars">
-                  <i :style="{ height: `${Math.max(day.views ? 5 : 0, day.views / dailyMax * 100)}%` }" />
-                  <i :style="{ height: `${Math.max(day.bookings ? 5 : 0, day.bookings / dailyMax * 100)}%` }" />
-                </div>
-                <small>{{ shortDay(day.date, index, analyticsPayload.data.daily.length) }}</small>
-              </div>
-            </div>
+            <WidgetsWidgetAnalyticsTrend
+              :days="analyticsDays"
+              :data="analyticsPayload.data.daily"
+            />
           </section>
 
           <section v-if="analyticsPayload.data.topServices.length" class="widget-panel services-analytics">
             <header class="widget-panel__header">
               <div>
-                <p>Rezerwacje</p>
-                <h2>Najczęściej wybierane usługi</h2>
+                <p>Zainteresowanie usługami</p>
+                <h2>Od zainteresowania do rezerwacji</h2>
               </div>
             </header>
-            <div v-for="service in analyticsPayload.data.topServices" :key="service.serviceId">
-              <span>{{ service.name }}</span>
-              <strong>{{ service.bookings }}</strong>
+            <div class="services-analytics__table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Usługa</th>
+                    <th>Zainteresowanie</th>
+                    <th>Rezerwacje</th>
+                    <th>Konwersja</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="service in analyticsPayload.data.topServices" :key="service.serviceId">
+                    <th>{{ service.name }}</th>
+                    <td>{{ service.interest }}</td>
+                    <td>{{ service.bookings }}</td>
+                    <td>
+                      {{ service.interest
+                        ? `${percentage(service.bookings, service.interest).toFixed(1)}%`
+                        : '—' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -871,7 +1049,7 @@ function shortDay(value: string, index: number, total: number) {
           <span><UIcon name="i-lucide-chart-no-axes-combined" /></span>
           <div>
             <strong>Analityka zacznie się wypełniać po pierwszych odwiedzinach</strong>
-            <p>Mierzymy wyświetlenia, wyszukiwanie terminów i próby rezerwacji. Udane rezerwacje pochodzą bezpośrednio z kalendarza.</p>
+            <p>Mierzymy anonimowe etapy jednej wizyty — od wejścia, przez wybór terminu i rozpoczęcie danych, aż do rezerwacji.</p>
           </div>
           <UButton
             v-if="widget.is_active"
@@ -890,7 +1068,7 @@ function shortDay(value: string, index: number, total: number) {
     <UModal
       v-model:open="disableOpen"
       title="Wyłączyć widget?"
-      description="Publiczny link i osadzenie przestaną działać. Konfiguracja, analityka i istniejące rezerwacje pozostaną bez zmian."
+      description="Publiczny link i osadzenie przestaną działać, a widget zostanie usunięty z katalogu OpenExpert. Konfiguracja, analityka i istniejące rezerwacje pozostaną bez zmian."
       :ui="{ footer: 'justify-end' }"
     >
       <template #body>
@@ -1111,6 +1289,58 @@ function shortDay(value: string, index: number, total: number) {
 
 .accent-field__picker {
   padding: 12px;
+}
+
+.directory-listing-setting {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 30%, var(--ui-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-primary) 5%, var(--ui-bg));
+}
+
+.directory-listing-setting--disabled {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.directory-listing-setting__control {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.directory-listing-setting__control > span {
+  display: grid;
+  gap: 3px;
+}
+
+.directory-listing-setting__control strong {
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+}
+
+.directory-listing-setting__control small,
+.directory-listing-setting p {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.directory-listing-setting p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.directory-listing-setting p > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--ui-primary);
+  font-size: 13px;
 }
 
 .service-options {
@@ -1394,6 +1624,41 @@ function shortDay(value: string, index: number, total: number) {
   gap: 18px;
 }
 
+.analytics-diagnostics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analytics-diagnostics article {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-bg-muted);
+}
+
+.analytics-diagnostics span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.analytics-diagnostics strong {
+  color: var(--ui-text-highlighted);
+  font-family: var(--font-mono);
+  font-size: 19px;
+}
+
+.analytics-diagnostics small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .funnel {
   display: grid;
   gap: 13px;
@@ -1431,7 +1696,6 @@ function shortDay(value: string, index: number, total: number) {
 .funnel i {
   display: block;
   height: 100%;
-  min-width: 2px;
   border-radius: inherit;
   background: var(--ui-primary);
 }
@@ -1443,92 +1707,60 @@ function shortDay(value: string, index: number, total: number) {
   text-align: right;
 }
 
-.trend-legend {
+.funnel-panel__footer {
   display: flex;
-  gap: 16px;
-  margin: -8px 0 12px;
-}
-
-.trend-legend span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-border-muted);
   color: var(--ui-text-muted);
   font-size: 9px;
 }
 
-.trend-legend i {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--ui-primary);
-}
-
-.trend-legend span:last-child i {
-  background: var(--ui-success);
-}
-
-.trend-chart {
-  display: flex;
-  gap: 4px;
-  min-height: 190px;
-  overflow-x: auto;
-  padding: 12px 4px 0;
-  border-top: 1px solid var(--ui-border-muted);
-}
-
-.trend-chart__day {
-  display: grid;
-  flex: 1 0 9px;
-  grid-template-rows: 160px 18px;
-  min-width: 9px;
-  align-items: end;
-}
-
-.trend-chart__bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2px;
-  height: 150px;
-}
-
-.trend-chart__bars i {
-  width: min(6px, 45%);
-  min-height: 0;
-  border-radius: 3px 3px 0 0;
-  background: var(--ui-primary);
-}
-
-.trend-chart__bars i:last-child {
-  background: var(--ui-success);
-}
-
-.trend-chart__day small {
-  overflow: visible;
-  color: var(--ui-text-dimmed);
-  font-family: var(--font-mono);
-  font-size: 7px;
-  text-align: center;
-  white-space: nowrap;
+.trend-panel {
+  overflow: hidden;
 }
 
 .services-analytics {
   display: grid;
 }
 
-.services-analytics > div:not(.widget-panel__header) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--ui-border-muted);
-  color: var(--ui-text-muted);
-  font-size: 11px;
+.services-analytics__table-wrap {
+  overflow-x: auto;
 }
 
-.services-analytics > div strong {
+.services-analytics table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.services-analytics th,
+.services-analytics td {
+  padding: 11px 8px;
+  border-top: 1px solid var(--ui-border-muted);
+  text-align: right;
+}
+
+.services-analytics th:first-child {
+  text-align: left;
+}
+
+.services-analytics thead th {
+  color: var(--ui-text-muted);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.services-analytics tbody th {
+  color: var(--ui-text-highlighted);
+  font-weight: 600;
+}
+
+.services-analytics tbody td {
   color: var(--ui-text-highlighted);
   font-family: var(--font-mono);
 }
@@ -1592,13 +1824,18 @@ function shortDay(value: string, index: number, total: number) {
   .analytics-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .analytics-diagnostics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
   .widget-detail__skeleton > div,
   .widget-settings-form__grid,
   .widget-type-options,
-  .analytics-cards {
+  .analytics-cards,
+  .analytics-diagnostics {
     grid-template-columns: 1fr;
   }
 
@@ -1621,6 +1858,10 @@ function shortDay(value: string, index: number, total: number) {
   .funnel > div > div {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+
+  .funnel-panel__footer {
+    flex-direction: column;
   }
 }
 </style>

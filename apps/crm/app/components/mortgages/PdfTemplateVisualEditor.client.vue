@@ -123,6 +123,14 @@ interface SemanticAiProposal {
   contract: TemplateBindingSemanticContract
 }
 
+interface SemanticEditorDraft {
+  fieldKey: string
+  semanticDescription: string
+  semanticRole: string
+  aliases: string
+  exclude: string
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<{
   'update:templateText': [value: string]
@@ -153,10 +161,6 @@ const ALIGNMENT_SNAP_THRESHOLD_PX = 10
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const fieldLayerRef = ref<HTMLElement | null>(null)
-const semanticDescriptionRef = ref<HTMLTextAreaElement | null>(null)
-const semanticRoleRef = ref<HTMLInputElement | null>(null)
-const semanticAliasesRef = ref<HTMLTextAreaElement | null>(null)
-const semanticExcludeRef = ref<HTMLTextAreaElement | null>(null)
 const activeTemplate = shallowRef<DocumentTemplate | null>(null)
 const templateError = ref('')
 const pdfDocument = shallowRef<PDFDocumentProxy | null>(null)
@@ -185,6 +189,13 @@ const alignmentGuides = shallowRef<VisualAlignmentGuide[]>([])
 const semanticGeneratingBindingIndex = ref<number | null>(null)
 const semanticAiProposal = shallowRef<SemanticAiProposal | null>(null)
 const semanticEditorDirty = ref(false)
+const semanticEditorDraft = reactive<SemanticEditorDraft>({
+  fieldKey: '',
+  semanticDescription: '',
+  semanticRole: '',
+  aliases: '',
+  exclude: '',
+})
 const undoStack = ref<string[]>([])
 const redoStack = ref<string[]>([])
 const localPdfUrl = ref('')
@@ -370,12 +381,12 @@ watch(() => props.templateText, (text, previous) => {
   parseTemplateText(text)
   if (previous !== undefined && text !== previous) {
     semanticAiProposal.value = null
-    semanticEditorDirty.value = false
   }
+  syncSemanticEditorDraft(true)
 }, { immediate: true })
 watch(selectedFieldKey, () => {
   semanticAiProposal.value = null
-  semanticEditorDirty.value = false
+  syncSemanticEditorDraft(true)
 })
 watch([pageNumber, zoom], () => {
   cancelDrag()
@@ -1168,6 +1179,38 @@ function semanticHintsText(values: readonly string[]) {
   return values.join('\n')
 }
 
+function clearSemanticEditorDraft() {
+  semanticEditorDraft.fieldKey = ''
+  semanticEditorDraft.semanticDescription = ''
+  semanticEditorDraft.semanticRole = ''
+  semanticEditorDraft.aliases = ''
+  semanticEditorDraft.exclude = ''
+  semanticEditorDirty.value = false
+}
+
+function syncSemanticEditorDraft(force = false) {
+  const field = selectedField.value
+  const contract = selectedSemanticContract.value
+  if (!field || !contract) {
+    clearSemanticEditorDraft()
+    return
+  }
+  if (
+    !force
+    && semanticEditorDirty.value
+    && semanticEditorDraft.fieldKey === field.key
+  ) {
+    return
+  }
+
+  semanticEditorDraft.fieldKey = field.key
+  semanticEditorDraft.semanticDescription = contract.semanticDescription
+  semanticEditorDraft.semanticRole = contract.semanticRole
+  semanticEditorDraft.aliases = semanticHintsText(contract.aiMappingHints.aliases)
+  semanticEditorDraft.exclude = semanticHintsText(contract.aiMappingHints.exclude)
+  semanticEditorDirty.value = false
+}
+
 function parseSemanticHints(value: string) {
   return value
     .split(/\r?\n|;/u)
@@ -1190,6 +1233,9 @@ function semanticContractForManualEdit(
 }
 
 function markSemanticEditorDirty() {
+  if (semanticEditorDraft.fieldKey !== selectedField.value?.key) {
+    syncSemanticEditorDraft(true)
+  }
   semanticEditorDirty.value = true
   visualActionError.value = ''
 }
@@ -1198,27 +1244,20 @@ function applySelectedSemanticEditor() {
   const field = selectedField.value
   const current = selectedSemanticContract.value
   const template = activeTemplate.value
-  const descriptionInput = semanticDescriptionRef.value
-  const roleInput = semanticRoleRef.value
-  const aliasesInput = semanticAliasesRef.value
-  const excludeInput = semanticExcludeRef.value
   if (
     !field
     || !current
     || !template
-    || !descriptionInput
-    || !roleInput
-    || !aliasesInput
-    || !excludeInput
+    || semanticEditorDraft.fieldKey !== field.key
   ) {
     return
   }
 
   const contract = semanticContractForManualEdit(current)
-  contract.semanticDescription = descriptionInput.value
-  contract.semanticRole = roleInput.value
-  contract.aiMappingHints.aliases = parseSemanticHints(aliasesInput.value)
-  contract.aiMappingHints.exclude = parseSemanticHints(excludeInput.value)
+  contract.semanticDescription = semanticEditorDraft.semanticDescription
+  contract.semanticRole = semanticEditorDraft.semanticRole
+  contract.aiMappingHints.aliases = parseSemanticHints(semanticEditorDraft.aliases)
+  contract.aiMappingHints.exclude = parseSemanticHints(semanticEditorDraft.exclude)
 
   try {
     commitTemplate(
@@ -1817,23 +1856,21 @@ function fieldKindLabel(field: VisualField) {
             <div class="semantic-editor">
               <label>Opis semantyczny
                 <textarea
-                  ref="semanticDescriptionRef"
+                  v-model="semanticEditorDraft.semanticDescription"
                   rows="4"
                   maxlength="2000"
                   :disabled="!editEnabled"
-                  :value="selectedSemanticContract.semanticDescription"
                   @input="markSemanticEditorDirty"
                 />
               </label>
               <label>Rola techniczna
                 <input
-                  ref="semanticRoleRef"
+                  v-model="semanticEditorDraft.semanticRole"
                   type="text"
                   maxlength="160"
                   pattern="[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
                   spellcheck="false"
                   :disabled="!editEnabled"
-                  :value="selectedSemanticContract.semanticRole"
                   @input="markSemanticEditorDirty"
                 >
               </label>
@@ -1842,21 +1879,19 @@ function fieldKindLabel(field: VisualField) {
                 <div class="semantic-hints-grid">
                   <label>Aliasy · jeden na linię
                     <textarea
-                      ref="semanticAliasesRef"
+                      v-model="semanticEditorDraft.aliases"
                       rows="4"
                       maxlength="5000"
                       :disabled="!editEnabled"
-                      :value="semanticHintsText(selectedSemanticContract.aiMappingHints.aliases)"
                       @input="markSemanticEditorDirty"
                     />
                   </label>
                   <label>Wyklucz · jeden na linię
                     <textarea
-                      ref="semanticExcludeRef"
+                      v-model="semanticEditorDraft.exclude"
                       rows="4"
                       maxlength="5000"
                       :disabled="!editEnabled"
-                      :value="semanticHintsText(selectedSemanticContract.aiMappingHints.exclude)"
                       @input="markSemanticEditorDirty"
                     />
                   </label>

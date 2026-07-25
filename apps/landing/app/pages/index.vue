@@ -367,20 +367,22 @@ async function submitWaitlist() {
     </main>
 
     <footer class="site-footer">
-      <a href="#poczatek" class="footer-brand" aria-label="OpenExpert — wróć na początek">
-        <img src="/assets/logo-dark.svg" alt="" width="24" height="24">
-        <span>OpenExpert</span>
-      </a>
-      <p>© 2026 OpenExpert. Jeden ekspert. Zespół agentów AI.</p>
-      <nav aria-label="Linki w stopce">
-        <NuxtLink to="/eksperci">Eksperci</NuxtLink>
-        <NuxtLink to="/placowki">Placówki</NuxtLink>
-        <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
-        <NuxtLink to="/waitlist">Waitlista</NuxtLink>
-        <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
-          GitHub <Icon name="lucide:github" aria-hidden="true" />
+      <div class="site-footer__inner">
+        <a href="#poczatek" class="footer-brand" aria-label="OpenExpert — wróć na początek">
+          <img src="/assets/logo-dark.svg" alt="" width="24" height="24">
+          <span>OpenExpert</span>
         </a>
-      </nav>
+        <p>© 2026 OpenExpert. Jeden ekspert. Zespół agentów AI.</p>
+        <nav aria-label="Linki w stopce">
+          <NuxtLink to="/eksperci">Eksperci</NuxtLink>
+          <NuxtLink to="/placowki">Placówki</NuxtLink>
+          <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
+          <NuxtLink to="/waitlist">Waitlista</NuxtLink>
+          <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
+            GitHub <Icon name="lucide:github" aria-hidden="true" />
+          </a>
+        </nav>
+      </div>
     </footer>
   </div>
 </template>
@@ -1073,27 +1075,19 @@ async function submitWaitlist() {
 }
 
 .site-footer {
+  width: 100%;
+  border-top: 1px solid #292929;
+  background: #030303;
+  color: #aaa;
+}
+
+.site-footer__inner {
   display: grid;
   width: min(1440px, calc(100% - 80px));
   min-height: 102px;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   margin: 0 auto;
-  background: #030303;
-  color: #aaa;
-}
-
-.site-footer::before {
-  position: absolute;
-  right: 0;
-  left: 0;
-  border-top: 1px solid #292929;
-  content: '';
-  transform: translateY(-51px);
-}
-
-.site-footer {
-  position: relative;
 }
 
 .footer-brand {
@@ -1149,7 +1143,7 @@ async function submitWaitlist() {
 
 @media (max-width: 1099px) {
   .site-header,
-  .site-footer {
+  .site-footer__inner {
     width: calc(100% - 64px);
   }
 
@@ -1479,16 +1473,12 @@ async function submitWaitlist() {
     width: 100%;
   }
 
-  .site-footer {
+  .site-footer__inner {
     width: calc(100% - 40px);
     min-height: 0;
     grid-template-columns: 1fr;
     gap: 10px;
     padding: 34px 0;
-  }
-
-  .site-footer::before {
-    transform: translateY(-34px);
   }
 
   .site-footer p {
@@ -1504,7 +1494,7 @@ async function submitWaitlist() {
 
 @media (max-width: 359px) {
   .site-header,
-  .site-footer,
+  .site-footer__inner,
   .hero,
   .speed-results,
   .personalize-inner,
@@ -1532,7 +1522,7 @@ async function submitWaitlist() {
     height: 42px;
   }
 
-  .site-footer {
+  .site-footer__inner {
     grid-template-columns: 1fr;
   }
 

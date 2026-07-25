@@ -150,6 +150,13 @@ const agendaStatusItems = [
 const visibleMembers = computed(() => selectedMemberId.value === 'all'
   ? calendarStats.value.members
   : calendarStats.value.members.filter(item => item.member.userId === selectedMemberId.value))
+const visibleSummary = computed(() => ({
+  confirmed: visibleMembers.value.reduce((sum, item) => sum + item.confirmed, 0),
+  hold: visibleMembers.value.reduce((sum, item) => sum + item.hold, 0),
+  cancelled: visibleMembers.value.reduce((sum, item) => sum + item.cancelled, 0),
+  scheduledMinutes: visibleMembers.value.reduce((sum, item) => sum + item.scheduledMinutes, 0),
+  activeMembers: visibleMembers.value.filter(item => item.confirmed + item.hold > 0).length,
+}))
 const membersById = computed(() => new Map(
   calendarStats.value.members.map(item => [item.member.userId, item]),
 ))
@@ -188,7 +195,7 @@ function formatTime(value: string) {
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return 'Brak kolejnego spotkania'
+  if (!value) return 'Brak kolejnego spotkania w tym tygodniu'
   return new Intl.DateTimeFormat('pl-PL', {
     weekday: 'short',
     day: 'numeric',
@@ -246,6 +253,24 @@ function individualCalendarTo(userId: string, date = weekStartKey.value) {
     path: orgPath('/calendar'),
     query: { expert: userId, date },
   }
+}
+
+function memberRank(userId: string) {
+  const index = calendarStats.value.members.findIndex(item => item.member.userId === userId)
+  return index >= 0 ? index + 1 : '—'
+}
+
+function dayCellLabel(item: TeamCalendarMemberStats, key: string, dateLabel: string) {
+  const day = item.byDay[key]
+  if (!day) return `${memberName(item)}, ${dateLabel}: brak zdarzeń`
+  const details = [
+    day.confirmed ? `potwierdzone spotkania: ${day.confirmed}` : '',
+    day.scheduledMinutes ? `czas: ${formatDuration(day.scheduledMinutes)}` : '',
+    day.hold ? `oczekujące: ${day.hold}` : '',
+    day.cancelled ? `anulowane: ${day.cancelled}` : '',
+    day.timeOff ? 'urlop' : '',
+  ].filter(Boolean)
+  return `${memberName(item)}, ${dateLabel}: ${details.join(', ') || 'brak zdarzeń'}`
 }
 
 function timeOffCoversDate(item: TeamCalendarTimeOff, key: string) {
@@ -321,12 +346,14 @@ function statusColor(statusValue: AppointmentStatus) {
         <p>Zakres obejmuje ten zespół oraz jego podzespoły. Kliknij osobę lub dzień, aby przejść do szczegółowego kalendarza.</p>
       </div>
       <div class="team-calendar-intro__actions">
-        <USelect
+        <USelectMenu
           v-model="selectedMemberId"
           class="team-calendar-member-select"
           :items="memberItems"
           value-key="value"
+          label-key="label"
           icon="i-lucide-users-round"
+          placeholder="Wyszukaj eksperta"
           aria-label="Filtruj kalendarz po osobie"
         />
         <UButton
@@ -393,7 +420,7 @@ function statusColor(statusValue: AppointmentStatus) {
       :actions="[{ label: 'Spróbuj ponownie', onClick: () => refresh() }]"
     />
 
-    <template v-else-if="status === 'pending' && !payload">
+    <template v-else-if="status === 'pending'">
       <div class="team-calendar-kpis">
         <USkeleton v-for="index in 4" :key="index" class="h-28 w-full" />
       </div>
@@ -406,7 +433,7 @@ function statusColor(statusValue: AppointmentStatus) {
           <span><UIcon name="i-lucide-calendar-check-2" /></span>
           <div>
             <small>Potwierdzone</small>
-            <strong>{{ calendarStats.summary.confirmed }}</strong>
+            <strong>{{ visibleSummary.confirmed }}</strong>
             <p>w wybranym tygodniu</p>
           </div>
         </article>
@@ -414,7 +441,7 @@ function statusColor(statusValue: AppointmentStatus) {
           <span><UIcon name="i-lucide-users-round" /></span>
           <div>
             <small>Aktywni eksperci</small>
-            <strong>{{ calendarStats.summary.activeMembers }}<em>/{{ calendarStats.members.length }}</em></strong>
+            <strong>{{ visibleSummary.activeMembers }}<em>/{{ visibleMembers.length }}</em></strong>
             <p>ze spotkaniami</p>
           </div>
         </article>
@@ -422,7 +449,7 @@ function statusColor(statusValue: AppointmentStatus) {
           <span><UIcon name="i-lucide-clock-3" /></span>
           <div>
             <small>Czas spotkań</small>
-            <strong>{{ formatDuration(calendarStats.summary.scheduledMinutes) }}</strong>
+            <strong>{{ formatDuration(visibleSummary.scheduledMinutes) }}</strong>
             <p>potwierdzone terminy</p>
           </div>
         </article>
@@ -430,8 +457,8 @@ function statusColor(statusValue: AppointmentStatus) {
           <span><UIcon name="i-lucide-hourglass" /></span>
           <div>
             <small>Oczekujące</small>
-            <strong>{{ calendarStats.summary.hold }}</strong>
-            <p>{{ calendarStats.summary.cancelled }} anulowanych</p>
+            <strong>{{ visibleSummary.hold }}</strong>
+            <p>{{ visibleSummary.cancelled }} anulowanych</p>
           </div>
         </article>
       </div>
@@ -485,7 +512,7 @@ function statusColor(statusValue: AppointmentStatus) {
                 >
                   <NuxtLink
                     :to="individualCalendarTo(item.member.userId, day.key)"
-                    :aria-label="`${memberName(item)}, ${day.accessibleLabel}`"
+                    :aria-label="dayCellLabel(item, day.key, day.accessibleLabel)"
                   >
                     <template v-if="item.byDay[day.key]">
                       <strong v-if="item.byDay[day.key]?.confirmed">
@@ -535,8 +562,8 @@ function statusColor(statusValue: AppointmentStatus) {
             </div>
           </template>
           <ol v-if="visibleMembers.length">
-            <li v-for="(item, index) in visibleMembers" :key="item.member.userId">
-              <span class="team-calendar-ranking__position">{{ index + 1 }}</span>
+            <li v-for="item in visibleMembers" :key="item.member.userId">
+              <span class="team-calendar-ranking__position">{{ memberRank(item.member.userId) }}</span>
               <span class="team-calendar-avatar">{{ memberInitials(item) }}</span>
               <div>
                 <NuxtLink :to="individualCalendarTo(item.member.userId)">
@@ -578,7 +605,7 @@ function statusColor(statusValue: AppointmentStatus) {
               <header>
                 <strong>{{ day.weekday }}</strong>
                 <span>{{ day.day }}</span>
-                <small>{{ day.entries.length }} zdarzeń</small>
+                <small>{{ day.entries.length === 1 ? '1 zdarzenie' : `${day.entries.length} zdarzeń` }}</small>
               </header>
               <div>
                 <template v-for="entry in day.entries" :key="`${entry.kind}-${entry.id}-${day.key}`">
@@ -1265,7 +1292,12 @@ function statusColor(statusValue: AppointmentStatus) {
   }
 
   .team-calendar-agenda__person {
-    display: none;
+    grid-column: 2;
+  }
+
+  .team-calendar-agenda__entry > :last-child {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 }
 
@@ -1284,6 +1316,7 @@ function statusColor(statusValue: AppointmentStatus) {
 
   .team-calendar-agenda__entry > :last-child {
     grid-column: 2;
+    grid-row: auto;
     justify-self: start;
   }
 }

@@ -20,6 +20,30 @@ const devAccount = {
   fullName: process.env.OPENEXPERT_DEV_FULL_NAME ?? 'Local Administrator',
 }
 
+const demoDelegateAccounts = [
+  {
+    key: 'anna-nowak',
+    email: 'anna.nowak@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Anna Nowak',
+    specialty: 'Nieruchomości',
+  },
+  {
+    key: 'piotr-zielinski',
+    email: 'piotr.zielinski@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Piotr Zieliński',
+    specialty: 'Ubezpieczenia',
+  },
+  {
+    key: 'marta-wojcik',
+    email: 'marta.wojcik@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Marta Wójcik',
+    specialty: 'Obsługa klienta',
+  },
+]
+
 function runSupabase(args, { capture = false } = {}) {
   const result = spawnSync(
     'supabase',
@@ -264,9 +288,136 @@ async function authenticatedDevClient(credentials) {
   return client
 }
 
+async function ensureDemoDelegateAccounts(supabase, credentials, organizationId) {
+  const { data: usersData, error: usersError } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  })
+  assertNoError(usersError, 'Listing local Auth users for task delegation seed')
+  const authUserByEmail = new Map(
+    usersData.users.map(user => [String(user.email ?? '').toLowerCase(), user]),
+  )
+  const delegateByKey = new Map()
+
+  for (const account of demoDelegateAccounts) {
+    const userMetadata = {
+      full_name: account.fullName,
+      demo_seed_kind: 'task_delegate',
+      specialty: account.specialty,
+    }
+    let authUser = authUserByEmail.get(account.email)
+    if (authUser) {
+      const { data, error } = await supabase.auth.admin.updateUserById(authUser.id, {
+        password: account.password,
+        email_confirm: true,
+        user_metadata: userMetadata,
+      })
+      assertNoError(error, `Updating demo delegate ${account.fullName}`)
+      authUser = data.user
+    }
+    else {
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: account.email,
+        password: account.password,
+        email_confirm: true,
+        user_metadata: userMetadata,
+      })
+      assertNoError(error, `Creating demo delegate ${account.fullName}`)
+      authUser = data.user
+      if (authUser) authUserByEmail.set(account.email, authUser)
+    }
+    if (!authUser?.id) {
+      throw new Error(`Creating demo delegate ${account.fullName} returned no user id`)
+    }
+
+    let { data: workforceProfile, error: profileError } = await supabase
+      .from('users')
+      .select('id, organization_id, email, full_name')
+      .eq('id', authUser.id)
+      .maybeSingle()
+    assertNoError(profileError, `Reading workforce profile for ${account.fullName}`)
+
+    if (!workforceProfile) {
+      const delegateClient = createClient(credentials.url, credentials.publicKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+      const { error: signInError } = await delegateClient.auth.signInWithPassword({
+        email: account.email,
+        password: account.password,
+      })
+      assertNoError(signInError, `Signing in demo delegate ${account.fullName}`)
+      try {
+        const { error: onboardingError } = await delegateClient.rpc(
+          'create_organization_with_admin',
+          {
+            organization_name: `${account.fullName} — profil demonstracyjny`,
+            full_name: account.fullName,
+          },
+        )
+        assertNoError(onboardingError, `Onboarding demo delegate ${account.fullName}`)
+      }
+      finally {
+        await delegateClient.auth.signOut({ scope: 'local' })
+      }
+
+      const refreshed = await supabase
+        .from('users')
+        .select('id, organization_id, email, full_name')
+        .eq('id', authUser.id)
+        .single()
+      assertNoError(refreshed.error, `Reading onboarded delegate ${account.fullName}`)
+      workforceProfile = refreshed.data
+    }
+
+    const { error: userUpdateError } = await supabase
+      .from('users')
+      .update({
+        email: account.email,
+        full_name: account.fullName,
+      })
+      .eq('id', authUser.id)
+    assertNoError(userUpdateError, `Stabilizing demo delegate ${account.fullName}`)
+
+    const { error: publicProfileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: authUser.id,
+        display_name: account.fullName,
+        locale: 'pl-PL',
+      }, { onConflict: 'id' })
+    assertNoError(publicProfileError, `Updating profile for ${account.fullName}`)
+
+    const { error: membershipError } = await supabase
+      .from('organization_memberships')
+      .upsert({
+        organization_id: organizationId,
+        user_id: authUser.id,
+        role: 'expert',
+      }, { onConflict: 'organization_id,user_id' })
+    assertNoError(membershipError, `Adding ${account.fullName} to the demo organization`)
+
+    delegateByKey.set(account.key, {
+      id: authUser.id,
+      email: account.email,
+      fullName: account.fullName,
+      specialty: account.specialty,
+    })
+  }
+
+  return delegateByKey
+}
+
 async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
   const organizationId = profile.organization_id
   const userId = profile.id
+  const delegateByKey = await ensureDemoDelegateAccounts(
+    supabase,
+    credentials,
+    organizationId,
+  )
 
   const { error: organizationError } = await supabase
     .from('organizations')
@@ -368,15 +519,53 @@ async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
   )
   assertNoError(teamMembershipsError, 'Assigning the local account to the Szczecin teams')
 
-  const { error: facilityMembershipError } = await supabase.from('facility_memberships').upsert({
+  const delegateTeamAssignments = [
+    { delegateKey: 'anna-nowak', team: branch },
+    { delegateKey: 'anna-nowak', team: service },
+    { delegateKey: 'piotr-zielinski', team: branch },
+    { delegateKey: 'piotr-zielinski', team: service },
+    { delegateKey: 'marta-wojcik', team: branch },
+    { delegateKey: 'marta-wojcik', team: mortgage },
+  ].map(({ delegateKey, team }) => ({
     organization_id: organizationId,
-    facility_id: facility.id,
-    user_id: userId,
+    team_id: team.id,
+    user_id: delegateByKey.get(delegateKey).id,
     role: 'member',
-    is_bookable: true,
-    booking_priority: 100,
-  }, { onConflict: 'organization_id,facility_id,user_id' })
-  assertNoError(facilityMembershipError, 'Assigning the local account to the Szczecin facility')
+  }))
+  const { error: delegateTeamsError } = await supabase
+    .from('team_memberships')
+    .upsert(delegateTeamAssignments, {
+      onConflict: 'organization_id,team_id,user_id',
+    })
+  assertNoError(delegateTeamsError, 'Assigning demo delegates to the Szczecin teams')
+
+  const bookableUsers = [
+    {
+      id: userId,
+      bookingPriority: 100,
+    },
+    ...[...delegateByKey.values()].map((delegate, index) => ({
+      id: delegate.id,
+      bookingPriority: 90 - index * 10,
+    })),
+  ]
+  const { error: facilityMembershipError } = await supabase
+    .from('facility_memberships')
+    .upsert(
+      bookableUsers.map(bookableUser => ({
+        organization_id: organizationId,
+        facility_id: facility.id,
+        user_id: bookableUser.id,
+        role: 'member',
+        is_bookable: true,
+        booking_priority: bookableUser.bookingPriority,
+      })),
+      { onConflict: 'organization_id,facility_id,user_id' },
+    )
+  assertNoError(
+    facilityMembershipError,
+    'Assigning the demo experts to the Szczecin facility',
+  )
 
   const { data: meetingService, error: meetingServiceError } = await supabase
     .from('booking_services')
@@ -405,14 +594,22 @@ async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
   }, { onConflict: 'organization_id,facility_id,service_id' })
   assertNoError(facilityServiceError, 'Enabling the generic meeting service at the Szczecin facility')
 
-  const { error: expertServiceError } = await supabase.from('facility_service_experts').upsert({
-    organization_id: organizationId,
-    facility_id: facility.id,
-    service_id: meetingService.id,
-    user_id: userId,
-    is_active: true,
-  }, { onConflict: 'organization_id,facility_id,service_id,user_id' })
-  assertNoError(expertServiceError, 'Assigning the generic meeting service to the local expert')
+  const { error: expertServiceError } = await supabase
+    .from('facility_service_experts')
+    .upsert(
+      bookableUsers.map(bookableUser => ({
+        organization_id: organizationId,
+        facility_id: facility.id,
+        service_id: meetingService.id,
+        user_id: bookableUser.id,
+        is_active: true,
+      })),
+      { onConflict: 'organization_id,facility_id,service_id,user_id' },
+    )
+  assertNoError(
+    expertServiceError,
+    'Assigning the generic meeting service to the demo experts',
+  )
 
   const userClient = await authenticatedDevClient(credentials)
   try {
@@ -421,20 +618,47 @@ async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
       adminClient: supabase,
       userClient,
       profile,
+      delegateByKey,
       seedNow,
     })
+    const meetingTask = crm.tasks.find(
+      task => task.seed_key === 'case-mortgage-warszewo:task:property-register',
+    )
+    if (!meetingTask) {
+      throw new Error('Demo task meeting requires the delegated property task')
+    }
     const scheduling = await seedDemoScheduling({
       adminClient: supabase,
       profile,
       facility,
       meetingService,
       clients: crm.clients,
+      additionalExpertUserIds: [...delegateByKey.values()].map(
+        delegate => delegate.id,
+      ),
+      delegatedTask: meetingTask,
       seedNow,
     })
+    const scheduledMeeting = scheduling.delegatedTaskAppointment
+    if (!scheduledMeeting) {
+      throw new Error('Demo delegated task meeting was not seeded')
+    }
+    const { error: staleTaskMeetingsError } = await supabase
+      .from('appointments')
+      .update({ crm_task_id: null })
+      .eq('organization_id', organizationId)
+      .eq('crm_task_id', meetingTask.id)
+      .neq('id', scheduledMeeting.id)
+    assertNoError(
+      staleTaskMeetingsError,
+      'Removing stale demo meetings from the delegated task',
+    )
+
     return {
       facility,
       facilityImages,
       teams: [branch, mortgage, service],
+      delegates: [...delegateByKey.values()],
       crm,
       scheduling,
     }
@@ -557,6 +781,17 @@ async function verifyPasswordLogin(credentials) {
     )
   }
 
+  const { data: platformRole, error: platformRoleError } = await supabase
+    .from('platform_user_roles')
+    .select('user_id, role')
+    .eq('user_id', profile.id)
+    .eq('role', 'super_admin')
+    .maybeSingle()
+  assertNoError(platformRoleError, 'Reading the local SuperAdmin role through authenticated RLS')
+  if (!platformRole) {
+    throw new Error('The local account must have the SuperAdmin platform role.')
+  }
+
   const { data: teamAdminMembership, error: teamAdminMembershipError } = await supabase
     .from('team_memberships')
     .select('team_id, role')
@@ -673,13 +908,14 @@ async function verifyPasswordLogin(credentials) {
     crm_tasks: 1,
     crm_documents: 1,
     crm_activities: 1,
+    organization_memberships: 4,
     facilities: 1,
     facility_images: 3,
     facility_opening_hours: 5,
     expert_availability_rules: 5,
     booking_services: 4,
     booking_widgets: 3,
-    appointments: 6,
+    appointments: 7,
   }
   const demoCountEntries = await Promise.all(
     Object.entries(minimumCounts).map(async ([table, minimum]) => {
@@ -691,6 +927,221 @@ async function verifyPasswordLogin(credentials) {
     }),
   )
   const demoCounts = Object.fromEntries(demoCountEntries)
+
+  const { data: delegationMembers, error: delegationMembersError } = await supabase
+    .from('organization_memberships')
+    .select('user_id, user:users!organization_memberships_user_id_fkey!inner(full_name)')
+    .eq('organization_id', profile.organization_id)
+  assertNoError(delegationMembersError, 'Reading task delegation demo members')
+  const delegateNames = new Set(
+    (delegationMembers ?? []).map(membership => membership.user?.full_name),
+  )
+  for (const expectedName of ['Anna Nowak', 'Piotr Zieliński', 'Marta Wójcik']) {
+    if (!delegateNames.has(expectedName)) {
+      throw new Error(`Task delegation seed is missing ${expectedName}`)
+    }
+  }
+
+  const { data: delegatedTasks, error: delegatedTasksError } = await supabase
+    .from('crm_tasks')
+    .select('id, delegator_user_id, assignee_user_id, client_id, case_id, case_item_id, title, status_code, delegation_status, data_access_scope')
+    .eq('organization_id', profile.organization_id)
+    .neq('delegation_status', 'not_delegated')
+  assertNoError(delegatedTasksError, 'Reading seeded delegated tasks')
+  const delegationStatuses = new Set(
+    (delegatedTasks ?? []).map(task => task.delegation_status),
+  )
+  if (
+    (delegatedTasks ?? []).length < 5
+    || !['pending', 'accepted', 'rejected'].every(status => delegationStatuses.has(status))
+    || !(delegatedTasks ?? []).some(task => task.status_code === 'done')
+    || (delegatedTasks ?? []).some(task => (
+      task.delegator_user_id !== profile.id
+      || task.assignee_user_id === profile.id
+      || !Array.isArray(task.data_access_scope)
+      || task.data_access_scope.length === 0
+    ))
+  ) {
+    throw new Error('Delegated task seed must cover pending, accepted, rejected and completed work')
+  }
+
+  const delegatedTaskIds = delegatedTasks.map(task => task.id)
+  const { data: taskAudit, error: taskAuditError } = await supabase
+    .from('crm_activities')
+    .select('task_id, activity_type')
+    .eq('organization_id', profile.organization_id)
+    .in('task_id', delegatedTaskIds)
+  assertNoError(taskAuditError, 'Reading delegated task audit trail')
+  if (
+    taskAudit.length < delegatedTasks.length
+    || !taskAudit.some(activity => activity.activity_type === 'task_delegated')
+    || !taskAudit.some(activity => activity.activity_type === 'task_delegation_accepted')
+    || !taskAudit.some(activity => activity.activity_type === 'task_delegation_rejected')
+  ) {
+    throw new Error('Delegated task audit trail is incomplete')
+  }
+
+  const { data: taskMeetings, error: taskMeetingsError } = await supabase
+    .from('appointments')
+    .select('id, crm_task_id, expert_user_id, starts_at, status, meeting_mode')
+    .eq('organization_id', profile.organization_id)
+    .not('crm_task_id', 'is', null)
+  assertNoError(taskMeetingsError, 'Reading delegated task meetings')
+  if (!taskMeetings.length) {
+    throw new Error('Delegated task seed must include at least one linked meeting')
+  }
+  const delegatedTaskById = new Map(
+    delegatedTasks.map(task => [task.id, task]),
+  )
+  if (taskMeetings.some((appointment) => {
+    const task = delegatedTaskById.get(appointment.crm_task_id)
+    return !task
+      || !task.data_access_scope.includes('client_contact')
+      || !task.data_access_scope.includes('client_identity')
+  })) {
+    throw new Error(
+      'Every delegated task meeting must include client contact and identity access',
+    )
+  }
+  const scheduledDelegationMeeting = taskMeetings.find((appointment) => {
+    const task = delegatedTaskById.get(appointment.crm_task_id)
+    return task
+      && appointment.expert_user_id === task.assignee_user_id
+      && appointment.status === 'confirmed'
+      && appointment.meeting_mode === 'office'
+      && new Date(appointment.starts_at).valueOf() > Date.now()
+  })
+  if (!scheduledDelegationMeeting) {
+    throw new Error(
+      'Delegated task seed must include a future confirmed meeting with its assignee',
+    )
+  }
+
+  const acceptedTask = delegatedTasks.find(task => task.delegation_status === 'accepted')
+  if (!acceptedTask) {
+    throw new Error('Task delegation security checks require an accepted task')
+  }
+  const annaAccount = demoDelegateAccounts.find(account => account.key === 'anna-nowak')
+  const annaMembership = (delegationMembers ?? []).find(
+    membership => membership.user?.full_name === annaAccount?.fullName,
+  )
+  const annaTask = delegatedTasks.find(task => (
+    task.assignee_user_id === annaMembership?.user_id
+    && task.delegation_status === 'accepted'
+  ))
+  if (!annaAccount || !annaMembership || !annaTask) {
+    throw new Error('Task delegation security checks require Anna and her accepted task')
+  }
+
+  const forgedResolvedTask = await supabase
+    .from('crm_tasks')
+    .insert({
+      organization_id: profile.organization_id,
+      delegator_user_id: profile.id,
+      assignee_user_id: annaMembership.user_id,
+      client_id: acceptedTask.client_id,
+      case_id: acceptedTask.case_id,
+      case_item_id: acceptedTask.case_item_id,
+      title: 'Nieprawidłowa delegacja z pominięciem akceptacji',
+      status_code: 'open',
+      delegation_status: 'accepted',
+      due_at: new Date(Date.now() + 86_400_000).toISOString(),
+      data_access_scope: ['case_summary'],
+      idempotency_key: 'd7300000-0000-4000-8000-000000000001',
+      idempotency_fingerprint: '0'.repeat(64),
+    })
+  if (
+    !forgedResolvedTask.error
+    || forgedResolvedTask.error.code !== '23514'
+    || !forgedResolvedTask.error.message.includes('delegated_task_must_start_pending')
+  ) {
+    throw new Error('Authenticated delegators can bypass task acceptance')
+  }
+
+  const forgedCompletedTask = await supabase
+    .from('crm_tasks')
+    .insert({
+      organization_id: profile.organization_id,
+      delegator_user_id: profile.id,
+      assignee_user_id: annaMembership.user_id,
+      client_id: acceptedTask.client_id,
+      case_id: acceptedTask.case_id,
+      case_item_id: acceptedTask.case_item_id,
+      title: 'Nieprawidłowe ukończone zadanie oczekujące',
+      status_code: 'open',
+      delegation_status: 'pending',
+      due_at: new Date(Date.now() + 86_400_000).toISOString(),
+      completed_at: new Date().toISOString(),
+      data_access_scope: ['case_summary'],
+      idempotency_key: 'd7300000-0000-4000-8000-000000000002',
+      idempotency_fingerprint: '0'.repeat(64),
+    })
+  if (
+    !forgedCompletedTask.error
+    || forgedCompletedTask.error.code !== '23514'
+    || !forgedCompletedTask.error.message.includes(
+      'crm_tasks_delegated_completion_check',
+    )
+  ) {
+    throw new Error('A pending delegated task can carry a forged completion')
+  }
+
+  const annaClient = createClient(credentials.url, credentials.publicKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+  const { error: annaSignInError } = await annaClient.auth.signInWithPassword({
+    email: annaAccount.email,
+    password: annaAccount.password,
+  })
+  assertNoError(annaSignInError, 'Signing in an assignee for task RLS checks')
+  try {
+    const forbiddenDefinitionChange = await annaClient
+      .from('crm_tasks')
+      .update({ title: `${annaTask.title} — niedozwolona zmiana` })
+      .eq('organization_id', profile.organization_id)
+      .eq('id', annaTask.id)
+      .select('id')
+    if (
+      !forbiddenDefinitionChange.error
+      || forbiddenDefinitionChange.error.code !== '42501'
+    ) {
+      throw new Error('An assignee changed the delegated task definition')
+    }
+
+    const forgedTaskAudit = await annaClient
+      .from('crm_activities')
+      .insert({
+        organization_id: profile.organization_id,
+        actor_user_id: annaMembership.user_id,
+        client_id: annaTask.client_id,
+        case_id: annaTask.case_id,
+        case_item_id: annaTask.case_item_id,
+        task_id: annaTask.id,
+        activity_type: 'task_completed',
+        title: 'Sfałszowany wpis audytowy',
+      })
+    if (!forgedTaskAudit.error || forgedTaskAudit.error.code !== '42501') {
+      throw new Error('An assignee inserted a forged delegated-task audit row')
+    }
+  }
+  finally {
+    await annaClient.auth.signOut({ scope: 'local' })
+  }
+
+  const protectedTask = delegatedTasks[0]
+  const { data: deletedDelegatedTask, error: deleteDelegatedTaskError } = await supabase
+    .from('crm_tasks')
+    .delete()
+    .eq('organization_id', profile.organization_id)
+    .eq('id', protectedTask.id)
+    .select('id')
+  assertNoError(deleteDelegatedTaskError, 'Checking delegated task deletion protection')
+  if (deletedDelegatedTask?.length) {
+    throw new Error('An authenticated organization admin deleted an audited delegated task')
+  }
 
   const { data: facility, error: facilityError } = await serviceClient
     .from('facilities')
@@ -829,6 +1280,8 @@ async function verifyPasswordLogin(credentials) {
     mortgageFiles: mortgageFiles.length,
     consentDefinitions: consentDefinitions.length,
     facilityImages: facilityImages.length,
+    delegatedTasks: delegatedTasks.length,
+    taskMeetings: taskMeetings.length,
     demoCounts,
     availableSlots: freeSlots.length,
     availabilityDate: availabilityOverride.local_date,
@@ -848,6 +1301,7 @@ function printAccount(result, credentials) {
   console.log('  Consent catalogue:  ' + result.consentDefinitions + ' published definitions')
   console.log('  Facility gallery:   ' + result.facilityImages + ' images')
   console.log('  Demo CRM:           ' + result.demoCounts.crm_clients + ' clients / ' + result.demoCounts.crm_cases + ' cases')
+  console.log('  Task delegation:    ' + result.delegatedTasks + ' tasks / ' + result.taskMeetings + ' linked meetings')
   console.log('  Demo calendar:      ' + result.demoCounts.appointments + ' appointments / ' + result.availableSlots + ' free slots on ' + result.availabilityDate)
 }
 

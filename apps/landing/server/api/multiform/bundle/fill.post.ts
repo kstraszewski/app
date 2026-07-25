@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto'
-import { getTemplate, prepareBundle } from '@openexpert/multiform'
+import {
+  getTemplate,
+  prepareBundle,
+  templateApplicantCapacityIssues,
+  type DocumentTemplate,
+} from '@openexpert/multiform'
 import { createError, readBody, setHeader } from 'h3'
 import {
   isCanonicalFieldRequired,
@@ -304,6 +309,38 @@ export default defineEventHandler(async (event) => {
     bundle.fields,
     normalizedValues,
   )
+  if (
+    crmContext
+    && bundle.collections.some(collection => collection.key === 'applicants')
+    && collectionCounts.applicants !== crmContext.applicants.length
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Liczba wnioskodawców formularza nie odpowiada aktualnej sprawie CRM.',
+      data: {
+        blockers: [
+          `Formularz zawiera ${collectionCounts.applicants ?? 0} `
+          + `wnioskodawców, a sprawa zawiera ${crmContext.applicants.length}.`,
+        ],
+      },
+    })
+  }
+  const applicantCapacityIssues = templateApplicantCapacityIssues(
+    templates.filter((template): template is DocumentTemplate => Boolean(template)),
+    collectionCounts.applicants ?? 0,
+  )
+  if (applicantCapacityIssues.length > 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Co najmniej jeden dokument nie obsługuje liczby wnioskodawców w formularzu.',
+      data: {
+        blockers: applicantCapacityIssues.map(issue => (
+          `${issue.templateLabel} obsługuje maksymalnie ${issue.supportedCount} `
+          + `wnioskodawców, a formularz zawiera ${issue.requestedCount}.`
+        )),
+      },
+    })
+  }
   const values = activeCollectionValues(bundle.fields, normalizedValues, collectionCounts)
   const validationIssues = validateValues(
     bundle.fields,

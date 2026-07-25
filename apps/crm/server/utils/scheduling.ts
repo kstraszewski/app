@@ -450,6 +450,48 @@ export async function ensureGenericMeetingService(
   return service
 }
 
+export async function findConfiguredGenericMeetingService(
+  event: H3Event,
+  organizationId: string,
+  facilityId: string,
+  expertUserId: string,
+): Promise<Record<string, any> | null> {
+  const serviceRole = serverSupabaseServiceRole(event) as any
+  const { data: service, error: serviceError } = await serviceRole
+    .from('booking_services')
+    .select('id, organization_id, name, slug, duration_minutes')
+    .eq('organization_id', organizationId)
+    .eq('slug', 'spotkanie')
+    .eq('is_active', true)
+    .maybeSingle()
+  throwDbError(serviceError)
+  if (!service) return null
+
+  const [facilityServiceResult, expertAssignmentResult] = await Promise.all([
+    serviceRole
+      .from('facility_services')
+      .select('service_id')
+      .eq('organization_id', organizationId)
+      .eq('facility_id', facilityId)
+      .eq('service_id', service.id)
+      .eq('is_active', true)
+      .maybeSingle(),
+    serviceRole
+      .from('facility_service_experts')
+      .select('user_id')
+      .eq('organization_id', organizationId)
+      .eq('facility_id', facilityId)
+      .eq('service_id', service.id)
+      .eq('user_id', expertUserId)
+      .eq('is_active', true)
+      .maybeSingle(),
+  ])
+  throwDbError(facilityServiceResult.error)
+  throwDbError(expertAssignmentResult.error)
+  if (!facilityServiceResult.data || !expertAssignmentResult.data) return null
+  return service
+}
+
 export async function assertPublicBookingRateLimit(
   event: H3Event,
   scope: 'catalog' | 'slots' | 'booking' | 'analytics',

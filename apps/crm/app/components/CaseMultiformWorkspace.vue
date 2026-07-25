@@ -474,7 +474,12 @@ function initializeForm(bundle: MultiformPrepareResponse) {
     const requested = collection.key === 'applicants'
       ? Math.max(collection.minItems, context.value?.applicants.length ?? 0)
       : collection.minItems
-    nextCounts[collection.key] = Math.min(supported, requested)
+    if (requested > supported) {
+      throw new Error(
+        `${collection.label}: zestaw dokumentów obsługuje ${supported}, a sprawa wymaga ${requested} pozycji.`,
+      )
+    }
+    nextCounts[collection.key] = requested
     nextTabs[collection.key] = '0'
   }
   collectionCounts.value = nextCounts

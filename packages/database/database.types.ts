@@ -165,6 +165,7 @@ export type Database = {
           confirmed_at: string | null
           created_at: string
           created_by_user_id: string | null
+          crm_task_id: string | null
           customer_email: string | null
           customer_name: string
           customer_phone: string | null
@@ -198,6 +199,7 @@ export type Database = {
           confirmed_at?: string | null
           created_at?: string
           created_by_user_id?: string | null
+          crm_task_id?: string | null
           customer_email?: string | null
           customer_name: string
           customer_phone?: string | null
@@ -231,6 +233,7 @@ export type Database = {
           confirmed_at?: string | null
           created_at?: string
           created_by_user_id?: string | null
+          crm_task_id?: string | null
           customer_email?: string | null
           customer_name?: string
           customer_phone?: string | null
@@ -288,6 +291,13 @@ export type Database = {
             columns: ["organization_id", "facility_id"]
             isOneToOne: false
             referencedRelation: "facilities"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "appointments_organization_crm_task_fkey"
+            columns: ["organization_id", "crm_task_id"]
+            isOneToOne: false
+            referencedRelation: "crm_tasks"
             referencedColumns: ["organization_id", "id"]
           },
           {
@@ -826,6 +836,7 @@ export type Database = {
           organization_id: string
           payload: Json
           submission_id: string | null
+          task_id: string | null
           title: string
         }
         Insert: {
@@ -840,6 +851,7 @@ export type Database = {
           organization_id: string
           payload?: Json
           submission_id?: string | null
+          task_id?: string | null
           title: string
         }
         Update: {
@@ -854,6 +866,7 @@ export type Database = {
           organization_id?: string
           payload?: Json
           submission_id?: string | null
+          task_id?: string | null
           title?: string
         }
         Relationships: [
@@ -925,6 +938,13 @@ export type Database = {
             columns: ["organization_id", "submission_id"]
             isOneToOne: false
             referencedRelation: "crm_item_submissions"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_activities_organization_task_fkey"
+            columns: ["organization_id", "task_id"]
+            isOneToOne: false
+            referencedRelation: "crm_tasks"
             referencedColumns: ["organization_id", "id"]
           },
           {
@@ -2748,52 +2768,85 @@ export type Database = {
       }
       crm_tasks: {
         Row: {
+          accepted_at: string | null
           assignee_user_id: string | null
+          cancelled_at: string | null
           case_id: string | null
           case_item_id: string | null
           client_id: string | null
           completed_at: string | null
           created_at: string
+          data_access_scope: string[]
+          delegated_at: string | null
+          delegation_status: string
+          delegator_user_id: string | null
           description: string | null
           due_at: string | null
           id: string
+          idempotency_fingerprint: string | null
+          idempotency_key: string | null
           metadata: Json
           organization_id: string
           priority: string
+          rejected_at: string | null
+          rejection_reason: string | null
+          responded_at: string | null
           status_code: string
           title: string
           updated_at: string
         }
         Insert: {
+          accepted_at?: string | null
           assignee_user_id?: string | null
+          cancelled_at?: string | null
           case_id?: string | null
           case_item_id?: string | null
           client_id?: string | null
           completed_at?: string | null
           created_at?: string
+          data_access_scope?: string[]
+          delegated_at?: string | null
+          delegation_status?: string
+          delegator_user_id?: string | null
           description?: string | null
           due_at?: string | null
           id?: string
+          idempotency_fingerprint?: string | null
+          idempotency_key?: string | null
           metadata?: Json
           organization_id: string
           priority?: string
+          rejected_at?: string | null
+          rejection_reason?: string | null
+          responded_at?: string | null
           status_code?: string
           title: string
           updated_at?: string
         }
         Update: {
+          accepted_at?: string | null
           assignee_user_id?: string | null
+          cancelled_at?: string | null
           case_id?: string | null
           case_item_id?: string | null
           client_id?: string | null
           completed_at?: string | null
           created_at?: string
+          data_access_scope?: string[]
+          delegated_at?: string | null
+          delegation_status?: string
+          delegator_user_id?: string | null
           description?: string | null
           due_at?: string | null
           id?: string
+          idempotency_fingerprint?: string | null
+          idempotency_key?: string | null
           metadata?: Json
           organization_id?: string
           priority?: string
+          rejected_at?: string | null
+          rejection_reason?: string | null
+          responded_at?: string | null
           status_code?: string
           title?: string
           updated_at?: string
@@ -2842,11 +2895,25 @@ export type Database = {
             referencedColumns: ["organization_id", "id"]
           },
           {
+            foreignKeyName: "crm_tasks_organization_case_item_fkey"
+            columns: ["organization_id", "case_id", "case_item_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_items"
+            referencedColumns: ["organization_id", "case_id", "id"]
+          },
+          {
             foreignKeyName: "crm_tasks_organization_client_fkey"
             columns: ["organization_id", "client_id"]
             isOneToOne: false
             referencedRelation: "crm_clients"
             referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_tasks_organization_delegator_membership_fkey"
+            columns: ["organization_id", "delegator_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
           },
           {
             foreignKeyName: "crm_tasks_organization_id_fkey"
@@ -5458,6 +5525,7 @@ export type Database = {
         }
         Returns: string
       }
+      create_delegated_crm_task: { Args: { p_request: Json }; Returns: Json }
       create_mortgage_product_draft_v2: {
         Args: {
           p_actor_user_id: string

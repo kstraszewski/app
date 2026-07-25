@@ -21,11 +21,16 @@ const emit = defineEmits<{
 }>()
 
 const controlId = computed(() => props.inputId || `field-${props.field.key}`)
-const fieldLabel = computed(() => props.field.collection?.label || props.field.label)
+const fieldLabel = computed(() => (
+  props.field.question
+  || props.field.collection?.label
+  || props.field.label
+))
+const fieldHelpText = computed(() => props.field.helpText || props.field.description)
 const showError = computed(() => props.invalid && !props.disabled)
 const describedBy = computed(() => {
   const ids = []
-  if (props.field.description) ids.push(`description-${controlId.value}`)
+  if (fieldHelpText.value) ids.push(`description-${controlId.value}`)
   if (showError.value) ids.push(`error-${controlId.value}`)
   return ids.length ? ids.join(' ') : undefined
 })
@@ -100,7 +105,7 @@ function validationMessage() {
       <span class="checkbox-field__box" aria-hidden="true" />
       <span>
         <strong>{{ fieldLabel }}<em v-if="required"> *</em></strong>
-        <small v-if="field.description" :id="`description-${controlId}`">{{ field.description }}</small>
+        <small v-if="fieldHelpText" :id="`description-${controlId}`">{{ fieldHelpText }}</small>
         <small v-if="showError" :id="`error-${controlId}`" class="field-error">{{ validationMessage() }}</small>
       </span>
     </label>
@@ -152,7 +157,7 @@ function validationMessage() {
         :aria-describedby="describedBy"
         @input="updateTextValue"
       >
-      <small v-if="field.description" :id="`description-${controlId}`">{{ field.description }}</small>
+      <small v-if="fieldHelpText" :id="`description-${controlId}`">{{ fieldHelpText }}</small>
       <small v-if="showError" :id="`error-${controlId}`" class="field-error">{{ validationMessage() }}</small>
     </template>
   </div>

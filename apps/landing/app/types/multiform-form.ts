@@ -6,6 +6,7 @@ export type FieldOption = string | { label: string, value: string }
 export interface FormCollectionFieldRef {
   key: string
   index: number
+  displayIndex: number
   relativeKey: string
   label: string
 }
@@ -22,12 +23,20 @@ export interface FormCollectionDefinition {
 export interface FormField {
   key: string
   label: string
+  question?: string
+  helpText?: string
   type: string
   section: string
   required: boolean
   options?: FieldOption[]
   placeholder?: string
   description?: string
+  semanticDescription?: string
+  semanticRole?: string
+  aiMappingHints?: {
+    aliases: string[]
+    exclude: string[]
+  }
   collection?: FormCollectionFieldRef
   visibleWhen?: FieldCondition
   requiredWhen?: FieldCondition
@@ -60,4 +69,3 @@ export interface RepeatableFormGroup {
 }
 
 export type FormRenderGroup = FlatFormGroup | RepeatableFormGroup
-

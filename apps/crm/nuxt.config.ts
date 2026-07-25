@@ -51,12 +51,25 @@ export default defineNuxtConfig({
   icon: {
     provider: 'none',
     clientBundle: {
-      icons: ['lucide:monitor'],
+      icons: [
+        'lucide:layers-3',
+        'lucide:monitor',
+        'lucide:mouse-pointer-2',
+        'lucide:move',
+        'lucide:panel-right',
+        'lucide:redo-2',
+      ],
       scan: true,
       sizeLimitKb: 512,
     },
   },
   nitro: {
+    serverAssets: [
+      {
+        baseName: 'mortgage-template-pdfs',
+        dir: fileURLToPath(new URL('../../mock-files', import.meta.url)),
+      },
+    ],
     typescript: {
       tsConfig: {
         compilerOptions: {

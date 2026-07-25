@@ -290,7 +290,12 @@ const resetting = ref(false)
 const refreshing = ref(false)
 const resetArmed = ref(false)
 const logoFile = ref<File | null>(null)
+const failedLogoUrls = ref<Set<string>>(new Set())
 const hasCustomLogo = computed(() => Boolean(bank.value?.override?.hasCustomLogo))
+const displayedLogoUrl = computed(() => firstAvailableImageSource(
+  [bank.value?.logoUrl, bank.value?.baseLogoUrl],
+  failedLogoUrls.value,
+))
 const settingsForm = reactive({
   is_enabled: true,
   custom_name: '',
@@ -327,6 +332,14 @@ onMounted(() => {
 
 function initials(name: string) {
   return name.split(/\s+/u).slice(0, 2).map(part => part[0]).join('').toUpperCase()
+}
+
+function handleLogoError(event: Event) {
+  const image = event.currentTarget as HTMLImageElement | null
+  failedLogoUrls.value = withFailedImageSource(
+    failedLogoUrls.value,
+    image?.getAttribute('src'),
+  )
 }
 
 function loadSettingsForm() {
@@ -650,7 +663,13 @@ watch(bank, loadSettingsForm, { immediate: true })
           class="bank-hero__logo"
           :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
         >
-          <img v-if="bank.logoUrl" :src="bank.logoUrl" :alt="`Logo ${bank.name}`">
+          <img
+            v-if="displayedLogoUrl"
+            :key="displayedLogoUrl"
+            :src="displayedLogoUrl"
+            :alt="`Logo ${bank.name}`"
+            @error="handleLogoError"
+          >
           <span v-else>{{ initials(bank.name) }}</span>
         </div>
         <div class="bank-hero__body">
@@ -1072,10 +1091,16 @@ watch(bank, loadSettingsForm, { immediate: true })
               class="settings-logo-preview"
               :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
             >
-              <img v-if="bank.logoUrl" :src="bank.logoUrl" :alt="`Aktualne logo ${bank.name}`">
+              <img
+                v-if="displayedLogoUrl"
+                :key="displayedLogoUrl"
+                :src="displayedLogoUrl"
+                :alt="`Aktualne logo ${bank.name}`"
+                @error="handleLogoError"
+              >
               <div v-else>
                 <UIcon name="i-lucide-image" />
-                <span>Brak logo</span>
+                <span>{{ bank.logoUrl ? 'Logo jest niedostępne' : 'Brak logo' }}</span>
               </div>
             </div>
             <div class="settings-logo-upload">

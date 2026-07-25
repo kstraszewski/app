@@ -106,6 +106,35 @@ const OWN_FUNDS_PARTS = [
   'investment.ownFundsDuringInvestment',
 ] as const
 
+function unreviewedApplicantBindings(
+  index: 2 | 3 | 4,
+  fullNameY: number,
+  peselY: number,
+): TemplateBinding[] {
+  const displayIndex = index + 1
+  const mappingEvidence = {
+    origin: 'manual' as const,
+    rationale: `Pozycja wyznaczona z etykiet „Wnioskodawca ${displayIndex}”, „imię i nazwisko” oraz „PESEL” na pierwszej stronie dokumentu.`,
+  }
+  return [
+    {
+      canonicalKey: `applicants.${index}.fullName`,
+      computed: true,
+      valueFrom: [`applicants.${index}.firstName`, `applicants.${index}.lastName`],
+      valueFormat: 'fullName',
+      reviewStatus: 'needsReview',
+      mappingEvidence,
+      target: textTarget(1, 155, fullNameY, 374),
+    },
+    {
+      canonicalKey: `applicants.${index}.pesel`,
+      reviewStatus: 'needsReview',
+      mappingEvidence,
+      target: textTarget(1, 104, peselY, 425),
+    },
+  ]
+}
+
 export const ERSTE_TEMPLATE: DocumentTemplate = {
   schemaVersion: 2,
   id: 'erste-mortgage-2026',
@@ -160,6 +189,9 @@ export const ERSTE_TEMPLATE: DocumentTemplate = {
       target: textTarget(1, 155, 560, 374),
     },
     text('applicants.1.pesel', 1, 104, 581, 425),
+    ...unreviewedApplicantBindings(2, 622, 642),
+    ...unreviewedApplicantBindings(3, 683, 703),
+    ...unreviewedApplicantBindings(4, 744, 765),
 
     mark('loan.purpose', 'purchase_primary', 2, 245),
     mark('loan.purpose', 'purchase_secondary', 2, 266),

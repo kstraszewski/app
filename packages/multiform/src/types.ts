@@ -15,6 +15,7 @@ export interface CanonicalFieldOption {
 export interface CanonicalCollectionFieldRef {
   key: string
   index: number
+  displayIndex: number
   relativeKey: string
   label: string
 }
@@ -33,11 +34,25 @@ export interface FieldCondition {
   equals: string | readonly string[]
 }
 
+export interface CanonicalFieldFormDefinition {
+  question: string
+  helpText?: string
+}
+
+export interface CanonicalFieldAiMappingHints {
+  aliases: readonly string[]
+  exclude: readonly string[]
+}
+
 export interface CanonicalFieldDefinition {
   canonicalKey: string
   label: string
   type: CanonicalFieldType
   group: 'application' | 'applicants' | 'loan' | 'investment' | 'property'
+  form: CanonicalFieldFormDefinition
+  semanticDescription: string
+  semanticRole: string
+  aiMappingHints: CanonicalFieldAiMappingHints
   description?: string
   options?: readonly CanonicalFieldOption[]
   collection?: CanonicalCollectionFieldRef
@@ -49,6 +64,20 @@ export interface CanonicalFieldDefinition {
     max?: number
     integer?: boolean
   }
+}
+
+export interface CanonicalComputedBindingDefinition {
+  canonicalKey: string
+  label: string
+  type: CanonicalFieldType
+  group: CanonicalFieldDefinition['group']
+  semanticDescription: string
+  semanticRole: string
+  aiMappingHints: CanonicalFieldAiMappingHints
+  collection?: CanonicalCollectionFieldRef
+  computed: true
+  valueFrom: readonly string[]
+  valueFormat: ValueFormat
 }
 
 export interface PdfBox {
@@ -205,6 +234,31 @@ export type ValueFormat =
   | 'landRegister.part2'
   | 'landRegister.part3'
 
+export interface TemplateMappingEvidenceAnchor {
+  kind: 'section' | 'label' | 'ordinal' | 'nearby-text' | 'acroform-name'
+  reference: string
+  page: number
+  text: string
+  box?: PdfBox
+}
+
+export interface TemplateMappingEvidence {
+  origin: 'ai' | 'manual' | 'legacy'
+  rationale: string
+  confidence?: number
+  anchors?: readonly TemplateMappingEvidenceAnchor[]
+  model?: string
+}
+
+export interface TemplateBindingSemanticContract {
+  semanticDescription: string
+  semanticRole: string
+  aiMappingHints: CanonicalFieldAiMappingHints
+  source: 'manual' | 'ai'
+  rationale?: string
+  model?: string
+}
+
 export interface TemplateBinding {
   canonicalKey: string
   target: TemplateTarget
@@ -213,6 +267,8 @@ export interface TemplateBinding {
   valueFormat?: ValueFormat
   condition?: BindingCondition
   reviewStatus?: 'ready' | 'needsReview'
+  semanticContract?: TemplateBindingSemanticContract
+  mappingEvidence?: TemplateMappingEvidence
   notes?: string
 }
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import {
@@ -28,4 +29,15 @@ test('hash wersji ignoruje klucz techniczny, ale wykrywa zmianę parametrów', (
     semanticVersionDigest(version),
     semanticVersionDigest({ ...version, fixedRatePct: 6.35 }),
   )
+})
+
+test('manifest Erste uses a direct HTTPS image asset', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../data/mortgages/pl-2026-07-12.json', import.meta.url),
+    'utf8',
+  ))
+  const erste = manifest.products.find(item => item.bank?.slug === 'erste')
+
+  assert.ok(erste)
+  assert.match(erste.bank.logoUrl, /^https:\/\/.+\.(png|jpe?g|webp|svg)(?:[?#].*)?$/iu)
 })

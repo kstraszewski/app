@@ -10,6 +10,7 @@ definePageMeta({
   middleware: ['auth', 'organization'],
   path: '/org/:organizationSlug/settings/institutions/:bankId/pdf-templates/:templateId',
   alias: ['/org/:organizationSlug/mortgages/institutions/:bankId/pdf-templates/:templateId'],
+  crmContentMode: 'workspace',
 })
 
 type TemplateSummary = {
@@ -76,6 +77,19 @@ type SyntaxState = {
   column?: number
 }
 
+type SuggestionResponse = {
+  schemaVersion: 1
+  template: DocumentTemplate
+  validation: TemplateValidationResult
+  generation: {
+    model: string
+    proposedCount: number
+    addedCount: number
+    skippedTargetCount: number
+    skippedUnmappedCount: number
+  }
+}
+
 const route = useRoute()
 const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
@@ -100,6 +114,13 @@ const editorMode = ref<'visual' | 'json'>('visual')
 const saving = ref(false)
 const validating = ref(false)
 const publishing = ref(false)
+const suggestingMappings = ref(false)
+const aiUndoState = ref<{
+  beforeText: string
+  beforeValidation: TemplateValidationResult | null
+  beforeValidatedSnapshot: string
+  afterText: string
+} | null>(null)
 const initializedFor = ref('')
 
 const template = computed(() => data.value?.template ?? null)
@@ -116,6 +137,32 @@ const canPublish = computed(() => Boolean(
   && !validationStale.value
   && validation.value?.summary.activationReady,
 ))
+const reviewCount = computed(() => validation.value?.summary.needsReviewCount ?? 0)
+const releaseAttentionCount = computed(() => (
+  reviewCount.value
+  + (validation.value?.summary.unmappedCount ?? 0)
+))
+const saveStateLabel = computed(() => {
+  if (saving.value) return 'Zapisywanie…'
+  if (dirty.value) return 'Niezapisane'
+  if (template.value?.draft?.updatedAt) return `Zapisano ${formatTime(template.value.draft.updatedAt)}`
+  return 'Zapisano'
+})
+const validationStateLabel = computed(() => {
+  if (validating.value) return 'Sprawdzanie…'
+  if (validationStale.value) return 'Walidacja nieaktualna'
+  if (validation.value?.summary.activationReady) return 'Walidacja aktualna'
+  if (releaseAttentionCount.value > 0) return `${releaseAttentionCount.value} pól wymaga weryfikacji`
+  return 'Wymaga uzupełnienia'
+})
+const saveStateDetailLabel = computed(() => {
+  if (dirty.value || validationStale.value || validating.value) return validationStateLabel.value
+  return template.value?.draft ? `Szkic r${template.value.draft.revision}` : 'Nowy szkic'
+})
+const studioDescription = computed(() => {
+  if (!template.value) return bank.value?.name ?? 'Szablon PDF'
+  return `${bank.value?.name ?? 'Instytucja'} · ${template.value.editor.template.source.pageCount} stron`
+})
 
 useHead(() => ({
   title: `${template.value?.label ?? 'Szablon PDF'} — ${bank.value?.name ?? 'Instytucja'} — OpenExpert`,
@@ -130,8 +177,15 @@ watch(data, (payload) => {
   savedSnapshot.value = text
   validation.value = payload.template.editor.validation
   validatedSnapshot.value = text
+  aiUndoState.value = null
   initializedFor.value = key
 }, { immediate: true })
+
+watch(editorText, (text) => {
+  if (aiUndoState.value && text !== aiUndoState.value.afterText) {
+    aiUndoState.value = null
+  }
+})
 
 onBeforeRouteLeave(() => {
   if (!dirty.value || !import.meta.client) return true
@@ -189,17 +243,37 @@ function formatDate(value: string | null) {
   }).format(date)
 }
 
+function formatTime(value: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('pl-PL', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function historyLabel(action: 'draft_saved' | 'published') {
   return action === 'published' ? 'Opublikowano wersję' : 'Zapisano szkic'
 }
 
 async function validateEditor(showSuccess = true) {
-  if (!syntax.value.valid) {
+  if (
+    validating.value
+    || suggestingMappings.value
+    || saving.value
+    || publishing.value
+  ) {
+    return null
+  }
+  const submittedText = editorText.value
+  const submittedSyntax = parseJson(submittedText)
+  if (!submittedSyntax.valid) {
     toast.add({
       title: 'JSON ma błąd składni',
-      description: syntax.value.line
-        ? `Linia ${syntax.value.line}, kolumna ${syntax.value.column}.`
-        : syntax.value.message,
+      description: submittedSyntax.line
+        ? `Linia ${submittedSyntax.line}, kolumna ${submittedSyntax.column}.`
+        : submittedSyntax.message,
       color: 'error',
     })
     return null
@@ -208,10 +282,20 @@ async function validateEditor(showSuccess = true) {
   try {
     const result = await $fetch<TemplateValidationResult>(`${apiPath.value}/validate`, {
       method: 'POST',
-      body: { template: syntax.value.value },
+      body: { template: submittedSyntax.value },
     })
+    if (editorText.value !== submittedText) {
+      if (showSuccess) {
+        toast.add({
+          title: 'Treść zmieniła się podczas walidacji',
+          description: 'Wynik starszej wersji został pominięty. Uruchom walidację ponownie.',
+          color: 'warning',
+        })
+      }
+      return null
+    }
     validation.value = result
-    validatedSnapshot.value = editorText.value
+    validatedSnapshot.value = submittedText
     if (showSuccess) {
       toast.add({
         title: result.valid ? 'Walidacja zakończona' : 'Template wymaga poprawek',
@@ -236,8 +320,100 @@ async function validateEditor(showSuccess = true) {
   }
 }
 
+async function suggestMappings() {
+  if (
+    !template.value
+    || suggestingMappings.value
+    || validating.value
+    || saving.value
+    || publishing.value
+  ) {
+    return
+  }
+  const submittedText = editorText.value
+  const submittedSyntax = parseJson(submittedText)
+  if (!submittedSyntax.valid) return
+  suggestingMappings.value = true
+  const beforeAi = {
+    text: submittedText,
+    validation: validation.value,
+    validatedSnapshot: validatedSnapshot.value,
+  }
+  try {
+    const response = await $fetch<SuggestionResponse>(`${apiPath.value}/suggest`, {
+      method: 'POST',
+      body: {
+        expectedRevision: template.value.draft?.revision ?? 0,
+        template: submittedSyntax.value,
+      },
+    })
+    if (editorText.value !== submittedText) {
+      toast.add({
+        title: 'Edytor zmienił się podczas analizy AI',
+        description: 'Propozycje dla starszej wersji zostały pominięte. Uruchom analizę ponownie.',
+        color: 'warning',
+      })
+      return
+    }
+    const nextText = JSON.stringify(response.template, null, 2)
+    editorText.value = nextText
+    validation.value = response.validation
+    validatedSnapshot.value = nextText
+    editorMode.value = 'visual'
+    aiUndoState.value = response.generation.addedCount > 0
+      ? {
+          beforeText: beforeAi.text,
+          beforeValidation: beforeAi.validation,
+          beforeValidatedSnapshot: beforeAi.validatedSnapshot,
+          afterText: nextText,
+        }
+      : null
+    toast.add({
+      title: response.generation.addedCount > 0
+        ? 'Agent AI dodał propozycje mapowań'
+        : 'Agent AI nie znalazł nowych targetów',
+      description: response.generation.addedCount > 0
+        ? `Dodano ${response.generation.addedCount} pól jako „do przeglądu”. Pominięto ${response.generation.skippedTargetCount} zajętych targetów.`
+        : 'Istniejące mapowania pozostawiono bez zmian.',
+      color: response.generation.addedCount > 0 ? 'success' : 'neutral',
+    })
+  }
+  catch (caught) {
+    toast.add({
+      title: 'Nie udało się wygenerować mapowań AI',
+      description: apiErrorMessage(caught),
+      color: 'error',
+    })
+  }
+  finally {
+    suggestingMappings.value = false
+  }
+}
+
+function undoAiSuggestions() {
+  const previous = aiUndoState.value
+  if (!previous || editorText.value !== previous.afterText) return
+  editorText.value = previous.beforeText
+  validation.value = previous.beforeValidation
+  validatedSnapshot.value = previous.beforeValidatedSnapshot
+  aiUndoState.value = null
+  toast.add({
+    title: 'Cofnięto propozycje Agenta AI',
+    description: 'Przywrócono stan edytora sprzed analizy PDF.',
+    color: 'neutral',
+  })
+}
+
 async function saveDraft() {
-  if (!template.value || saving.value) return false
+  if (
+    !template.value
+    || saving.value
+    || validating.value
+    || suggestingMappings.value
+    || publishing.value
+  ) {
+    return false
+  }
   const currentValidation = validatedSnapshot.value === editorText.value
     ? validation.value
     : await validateEditor(false)
@@ -250,19 +426,37 @@ async function saveDraft() {
     return false
   }
 
+  const submittedText = editorText.value
+  const submittedSyntax = parseJson(submittedText)
+  if (!submittedSyntax.valid || validatedSnapshot.value !== submittedText) return false
   saving.value = true
   try {
     await $fetch(apiPath.value, {
       method: 'PUT',
       body: {
         expectedRevision: template.value.draft?.revision ?? 0,
-        template: syntax.value.value,
+        template: submittedSyntax.value,
       },
     })
+    const textChangedDuringSave = editorText.value !== submittedText
+      ? editorText.value
+      : null
     await refresh()
+    if (textChangedDuringSave !== null) {
+      editorText.value = textChangedDuringSave
+      savedSnapshot.value = JSON.stringify(
+        data.value?.template.editor.template ?? submittedSyntax.value,
+        null,
+        2,
+      )
+      validation.value = null
+      validatedSnapshot.value = ''
+    }
     toast.add({
       title: 'Szkic zapisany w CRM',
-      description: 'Zmiana została zapisana po stronie serwera i dodana do historii.',
+      description: textChangedDuringSave === null
+        ? 'Zmiana została zapisana po stronie serwera i dodana do historii.'
+        : 'Zapisano wysłaną wersję. Późniejsze zmiany nadal czekają w edytorze na zapis.',
       color: 'success',
     })
     return true
@@ -281,7 +475,16 @@ async function saveDraft() {
 }
 
 async function publishDraft() {
-  if (!template.value?.draft || !canPublish.value || publishing.value) return
+  if (
+    !template.value?.draft
+    || !canPublish.value
+    || publishing.value
+    || validating.value
+    || suggestingMappings.value
+    || saving.value
+  ) {
+    return
+  }
   publishing.value = true
   try {
     await $fetch(`${apiPath.value}/publish`, {
@@ -310,58 +513,63 @@ async function publishDraft() {
 
 <template>
   <CrmShell
-    :title="template?.label ?? 'Edytor szablonu PDF'"
-    eyebrow="Instytucja · Szablony PDF"
-    :description="bank ? `${bank.name} · ${templateId}` : templateId"
+    class="template-studio-shell"
+    :title="template?.id ?? templateId"
+    :description="studioDescription"
     :back-to="profilePath"
-    back-label="Wróć do szablonów PDF"
+    back-label="Wróć"
   >
     <template #actions>
-      <UFieldGroup>
-        <UButton
-          color="neutral"
-          :variant="editorMode === 'visual' ? 'solid' : 'outline'"
-          icon="i-lucide-panels-top-left"
-          @click="editorMode = 'visual'"
-        >
-          Wizualnie
-        </UButton>
-        <UButton
-          color="neutral"
-          :variant="editorMode === 'json' ? 'solid' : 'outline'"
-          icon="i-lucide-braces"
-          @click="editorMode = 'json'"
-        >
-          JSON
-        </UButton>
-      </UFieldGroup>
+      <div
+        class="studio-save-state"
+        :class="{
+          'studio-save-state--dirty': dirty,
+          'studio-save-state--ready': !dirty && !validationStale && validation?.summary.activationReady,
+        }"
+        role="status"
+        aria-live="polite"
+      >
+        <span aria-hidden="true" />
+        <div>
+          <strong>{{ saveStateLabel }}</strong>
+          <small>{{ saveStateDetailLabel }}</small>
+        </div>
+      </div>
       <UButton
         color="neutral"
-        variant="outline"
+        variant="ghost"
         icon="i-lucide-shield-check"
         :loading="validating"
+        :disabled="suggestingMappings || validating || saving || publishing"
         @click="validateEditor()"
       >
-        Waliduj
+        Sprawdź
       </UButton>
       <UButton
+        color="neutral"
+        variant="solid"
         icon="i-lucide-save"
         :loading="saving"
-        :disabled="!dirty || !syntax.valid"
+        :disabled="!dirty || !syntax.valid || suggestingMappings || validating || publishing"
         @click="saveDraft"
       >
-        Zapisz szkic
+        Zapisz
       </UButton>
       <UButton
         color="success"
+        variant="outline"
         icon="i-lucide-rocket"
         :loading="publishing"
-        :disabled="!canPublish"
+        :disabled="!canPublish || suggestingMappings || validating || saving"
         :title="canPublish ? 'Opublikuj zatwierdzoną rewizję' : 'Najpierw zapisz kompletny szablon bez ostrzeżeń blokujących aktywację'"
         @click="publishDraft"
       >
         Opublikuj
       </UButton>
+      <span v-if="!canPublish" class="studio-publish-blocker">
+        {{ releaseAttentionCount || (validation?.errors.length ?? 0) }}
+        {{ releaseAttentionCount === 1 ? 'pole wymaga weryfikacji' : 'pól wymaga weryfikacji' }}
+      </span>
     </template>
 
     <UAlert
@@ -379,77 +587,218 @@ async function publishDraft() {
       <USkeleton class="h-[720px] w-full" />
     </div>
 
-    <div v-else-if="template" class="template-editor-page">
-      <section class="editor-status">
-        <div>
-          <span>Aktywna konfiguracja</span>
-          <strong>
-            {{ template.active.origin === 'catalog' ? `CRM · rewizja ${template.active.revision}` : 'Rejestr wdrożeniowy' }}
-          </strong>
-          <small v-if="template.active.publishedAt">{{ formatDate(template.active.publishedAt) }}</small>
-        </div>
-        <div>
-          <span>Edytowany dokument</span>
-          <strong>{{ template.editor.template.source.fileName }}</strong>
-          <small>{{ template.editor.template.source.pageCount }} stron · SHA-256</small>
-        </div>
-        <div>
-          <span>Szkic</span>
-          <strong>{{ template.draft ? `Rewizja ${template.draft.revision}` : 'Nowy' }}</strong>
-          <small>{{ template.draft ? formatDate(template.draft.updatedAt) : 'Nie zapisano zmian' }}</small>
-        </div>
-        <div>
-          <span>Walidacja</span>
-          <strong :class="{ 'status-ready': validation?.summary.activationReady }">
-            {{ validation?.summary.activationReady ? 'Gotowy do publikacji' : 'Wymaga uzupełnienia' }}
-          </strong>
-          <small>{{ validation?.errors.length ?? 0 }} błędów · {{ validation?.warnings.length ?? 0 }} ostrzeżeń</small>
-        </div>
-        <UBadge v-if="dirty" color="warning" variant="subtle">Niezapisane zmiany</UBadge>
-        <UBadge v-else color="success" variant="subtle">Zapisano</UBadge>
-      </section>
-
-      <UAlert
-        v-if="validationStale"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Walidacja jest nieaktualna"
-        description="Po ostatniej zmianie uruchom walidację ponownie przed publikacją."
-      />
-
+    <div
+      v-else-if="template"
+      class="template-editor-page"
+      :class="{
+        'template-editor-page--visual': editorMode === 'visual',
+        'template-editor-page--json': editorMode === 'json',
+      }"
+    >
       <ClientOnly v-if="editorMode === 'visual'">
-        <MortgagesPdfTemplateVisualEditor
-          v-model:template-text="editorText"
-          :template-id="template.id"
-          :source-kind="template.sourceKind"
-          :pdf-url="template.pdfUrl"
-        />
+        <div class="studio-workspace">
+          <MortgagesPdfTemplateVisualEditor
+            v-model:template-text="editorText"
+            :template-id="template.id"
+            :source-kind="template.sourceKind"
+            :pdf-url="template.pdfUrl"
+            :semantic-hints-url="`${apiPath}/semantic-hints`"
+            :semantic-hints-expected-revision="template.draft?.revision ?? 0"
+          >
+            <template #studio-actions>
+              <div class="studio-embedded-actions" aria-label="Tryb i narzędzia szablonu">
+                <UFieldGroup>
+                  <UButton
+                    type="button"
+                    color="neutral"
+                    variant="solid"
+                    icon="i-lucide-panels-top-left"
+                    size="sm"
+                  >
+                    Widok
+                  </UButton>
+                  <UButton
+                    type="button"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-braces"
+                    size="sm"
+                    @click="editorMode = 'json'"
+                  >
+                    JSON
+                  </UButton>
+                </UFieldGroup>
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-sparkles"
+                  size="sm"
+                  :loading="suggestingMappings"
+                  :disabled="!syntax.valid || suggestingMappings || validating || saving || publishing"
+                  title="Przeanalizuj źródłowy PDF i dodaj propozycje wymagające ręcznego zatwierdzenia"
+                  @click="suggestMappings"
+                >
+                  AI
+                </UButton>
+                <UButton
+                  v-if="aiUndoState"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-undo-2"
+                  size="sm"
+                  :disabled="suggestingMappings || validating || saving || publishing"
+                  @click="undoAiSuggestions"
+                >
+                  Cofnij AI
+                </UButton>
+
+                <UPopover :content="{ align: 'end', side: 'bottom', sideOffset: 8 }">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-list-checks"
+                    size="sm"
+                    aria-label="Szczegóły wersji"
+                    title="Szczegóły wersji"
+                  />
+                  <template #content>
+                    <section class="version-popover" aria-label="Szczegóły wersji i walidacji">
+                      <header class="version-popover__header">
+                        <div>
+                          <span>Szkic</span>
+                          <strong>{{ template.draft ? `Rewizja ${template.draft.revision}` : 'Nowy' }}</strong>
+                        </div>
+                        <UBadge :color="validation?.summary.activationReady ? 'success' : 'warning'" variant="subtle">
+                          {{ validation?.summary.activationReady && !validationStale ? 'Gotowy' : 'Wymaga uwagi' }}
+                        </UBadge>
+                      </header>
+
+                      <dl class="version-metadata">
+                        <div>
+                          <dt>Aktywna konfiguracja</dt>
+                          <dd>{{ template.active.origin === 'catalog' ? `CRM · rewizja ${template.active.revision}` : 'Rejestr wdrożeniowy' }}</dd>
+                        </div>
+                        <div>
+                          <dt>Dokument</dt>
+                          <dd>{{ template.editor.template.source.fileName }}</dd>
+                        </div>
+                        <div>
+                          <dt>Ostatni zapis</dt>
+                          <dd>{{ template.draft ? formatDate(template.draft.updatedAt) : 'Nie zapisano' }}</dd>
+                        </div>
+                      </dl>
+
+                      <div v-if="validation" class="validation-summary">
+                        <article><span>Mapowania</span><strong>{{ validation.summary.bindingCount }}</strong></article>
+                        <article><span>Gotowe</span><strong>{{ validation.summary.readyBindingCount }}</strong></article>
+                        <article><span>Do weryfikacji</span><strong>{{ validation.summary.needsReviewCount }}</strong></article>
+                        <article><span>Bez targetu</span><strong>{{ validation.summary.unmappedCount }}</strong></article>
+                      </div>
+
+                      <div class="version-popover__section">
+                        <div class="details-heading">
+                          <div>
+                            <span>Kontrola jakości</span>
+                            <h2>Walidacja mapowania</h2>
+                          </div>
+                          <UBadge color="neutral" variant="outline">
+                            {{ validation?.errors.length ?? 0 }} / {{ validation?.warnings.length ?? 0 }}
+                          </UBadge>
+                        </div>
+                        <ul v-if="issueList.length" class="validation-issues">
+                          <li v-for="(issue, index) in issueList" :key="`${issue.code}:${issue.path}:${index}`">
+                            <UIcon :name="issue.severity === 'error' ? 'i-lucide-circle-x' : 'i-lucide-triangle-alert'" />
+                            <span><strong>{{ issue.message }}</strong><code>{{ issue.path || issue.code }}</code></span>
+                          </li>
+                        </ul>
+                        <div v-else class="validation-empty">
+                          <UIcon name="i-lucide-circle-check-big" />
+                          <span>Walidator nie zgłasza problemów.</span>
+                        </div>
+                      </div>
+
+                      <div class="version-popover__section">
+                        <div class="details-heading">
+                          <div>
+                            <span>Audyt</span>
+                            <h2>Historia konfiguracji</h2>
+                          </div>
+                          <UBadge color="neutral" variant="outline">{{ template.history.length }}</UBadge>
+                        </div>
+                        <ol v-if="template.history.length" class="template-history">
+                          <li v-for="entry in template.history" :key="entry.id">
+                            <span :class="{ 'history-published': entry.action === 'published' }" />
+                            <div>
+                              <strong>{{ historyLabel(entry.action) }} · r{{ entry.revision }}</strong>
+                              <p>{{ entry.actor?.name || entry.actor?.email || 'SuperAdmin' }}</p>
+                              <small>{{ formatDate(entry.createdAt) }}</small>
+                            </div>
+                          </li>
+                        </ol>
+                        <div v-else class="validation-empty">
+                          Historia rozpocznie się po pierwszym zapisie szkicu.
+                        </div>
+                      </div>
+                    </section>
+                  </template>
+                </UPopover>
+              </div>
+            </template>
+          </MortgagesPdfTemplateVisualEditor>
+        </div>
         <template #fallback>
-          <USkeleton class="h-[720px] w-full" />
+          <USkeleton class="h-[calc(100dvh-160px)] w-full" />
         </template>
       </ClientOnly>
 
-      <section v-else class="json-editor">
-        <header>
-          <div>
+      <section v-else class="json-editor" aria-label="Edytor Template JSON">
+        <header class="json-editor__toolbar">
+          <div class="json-editor__meta">
             <span>Template JSON V2</span>
             <strong>{{ editorText.split('\n').length }} linii · {{ editorText.length }} znaków</strong>
           </div>
-          <UBadge :color="syntax.valid ? 'success' : 'error'" variant="subtle">
-            {{ syntax.valid ? 'Poprawna składnia' : 'Błąd składni' }}
-          </UBadge>
+          <div class="json-editor__actions">
+            <UBadge :color="syntax.valid ? 'success' : 'error'" variant="subtle">
+              {{ syntax.valid ? 'Poprawna składnia' : 'Błąd składni' }}
+            </UBadge>
+            <UFieldGroup aria-label="Tryb edytora szablonu">
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-panels-top-left"
+                size="sm"
+                title="Wróć do widoku wizualnego"
+                @click="editorMode = 'visual'"
+              >
+                Widok
+              </UButton>
+              <UButton
+                type="button"
+                color="neutral"
+                variant="solid"
+                icon="i-lucide-braces"
+                size="sm"
+                aria-current="page"
+              >
+                JSON
+              </UButton>
+            </UFieldGroup>
+          </div>
         </header>
-        <UTextarea
-          v-model="editorText"
-          :rows="38"
-          autoresize
-          :maxrows="60"
-          spellcheck="false"
-          aria-label="Template JSON"
-          class="json-editor__input"
-          :ui="{ base: 'font-mono text-xs leading-5' }"
-        />
+        <div class="json-editor__body">
+          <textarea
+            v-model="editorText"
+            spellcheck="false"
+            aria-label="Template JSON"
+            aria-describedby="json-editor-help"
+            class="json-editor__input"
+            @keydown.esc.stop="editorMode = 'visual'"
+          />
+        </div>
+        <p id="json-editor-help" class="json-editor__help">
+          Edytujesz roboczą wersję szablonu. Naciśnij Esc albo wybierz „Widok”, aby wrócić bez utraty zmian.
+        </p>
         <UAlert
           v-if="!syntax.valid"
           color="error"
@@ -459,95 +808,327 @@ async function publishDraft() {
           :description="syntax.line ? `Linia ${syntax.line}, kolumna ${syntax.column}: ${syntax.message}` : syntax.message"
         />
       </section>
-
-      <section class="editor-details">
-        <UCard>
-          <template #header>
-            <div class="details-heading">
-              <div>
-                <span>Kontrola jakości</span>
-                <h2>Walidacja mapowania</h2>
-              </div>
-              <UBadge :color="validation?.summary.activationReady ? 'success' : 'warning'" variant="subtle">
-                {{ validation?.summary.activationReady ? 'Można publikować' : 'Publikacja zablokowana' }}
-              </UBadge>
-            </div>
-          </template>
-          <div v-if="validation" class="validation-summary">
-            <article><span>Bindings</span><strong>{{ validation.summary.bindingCount }}</strong></article>
-            <article><span>Zmapowane</span><strong>{{ validation.summary.mappedBindingCount }}</strong></article>
-            <article><span>Gotowe</span><strong>{{ validation.summary.readyBindingCount }}</strong></article>
-            <article><span>Do przeglądu</span><strong>{{ validation.summary.needsReviewCount }}</strong></article>
-            <article><span>Bez targetu</span><strong>{{ validation.summary.unmappedCount }}</strong></article>
-          </div>
-          <ul v-if="issueList.length" class="validation-issues">
-            <li v-for="(issue, index) in issueList" :key="`${issue.code}:${issue.path}:${index}`">
-              <UIcon :name="issue.severity === 'error' ? 'i-lucide-circle-x' : 'i-lucide-triangle-alert'" />
-              <span><strong>{{ issue.message }}</strong><code>{{ issue.path || issue.code }}</code></span>
-            </li>
-          </ul>
-          <div v-else class="validation-empty">
-            <UIcon name="i-lucide-circle-check-big" />
-            <span>Walidator nie zgłasza problemów.</span>
-          </div>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <div class="details-heading">
-              <div>
-                <span>Audyt</span>
-                <h2>Historia konfiguracji</h2>
-              </div>
-              <UBadge color="neutral" variant="outline">{{ template.history.length }}</UBadge>
-            </div>
-          </template>
-          <ol v-if="template.history.length" class="template-history">
-            <li v-for="entry in template.history" :key="entry.id">
-              <span :class="{ 'history-published': entry.action === 'published' }" />
-              <div>
-                <strong>{{ historyLabel(entry.action) }} · r{{ entry.revision }}</strong>
-                <p>{{ entry.actor?.name || entry.actor?.email || 'SuperAdmin' }}</p>
-                <small>{{ formatDate(entry.createdAt) }}</small>
-              </div>
-            </li>
-          </ol>
-          <div v-else class="validation-empty">
-            Historia rozpocznie się po pierwszym zapisie szkicu.
-          </div>
-        </UCard>
-      </section>
     </div>
   </CrmShell>
 </template>
 
 <style scoped>
-.editor-loading, .template-editor-page { display: grid; gap: 16px; min-width: 0; }
-.editor-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: center; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.editor-status > div { display: grid; min-width: 0; gap: 3px; padding: 14px 16px; border-right: 1px solid var(--ui-border); }
-.editor-status > div > span, .details-heading span, .json-editor header span, .validation-summary span { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.editor-status strong { overflow: hidden; color: var(--ui-text-toned); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.editor-status small { color: var(--ui-text-muted); font-size: 10px; }
-.editor-status > :deep(.u-badge) { margin: 0 14px; }
-.status-ready { color: var(--ui-success) !important; }
-.json-editor { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.json-editor header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.json-editor header > div { display: grid; gap: 4px; }
-.json-editor header strong { color: var(--ui-text-toned); font-size: 12px; }
-.json-editor__input { width: 100%; }
-.editor-details { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, .75fr); gap: 16px; align-items: start; }
+.template-studio-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+
+.template-studio-shell :deep(.crm-page-header) {
+  grid-template-columns: minmax(250px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  margin-bottom: 0;
+  padding: 8px 0 10px;
+}
+
+.template-studio-shell :deep(.crm-page-header__copy) {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.template-studio-shell :deep(.crm-page-header__back) {
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-size: 0;
+}
+
+.template-studio-shell :deep(.crm-page-header h1) {
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-studio-shell :deep(.crm-page-header__description) {
+  overflow: hidden;
+  max-width: none;
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-studio-shell :deep(.crm-page-header__actions) {
+  gap: 8px;
+}
+
+.editor-loading,
+.template-editor-page {
+  display: grid;
+  min-width: 0;
+}
+
+.editor-loading {
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.template-editor-page--visual {
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.template-editor-page--json {
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.studio-save-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  padding-right: 4px;
+}
+
+.studio-save-state > span {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-text-muted);
+}
+
+.studio-save-state--dirty > span {
+  background: var(--ui-warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-warning) 12%, transparent);
+}
+
+.studio-save-state--ready > span {
+  background: var(--ui-success);
+}
+
+.studio-save-state > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.studio-save-state strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.studio-save-state small,
+.studio-publish-blocker {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.studio-publish-blocker {
+  max-width: 126px;
+  white-space: normal;
+}
+
+.studio-embedded-actions,
+.json-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.studio-workspace {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-bg);
+}
+
+.studio-workspace :deep(.visual-editor) {
+  height: 100%;
+  min-height: 0;
+}
+
+.json-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+}
+
+.json-editor__toolbar {
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+}
+
+.json-editor__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.json-editor__meta span,
+.details-heading span,
+.validation-summary span,
+.version-metadata dt,
+.version-popover__header span {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.json-editor__meta strong {
+  color: var(--ui-text-toned);
+  font-size: 12px;
+}
+
+.json-editor__body {
+  min-height: 0;
+  padding: 12px 14px 8px;
+  overflow: hidden;
+}
+
+.json-editor__input {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 14px 16px;
+  resize: none;
+  overflow: auto;
+  color: var(--ui-text-highlighted);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * .75);
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  tab-size: 2;
+  caret-color: var(--ui-primary);
+}
+
+.json-editor__input:focus-visible {
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-primary) 18%, transparent);
+}
+
+.json-editor__help {
+  margin: 0;
+  padding: 0 14px 12px;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.json-editor > :deep([data-slot='root'][role='alert']) {
+  margin: 0 14px 12px;
+}
+
+.version-popover {
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 96px));
+  overflow-y: auto;
+  background: var(--ui-bg);
+}
+
+.version-popover__header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+}
+
+.version-popover__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.version-popover__header strong {
+  font-size: 15px;
+}
+
+.version-metadata {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.version-metadata > div {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.version-metadata dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ui-text-toned);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-popover__section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--ui-border);
+}
+
 .details-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.details-heading h2 { margin: 4px 0 0; font-size: 17px; }
-.validation-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.details-heading h2 { margin: 3px 0 0; font-size: 14px; font-weight: 650; }
+.validation-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; padding: 14px 16px; }
 .validation-summary article { display: grid; gap: 4px; padding: 10px; border: 1px solid var(--ui-border); border-radius: calc(var(--ui-radius) * .75); background: var(--ui-bg-muted); }
-.validation-summary strong { font-size: 19px; }
+.validation-summary strong { font-size: 17px; }
 .validation-issues { display: grid; gap: 7px; max-height: 360px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .validation-issues li { display: flex; gap: 9px; padding: 9px 10px; border: 1px solid var(--ui-border); border-radius: calc(var(--ui-radius) * .7); }
 .validation-issues li > svg { flex: 0 0 auto; margin-top: 2px; color: var(--ui-warning); }
 .validation-issues li span { display: grid; gap: 3px; min-width: 0; }
-.validation-issues li strong { color: var(--ui-text-toned); font-size: 11px; line-height: 1.4; }
+.validation-issues li strong { color: var(--ui-text-toned); font-size: 12px; line-height: 1.4; }
 .validation-issues li code { overflow: hidden; color: var(--ui-text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.validation-empty { display: flex; align-items: center; gap: 8px; min-height: 72px; color: var(--ui-text-muted); font-size: 11px; }
+.validation-empty { display: flex; align-items: center; gap: 8px; min-height: 52px; color: var(--ui-text-muted); font-size: 11px; }
 .validation-empty > svg { color: var(--ui-success); }
 .template-history { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .template-history li { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 9px; padding: 2px 0 14px; }
@@ -558,14 +1139,54 @@ async function publishDraft() {
 .template-history li div { display: grid; gap: 2px; }
 .template-history strong { font-size: 11px; }
 .template-history p, .template-history small { margin: 0; color: var(--ui-text-muted); font-size: 10px; }
-@media (max-width: 1100px) {
-  .editor-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .editor-status > :deep(.u-badge) { margin: 12px 14px; }
-  .editor-details { grid-template-columns: 1fr; }
+
+@media (max-width: 1260px) {
+  .template-studio-shell :deep(.crm-page-header) {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .template-studio-shell :deep(.crm-page-header__actions) {
+    justify-content: flex-end;
+  }
+
 }
-@media (max-width: 700px) {
-  .editor-status { grid-template-columns: 1fr; }
-  .editor-status > div { border-right: 0; border-bottom: 1px solid var(--ui-border); }
+
+@media (max-width: 900px) {
+  .template-studio-shell :deep(.crm-page-header) {
+    grid-template-columns: 1fr;
+  }
+
+  .template-studio-shell :deep(.crm-page-header__actions) {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    overflow-x: auto;
+  }
+
+  .template-editor-page--visual {
+    min-height: 760px;
+    overflow: visible;
+  }
+
+  .template-editor-page--json {
+    min-height: 620px;
+  }
+
+  .json-editor__toolbar {
+    align-items: flex-start;
+  }
+
+  .json-editor__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .studio-embedded-actions {
+    flex: 0 0 auto;
+  }
+
   .validation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

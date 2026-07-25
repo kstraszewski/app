@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@typescript/native-preview": "7.0.0-dev.20260523.1",
-    "just-bash": "^3.1.0"
+    "just-bash": "^3.1.0",
+    "microsandbox": "^0.6.6"
   }
 }

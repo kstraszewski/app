@@ -342,8 +342,38 @@ const caseSeeds = [
     ],
     tasks: [
       { key: 'income-documents', itemKey: 'mortgage', title: 'Uzupełnij dokumenty dochodowe', description: 'Brakuje zaświadczenia Anny i wyciągów z ostatnich 3 miesięcy.', statusCode: 'open', priority: 'urgent', dueDays: -2 },
-      { key: 'property-register', itemKey: 'mortgage', title: 'Zweryfikuj księgę wieczystą', statusCode: 'in_progress', priority: 'high', dueDays: 1 },
-      { key: 'insurance-call', itemKey: 'life-insurance', title: 'Omów zakres ochrony życia', statusCode: 'open', priority: 'normal', dueDays: 5 },
+      {
+        key: 'property-register',
+        itemKey: 'mortgage',
+        title: 'Zweryfikuj księgę wieczystą',
+        description: 'Sprawdź działy II–IV księgi i dopisz wynik w historii sprawy.',
+        statusCode: 'in_progress',
+        priority: 'high',
+        dueDays: 1,
+        delegateKey: 'anna-nowak',
+        delegationStatus: 'accepted',
+        delegatedDaysAgo: 6,
+        respondedDaysAgo: 5,
+        dataAccessScope: [
+          'case_summary',
+          'client_contact',
+          'client_identity',
+          'documents',
+        ],
+      },
+      {
+        key: 'insurance-call',
+        itemKey: 'life-insurance',
+        title: 'Omów zakres ochrony życia',
+        description: 'Skontaktuj się z klientami i potwierdź oczekiwany zakres oraz sumę ochrony.',
+        statusCode: 'open',
+        priority: 'normal',
+        dueDays: 5,
+        delegateKey: 'piotr-zielinski',
+        delegationStatus: 'pending',
+        delegatedDaysAgo: 1,
+        dataAccessScope: ['case_summary', 'client_contact', 'financial_data'],
+      },
     ],
     documents: [
       { key: 'jan-id', itemKey: 'mortgage', type: 'identity_document', name: 'Dowód osobisty — Jan Kowalski', statusCode: 'verified', receivedDays: -18, verifiedDays: -17 },
@@ -390,7 +420,20 @@ const caseSeeds = [
       },
     ],
     tasks: [
-      { key: 'capacity-interview', itemKey: 'mortgage', title: 'Przeprowadź wywiad zdolnościowy', statusCode: 'open', priority: 'normal', dueDays: 2 },
+      {
+        key: 'capacity-interview',
+        itemKey: 'mortgage',
+        title: 'Przeprowadź wywiad zdolnościowy',
+        description: 'Umów 30-minutową rozmowę i uzupełnij źródła dochodu oraz zobowiązania.',
+        statusCode: 'open',
+        priority: 'normal',
+        dueDays: 2,
+        delegateKey: 'marta-wojcik',
+        delegationStatus: 'accepted',
+        delegatedDaysAgo: 3,
+        respondedDaysAgo: 2,
+        dataAccessScope: ['case_summary', 'client_contact', 'financial_data'],
+      },
       { key: 'own-contribution', itemKey: 'mortgage', title: 'Potwierdź źródło wkładu własnego', statusCode: 'open', priority: 'normal', dueDays: 6 },
     ],
     documents: [
@@ -442,7 +485,21 @@ const caseSeeds = [
     properties: [],
     tasks: [
       { key: 'confirm-sum', itemKey: 'property-insurance', title: 'Potwierdź sumę ubezpieczenia', statusCode: 'open', priority: 'high', dueDays: -1 },
-      { key: 'send-comparison', itemKey: 'property-insurance', title: 'Wyślij porównanie wariantów', statusCode: 'open', priority: 'normal', dueDays: 2 },
+      {
+        key: 'send-comparison',
+        itemKey: 'property-insurance',
+        title: 'Wyślij porównanie wariantów',
+        description: 'Przygotuj krótkie porównanie trzech wariantów i wskaż rekomendację.',
+        statusCode: 'cancelled',
+        priority: 'normal',
+        dueDays: 2,
+        delegateKey: 'piotr-zielinski',
+        delegationStatus: 'rejected',
+        delegatedDaysAgo: 4,
+        respondedDaysAgo: 3,
+        rejectionReason: 'Nie zdążę przed terminem odnowienia — potrzebne przejęcie przez inną osobę.',
+        dataAccessScope: ['case_summary', 'client_contact', 'documents', 'offers'],
+      },
     ],
     documents: [
       { key: 'current-policy', itemKey: 'property-insurance', type: 'insurance_policy', name: 'Obecna polisa nieruchomości', statusCode: 'received', receivedDays: -9 },
@@ -541,7 +598,21 @@ const caseSeeds = [
       },
     ],
     tasks: [
-      { key: 'archive', itemKey: 'mortgage', title: 'Zarchiwizuj komplet dokumentów', statusCode: 'done', priority: 'low', dueDays: -40, completedDays: -41 },
+      {
+        key: 'archive',
+        itemKey: 'mortgage',
+        title: 'Zarchiwizuj komplet dokumentów',
+        description: 'Zweryfikuj kompletność teczki i oznacz dokumenty zgodnie z retencją.',
+        statusCode: 'done',
+        priority: 'low',
+        dueDays: -40,
+        completedDays: -41,
+        delegateKey: 'marta-wojcik',
+        delegationStatus: 'accepted',
+        delegatedDaysAgo: 48,
+        respondedDaysAgo: 47,
+        dataAccessScope: ['case_summary', 'documents', 'activities'],
+      },
     ],
     documents: [
       { key: 'credit-agreement', itemKey: 'mortgage', type: 'credit_agreement', name: 'Umowa kredytowa', statusCode: 'verified', receivedDays: -52, verifiedDays: -50 },
@@ -766,6 +837,32 @@ function stableUuid(key) {
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const hex = bytes.toString('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function taskDelegationFingerprint({
+  organizationId,
+  caseId,
+  caseItemId,
+  delegatorUserId,
+  assigneeUserId,
+  title,
+  description,
+  dueAt,
+  priority,
+  dataAccessScope,
+}) {
+  return createHash('sha256').update(JSON.stringify({
+    organization_id: organizationId,
+    case_id: caseId,
+    case_item_id: caseItemId,
+    delegator_user_id: delegatorUserId,
+    assignee_user_id: assigneeUserId,
+    title,
+    description,
+    due_at: dueAt,
+    priority,
+    data_access_scope: [...dataAccessScope].sort(),
+  })).digest('hex')
 }
 
 function operationError(operation, error) {
@@ -1444,6 +1541,7 @@ async function ensureTasks({
   organizationId,
   ownerUserId,
   seedNow,
+  delegateByKey,
   clientByKey,
   caseByKey,
   itemByKey,
@@ -1452,7 +1550,7 @@ async function ensureTasks({
   const existingRows = assertResult(
     await adminClient
       .from('crm_tasks')
-      .select('id, client_id, case_id, case_item_id, title, description, status_code, priority, due_at, completed_at, metadata')
+      .select('id, delegator_user_id, assignee_user_id, client_id, case_id, case_item_id, title, description, status_code, delegation_status, priority, due_at, completed_at, data_access_scope, delegated_at, responded_at, accepted_at, rejected_at, rejection_reason, cancelled_at, idempotency_key, idempotency_fingerprint, metadata')
       .eq('organization_id', organizationId)
       .in('case_id', caseIds),
     'Reading existing demo CRM tasks',
@@ -1468,34 +1566,115 @@ async function ensureTasks({
     const primaryClient = clientByKey.get(caseSeed.clientKeys[0])
     for (const taskSeed of caseSeed.tasks) {
       const key = `${caseSeed.key}:task:${taskSeed.key}`
-      const existing = taskByKey.get(key)
+      let existing = taskByKey.get(key)
       const caseItem = taskSeed.itemKey
         ? itemByKey.get(`${caseSeed.key}:item:${taskSeed.itemKey}`)
         : null
       const metadata = metadataFor(key, existing?.metadata)
+      const delegate = taskSeed.delegateKey
+        ? delegateByKey?.get(taskSeed.delegateKey)
+        : null
+      if (taskSeed.delegateKey && !delegate) {
+        throw new Error(
+          `Demo CRM task ${taskSeed.title} references missing delegate ${taskSeed.delegateKey}`,
+        )
+      }
+      const dueAt = isoOffset(seedNow, taskSeed.dueDays)
+      const description = taskSeed.description ?? null
+      const dataAccessScope = delegate
+        ? [...taskSeed.dataAccessScope].sort()
+        : ['case_summary']
+      const delegationStatus = delegate
+        ? taskSeed.delegationStatus
+        : 'not_delegated'
+      const delegatedAt = delegate
+        ? existing?.delegated_at
+          ?? isoOffset(seedNow, -taskSeed.delegatedDaysAgo)
+        : null
+      const respondedAt = delegate && delegationStatus !== 'pending'
+        ? existing?.responded_at
+          ?? isoOffset(seedNow, -taskSeed.respondedDaysAgo)
+        : null
+      const idempotencyKey = delegate
+        ? stableUuid(`${key}:delegation-request`)
+        : null
+      const idempotencyFingerprint = delegate
+        ? existing?.idempotency_fingerprint
+          ?? taskDelegationFingerprint({
+            organizationId,
+            caseId: String(crmCase.id),
+            caseItemId: caseItem?.id ?? null,
+            delegatorUserId: ownerUserId,
+            assigneeUserId: delegate.id,
+            title: taskSeed.title,
+            description,
+            dueAt,
+            priority: taskSeed.priority,
+            dataAccessScope,
+          })
+        : null
       const values = {
         organization_id: organizationId,
-        assignee_user_id: ownerUserId,
+        delegator_user_id: delegate ? ownerUserId : null,
+        assignee_user_id: delegate?.id ?? ownerUserId,
         client_id: primaryClient.id,
         case_id: crmCase.id,
         case_item_id: caseItem?.id ?? null,
         title: taskSeed.title,
-        description: taskSeed.description ?? null,
+        description,
         status_code: taskSeed.statusCode,
+        delegation_status: delegationStatus,
         priority: taskSeed.priority,
-        due_at: isoOffset(seedNow, taskSeed.dueDays),
+        due_at: dueAt,
         completed_at: taskSeed.completedDays == null ? null : isoOffset(seedNow, taskSeed.completedDays),
+        data_access_scope: dataAccessScope,
+        delegated_at: delegatedAt,
+        responded_at: respondedAt,
+        accepted_at: delegationStatus === 'accepted' ? respondedAt : null,
+        rejected_at: delegationStatus === 'rejected' ? respondedAt : null,
+        rejection_reason: delegationStatus === 'rejected'
+          ? taskSeed.rejectionReason
+          : null,
+        cancelled_at: delegationStatus === 'cancelled' ? respondedAt : null,
+        idempotency_key: idempotencyKey,
+        idempotency_fingerprint: idempotencyFingerprint,
         metadata,
       }
 
       if (existing) {
+        if (
+          existing.delegation_status === 'not_delegated'
+          && delegate
+          && delegationStatus !== 'pending'
+        ) {
+          existing = assertResult(
+            await adminClient
+              .from('crm_tasks')
+              .update({
+                ...values,
+                status_code: 'open',
+                delegation_status: 'pending',
+                completed_at: null,
+                responded_at: null,
+                accepted_at: null,
+                rejected_at: null,
+                rejection_reason: null,
+                cancelled_at: null,
+              })
+              .eq('organization_id', organizationId)
+              .eq('id', existing.id)
+              .select('id, delegator_user_id, assignee_user_id, client_id, case_id, title, status_code, delegation_status, priority, due_at, completed_at, data_access_scope, delegated_at, responded_at, accepted_at, rejected_at, rejection_reason, cancelled_at, idempotency_key, idempotency_fingerprint, metadata')
+              .single(),
+            `Preparing delegated demo CRM task ${taskSeed.title}`,
+          )
+        }
         const updated = assertResult(
           await adminClient
             .from('crm_tasks')
             .update(values)
             .eq('organization_id', organizationId)
             .eq('id', existing.id)
-            .select('id, case_id, title, status_code, priority, due_at, completed_at, metadata')
+            .select('id, delegator_user_id, assignee_user_id, client_id, case_id, title, status_code, delegation_status, priority, due_at, completed_at, data_access_scope, delegated_at, responded_at, accepted_at, rejected_at, rejection_reason, cancelled_at, idempotency_key, idempotency_fingerprint, metadata')
             .single(),
           `Updating demo CRM task ${taskSeed.title}`,
         )
@@ -1506,7 +1685,7 @@ async function ensureTasks({
           await adminClient
             .from('crm_tasks')
             .insert({ id: stableUuid(key), ...values })
-            .select('id, case_id, title, status_code, priority, due_at, completed_at, metadata')
+            .select('id, delegator_user_id, assignee_user_id, client_id, case_id, title, status_code, delegation_status, priority, due_at, completed_at, data_access_scope, delegated_at, responded_at, accepted_at, rejected_at, rejection_reason, cancelled_at, idempotency_key, idempotency_fingerprint, metadata')
             .single(),
           `Creating demo CRM task ${taskSeed.title}`,
         )
@@ -1692,6 +1871,7 @@ export async function seedDemoCrm({
   adminClient,
   userClient,
   profile,
+  delegateByKey = new Map(),
   seedNow,
 }) {
   if (!adminClient || !userClient) throw new Error('seedDemoCrm requires adminClient and userClient')
@@ -1745,6 +1925,7 @@ export async function seedDemoCrm({
     organizationId,
     ownerUserId,
     seedNow: referenceNow,
+    delegateByKey,
     clientByKey: clientResult.clientByKey,
     caseByKey,
     itemByKey,
@@ -1778,6 +1959,11 @@ export async function seedDemoCrm({
 
   return {
     clients: clientResult.clients,
+    tasks: [...taskByKey.entries()].map(([seedKey, task]) => ({
+      ...task,
+      id: String(task.id),
+      seed_key: seedKey,
+    })),
     cases: caseSeeds.map((seed) => {
       const crmCase = caseByKey.get(seed.key)
       return {

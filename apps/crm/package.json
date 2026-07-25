@@ -13,6 +13,8 @@
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3004",
     "test:client-identity": "node --test --experimental-strip-types test/client-identity.test.ts",
+    "test:mortgage-template-ai": "node --test --experimental-strip-types test/mortgage-template-ai.test.ts",
+    "test:multiform-template-editor": "node --test --experimental-strip-types test/multiform-template-editor.test.ts",
     "test:property-import": "node --test --experimental-strip-types test/property-import.test.ts",
     "test:team-scope": "node --test --experimental-strip-types test/team-scope.test.ts",
     "typecheck": "nuxt typecheck"

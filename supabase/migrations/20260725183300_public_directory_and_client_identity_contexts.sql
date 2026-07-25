@@ -1,6 +1,8 @@
 -- One authenticated identity can be used in several product contexts. A workforce
 -- membership and a client relationship are independent capabilities.
 
+begin;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
@@ -269,3 +271,5 @@ comment on table public.client_account_links is
   'Verified client-portal access for one Auth identity and one CRM person.';
 comment on column public.booking_widgets.is_directory_listed is
   'Explicit opt-in for the public OpenExpert experts and facilities directory.';
+
+commit;

@@ -1,6 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { useRuntimeConfig } from '#imports'
-import { createError, type H3Event } from 'h3'
+import { createError } from 'h3'
 import {
   mortgageBackofficeUuid,
   throwMortgageBackofficeDbError,
@@ -10,33 +9,17 @@ import {
   registeredMortgageTemplate,
 } from '~~/server/utils/mortgage-document-templates'
 import {
+  normalizeMortgageTemplatePdfAsset,
+  validateMortgageTemplatePdf,
+} from '~~/server/utils/mortgage-template-source'
+import {
   getRequiredParam,
   requireCrmSession,
   requireSuperAdmin,
 } from '~~/server/utils/crm'
 
-const maxPdfBytes = 25 * 1024 * 1024
-
 function safeFileName(value: string) {
   return value.replace(/["\\\r\n]/g, '_')
-}
-
-function multiformPdfUrl(event: H3Event, templateId: string) {
-  const configured = String(useRuntimeConfig(event).multiformServiceUrl || '').trim()
-  let base: URL
-  try {
-    base = new URL(configured)
-  }
-  catch {
-    throw createError({ statusCode: 503, statusMessage: 'Usługa Multiwniosku nie jest skonfigurowana.' })
-  }
-  if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) {
-    throw createError({ statusCode: 503, statusMessage: 'Adres usługi Multiwniosku jest nieprawidłowy.' })
-  }
-  base.pathname = `${base.pathname.replace(/\/+$/g, '')}/`
-  base.search = ''
-  base.hash = ''
-  return new URL(`api/multiform/demo-pdfs/${encodeURIComponent(templateId)}`, base)
 }
 
 export default defineEventHandler(async (event) => {
@@ -58,41 +41,27 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono źródłowego formularza PDF.' })
   }
 
-  let response: Response
-  try {
-    response = await fetch(multiformPdfUrl(event, templateId), {
-      headers: { accept: 'application/pdf' },
-      redirect: 'error',
-    })
-  }
-  catch {
-    throw createError({ statusCode: 502, statusMessage: 'Nie udało się pobrać PDF-u z usługi Multiwniosku.' })
-  }
-  if (!response.ok) {
+  const rawAsset = await useStorage('assets:mortgage-template-pdfs')
+    .getItemRaw(registered.source.fileName)
+  const bytes = normalizeMortgageTemplatePdfAsset(rawAsset)
+  if (!bytes) {
     throw createError({
-      statusCode: response.status === 404 ? 404 : 502,
-      statusMessage: response.status === 404
-        ? 'Nie znaleziono źródłowego formularza PDF.'
-        : 'Usługa Multiwniosku nie zwróciła poprawnego PDF-u.',
+      statusCode: 500,
+      statusMessage: 'Źródłowy formularz PDF nie został dołączony do wdrożenia CRM.',
     })
   }
-  const declaredLength = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declaredLength) && declaredLength > maxPdfBytes) {
-    throw createError({ statusCode: 413, statusMessage: 'Źródłowy PDF przekracza limit 25 MB.' })
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > maxPdfBytes) {
-    throw createError({ statusCode: 413, statusMessage: 'Źródłowy PDF przekracza limit 25 MB.' })
-  }
-  if (
-    bytes.byteLength < 5
-    || bytes[0] !== 0x25
-    || bytes[1] !== 0x50
-    || bytes[2] !== 0x44
-    || bytes[3] !== 0x46
-    || bytes[4] !== 0x2D
-  ) {
-    throw createError({ statusCode: 502, statusMessage: 'Usługa Multiwniosku zwróciła nieprawidłowy PDF.' })
+
+  const validation = validateMortgageTemplatePdf(bytes, registered.source.sha256)
+  if (!validation.valid) {
+    if (validation.reason === 'too_large') {
+      throw createError({ statusCode: 413, statusMessage: 'Źródłowy PDF przekracza limit 25 MB.' })
+    }
+    throw createError({
+      statusCode: 500,
+      statusMessage: validation.reason === 'checksum_mismatch'
+        ? 'Źródłowy PDF nie przeszedł weryfikacji integralności.'
+        : 'Źródłowy formularz nie jest poprawnym plikiem PDF.',
+    })
   }
 
   const fileName = safeFileName(registered.source.fileName)

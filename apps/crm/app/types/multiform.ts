@@ -11,6 +11,7 @@ export interface MultiformFieldCondition {
 export interface MultiformCollectionFieldRef {
   key: string
   index: number
+  displayIndex: number
   relativeKey: string
   label: string
 }
@@ -27,12 +28,20 @@ export interface MultiformCollectionDefinition {
 export interface MultiformFormField {
   key: string
   label: string
+  question?: string
+  helpText?: string
   type: string
   section: string
   required: boolean
   options?: MultiformFieldOption[]
   placeholder?: string
   description?: string
+  semanticDescription?: string
+  semanticRole?: string
+  aiMappingHints?: {
+    aliases: string[]
+    exclude: string[]
+  }
   collection?: MultiformCollectionFieldRef
   visibleWhen?: MultiformFieldCondition
   requiredWhen?: MultiformFieldCondition

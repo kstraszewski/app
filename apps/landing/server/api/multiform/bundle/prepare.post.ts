@@ -1,4 +1,4 @@
-import { prepareBundle } from '@openexpert/multiform'
+import { prepareBundle, templateApplicantCapacity } from '@openexpert/multiform'
 import { createError, readBody } from 'h3'
 import { bankLabel, toUiField } from '../../../utils/multiform-api'
 import {
@@ -56,6 +56,32 @@ export default defineEventHandler(async (event) => {
       })
     }
     const bindingCount = bundle.documents.reduce((sum, document) => sum + document.bindings.length, 0)
+    const applicantCapacities = bundle.documents
+      .map(templateApplicantCapacity)
+      .filter((capacity): capacity is number => capacity !== null)
+    const applicantCapacity = applicantCapacities.length
+      ? Math.min(...applicantCapacities)
+      : null
+    const applicantCollection = bundle.collections.find(collection => (
+      collection.key === 'applicants'
+    ))
+    if (
+      applicantCapacity !== null
+      && applicantCollection
+      && applicantCapacity < applicantCollection.minItems
+    ) {
+      const blockers = bundle.documents.flatMap((document) => {
+        const capacity = templateApplicantCapacity(document)
+        return capacity !== null && capacity < applicantCollection.minItems
+          ? [`${document.label}: mapowania wnioskodawców nie zaczynają się od pierwszej osoby.`]
+          : []
+      })
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Co najmniej jeden dokument ma nieprawidłową strukturę mapowań wnioskodawców.',
+        data: { blockers },
+      })
+    }
 
     return {
       templateIds: bundle.templateIds,
@@ -69,6 +95,9 @@ export default defineEventHandler(async (event) => {
       fields: bundle.fields.map(toUiField),
       collections: bundle.collections.map(collection => ({
         ...collection,
+        ...(collection.key === 'applicants' && applicantCapacity !== null
+          ? { maxItems: Math.min(collection.maxItems, applicantCapacity) }
+          : {}),
         requiredRelativeKeys: [...collection.requiredRelativeKeys],
       })),
       warnings: bundle.warnings,

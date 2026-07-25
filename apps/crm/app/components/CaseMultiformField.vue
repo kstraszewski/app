@@ -21,7 +21,12 @@ const emit = defineEmits<{
 }>()
 
 const controlId = computed(() => `case-multiform-${props.field.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`)
-const fieldLabel = computed(() => props.field.collection?.label || props.field.label)
+const fieldLabel = computed(() => (
+  props.field.question
+  || props.field.collection?.label
+  || props.field.label
+))
+const fieldHelpText = computed(() => props.field.helpText || props.field.description)
 const selectItems = computed(() => (props.field.options ?? []).map(option => ({
   label: optionLabel(option),
   value: optionValue(option),
@@ -76,7 +81,7 @@ function validationMessage() {
   <UFormField
     :name="field.key"
     :label="field.type === 'checkbox' ? undefined : fieldLabel"
-    :description="field.type === 'checkbox' ? undefined : field.description"
+    :description="field.type === 'checkbox' ? undefined : fieldHelpText"
     :required="required"
     :error="errorMessage"
     :class="{ 'case-multiform-field--wide': field.type === 'textarea' || field.type === 'checkbox' }"
@@ -86,7 +91,7 @@ function validationMessage() {
       :id="controlId"
       :model-value="modelValue === true"
       :label="fieldLabel"
-      :description="field.description"
+      :description="fieldHelpText"
       :aria-required="required"
       @update:model-value="updateValue(Boolean($event))"
     />

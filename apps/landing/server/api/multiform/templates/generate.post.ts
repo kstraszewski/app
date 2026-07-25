@@ -17,7 +17,7 @@ import {
   generateTemplateDraft,
   MultiformPdfInputError,
   TEMPLATE_GENERATOR_MODEL,
-} from '../../../utils/multiform-template-generator'
+} from '@openexpert/multiform/template-generator'
 import { toUiField } from '../../../utils/multiform-api'
 
 const maxPdfBytes = 15 * 1024 * 1024
@@ -148,15 +148,19 @@ export default defineEventHandler(async (event) => {
     const mappedFieldUsage = new Map<CanonicalFieldKey, Set<string>>()
     for (const template of templates) {
       for (const binding of template.bindings) {
-        const key = binding.canonicalKey as CanonicalFieldKey
-        const usedBy = fieldUsage.get(key) ?? new Set<string>()
-        usedBy.add(template.id)
-        fieldUsage.set(key, usedBy)
+        const inputKeys = binding.computed
+          ? binding.valueFrom ?? []
+          : [binding.canonicalKey]
+        for (const key of inputKeys as readonly CanonicalFieldKey[]) {
+          const usedBy = fieldUsage.get(key) ?? new Set<string>()
+          usedBy.add(template.id)
+          fieldUsage.set(key, usedBy)
 
-        if (binding.target.kind !== 'unmapped') {
-          const mappedBy = mappedFieldUsage.get(key) ?? new Set<string>()
-          mappedBy.add(template.id)
-          mappedFieldUsage.set(key, mappedBy)
+          if (binding.target.kind !== 'unmapped') {
+            const mappedBy = mappedFieldUsage.get(key) ?? new Set<string>()
+            mappedBy.add(template.id)
+            mappedFieldUsage.set(key, mappedBy)
+          }
         }
       }
     }

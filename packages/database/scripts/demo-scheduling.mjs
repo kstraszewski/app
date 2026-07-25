@@ -53,6 +53,7 @@ const DEMO_IDS = Object.freeze({
     'd3100007-1000-4000-8000-000000000004',
     'd3100007-1000-4000-8000-000000000005',
     'd3100007-1000-4000-8000-000000000006',
+    'd3100007-1000-4000-8000-000000000007',
   ],
   appointmentManageTokens: [
     'd3100007-2000-4000-8000-000000000001',
@@ -61,6 +62,7 @@ const DEMO_IDS = Object.freeze({
     'd3100007-2000-4000-8000-000000000004',
     'd3100007-2000-4000-8000-000000000005',
     'd3100007-2000-4000-8000-000000000006',
+    'd3100007-2000-4000-8000-000000000007',
   ],
 })
 
@@ -323,6 +325,8 @@ function appointmentRow({
   seedNow,
   notes,
   bookingContext = {},
+  crmTaskId = null,
+  createdByUserId = expertUserId,
 }) {
   const idempotencyKey = `demo-scheduling:${id}`
   const isConfirmed = status === 'confirmed'
@@ -334,6 +338,7 @@ function appointmentRow({
     service_id: service.id,
     expert_user_id: expertUserId,
     widget_id: widget?.id ?? null,
+    crm_task_id: crmTaskId,
     client_id: client.id,
     client_person_id: client.personId,
     starts_at: startsAt,
@@ -351,7 +356,7 @@ function appointmentRow({
     source: widget ? 'widget' : 'staff',
     idempotency_key: idempotencyKey,
     manage_token: manageToken,
-    created_by_user_id: expertUserId,
+    created_by_user_id: createdByUserId,
     booking_context: bookingContext,
     request_fingerprint: widget ? sha256(idempotencyKey) : null,
     created_at: createdAt,
@@ -385,6 +390,7 @@ const appointmentReconcileFields = [
   'service_id',
   'expert_user_id',
   'widget_id',
+  'crm_task_id',
   'client_id',
   'client_person_id',
   'starts_at',
@@ -448,6 +454,8 @@ export async function seedDemoScheduling({
   facility,
   meetingService,
   clients,
+  additionalExpertUserIds = [],
+  delegatedTask,
   seedNow,
 }) {
   if (!adminClient?.from || !adminClient?.rpc) {
@@ -460,11 +468,41 @@ export async function seedDemoScheduling({
   const expertUserId = requiredString(profile?.id, 'profile.id')
   const facilityId = requiredString(facility?.id, 'facility.id')
   const meetingServiceId = requiredString(meetingService?.id, 'meetingService.id')
+  const delegatedTaskId = requiredString(delegatedTask?.id, 'delegatedTask.id')
+  const delegatedExpertUserId = requiredString(
+    delegatedTask?.assignee_user_id,
+    'delegatedTask.assignee_user_id',
+  )
+  const delegatedClientId = requiredString(
+    delegatedTask?.client_id,
+    'delegatedTask.client_id',
+  )
+  const normalizedAdditionalExpertIds = [
+    ...new Set(
+      additionalExpertUserIds
+        .map((userId, index) => requiredString(
+          userId,
+          `additionalExpertUserIds[${index}]`,
+        ))
+        .filter(userId => userId !== expertUserId),
+    ),
+  ]
+  if (!normalizedAdditionalExpertIds.includes(delegatedExpertUserId)) {
+    throw new Error(
+      'Demo scheduling requires the delegated task expert in additionalExpertUserIds.',
+    )
+  }
   const normalizedClients = Array.isArray(clients)
     ? clients.map(clientRecord)
     : []
   if (normalizedClients.length === 0) {
     throw new Error('Demo scheduling requires at least one seeded CRM client.')
+  }
+  const delegatedClient = normalizedClients.find(
+    client => client.id === delegatedClientId,
+  )
+  if (!delegatedClient) {
+    throw new Error('Demo delegated task must reference one of the seeded CRM clients.')
   }
 
   const now = asDate(seedNow)
@@ -503,9 +541,26 @@ export async function seedDemoScheduling({
     is_active: true,
     updated_at: nowIso,
   }))
+  const additionalExpertRules = normalizedAdditionalExpertIds.flatMap(
+    userId => DEMO_IDS.expertRules.map((_, weekday) => ({
+      id: deterministicUuid(
+        `openexpert:demo-scheduling:expert-rule:${userId}:${weekday}`,
+      ),
+      organization_id: organizationId,
+      facility_id: facilityId,
+      user_id: userId,
+      weekday,
+      starts_at: '09:00:00',
+      ends_at: '17:00:00',
+      valid_from: null,
+      valid_until: null,
+      is_active: true,
+      updated_at: nowIso,
+    })),
+  )
   const { error: expertRulesError } = await adminClient
     .from('expert_availability_rules')
-    .upsert(expertRules, { onConflict: 'id' })
+    .upsert([...expertRules, ...additionalExpertRules], { onConflict: 'id' })
   assertNoError(expertRulesError, 'Seeding expert availability rules')
 
   const facilityOverrides = [
@@ -540,9 +595,18 @@ export async function seedDemoScheduling({
       updated_at: nowIso,
     },
   ]
+  const { error: deleteFacilityOverridesError } = await adminClient
+    .from('facility_opening_overrides')
+    .delete()
+    .eq('organization_id', organizationId)
+    .in('id', Object.values(DEMO_IDS.facilityOverrides))
+  assertNoError(
+    deleteFacilityOverridesError,
+    'Resetting seeded facility opening overrides',
+  )
   const { error: facilityOverridesError } = await adminClient
     .from('facility_opening_overrides')
-    .upsert(facilityOverrides, { onConflict: 'id' })
+    .insert(facilityOverrides)
   assertNoError(facilityOverridesError, 'Seeding facility opening overrides')
 
   const expertOverrides = [
@@ -569,9 +633,37 @@ export async function seedDemoScheduling({
       updated_at: nowIso,
     },
   ]
+  const additionalExpertOverrides = normalizedAdditionalExpertIds.map(
+    userId => ({
+      id: deterministicUuid(
+        `openexpert:demo-scheduling:expert-override:${userId}:tomorrow`,
+      ),
+      organization_id: organizationId,
+      facility_id: facilityId,
+      user_id: userId,
+      local_date: demoDate,
+      is_unavailable: false,
+      starts_at: '09:00:00',
+      ends_at: '17:00:00',
+      updated_at: nowIso,
+    }),
+  )
+  const seededExpertOverrideIds = [
+    ...Object.values(DEMO_IDS.expertOverrides),
+    ...additionalExpertOverrides.map(override => override.id),
+  ]
+  const { error: deleteExpertOverridesError } = await adminClient
+    .from('expert_availability_overrides')
+    .delete()
+    .eq('organization_id', organizationId)
+    .in('id', seededExpertOverrideIds)
+  assertNoError(
+    deleteExpertOverridesError,
+    'Resetting seeded expert availability overrides',
+  )
   const { error: expertOverridesError } = await adminClient
     .from('expert_availability_overrides')
-    .upsert(expertOverrides, { onConflict: 'id' })
+    .insert([...expertOverrides, ...additionalExpertOverrides])
   assertNoError(expertOverridesError, 'Seeding expert availability overrides')
 
   const additionalServices = [
@@ -706,6 +798,7 @@ export async function seedDemoScheduling({
       created_by_user_id: expertUserId,
       locale: 'pl-PL',
       is_active: true,
+      is_directory_listed: false,
       analytics_started_at: analyticsStartedAt,
       updated_at: nowIso,
     },
@@ -727,6 +820,7 @@ export async function seedDemoScheduling({
       created_by_user_id: expertUserId,
       locale: 'pl-PL',
       is_active: true,
+      is_directory_listed: false,
       analytics_started_at: analyticsStartedAt,
       updated_at: nowIso,
     },
@@ -1005,6 +1099,30 @@ export async function seedDemoScheduling({
         estimatedCapacity: 712000,
       },
     }),
+    appointmentRow({
+      id: DEMO_IDS.appointments[6],
+      manageToken: DEMO_IDS.appointmentManageTokens[6],
+      organizationId,
+      facilityId,
+      service: services.find(service => service.id === meetingServiceId),
+      expertUserId: delegatedExpertUserId,
+      client: delegatedClient,
+      widget: null,
+      startsAt: zonedDateTimeIso(demoDate, '10:00'),
+      endsAt: zonedDateTimeIso(demoDate, '11:00'),
+      status: 'confirmed',
+      createdAt: new Date(
+        new Date(zonedDateTimeIso(demoDate, '10:00')).valueOf() - DAY_MS,
+      ).toISOString(),
+      seedNow: now,
+      notes: 'Omówienie wyniku weryfikacji księgi wieczystej.',
+      bookingContext: {
+        source: 'delegated_task',
+        version: 1,
+      },
+      crmTaskId: delegatedTaskId,
+      createdByUserId: expertUserId,
+    }),
   )
   const reconciledAppointments = []
   for (const [index, desired] of appointmentsSeed.entries()) {
@@ -1093,6 +1211,9 @@ export async function seedDemoScheduling({
     services,
     widgets: widgets ?? widgetsSeed,
     appointments,
+    delegatedTaskAppointment: appointments.find(
+      appointment => appointment.id === DEMO_IDS.appointments[6],
+    ) ?? null,
     demoDate,
     availableSlotCount: (availableSlots ?? []).length,
     counts,

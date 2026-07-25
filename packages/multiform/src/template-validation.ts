@@ -1,5 +1,11 @@
-import { CANONICAL_FIELDS } from './canonical-fields.ts'
-import type { CanonicalFieldDefinition } from './types.ts'
+import {
+  CANONICAL_COMPUTED_BINDINGS,
+  CANONICAL_FIELDS,
+} from './canonical-fields.ts'
+import type {
+  CanonicalComputedBindingDefinition,
+  CanonicalFieldDefinition,
+} from './types.ts'
 
 export type TemplateJsonKind = 'document-template' | 'generated-draft' | 'unknown'
 
@@ -30,6 +36,38 @@ export interface TemplateValidationResult {
 
 const canonicalFields: readonly CanonicalFieldDefinition[] = CANONICAL_FIELDS
 const canonicalKeys = new Set<string>(canonicalFields.map(field => field.canonicalKey))
+const computedBindings: readonly CanonicalComputedBindingDefinition[] = CANONICAL_COMPUTED_BINDINGS
+interface ComputedBindingContract {
+  valueFrom: readonly string[]
+  valueFormat: string
+}
+
+const computedContractsByKey = new Map<string, readonly ComputedBindingContract[]>([
+  ...computedBindings.map((binding): [string, readonly ComputedBindingContract[]] => [
+    binding.canonicalKey,
+    [binding],
+  ]),
+  [
+    'investment.ownFunds',
+    [
+      {
+        valueFrom: [
+          'investment.ownFundsPaid',
+          'investment.ownFundsBeforeDisbursement',
+          'investment.ownFundsDuringInvestment',
+        ],
+        valueFormat: 'currency.sum',
+      },
+      {
+        valueFrom: [
+          'investment.ownFundsBeforeDisbursement',
+          'investment.ownFundsDuringInvestment',
+        ],
+        valueFormat: 'currency.sum',
+      },
+    ],
+  ],
+])
 const canonicalOptions = new Map<string, Set<string>>(canonicalFields.map(field => [
   field.canonicalKey,
   new Set(field.options?.map(option => option.value) ?? []),
@@ -116,6 +154,155 @@ function validateCondition(
     if (options?.size && expected.some(item => !options.has(item as string))) {
       pushIssue(warnings, `${path}.equals`, 'unknown_condition_option', 'Warunek zawiera wartość spoza opcji pola kanonicznego.', 'warning')
     }
+  }
+}
+
+function validateMappingEvidence(
+  value: unknown,
+  path: string,
+  pageCount: number | undefined,
+  errors: TemplateValidationIssue[],
+  warnings: TemplateValidationIssue[],
+) {
+  if (!isRecord(value)) {
+    pushIssue(errors, path, 'invalid_mapping_evidence', 'Dowód mapowania musi być obiektem.')
+    return
+  }
+  if (!['ai', 'manual', 'legacy'].includes(String(value.origin))) {
+    pushIssue(errors, `${path}.origin`, 'invalid_mapping_evidence_origin', 'origin musi mieć wartość ai, manual albo legacy.')
+  }
+  if (!isNonEmptyString(value.rationale)) {
+    pushIssue(errors, `${path}.rationale`, 'missing_mapping_rationale', 'Dowód mapowania wymaga uzasadnienia.')
+  }
+  if (
+    value.confidence !== undefined
+    && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)
+  ) {
+    pushIssue(errors, `${path}.confidence`, 'invalid_mapping_confidence', 'confidence musi być liczbą od 0 do 1.')
+  }
+  if (value.model !== undefined && !isNonEmptyString(value.model)) {
+    pushIssue(errors, `${path}.model`, 'invalid_mapping_model', 'Identyfikator modelu musi być niepustym tekstem.')
+  }
+  if (value.anchors !== undefined) {
+    if (!Array.isArray(value.anchors) || value.anchors.length > 12) {
+      pushIssue(errors, `${path}.anchors`, 'invalid_mapping_anchors', 'anchors musi być tablicą maksymalnie 12 dowodów.')
+    }
+    else {
+      for (const [anchorIndex, anchor] of value.anchors.entries()) {
+        const anchorPath = `${path}.anchors[${anchorIndex}]`
+        if (!isRecord(anchor)) {
+          pushIssue(errors, anchorPath, 'invalid_mapping_anchor', 'Anchor dowodu musi być obiektem.')
+          continue
+        }
+        if (!['section', 'label', 'ordinal', 'nearby-text', 'acroform-name'].includes(String(anchor.kind))) {
+          pushIssue(errors, `${anchorPath}.kind`, 'invalid_mapping_anchor_kind', 'Anchor ma nieobsługiwany rodzaj.')
+        }
+        if (!isNonEmptyString(anchor.reference)) {
+          pushIssue(errors, `${anchorPath}.reference`, 'missing_mapping_anchor_reference', 'Anchor wymaga stabilnej referencji.')
+        }
+        if (!isNonEmptyString(anchor.text)) {
+          pushIssue(errors, `${anchorPath}.text`, 'missing_mapping_anchor_text', 'Anchor wymaga tekstu źródłowego.')
+        }
+        if (!isPositiveInteger(anchor.page) || (pageCount && anchor.page > pageCount)) {
+          pushIssue(errors, `${anchorPath}.page`, 'invalid_mapping_anchor_page', 'Anchor wskazuje nieprawidłową stronę PDF.')
+        }
+        if (anchor.box !== undefined) validatePdfBox(anchor.box, `${anchorPath}.box`, errors)
+      }
+    }
+  }
+  if (value.origin === 'ai' && (!Array.isArray(value.anchors) || value.anchors.length === 0)) {
+    pushIssue(
+      warnings,
+      `${path}.anchors`,
+      'ai_mapping_without_anchors',
+      'Propozycja AI nie wskazuje zweryfikowanego fragmentu źródłowego PDF-u.',
+      'warning',
+    )
+  }
+}
+
+function validateSemanticHintList(
+  value: unknown,
+  path: string,
+  errors: TemplateValidationIssue[],
+  warnings: TemplateValidationIssue[],
+) {
+  if (!Array.isArray(value) || value.length > 30) {
+    pushIssue(errors, path, 'invalid_semantic_hint_list', 'Lista wskazówek musi być tablicą maksymalnie 30 tekstów.')
+    return
+  }
+
+  const normalized = new Set<string>()
+  for (const [index, item] of value.entries()) {
+    const itemPath = `${path}[${index}]`
+    if (!isNonEmptyString(item) || item.trim().length > 160) {
+      pushIssue(errors, itemPath, 'invalid_semantic_hint', 'Wskazówka musi być niepustym tekstem do 160 znaków.')
+      continue
+    }
+    const key = item.trim().toLocaleLowerCase('pl-PL')
+    if (normalized.has(key)) {
+      pushIssue(warnings, itemPath, 'duplicate_semantic_hint', 'Lista zawiera powtórzoną wskazówkę.', 'warning')
+    }
+    normalized.add(key)
+  }
+}
+
+function validateBindingSemanticContract(
+  value: unknown,
+  path: string,
+  errors: TemplateValidationIssue[],
+  warnings: TemplateValidationIssue[],
+) {
+  if (!isRecord(value)) {
+    pushIssue(errors, path, 'invalid_semantic_contract', 'Kontrakt semantyczny bindingu musi być obiektem.')
+    return
+  }
+  if (!isNonEmptyString(value.semanticDescription) || value.semanticDescription.trim().length > 2_000) {
+    pushIssue(errors, `${path}.semanticDescription`, 'invalid_semantic_description', 'Opis semantyczny musi mieć od 1 do 2000 znaków.')
+  }
+  if (
+    !isNonEmptyString(value.semanticRole)
+    || value.semanticRole.trim().length > 160
+    || !/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/u.test(value.semanticRole.trim())
+  ) {
+    pushIssue(errors, `${path}.semanticRole`, 'invalid_semantic_role', 'Rola semantyczna musi być stabilnym identyfikatorem do 160 znaków.')
+  }
+  if (!isRecord(value.aiMappingHints)) {
+    pushIssue(errors, `${path}.aiMappingHints`, 'invalid_ai_mapping_hints', 'Wskazówki AI muszą zawierać listy aliases i exclude.')
+  }
+  else {
+    validateSemanticHintList(value.aiMappingHints.aliases, `${path}.aiMappingHints.aliases`, errors, warnings)
+    validateSemanticHintList(value.aiMappingHints.exclude, `${path}.aiMappingHints.exclude`, errors, warnings)
+    if (Array.isArray(value.aiMappingHints.aliases) && Array.isArray(value.aiMappingHints.exclude)) {
+      const aliases = new Set(value.aiMappingHints.aliases
+        .filter(isNonEmptyString)
+        .map(item => item.trim().toLocaleLowerCase('pl-PL')))
+      for (const [index, item] of value.aiMappingHints.exclude.entries()) {
+        if (
+          isNonEmptyString(item)
+          && aliases.has(item.trim().toLocaleLowerCase('pl-PL'))
+        ) {
+          pushIssue(
+            errors,
+            `${path}.aiMappingHints.exclude[${index}]`,
+            'conflicting_semantic_hint',
+            'Ta sama wskazówka nie może jednocześnie występować w aliases i exclude.',
+          )
+        }
+      }
+    }
+  }
+  if (!['manual', 'ai'].includes(String(value.source))) {
+    pushIssue(errors, `${path}.source`, 'invalid_semantic_contract_source', 'Źródło kontraktu musi mieć wartość manual albo ai.')
+  }
+  if (value.rationale !== undefined && (!isNonEmptyString(value.rationale) || value.rationale.trim().length > 1_000)) {
+    pushIssue(errors, `${path}.rationale`, 'invalid_semantic_rationale', 'Uzasadnienie musi być niepustym tekstem do 1000 znaków.')
+  }
+  if (value.model !== undefined && (!isNonEmptyString(value.model) || value.model.trim().length > 160)) {
+    pushIssue(errors, `${path}.model`, 'invalid_semantic_model', 'Identyfikator modelu musi być niepustym tekstem do 160 znaków.')
+  }
+  if (value.source === 'ai' && value.model === undefined) {
+    pushIssue(warnings, `${path}.model`, 'ai_semantic_contract_without_model', 'Kontrakt wygenerowany przez AI nie wskazuje użytego modelu.', 'warning')
   }
 }
 
@@ -734,8 +921,13 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     if (!isNonEmptyString(rawBinding.canonicalKey)) {
       pushIssue(errors, `${path}.canonicalKey`, 'missing_canonical_key', 'Binding wymaga canonicalKey.')
     }
-    else if (!canonicalKeys.has(rawBinding.canonicalKey) && rawBinding.computed !== true) {
-      pushIssue(warnings, `${path}.canonicalKey`, 'unknown_canonical_key', 'Klucz nie występuje w aktualnym katalogu kanonicznym.', 'warning')
+    else if (rawBinding.computed === true) {
+      if (!computedContractsByKey.has(rawBinding.canonicalKey)) {
+        pushIssue(errors, `${path}.canonicalKey`, 'unknown_computed_key', 'Klucz nie występuje w kontrolowanym katalogu pól obliczanych.')
+      }
+    }
+    else if (!canonicalKeys.has(rawBinding.canonicalKey)) {
+      pushIssue(errors, `${path}.canonicalKey`, 'unknown_canonical_key', 'Klucz nie występuje w aktualnym katalogu kanonicznym.')
     }
 
     if (rawBinding.computed !== undefined && typeof rawBinding.computed !== 'boolean') {
@@ -745,7 +937,7 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
       if (validateStringArray(rawBinding.valueFrom, `${path}.valueFrom`, errors)) {
         for (const [dependencyIndex, dependency] of rawBinding.valueFrom.entries()) {
           if (!canonicalKeys.has(dependency as string)) {
-            pushIssue(warnings, `${path}.valueFrom[${dependencyIndex}]`, 'unknown_dependency', 'Zależność nie występuje w katalogu kanonicznym.', 'warning')
+            pushIssue(errors, `${path}.valueFrom[${dependencyIndex}]`, 'unknown_dependency', 'Zależność nie występuje w katalogu kanonicznym.')
           }
         }
       }
@@ -753,11 +945,58 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     if (rawBinding.valueFormat !== undefined && !valueFormats.has(String(rawBinding.valueFormat))) {
       pushIssue(errors, `${path}.valueFormat`, 'invalid_value_format', 'Binding używa nieobsługiwanego valueFormat.')
     }
+    const computedContracts = isNonEmptyString(rawBinding.canonicalKey)
+      ? computedContractsByKey.get(rawBinding.canonicalKey)
+      : undefined
+    if (rawBinding.computed === true && computedContracts) {
+      const matchingDependencies = computedContracts.filter(contract => (
+        Array.isArray(rawBinding.valueFrom)
+        && rawBinding.valueFrom.length === contract.valueFrom.length
+        && rawBinding.valueFrom.every((dependency, dependencyIndex) => (
+          dependency === contract.valueFrom[dependencyIndex]
+        ))
+      ))
+      if (matchingDependencies.length === 0) {
+        pushIssue(
+          errors,
+          `${path}.valueFrom`,
+          'computed_dependencies_mismatch',
+          'Zależności pola obliczanego nie odpowiadają centralnemu kontraktowi semantycznemu.',
+        )
+      }
+      else if (!matchingDependencies.some(contract => (
+        rawBinding.valueFormat === contract.valueFormat
+      ))) {
+        pushIssue(
+          errors,
+          `${path}.valueFormat`,
+          'computed_format_mismatch',
+          'Format pola obliczanego nie odpowiada centralnemu kontraktowi semantycznemu.',
+        )
+      }
+    }
     if (rawBinding.condition !== undefined) {
       validateCondition(rawBinding.condition, `${path}.condition`, errors, warnings)
     }
     if (rawBinding.reviewStatus !== undefined && !['ready', 'needsReview'].includes(String(rawBinding.reviewStatus))) {
       pushIssue(errors, `${path}.reviewStatus`, 'invalid_review_status', 'reviewStatus musi mieć wartość ready albo needsReview.')
+    }
+    if (rawBinding.semanticContract !== undefined) {
+      validateBindingSemanticContract(
+        rawBinding.semanticContract,
+        `${path}.semanticContract`,
+        errors,
+        warnings,
+      )
+    }
+    if (rawBinding.mappingEvidence !== undefined) {
+      validateMappingEvidence(
+        rawBinding.mappingEvidence,
+        `${path}.mappingEvidence`,
+        pageCount,
+        errors,
+        warnings,
+      )
     }
     if (rawBinding.notes !== undefined && typeof rawBinding.notes !== 'string') {
       pushIssue(errors, `${path}.notes`, 'invalid_notes', 'Notatka bindingu musi być tekstem.')

@@ -197,14 +197,6 @@ async function createFacility() {
             <p>lokalizacje operacyjne</p>
           </div>
         </article>
-        <article class="facility-stat">
-          <span class="facility-stat__icon"><UIcon name="i-lucide-clock-3" /></span>
-          <div>
-            <small>Strefa bazowa</small>
-            <strong class="facility-stat__text">Europe/Warsaw</strong>
-            <p>domyślna organizacji</p>
-          </div>
-        </article>
       </div>
 
       <UAlert
@@ -366,7 +358,7 @@ async function createFacility() {
 
 .facility-index__summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 14px;
 }
 
@@ -417,14 +409,6 @@ async function createFacility() {
   line-height: 1.05;
 }
 
-.facility-stat strong.facility-stat__text {
-  overflow: hidden;
-  font-size: 15px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .facility-stat p {
   margin: 0;
   color: var(--ui-text-dimmed);
@@ -456,11 +440,8 @@ async function createFacility() {
 .facility-index__empty p { color: var(--ui-text-muted); }
 .facility-form { display: grid; gap: 18px; }
 .facility-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-@media (max-width: 1180px) {
-  .facility-index__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 780px) {
-  .facility-index__summary, .facility-form__grid { grid-template-columns: 1fr; }
+  .facility-form__grid { grid-template-columns: 1fr; }
   .facility-index__toolbar { align-items: stretch; flex-direction: column; }
   .facility-index__toolbar > :last-child { width: 100%; }
   .facility-row { grid-template-columns: 56px minmax(0, 1fr) auto; }

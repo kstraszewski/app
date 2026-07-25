@@ -3,6 +3,7 @@ import { serverSupabaseClient, serverSupabaseUser } from './supabase'
 import {
   getTemplate,
   prepareBundle,
+  templateApplicantCapacityIssues,
   type DocumentTemplate,
 } from '@openexpert/multiform'
 import { useRuntimeConfig } from '#imports'
@@ -630,9 +631,14 @@ function buildTemplateValidation(
   templateIds: readonly string[],
   requirements: readonly CrmMultiformDocumentRequirement[],
   sources: readonly RequirementApplicationSource[],
+  applicantCount: number,
   templateOverrides: readonly DocumentTemplate[] = [],
 ) {
   const overrideById = new Map(templateOverrides.map(template => [template.id, template]))
+  const resolvedTemplates = templateIds.flatMap((templateId) => {
+    const template = overrideById.get(templateId) ?? getTemplate(templateId)
+    return template ? [template] : []
+  })
   const templates = templateIds.map((templateId) => {
     const template = overrideById.get(templateId) ?? getTemplate(templateId)
     if (!template) {
@@ -677,6 +683,10 @@ function buildTemplateValidation(
     ...templates.flatMap(template => template.ready
       ? []
       : template.warnings.map(warning => `${template.templateId}: ${warning}`)),
+    ...templateApplicantCapacityIssues(resolvedTemplates, applicantCount).map(issue => (
+      `${issue.templateLabel} obsługuje maksymalnie ${issue.supportedCount} `
+      + `wnioskodawców, a sprawa zawiera ${issue.requestedCount}.`
+    )),
   ]
   return { valid: blockers.length === 0, blockers, templates }
 }
@@ -1076,6 +1086,7 @@ export async function loadCrmMultiformContext(
     templateIds,
     documentRequirements,
     requirementSources,
+    applicants.length,
     templateOverrides,
   )
 

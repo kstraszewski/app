@@ -1,8 +1,10 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
+  workspacePage?: boolean
 }>(), {
   assistantPage: false,
+  workspacePage: false,
 })
 
 const sidebarCollapsed = useCookie<boolean>('openexpert-crm-nav-collapsed', {
@@ -391,7 +393,10 @@ async function signOut() {
 
     <section
       class="crm-content"
-      :class="{ 'crm-content--assistant': props.assistantPage }"
+      :class="{
+        'crm-content--assistant': props.assistantPage,
+        'crm-content--workspace': props.workspacePage,
+      }"
     >
       <slot />
     </section>
@@ -731,6 +736,14 @@ async function signOut() {
   padding: 24px 32px 0;
 }
 
+.crm-content--workspace {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
 @media (max-width: 900px) {
   .crm-shell,
   .crm-shell--collapsed {
@@ -860,6 +873,14 @@ async function signOut() {
     min-height: 0;
     overflow: hidden;
     padding: 18px 16px 0;
+  }
+
+  .crm-content--workspace {
+    width: 100%;
+    height: calc(100dvh - 76px);
+    min-height: 720px;
+    overflow: auto;
+    padding: 0;
   }
 
 }

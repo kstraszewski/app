@@ -1,4 +1,4 @@
-import { createError, setResponseHeader } from 'h3'
+import { createError } from 'h3'
 import type {
   DirectoryExpert,
   DirectoryFacility,
@@ -214,7 +214,7 @@ function buildDirectory(catalogs: CatalogSnapshot[]): Omit<DirectoryPayload, 'ge
   }
 }
 
-export default defineEventHandler(async (event): Promise<DirectoryPayload> => {
+export default defineCachedEventHandler(async (event): Promise<DirectoryPayload> => {
   const serviceRole = serverSupabaseServiceRole(event)
   const widgetKeys: string[] = []
 
@@ -281,12 +281,6 @@ export default defineEventHandler(async (event): Promise<DirectoryPayload> => {
     })
   }
 
-  setResponseHeader(
-    event,
-    'Cache-Control',
-    'no-store',
-  )
-
   const directory = buildDirectory(catalogs)
   const coverImages = await loadDirectoryCoverImages(
     serviceRole,
@@ -301,4 +295,9 @@ export default defineEventHandler(async (event): Promise<DirectoryPayload> => {
       coverImage: coverImages.get(facility.facilityId) ?? null,
     })),
   }
+}, {
+  name: 'public-directory',
+  maxAge: 5 * 60,
+  staleMaxAge: 10 * 60,
+  swr: true,
 })

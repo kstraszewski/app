@@ -1375,11 +1375,16 @@ async function disconnectCalendar() {
                   Do implementacji
                 </UBadge>
                 <UButton
+                  class="google-business-button"
                   color="neutral"
                   variant="outline"
-                  icon="i-lucide-store"
                   @click="showGoogleBusinessProfilePlanned"
                 >
+                  <template #leading>
+                    <span class="google-business-button__logo" aria-hidden="true">
+                      <img src="/assets/google-icon.svg" alt="">
+                    </span>
+                  </template>
                   Połącz z Google Business Profile
                 </UButton>
               </div>
@@ -2540,6 +2545,47 @@ async function disconnectCalendar() {
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.google-business-button {
+  min-height: 42px;
+  max-width: 100%;
+  padding-inline: 10px 16px;
+  border: 1px solid color-mix(in srgb, #4285f4 42%, var(--ui-border));
+  background: color-mix(in srgb, #4285f4 7%, var(--ui-bg));
+  color: var(--ui-text-highlighted);
+  font-weight: 650;
+  box-shadow: 0 1px 2px color-mix(in srgb, #4285f4 12%, transparent);
+}
+
+.google-business-button:hover {
+  border-color: #4285f4;
+  background: color-mix(in srgb, #4285f4 13%, var(--ui-bg));
+  color: var(--ui-text-highlighted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #4285f4 14%, transparent);
+}
+
+.google-business-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, #4285f4 36%, transparent);
+  outline-offset: 2px;
+}
+
+.google-business-button__logo {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, #4285f4 16%, #dadce0);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(60 64 67 / 16%);
+}
+
+.google-business-button__logo img {
+  display: block;
+  width: 17px;
+  height: 17px;
 }
 
 .facility-list {

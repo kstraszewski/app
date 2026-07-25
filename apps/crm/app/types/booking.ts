@@ -29,6 +29,8 @@ export interface PublicBookingService {
 export interface PublicBookingExpert {
   userId: string
   name: string
+  avatarUrl?: string | null
+  roleLabel?: string | null
   serviceIds?: string[]
 }
 
@@ -62,6 +64,7 @@ export interface PublicBookingSlot {
 
 export interface PublicBookingSlotsPayload {
   date: string
+  endDate: string
   timezone: string
   slots: PublicBookingSlot[]
 }

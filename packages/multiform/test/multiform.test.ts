@@ -5,10 +5,13 @@ import {
   CANONICAL_FIELDS,
   DEMO_TEMPLATE_IDS,
   MULTIFORM_MODEL_DEFINITIONS,
+  type DocumentTemplate,
   getTemplate,
   getTemplateBySourceSha256,
   getTemplates,
   prepareBundle,
+  templateApplicantCapacity,
+  templateApplicantCapacityIssues,
   validateTemplateJson,
 } from '../src/index.ts'
 
@@ -89,17 +92,43 @@ const completeValidationTemplate = (target: unknown, formKind = 'overlay') => ({
 
 test('exposes a unique canonical catalog for the MVP form', () => {
   const keys = CANONICAL_FIELDS.map((field) => field.canonicalKey)
+  const applicantFields = CANONICAL_FIELDS.filter(field => field.collection?.key === 'applicants')
   assert.equal(new Set(keys).size, keys.length)
   assert.ok(keys.includes('applicants.0.pesel'))
+  assert.ok(keys.includes('applicants.4.pesel'))
   assert.ok(keys.includes('loan.amount'))
   assert.ok(keys.includes('property.address.houseNumber'))
   assert.ok(keys.includes('property.landRegisterNumber'))
+  assert.equal(applicantFields.length, 15)
+  assert.deepEqual(
+    [...new Set(applicantFields.map(field => field.collection?.index))],
+    [0, 1, 2, 3, 4],
+  )
+  assert.ok(CANONICAL_FIELDS.every(field => (
+    field.form.question
+    && field.semanticDescription
+    && field.semanticRole
+    && field.aiMappingHints.aliases.length > 0
+  )))
+  assert.deepEqual(
+    CANONICAL_FIELDS.find(field => field.canonicalKey === 'applicants.4.pesel')?.collection,
+    {
+      key: 'applicants',
+      index: 4,
+      displayIndex: 5,
+      relativeKey: 'pesel',
+      label: 'PESEL',
+    },
+  )
+  const applicationPlace = CANONICAL_FIELDS.find(field => field.canonicalKey === 'application.place')
+  assert.match(applicationPlace?.form.helpText ?? '', /zamieszkania/)
+  assert.ok(applicationPlace?.aiMappingHints.exclude.includes('miejscowość nieruchomości'))
   assert.deepEqual(CANONICAL_COLLECTIONS, [{
     key: 'applicants',
     label: 'Wnioskodawcy',
     itemLabel: 'Wnioskodawca',
     minItems: 1,
-    maxItems: 2,
+    maxItems: 5,
     requiredRelativeKeys: ['firstName', 'lastName', 'pesel'],
   }])
 })
@@ -113,6 +142,187 @@ test('registers the three curated PDF templates', () => {
   assert.equal(getTemplate('pekao-mortgage-2025')?.source.pageCount, 6)
 })
 
+test('computes applicant capacity per template without hiding index gaps', () => {
+  const erste = getTemplate('erste-mortgage-2026')!
+  const pko = getTemplate('pko-bp-mortgage-2022')!
+  assert.equal(templateApplicantCapacity(erste), 5)
+  assert.equal(templateApplicantCapacity(pko), 2)
+  assert.deepEqual(
+    templateApplicantCapacityIssues([erste, pko], 3).map(issue => issue.templateId),
+    ['pko-bp-mortgage-2022'],
+  )
+  assert.deepEqual(templateApplicantCapacityIssues([erste, pko], 2), [])
+
+  const withGap: DocumentTemplate = {
+    ...erste,
+    bindings: erste.bindings.filter(binding => (
+      !/^applicants\.(?:2|4)\./u.test(binding.canonicalKey)
+    )),
+  }
+  assert.equal(templateApplicantCapacity(withGap), 2)
+
+  const withoutFirstApplicant: DocumentTemplate = {
+    ...erste,
+    bindings: erste.bindings.filter(binding => (
+      !/^applicants\.0\./u.test(binding.canonicalKey)
+      && !(binding.valueFrom ?? []).some(key => /^applicants\.0\./u.test(key))
+    )),
+  }
+  assert.equal(templateApplicantCapacity(withoutFirstApplicant), 0)
+
+  const withoutApplicants: DocumentTemplate = {
+    ...erste,
+    bindings: erste.bindings.filter(binding => !binding.canonicalKey.startsWith('applicants.')),
+  }
+  assert.equal(templateApplicantCapacity(withoutApplicants), null)
+  assert.deepEqual(templateApplicantCapacityIssues([withoutApplicants], 5), [])
+})
+
+test('validates applicant five and structured mapping evidence deterministically', () => {
+  const baseTemplate = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  )) as DocumentTemplate
+  const template: DocumentTemplate = {
+    ...baseTemplate,
+    bindings: [{
+      ...baseTemplate.bindings[0]!,
+      canonicalKey: 'applicants.4.pesel',
+      reviewStatus: 'needsReview',
+      mappingEvidence: {
+        origin: 'ai',
+        confidence: 0.94,
+        rationale: 'Etykieta PESEL znajduje się w sekcji Wnioskodawca 5.',
+        model: 'test/model',
+        anchors: [{
+          kind: 'ordinal',
+          reference: 'p1:t42',
+          page: 1,
+          text: 'Wnioskodawca 5',
+          box: { x: 40, y: 660, width: 90, height: 12 },
+        }],
+      },
+    }],
+  }
+
+  const valid = validateTemplateJson(template)
+  assert.equal(valid.valid, true)
+  assert.ok(!valid.warnings.some(issue => issue.code === 'unknown_canonical_key'))
+
+  const invalidConfidence: DocumentTemplate = {
+    ...template,
+    bindings: [{
+      ...template.bindings[0]!,
+      mappingEvidence: {
+        ...template.bindings[0]!.mappingEvidence!,
+        confidence: 1.2,
+      },
+    }],
+  }
+  const invalid = validateTemplateJson(invalidConfidence)
+  assert.equal(invalid.valid, false)
+  assert.ok(invalid.errors.some(issue => (
+    issue.path === 'bindings[0].mappingEvidence.confidence'
+    && issue.code === 'invalid_mapping_confidence'
+  )))
+
+  const unknown: DocumentTemplate = {
+    ...template,
+    bindings: [{
+      ...template.bindings[0]!,
+      canonicalKey: 'applicants.5.pesel',
+    }],
+  }
+  const unknownResult = validateTemplateJson(unknown)
+  assert.equal(unknownResult.valid, false)
+  assert.ok(unknownResult.errors.some(issue => issue.code === 'unknown_canonical_key'))
+
+  const unknownComputed: DocumentTemplate = {
+    ...template,
+    bindings: [{
+      ...template.bindings[0]!,
+      canonicalKey: 'applicants.5.fullName',
+      computed: true,
+      valueFrom: ['applicants.4.firstName', 'applicants.4.lastName'],
+      valueFormat: 'fullName',
+    }],
+  }
+  const unknownComputedResult = validateTemplateJson(unknownComputed)
+  assert.equal(unknownComputedResult.valid, false)
+  assert.ok(unknownComputedResult.errors.some(issue => issue.code === 'unknown_computed_key'))
+
+  const mismatchedComputed: DocumentTemplate = {
+    ...template,
+    bindings: [{
+      ...template.bindings[0]!,
+      canonicalKey: 'applicants.4.fullName',
+      computed: true,
+      valueFrom: ['applicants.3.firstName', 'applicants.3.lastName'],
+      valueFormat: 'fullName',
+    }],
+  }
+  const mismatchedComputedResult = validateTemplateJson(mismatchedComputed)
+  assert.equal(mismatchedComputedResult.valid, false)
+  assert.ok(mismatchedComputedResult.errors.some(issue => (
+    issue.code === 'computed_dependencies_mismatch'
+  )))
+
+  const disguisedCanonicalInput: DocumentTemplate = {
+    ...template,
+    bindings: [{
+      ...template.bindings[0]!,
+      canonicalKey: 'applicants.4.pesel',
+      computed: true,
+      valueFrom: ['applicants.0.pesel'],
+    }],
+  }
+  const disguisedCanonicalInputResult = validateTemplateJson(disguisedCanonicalInput)
+  assert.equal(disguisedCanonicalInputResult.valid, false)
+  assert.ok(disguisedCanonicalInputResult.errors.some(issue => (
+    issue.path === 'bindings[0].canonicalKey'
+    && issue.code === 'unknown_computed_key'
+  )))
+})
+
+test('validates optional per-binding semantic contracts without breaking legacy templates', () => {
+  const baseTemplate = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  )) as DocumentTemplate
+
+  assert.equal(validateTemplateJson(baseTemplate).valid, true)
+
+  const customized: DocumentTemplate = structuredClone(baseTemplate)
+  customized.bindings[0]!.semanticContract = {
+    semanticDescription: 'Kwota kredytu wnioskowana w tym formularzu.',
+    semanticRole: 'loan.requested.amount',
+    aiMappingHints: {
+      aliases: ['kwota kredytu', 'wnioskowana kwota'],
+      exclude: ['wartość nieruchomości', 'wkład własny'],
+    },
+    source: 'ai',
+    rationale: 'Pole leży przy etykiecie „Kwota kredytu”.',
+    model: 'google/test-model',
+  }
+  assert.equal(validateTemplateJson(customized).valid, true)
+
+  const invalid: DocumentTemplate = structuredClone(customized)
+  invalid.bindings[0]!.semanticContract = {
+    ...invalid.bindings[0]!.semanticContract!,
+    semanticRole: 'rola ze spacją',
+    aiMappingHints: {
+      aliases: Array.from({ length: 31 }, (_, index) => `alias-${index}`),
+      exclude: ['', 'ALIAS-0'],
+    },
+  }
+  const result = validateTemplateJson(invalid)
+  assert.equal(result.valid, false)
+  assert.ok(result.errors.some(issue => issue.code === 'invalid_semantic_role'))
+  assert.ok(result.errors.some(issue => issue.code === 'invalid_semantic_hint_list'))
+  assert.ok(result.errors.some(issue => issue.code === 'invalid_semantic_hint'))
+  assert.ok(result.errors.some(issue => issue.code === 'conflicting_semantic_hint'))
+})
+
 test('validates every registered template but keeps incomplete coverage out of fill-ready state', () => {
   for (const template of getTemplates()) {
     const result = validateTemplateJson(template)
@@ -123,7 +333,11 @@ test('validates every registered template but keeps incomplete coverage out of f
     assert.equal(result.summary.activationReady, false, template.id)
     assert.equal(result.summary.bindingCount, template.bindings.length, template.id)
     assert.equal(result.summary.mappedBindingCount, template.bindings.length, template.id)
-    assert.equal(result.summary.needsReviewCount, 0, template.id)
+    assert.equal(
+      result.summary.needsReviewCount,
+      template.id === 'erste-mortgage-2026' ? 6 : 0,
+      template.id,
+    )
     assert.equal(result.summary.unmappedCount, 0, template.id)
     assert.deepEqual(result.errors, [], template.id)
     assert.ok(result.warnings.some(issue => issue.code === 'incomplete_coverage'), template.id)
@@ -166,7 +380,7 @@ test('rejects malformed template JSON with actionable paths and issue codes', ()
   assert.ok(result.errors.some(issue => issue.path === 'coverage.mappedTargetCount' && issue.code === 'coverage_exceeds_scope'))
   assert.ok(result.errors.some(issue => issue.path === 'bindings[0].target.page' && issue.code === 'overlay_page_out_of_range'))
   assert.ok(result.errors.some(issue => issue.path === 'bindings[0].target.x' && issue.code === 'invalid_overlay_coordinate'))
-  assert.ok(result.warnings.some(issue => (
+  assert.ok(result.errors.some(issue => (
     issue.path === 'bindings[0].canonicalKey' && issue.code === 'unknown_canonical_key'
   )))
 })
@@ -418,6 +632,9 @@ test('prepareBundle merges canonical inputs and omits computed presentation fiel
   assert.equal(keys.filter((key) => key === 'loan.amount').length, 1)
   assert.ok(keys.includes('applicants.0.firstName'))
   assert.ok(keys.includes('applicants.0.lastName'))
+  assert.ok(keys.includes('applicants.2.firstName'))
+  assert.ok(keys.includes('applicants.3.lastName'))
+  assert.ok(keys.includes('applicants.4.pesel'))
   assert.ok(keys.includes('property.address.houseNumber'))
   assert.ok(keys.includes('property.address.unitNumber'))
   assert.ok(!keys.includes('applicants.0.fullName'))
@@ -434,17 +651,19 @@ test('resolved bindings do not masquerade as complete source-form coverage', () 
   ])
 
   for (const template of getTemplates()) {
+    const needsReviewCount = template.bindings.filter(binding => binding.reviewStatus === 'needsReview').length
     assert.ok(template.bindings.length > 0)
     assert.ok(template.bindings.every(binding => binding.target.kind !== 'unmapped'))
-    assert.ok(template.bindings.every(binding => binding.reviewStatus !== 'needsReview'))
+    assert.equal(needsReviewCount, template.id === 'erste-mortgage-2026' ? 6 : 0)
     assert.equal(template.coverage.status, 'incomplete')
     assert.equal(template.coverage.mappedTargetCount, expectedCoverage.get(template.id)?.mapped)
     assert.equal(template.coverage.inScopeTargetCount, expectedCoverage.get(template.id)?.total)
 
     const warnings = prepareBundle([template.id]).warnings
-    assert.equal(warnings.length, 1)
-    assert.equal(warnings[0]?.canonicalKey, '__templateCoverage__')
-    assert.equal(warnings[0]?.status, 'unmapped')
+    assert.equal(warnings.length, 1 + needsReviewCount)
+    assert.ok(warnings.some(warning => (
+      warning.canonicalKey === '__templateCoverage__' && warning.status === 'unmapped'
+    )))
   }
 })
 

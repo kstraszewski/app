@@ -8,6 +8,11 @@ import type {
   SavedCaseOffer,
 } from '~/types/cases'
 import type { MultiformCrmContext } from '~/types/multiform'
+import type {
+  CaseTaskDelegationAssignee,
+  CaseTaskDelegationPayload,
+  CaseTaskDelegationRecentAssignee,
+} from '~/types/task-delegation-ui'
 import {
   calculatePropertyOfferComparison,
   getFinancingComparisonBaseline,
@@ -22,12 +27,88 @@ definePageMeta({ middleware: ['auth', 'organization'] })
 interface RenameForm { title: string }
 interface ClientsForm { client_ids: string[] }
 
+interface DelegationProfile {
+  id?: string
+  user_id?: string
+  email?: string | null
+  full_name?: string | null
+}
+
+interface DelegationHistoryEntry {
+  id: string
+  activity_type: string
+  title: string
+  body?: string | null
+  created_at: string
+  actor?: DelegationProfile | null
+}
+
+interface DelegationMeeting {
+  id: string
+  starts_at: string
+  ends_at?: string | null
+  status: string
+  meeting_mode?: string | null
+  customer_name?: string | null
+  notes?: string | null
+  expert?: DelegationProfile | null
+}
+
+interface DelegatedTask {
+  id: string
+  title: string
+  description?: string | null
+  assignee_user_id: string
+  delegator_user_id: string
+  delegation_status: 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  status_code: 'open' | 'in_progress' | 'done' | 'cancelled' | string
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  due_at?: string | null
+  data_access_scope?: string[]
+  delegated_at: string
+  accepted_at?: string | null
+  rejected_at?: string | null
+  rejection_reason?: string | null
+  completed_at?: string | null
+  assignee?: DelegationProfile | null
+  delegator?: DelegationProfile | null
+  history?: DelegationHistoryEntry[]
+  meetings?: DelegationMeeting[]
+}
+
+interface DelegatedTasksResponse {
+  data: DelegatedTask[]
+  current_user_id?: string
+}
+
+interface DelegationMemberRow {
+  user_id: string
+  email: string
+  full_name: string | null
+  role: 'expert' | 'admin'
+  open_task_count?: number
+  team_name?: string | null
+}
+
+interface DelegationRecentMemberRow extends DelegationMemberRow {
+  last_delegated_at: string
+  delegation_count: number
+}
+
+interface DelegationAssigneesResponse {
+  data: {
+    members: DelegationMemberRow[]
+    recent: DelegationRecentMemberRow[]
+  }
+}
+
 const route = useRoute()
 const router = useRouter()
 const { organizationSlug, crmApiPath, orgPath } = useOrganizationContext()
 const caseId = computed(() => String(route.params.id))
 const toast = useToast()
 const requestFetch = useRequestFetch()
+const authenticatedUser = useSupabaseUser()
 
 const emptyCase = (): CaseDetailResponse => ({
   data: {
@@ -80,6 +161,19 @@ const { data: filterConfiguration } = await useAsyncData<CaseFiltersResponse>(
   () => requestFetch<CaseFiltersResponse>(crmApiPath('/cases/filters')),
   { default: emptyFilters, watch: [organizationSlug] },
 )
+const {
+  data: delegatedTasksResponse,
+  pending: delegatedTasksPending,
+  error: delegatedTasksError,
+  refresh: refreshDelegatedTasks,
+} = await useAsyncData<DelegatedTasksResponse>(
+  `crm-case-delegated-tasks:${organizationSlug.value}:${caseId.value}`,
+  () => requestFetch<DelegatedTasksResponse>(crmApiPath(`/cases/${caseId.value}/tasks`)),
+  {
+    default: () => ({ data: [] }),
+    watch: [organizationSlug, caseId],
+  },
+)
 
 useHead(() => ({ title: `${data.value.data.title || 'Sprawa'} — OpenExpert CRM` }))
 
@@ -90,6 +184,7 @@ const removeOfferOpen = ref(false)
 const propertyOpen = ref(false)
 const renovationOpen = ref(false)
 const insuranceOpen = ref(false)
+const delegationOpen = ref(false)
 const savingName = ref(false)
 const savingClients = ref(false)
 const removingOffer = ref(false)
@@ -102,6 +197,15 @@ const selectedProperty = ref<CaseProperty | null>(null)
 const selectedInsuranceType = ref<'insurance_life' | 'insurance_property'>('insurance_life')
 const multiformContext = ref<MultiformCrmContext | null>(null)
 const multiformContextPending = ref(false)
+const delegationAssignees = ref<CaseTaskDelegationAssignee[]>([])
+const recentDelegationAssignees = ref<CaseTaskDelegationRecentAssignee[]>([])
+const delegationAssigneesPending = ref(false)
+const delegationAssigneesError = ref('')
+const delegationSubmitting = ref(false)
+const delegationSubmitError = ref('')
+const delegationSubmitted = ref(false)
+const updatingDelegatedTaskId = ref('')
+const delegationIdempotencyKey = ref('')
 const renameForm = reactive<RenameForm>({ title: '' })
 const clientsForm = reactive<ClientsForm>({ client_ids: [] })
 
@@ -171,7 +275,14 @@ const selectedOfferComparison = computed(() => {
   )
 })
 
-const validViews = ['overview', 'credit', 'documents', 'history'] as const
+const delegatedTasks = computed(() => delegatedTasksResponse.value.data ?? [])
+const delegationCurrentUserId = computed(() => (
+  delegatedTasksResponse.value.current_user_id
+  || authenticatedUser.value?.id
+  || null
+))
+
+const validViews = ['overview', 'credit', 'documents', 'delegations', 'history'] as const
 type CaseView = typeof validViews[number]
 const currentView = computed<CaseView>(() => {
   const value = String(route.query.view ?? 'overview')
@@ -182,6 +293,7 @@ const caseTabs = computed(() => [
   { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
   { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
   { label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length, to: viewLocation('documents') },
+  { label: 'Delegacje', icon: 'i-lucide-send', count: delegatedTasks.value.length, to: viewLocation('delegations') },
   { label: 'Historia', icon: 'i-lucide-history', to: viewLocation('history') },
 ])
 
@@ -300,6 +412,7 @@ const headerDate = new Intl.DateTimeFormat('pl-PL', {
 })
 
 const headerMenuItems = computed(() => [[
+  { label: 'Deleguj zadanie', icon: 'i-lucide-user-round-plus', onSelect: openDelegation },
   { label: 'Zmień nazwę', icon: 'i-lucide-pencil', onSelect: openRename },
   { label: 'Zarządzaj klientami', icon: 'i-lucide-users-round', onSelect: openClients },
   { label: 'Dodaj nieruchomość', icon: 'i-lucide-house-plus', onSelect: addProperty },
@@ -402,6 +515,182 @@ function openRename() {
 function openClients() {
   clientsForm.client_ids = data.value.data.clients.map(client => client.id)
   clientsOpen.value = true
+}
+
+function mapDelegationMember(member: DelegationMemberRow): CaseTaskDelegationAssignee {
+  return {
+    userId: member.user_id,
+    email: member.email,
+    fullName: member.full_name ?? '',
+    role: member.role,
+    teamName: member.team_name
+      ?? (member.role === 'admin' ? 'Administrator organizacji' : 'Ekspert'),
+    openTaskCount: member.open_task_count,
+  }
+}
+
+function mapRecentDelegationMember(member: DelegationRecentMemberRow): CaseTaskDelegationRecentAssignee {
+  return {
+    ...mapDelegationMember(member),
+    lastDelegatedAt: member.last_delegated_at,
+    delegationCount: member.delegation_count,
+  }
+}
+
+function freshIdempotencyKey() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+}
+
+async function loadDelegationAssignees() {
+  delegationAssigneesPending.value = true
+  delegationAssigneesError.value = ''
+  try {
+    const response = await $fetch<DelegationAssigneesResponse>(
+      crmApiPath(`/cases/${caseId.value}/tasks/assignees`),
+    )
+    delegationAssignees.value = response.data.members.map(mapDelegationMember)
+    recentDelegationAssignees.value = response.data.recent.map(mapRecentDelegationMember)
+  }
+  catch (caught: any) {
+    delegationAssigneesError.value = caught?.data?.statusMessage
+      ?? caught?.message
+      ?? 'Odśwież listę zespołu i spróbuj ponownie.'
+  }
+  finally {
+    delegationAssigneesPending.value = false
+  }
+}
+
+function openDelegation() {
+  delegationSubmitError.value = ''
+  delegationSubmitted.value = false
+  delegationIdempotencyKey.value = freshIdempotencyKey()
+  delegationOpen.value = true
+  void loadDelegationAssignees()
+}
+
+async function submitDelegatedTask(payload: CaseTaskDelegationPayload) {
+  if (delegationSubmitting.value) return
+  delegationSubmitting.value = true
+  delegationSubmitError.value = ''
+  try {
+    await $fetch(crmApiPath(`/cases/${caseId.value}/tasks`), {
+      method: 'POST',
+      body: {
+        title: payload.title,
+        description: payload.description || null,
+        assignee_user_id: payload.assigneeUserId,
+        due_at: payload.dueAt,
+        priority: payload.priority,
+        data_access_scope: payload.accessScope,
+        idempotency_key: delegationIdempotencyKey.value || freshIdempotencyKey(),
+        appointment: payload.appointment
+          ? {
+              facility_id: payload.appointment.facilityId,
+              service_id: payload.appointment.serviceId,
+              starts_at: payload.appointment.startsAt,
+              meeting_mode: payload.appointment.meetingMode,
+            }
+          : null,
+      },
+    })
+    delegationSubmitted.value = true
+    await Promise.all([refreshDelegatedTasks(), refresh()])
+    toast.add({
+      title: payload.appointment
+        ? 'Zadanie i termin zostały przekazane'
+        : 'Zadanie zostało oddelegowane',
+      description: payload.appointment
+        ? 'Godzina jest już zarezerwowana w kalendarzu realizatora. Status i historię zobaczysz w Delegacjach.'
+        : 'Status przyjęcia i całą historię zobaczysz w zakładce Delegacje.',
+      color: 'success',
+      icon: payload.appointment ? 'i-lucide-calendar-check-2' : 'i-lucide-send',
+    })
+  }
+  catch (caught: any) {
+    const statusCode = Number(
+      caught?.statusCode
+      ?? caught?.status
+      ?? caught?.response?.status
+      ?? 0,
+    )
+    const detail = caught?.data?.statusMessage ?? caught?.message ?? ''
+    const slotConflict = statusCode === 409
+      && /slot|termin|available/i.test(detail)
+    if (slotConflict) delegationIdempotencyKey.value = freshIdempotencyKey()
+    delegationSubmitError.value = slotConflict
+      ? 'Ta godzina właśnie została zajęta. Wybierz nowy wolny termin.'
+      : detail || 'Nie udało się zapisać delegacji.'
+  }
+  finally {
+    delegationSubmitting.value = false
+  }
+}
+
+async function respondToDelegatedTask(payload: {
+  taskId: string
+  action: 'accept' | 'reject' | 'cancel'
+  reason?: string
+}) {
+  if (updatingDelegatedTaskId.value) return
+  updatingDelegatedTaskId.value = payload.taskId
+  try {
+    await $fetch(crmApiPath(`/cases/${caseId.value}/tasks/${payload.taskId}/response`), {
+      method: 'PATCH',
+      body: {
+        action: payload.action,
+        ...(payload.reason ? { reason: payload.reason } : {}),
+      },
+    })
+    await Promise.all([refreshDelegatedTasks(), refresh()])
+    toast.add({
+      title: payload.action === 'accept'
+        ? 'Przyjęto zadanie'
+        : payload.action === 'reject'
+          ? 'Odrzucono zadanie'
+          : 'Anulowano delegację',
+      color: payload.action === 'accept' ? 'success' : 'neutral',
+    })
+  }
+  catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się zapisać decyzji',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+    })
+  }
+  finally {
+    updatingDelegatedTaskId.value = ''
+  }
+}
+
+async function updateDelegatedTaskStatus(payload: {
+  taskId: string
+  statusCode: 'in_progress' | 'done'
+}) {
+  if (updatingDelegatedTaskId.value) return
+  updatingDelegatedTaskId.value = payload.taskId
+  try {
+    await $fetch(crmApiPath(`/cases/${caseId.value}/tasks/${payload.taskId}`), {
+      method: 'PATCH',
+      body: { status_code: payload.statusCode },
+    })
+    await Promise.all([refreshDelegatedTasks(), refresh()])
+    toast.add({
+      title: payload.statusCode === 'done' ? 'Zadanie zakończone' : 'Rozpoczęto realizację',
+      color: 'success',
+    })
+  }
+  catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się zmienić statusu',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+    })
+  }
+  finally {
+    updatingDelegatedTaskId.value = ''
+  }
 }
 
 function openOfferDetails(offer: SavedCaseOffer) {
@@ -724,6 +1013,15 @@ watch(
       </div>
     </template>
     <template #actions>
+      <UButton
+        color="neutral"
+        variant="outline"
+        size="lg"
+        icon="i-lucide-user-round-plus"
+        @click="openDelegation"
+      >
+        Deleguj zadanie
+      </UButton>
       <UButton class="case-next-action" color="neutral" variant="solid" size="lg" trailing-icon="i-lucide-arrow-right" @click="openNextStep">
         Otwórz następny krok
       </UButton>
@@ -1037,6 +1335,37 @@ watch(
       />
     </section>
 
+    <section
+      v-if="!pending && currentView === 'delegations'"
+      class="case-delegations"
+      aria-label="Delegowane zadania w sprawie"
+    >
+      <UAlert
+        v-if="delegatedTasksError"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        title="Nie udało się pobrać delegowanych zadań"
+        description="Odśwież listę, aby zobaczyć aktualne statusy."
+      >
+        <template #actions>
+          <UButton color="error" variant="soft" size="sm" @click="refreshDelegatedTasks()">
+            Odśwież
+          </UButton>
+        </template>
+      </UAlert>
+
+      <CaseTaskDelegationsPanel
+        :tasks="delegatedTasks"
+        :loading="delegatedTasksPending"
+        :current-user-id="delegationCurrentUserId"
+        :updating-task-id="updatingDelegatedTaskId"
+        @delegate="openDelegation"
+        @respond="respondToDelegatedTask"
+        @update-status="updateDelegatedTaskStatus"
+      />
+    </section>
+
     <section v-if="!pending && currentView === 'history'" class="case-history" aria-labelledby="case-history-title">
       <div class="case-section-heading">
         <div>
@@ -1116,6 +1445,24 @@ watch(
       :type="selectedInsuranceType"
       :existing-item="activeInsuranceItem"
       @saved="refresh()"
+    />
+
+    <CaseTaskDelegationModal
+      v-model:open="delegationOpen"
+      :case-summary="{
+        id: data.data.id,
+        title: data.data.title,
+        clients: data.data.clients,
+      }"
+      :recent-assignees="recentDelegationAssignees"
+      :available-assignees="delegationAssignees"
+      :loading-assignees="delegationAssigneesPending"
+      :assignees-error="delegationAssigneesError"
+      :submitting="delegationSubmitting"
+      :submit-error="delegationSubmitError"
+      :submitted="delegationSubmitted"
+      @retry-assignees="loadDelegationAssignees"
+      @submit="submitDelegatedTask"
     />
 
     <UModal
@@ -1656,9 +2003,15 @@ watch(
 
 .case-documents,
 .case-applications,
+.case-delegations,
 .case-history {
   scroll-margin-top: 20px;
   margin-top: 0;
+}
+
+.case-delegations {
+  display: grid;
+  gap: 16px;
 }
 
 .case-section-heading {

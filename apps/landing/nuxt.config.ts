@@ -152,10 +152,14 @@ export default defineNuxtConfig({
       prerender: true,
     },
     '/eksperci': {
-      headers: { 'cache-control': 'no-store' },
+      headers: {
+        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+      },
     },
     '/placowki': {
-      headers: { 'cache-control': 'no-store' },
+      headers: {
+        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+      },
     },
     '/placówki': {
       redirect: {

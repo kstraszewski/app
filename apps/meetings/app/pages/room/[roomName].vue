@@ -44,7 +44,7 @@ function tokenErrorMessage(error: unknown): string {
   const status = responseError.statusCode || responseError.status
 
   if (status === 401) return 'Kod dostępu jest nieprawidłowy.'
-  if (status === 400 || status === 403) return 'Ten pokój nie jest dostępny w konfiguracji demo.'
+  if (status === 400 || status === 403) return 'Ten pokój nie jest dostępny w konfiguracji serwera.'
   if (status === 503) return 'LiveKit nie został jeszcze skonfigurowany na serwerze.'
   return responseError.data?.statusMessage
     || responseError.data?.message

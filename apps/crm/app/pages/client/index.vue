@@ -4,6 +4,7 @@ import type { AccountContexts, ClientAppointment } from '~/types/account'
 definePageMeta({ middleware: 'client-auth', layout: false })
 
 const route = useRoute()
+const requestUrl = useRequestURL()
 const authenticatedUser = useSupabaseUser()
 const accountCacheScope = String(authenticatedUser.value?.sub ?? 'anonymous')
 const runtimeConfig = useRuntimeConfig()
@@ -69,6 +70,17 @@ function statusLabel(statusValue: string) {
   if (statusValue === 'confirmed') return 'Potwierdzona'
   if (statusValue === 'cancelled') return 'Anulowana'
   return 'Oczekuje'
+}
+
+function isClientMeetingUrl(value: string | null) {
+  if (!value) return false
+  try {
+    const url = new URL(value, requestUrl.origin)
+    return url.origin === requestUrl.origin
+      && /^\/client\/meetings\/[^/]+\/?$/u.test(url.pathname)
+  } catch {
+    return false
+  }
 }
 </script>
 
@@ -163,7 +175,7 @@ function statusLabel(statusValue: string) {
             </dl>
             <UButton
               v-if="appointment.meetingMode === 'online' && appointment.meetingUrl"
-              :href="appointment.meetingUrl"
+              :href="appointment.meetingUrl || undefined"
               target="_blank"
               rel="noopener noreferrer"
               external
@@ -199,6 +211,20 @@ function statusLabel(statusValue: string) {
                 ? 'Online'
                 : appointment.facility?.name ?? appointment.organization?.name ?? 'Placówka' }}
             </p>
+            <UButton
+              v-if="appointment.status !== 'cancelled'
+                && appointment.meetingMode === 'online'
+                && isClientMeetingUrl(appointment.meetingUrl)"
+              :href="appointment.meetingUrl || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
+              external
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-file-text"
+            >
+              Zobacz spotkanie
+            </UButton>
           </UCard>
         </div>
       </section>

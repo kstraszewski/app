@@ -1192,6 +1192,15 @@ watch(
               <UBadge v-else color="neutral" variant="subtle" size="xs">
                 Shortlista
               </UBadge>
+              <UBadge
+                v-if="offer.calculation_status === 'partial'"
+                color="warning"
+                variant="subtle"
+                size="xs"
+                icon="i-lucide-circle-alert"
+              >
+                Warunki i koszty do potwierdzenia
+              </UBadge>
             </div>
             <dl class="offer-metrics">
               <div>
@@ -1224,6 +1233,14 @@ watch(
               >
                 Dokumenty
               </UButton>
+              <UBadge
+                v-else-if="offer.calculation_status === 'partial'"
+                color="warning"
+                variant="outline"
+                size="sm"
+              >
+                Potwierdź warunki przed wnioskiem
+              </UBadge>
               <UButton
                 v-else-if="!data.data.contract_application_id && !applicationForBank(offer) && data.data.bank_applications.length < 3"
                 color="neutral"

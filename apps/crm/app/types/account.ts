@@ -49,3 +49,51 @@ export interface ClientAppointment {
     name: string
   } | null
 }
+
+export type ClientMeetingStatus = 'scheduled' | 'live' | 'ended'
+export type ClientMeetingSharedKind = 'none' | 'mortgage-process' | 'mortgage-offers'
+
+export interface ClientMeetingSharedOffer {
+  id: string
+  bankName: string
+  productName: string
+  calculationStatus: 'complete' | 'partial'
+  firstInstallment: number
+  firstMonthlyOutflow: number
+  costFirstFiveYears: number
+  totalCost: number
+  representativeAprPct: number | null
+}
+
+export interface ClientMeetingSharedContent {
+  kind: ClientMeetingSharedKind
+  processStepId: string | null
+  updatedAt: string | null
+  offers: ClientMeetingSharedOffer[]
+}
+
+export interface ClientMeeting {
+  id: string
+  status: ClientMeetingStatus
+  startsAt: string
+  endsAt: string
+  timezone: string
+  organization: {
+    id: string
+    name: string
+    slug?: string
+  } | null
+  service: {
+    id: string
+    name: string
+  } | null
+  expert: {
+    id: string
+    name: string
+  } | null
+  shared: ClientMeetingSharedContent
+}
+
+export interface ClientMeetingResponse {
+  data: ClientMeeting
+}

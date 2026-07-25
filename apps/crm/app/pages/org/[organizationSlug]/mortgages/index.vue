@@ -93,6 +93,10 @@ const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const caseId = computed(() => typeof route.query.caseId === 'string' ? route.query.caseId : '')
 const { crmApiPath, orgPath } = useOrganizationContext()
+const meetingReturnPath = computed(() => {
+  const requested = typeof route.query.returnTo === 'string' ? route.query.returnTo : ''
+  return requested.startsWith(`${orgPath('/meetings')}/`) ? requested : ''
+})
 const toast = useToast()
 const requestFetch = useRequestFetch()
 const { data, pending, error, refresh } = await useFetch<Payload>(
@@ -317,7 +321,7 @@ const calculations = computed(() => data.value.products.map((product) => {
     stress,
     ltvEligible,
     eligible,
-    saveable: eligible && result.status === 'complete',
+    saveable: eligible && (result.status === 'complete' || result.status === 'partial'),
   }
 }))
 
@@ -367,6 +371,20 @@ function toggleBank(slug: string) {
 function toggleCompare(id: string) {
   if (comparedIds.value.includes(id)) comparedIds.value = comparedIds.value.filter(value => value !== id)
   else if (comparedIds.value.length < 3) comparedIds.value = [...comparedIds.value, id]
+}
+
+function presentComparedOffers() {
+  if (!compared.value.length) return
+
+  toast.add({
+    title: meetingReturnPath.value ? 'Wracasz do spotkania' : 'Porównanie jest gotowe',
+    description: meetingReturnPath.value
+      ? 'W pokoju zobaczysz oferty zapisane w sprawie i zdecydujesz, które jawnie pokazać klientowi.'
+      : `Wybrano ${compared.value.length} ${compared.value.length === 1 ? 'ofertę' : 'oferty'} do dalszej pracy.`,
+    color: 'success',
+  })
+
+  void navigateTo(meetingReturnPath.value || orgPath('/meetings'))
 }
 
 function scenarioFingerprint(value: Record<string, any>) {
@@ -560,7 +578,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
       variant="subtle"
       icon="i-lucide-folder-heart"
       :title="`Zapisujesz oferty w sprawie: ${caseContext.data.title}`"
-      description="Ustaw scenariusz i użyj przycisku „Zapisz w sprawie” przy wybranych ofertach. Zachowamy parametry i wyliczenia z tej chwili."
+      description="Ustaw scenariusz i zapisz wybrane warianty na shortliście sprawy. Wyniki z brakującymi kosztami zachowamy z wyraźnym statusem do uzupełnienia."
     >
       <template #actions>
         <UButton
@@ -697,7 +715,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
                 </span>
               </label>
             </div>
-            <div v-if="!offer.eligible || offer.result.status !== 'complete' || offer.product.version.unknown_fields.length" class="unknown"><UIcon name="i-lucide-circle-help" /> {{ !offer.eligible || offer.result.status === 'ineligible' ? 'Scenariusz poza kryteriami lub limitami oferty' : offer.result.status === 'unsupported' ? 'Konfiguracja nie pozwala na kalkulację' : 'Wynik częściowy — co najmniej jeden koszt jest nieznany' }}</div>
+            <div v-if="!offer.eligible || offer.result.status !== 'complete' || offer.product.version.unknown_fields.length" class="unknown"><UIcon name="i-lucide-circle-help" /> {{ !offer.eligible || offer.result.status === 'ineligible' ? 'Scenariusz poza kryteriami lub limitami oferty' : offer.result.status === 'unsupported' ? 'Konfiguracja nie pozwala na kalkulację' : 'Wynik częściowy — dostępność, limity lub część kosztów wymagają potwierdzenia' }}</div>
             <footer>
               <button type="button" class="secondary" :disabled="!comparedIds.includes(offer.product.id) && comparedIds.length >= 3" @click="toggleCompare(offer.product.id)">{{ comparedIds.includes(offer.product.id) ? 'Usuń z porównania' : 'Porównaj' }}</button>
               <button type="button" :class="caseId ? 'secondary' : 'primary'" @click="selectedId = offer.product.id">Szczegóły</button>
@@ -707,7 +725,11 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
                 class="primary"
                 :data-testid="`save-offer-${offer.product.slug}`"
                 :disabled="!offer.saveable || caseContextPending || !caseContext || savingOfferKeys.includes(offerSaveKey(offer.product.id, offer.product.version.version_key, calculationScenario(offer.product))) || persistedOfferKeys.has(offerSaveKey(offer.product.id, offer.product.version.version_key, calculationScenario(offer.product)))"
-                :title="offer.saveable ? undefined : 'Zapis wymaga kompletnego wyniku i spełnienia limitów oferty'"
+                :title="offer.saveable
+                  ? offer.result.status === 'partial'
+                    ? 'Wynik częściowy zostanie zapisany na shortliście ze statusem warunków i kosztów do potwierdzenia'
+                    : undefined
+                  : 'Scenariusz musi spełniać kryteria oferty i dać się bezpiecznie obliczyć'"
                 @click="saveOffer(offer)"
               >
                 {{ persistedOfferKeys.has(offerSaveKey(offer.product.id, offer.product.version.version_key, calculationScenario(offer.product))) ? 'Zapisano' : savingOfferKeys.includes(offerSaveKey(offer.product.id, offer.product.version.version_key, calculationScenario(offer.product))) ? 'Zapisywanie…' : 'Zapisz w sprawie' }}
@@ -717,7 +739,18 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
         </div>
 
         <section v-if="compared.length" class="comparison">
-          <div class="section-title"><span>03</span><div><h2>Porównanie obok siebie</h2><p>Maksymalnie trzy produkty</p></div></div>
+          <div class="comparison-heading">
+            <div class="section-title"><span>03</span><div><h2>Porównanie obok siebie</h2><p>Maksymalnie trzy produkty</p></div></div>
+            <button
+              type="button"
+              class="primary"
+              data-testid="share-comparison-to-meeting"
+              @click="presentComparedOffers"
+            >
+              <UIcon :name="meetingReturnPath ? 'i-lucide-arrow-left' : 'i-lucide-calendar-video'" />
+              {{ meetingReturnPath ? 'Wróć do spotkania' : 'Przejdź do spotkań' }}
+            </button>
+          </div>
           <div class="comparison-table"><table><thead><tr><th>Parametr</th><th v-for="offer in compared" :key="offer.product.id">{{ offer.product.bank.name }}<button type="button" @click="toggleCompare(offer.product.id)">×</button></th></tr></thead><tbody>
             <tr><th>Pierwsza rata</th><td v-for="offer in compared" :key="offer.product.id">{{ money(offer.result.firstInstallment) }}</td></tr>
             <tr><th>Rata po stałej stopie</th><td v-for="offer in compared" :key="offer.product.id">{{ offer.result.postFixedInstallment == null ? '—' : money(offer.result.postFixedInstallment) }}</td></tr>
@@ -764,6 +797,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
 .section-title>span,
 .chip.active,
 .primary{color:var(--ui-text-inverted)}
+.comparison-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.comparison-heading>.primary{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding-inline:14px;white-space:nowrap}.comparison-heading>.primary svg{font-size:16px}
 @media(max-width:1100px){.workspace{grid-template-columns:1fr}.scenario-panel{position:static;grid-template-columns:repeat(2,minmax(0,1fr))}.panel-heading,.panel-heading--compact,fieldset{grid-column:1/-1}.offer-grid{grid-template-columns:1fr}.detail-columns{grid-template-columns:1fr}.notice{grid-template-columns:auto 1fr}.notice>span{grid-column:2}}
-@media(max-width:700px){.scenario-panel{grid-template-columns:1fr}.results-toolbar,.source,.schedule-heading{align-items:stretch;flex-direction:column}.results-toolbar label{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.notice>span{grid-column:1}.offer dl{grid-template-columns:1fr}.offer-options__change{grid-template-columns:1fr;align-items:stretch}.primary-price strong{font-size:24px}}
+@media(max-width:700px){.scenario-panel{grid-template-columns:1fr}.results-toolbar,.source,.schedule-heading,.comparison-heading{align-items:stretch;flex-direction:column}.results-toolbar label{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.notice>span{grid-column:1}.offer dl{grid-template-columns:1fr}.offer-options__change{grid-template-columns:1fr;align-items:stretch}.primary-price strong{font-size:24px}.comparison-heading>.primary{justify-content:center}}
 </style>

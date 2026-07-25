@@ -5,6 +5,7 @@ import type {
   MortgageApplicationStatus,
   SavedCaseOffer,
 } from '~/types/cases'
+import { isMortgageOfferApplicationReady } from '~/utils/mortgage-offer-readiness'
 
 const props = defineProps<{
   caseData: CaseDetail
@@ -39,8 +40,13 @@ const statusItems = [
 const statusValues = new Set<MortgageApplicationStatus>(statusItems.map(item => item.value))
 const applicationBankIds = computed(() => new Set(props.caseData.bank_applications.map(application => application.bank_id)))
 const availableOffers = computed(() => props.caseData.offers.filter(offer => (
-  Boolean(offer.bank_id) && !applicationBankIds.value.has(String(offer.bank_id))
+  Boolean(offer.bank_id)
+  && isMortgageOfferApplicationReady(offer.calculation_status)
+  && !applicationBankIds.value.has(String(offer.bank_id))
 )))
+const incompleteOfferCount = computed(() => props.caseData.offers.filter(offer => (
+  !isMortgageOfferApplicationReady(offer.calculation_status)
+)).length)
 const candidateItems = computed(() => availableOffers.value.map(offer => ({
   label: offer.bank_name,
   description: `${offer.product_name} · ${money(offer.first_monthly_outflow, offer.currency)}/mies.`,
@@ -398,6 +404,10 @@ async function signContract() {
       </UButton>
       <small v-if="candidateItems.length && !caseData.selected_property_id">
         Najpierw wybierz nieruchomość, aby przeliczyć i zamrozić parametry wniosku.
+      </small>
+      <small v-else-if="!candidateItems.length && incompleteOfferCount">
+        {{ incompleteOfferCount }} {{ incompleteOfferCount === 1 ? 'wariant wymaga' : 'warianty wymagają' }}
+        potwierdzenia warunków i kosztów przed uruchomieniem wniosku.
       </small>
       <UButton
         v-if="!candidateItems.length"

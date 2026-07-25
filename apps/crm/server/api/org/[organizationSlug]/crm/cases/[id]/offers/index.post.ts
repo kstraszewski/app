@@ -13,6 +13,10 @@ import {
   requiredText,
   throwDbError,
 } from '~~/server/utils/crm'
+import {
+  isMortgageCalculationShortlistable,
+  mortgageCalculationSnapshot,
+} from '~~/server/utils/mortgage-case-offers'
 import { loadMortgageCatalog } from '~~/server/utils/mortgage-catalog'
 
 function finiteNumber(
@@ -134,12 +138,10 @@ export default defineEventHandler(async (event) => {
     && (n(version.min_term_months) === null || termMonths >= n(version.min_term_months)!)
     && (n(version.max_term_months) === null || termMonths <= n(version.max_term_months)!)
     && (maxLtv === null || calculation.ltvPct <= maxLtv))
-  if (calculation.status !== 'complete' || !legacyLimitsEligible) {
+  if (!isMortgageCalculationShortlistable(calculation.status, legacyLimitsEligible)) {
     throw createError({
       statusCode: 422,
-      statusMessage: calculation.status === 'partial'
-        ? 'The mortgage offer has incomplete costs or events and cannot be saved as a final scenario.'
-        : calculation.status === 'ineligible' || !legacyLimitsEligible
+      statusMessage: calculation.status === 'ineligible' || !legacyLimitsEligible
         ? 'The scenario does not meet this mortgage offer eligibility rules.'
         : 'The mortgage offer configuration cannot be calculated.',
       data: { issues: calculation.issues },
@@ -174,8 +176,16 @@ export default defineEventHandler(async (event) => {
       representative_apr_pct: n(version.representative_apr_pct),
       scenario_snapshot: scenario,
       catalog_snapshot: product,
-      calculation_snapshot: calculation.raw,
-      stress_snapshot: stress.raw,
+      calculation_snapshot: mortgageCalculationSnapshot(
+        calculation.raw as unknown as Record<string, unknown>,
+        calculation.status,
+        calculation.issues,
+      ),
+      stress_snapshot: mortgageCalculationSnapshot(
+        stress.raw as unknown as Record<string, unknown>,
+        stress.status,
+        stress.issues,
+      ),
     })
     .select('id, case_id, bank_id, mortgage_product_id, mortgage_product_version_id, offer_type, bank_name, product_name, version_key, calculator_version, currency, loan_amount, first_installment, first_monthly_outflow, cost_first_five_years, total_cost, representative_apr_pct, scenario_snapshot, catalog_snapshot, calculation_snapshot, saved_at')
     .single()

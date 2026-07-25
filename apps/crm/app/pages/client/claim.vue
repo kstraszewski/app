@@ -5,6 +5,12 @@ const route = useRoute()
 const appointmentId = computed(() => (
   typeof route.query.appointmentId === 'string' ? route.query.appointmentId : ''
 ))
+const redirectAfterClaim = computed(() => {
+  const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  return requested.startsWith('/client/') && !requested.startsWith('//')
+    ? requested
+    : '/client?claimed=1'
+})
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -26,7 +32,7 @@ async function claimAppointment() {
       method: 'POST',
       body: { appointmentId: appointmentId.value },
     })
-    await navigateTo('/client?claimed=1')
+    await navigateTo(redirectAfterClaim.value)
   } catch (claimError: unknown) {
     const candidate = claimError as {
       statusCode?: number

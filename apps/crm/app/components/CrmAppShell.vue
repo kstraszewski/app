@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CrmMeetingListResponse } from '~/types/crm-meeting'
+
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
   workspacePage?: boolean
@@ -17,6 +19,12 @@ let viewportMedia: MediaQueryList | null = null
 let previousBodyOverflow = ''
 let bodyScrollLocked = false
 const organizationDesign = useOrganizationDesignState()
+const {
+  state: meetingPrototype,
+  openMeeting,
+  minimizeMeeting,
+  endMeeting,
+} = useCrmMeetingPrototype()
 const user = useSupabaseUser()
 const supabase = useHasSupabaseConfig() ? useSupabaseClient() : null
 const route = useRoute()
@@ -25,6 +33,13 @@ const organizationSlug = computed(() => {
   return Array.isArray(raw) ? String(raw[0] ?? '') : String(raw ?? '')
 })
 const organizationBase = computed(() => organizationSlug.value ? `/org/${organizationSlug.value}` : '')
+const meetingPath = computed(() => `${organizationBase.value}/meetings`)
+const activeMeetingPath = computed(() => (
+  meetingPrototype.value.active && meetingPrototype.value.appointmentId
+    ? `${meetingPath.value}/${meetingPrototype.value.appointmentId}`
+    : meetingPath.value
+))
+const restoredMeetingOrganization = ref('')
 const { data: organizations } = await useOrganizations()
 const organizationItems = computed(() => organizations.value.data.map((organization) => ({
   label: organization.name,
@@ -153,6 +168,7 @@ onMounted(() => {
   updateViewport()
   viewportMedia.addEventListener('change', updateViewport)
   window.addEventListener('keydown', handleShellKeydown)
+  void restoreActiveMeeting()
 })
 
 onBeforeUnmount(() => {
@@ -160,6 +176,45 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleShellKeydown)
   setBodyScrollLock(false)
 })
+
+watch(organizationSlug, () => {
+  void restoreActiveMeeting()
+})
+
+async function restoreActiveMeeting() {
+  const slug = organizationSlug.value
+  if (!slug || restoredMeetingOrganization.value === slug) return
+  restoredMeetingOrganization.value = slug
+
+  try {
+    const payload = await $fetch<CrmMeetingListResponse>(
+      `/api/org/${encodeURIComponent(slug)}/crm/meetings`,
+    )
+    const activeMeeting = payload.data
+      .filter(meeting => meeting.status === 'live')
+      .sort((left, right) => (
+        new Date(right.startedAt ?? right.startsAt).valueOf()
+        - new Date(left.startedAt ?? left.startsAt).valueOf()
+      ))[0]
+
+    if (!activeMeeting) {
+      if (meetingPrototype.value.active) endMeeting()
+      return
+    }
+
+    openMeeting({
+      appointmentId: activeMeeting.id,
+      caseId: activeMeeting.caseId,
+      clientName: activeMeeting.clientName,
+      startedAt: activeMeeting.startedAt ?? activeMeeting.startsAt,
+    })
+    if (route.path !== `${meetingPath.value}/${activeMeeting.id}`) {
+      minimizeMeeting()
+    }
+  } catch {
+    restoredMeetingOrganization.value = ''
+  }
+}
 
 function toggleSidebar() {
   if (import.meta.client && window.matchMedia('(max-width: 900px)').matches) {
@@ -171,6 +226,11 @@ function toggleSidebar() {
 
 function expandSidebar() {
   sidebarCollapsed.value = false
+}
+
+function openMeetingPage() {
+  mobileNavigationOpen.value = false
+  void navigateTo(activeMeetingPath.value)
 }
 
 type NavigationItem = {
@@ -214,6 +274,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
       { label: 'Agent AI', to: `${organizationBase.value}/assistant`, icon: 'i-lucide-sparkles' },
       { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
       { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
+      { label: 'Spotkania', to: `${organizationBase.value}/meetings`, icon: 'i-lucide-video' },
       { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
       { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
     ],
@@ -412,6 +473,24 @@ async function signOut() {
       </nav>
 
       <div class="crm-nav__footer">
+        <UButton
+          v-if="meetingPrototype.active"
+          class="crm-nav__meeting"
+          :class="{ 'crm-nav__meeting--active': route.path === meetingPath || route.path.startsWith(`${meetingPath}/`) }"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-video"
+          :square="sidebarCollapsed"
+          aria-label="Wróć do spotkania"
+          :title="sidebarCollapsed ? 'Wróć do spotkania' : undefined"
+          @click="openMeetingPage"
+        >
+          <span class="crm-nav__meeting-label">
+            Wróć do spotkania
+          </span>
+          <span class="crm-nav__meeting-dot" aria-label="Spotkanie aktywne" />
+        </UButton>
+
         <div
           v-if="user?.email"
           class="crm-nav__account"
@@ -496,6 +575,8 @@ async function signOut() {
       :inert="mobileNavigationOpen || undefined"
       :aria-hidden="mobileNavigationOpen ? 'true' : undefined"
     />
+
+    <CrmMeetingPrototype />
   </main>
 </template>
 
@@ -567,6 +648,7 @@ async function signOut() {
 
 .crm-brand__label,
 .crm-link__label,
+.crm-nav__meeting-label,
 .crm-nav__logout-label {
   overflow: hidden;
   white-space: nowrap;
@@ -728,6 +810,7 @@ async function signOut() {
   background: color-mix(in srgb, var(--ui-text-inverted) 10%, transparent);
 }
 
+.crm-nav__footer :deep(.crm-nav__meeting),
 .crm-nav__footer :deep(.crm-nav__logout) {
   width: 100%;
   justify-content: flex-start;
@@ -736,9 +819,20 @@ async function signOut() {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-text-inverted) 14%, transparent);
 }
 
+.crm-nav__footer :deep(.crm-nav__meeting:hover),
 .crm-nav__footer :deep(.crm-nav__logout:hover) {
   color: var(--ui-text-inverted);
   background: color-mix(in srgb, var(--ui-text-inverted) 10%, transparent);
+}
+
+.crm-nav__meeting-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--ui-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-success) 18%, transparent);
 }
 
 .crm-shell--collapsed .crm-nav {
@@ -759,6 +853,7 @@ async function signOut() {
 .crm-shell--collapsed .crm-brand__label,
 .crm-shell--collapsed .crm-link__label,
 .crm-shell--collapsed .crm-link-group__label,
+.crm-shell--collapsed .crm-nav__meeting-label,
 .crm-shell--collapsed .crm-nav__logout-label,
 .crm-shell--collapsed .crm-organization-select {
   display: none;
@@ -811,10 +906,15 @@ async function signOut() {
   width: 40px;
 }
 
+.crm-shell--collapsed .crm-nav__footer :deep(.crm-nav__meeting),
 .crm-shell--collapsed .crm-nav__footer :deep(.crm-nav__logout) {
   align-self: center;
   justify-content: center;
   width: 40px;
+}
+
+.crm-shell--collapsed .crm-nav__meeting-dot {
+  display: none;
 }
 
 .crm-content {
@@ -911,6 +1011,7 @@ async function signOut() {
   .crm-brand__label,
   .crm-shell--collapsed .crm-brand__label,
   .crm-shell--collapsed .crm-link__label,
+  .crm-shell--collapsed .crm-nav__meeting-label,
   .crm-shell--collapsed .crm-nav__logout-label {
     display: inline;
   }
@@ -977,10 +1078,15 @@ async function signOut() {
     padding-inline: 10px;
   }
 
+  .crm-shell--collapsed .crm-nav__footer :deep(.crm-nav__meeting),
   .crm-shell--collapsed .crm-nav__footer :deep(.crm-nav__logout) {
     align-self: stretch;
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .crm-shell--collapsed .crm-nav__meeting-dot {
+    display: block;
   }
 
   .crm-shell--collapsed .crm-nav__footer {

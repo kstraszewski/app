@@ -6,7 +6,7 @@ const formError = ref('')
 
 useSeoMeta({
   title: 'OpenExpert Meet — spotkania po swojemu',
-  description: 'Osobna aplikacja testowa LiveKit z całkowicie własnym interfejsem.',
+  description: 'Aplikacja spotkań LiveKit z całkowicie własnym interfejsem.',
 })
 
 onMounted(() => {
@@ -49,7 +49,7 @@ async function openRoom(): Promise<void> {
 
       <span class="landing-nav__badge">
         <span />
-        Prototyp LiveKit
+        Spotkania online
       </span>
     </nav>
 
@@ -90,13 +90,13 @@ async function openRoom(): Promise<void> {
             <UIcon name="i-lucide-camera" />
           </span>
           <div>
-            <span>Uruchom test</span>
+            <span>Spotkanie online</span>
             <h2>Dołącz do pokoju</h2>
           </div>
         </div>
 
         <div class="join-card__fields">
-          <UFormField label="Nazwa pokoju" hint="Musi odpowiadać konfiguracji demo">
+          <UFormField label="Nazwa pokoju" hint="Musi odpowiadać konfiguracji serwera">
             <UInput
               v-model="roomName"
               class="w-full"
@@ -155,7 +155,7 @@ async function openRoom(): Promise<void> {
       </form>
     </section>
 
-    <section class="landing-features" aria-label="Możliwości prototypu">
+    <section class="landing-features" aria-label="Możliwości spotkania">
       <article>
         <span>01</span>
         <h3>Custom UI</h3>

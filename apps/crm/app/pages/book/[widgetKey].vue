@@ -14,6 +14,8 @@ import type {
 definePageMeta({ layout: false })
 
 const route = useRoute()
+const authenticatedUser = useSupabaseUser()
+const anyExpertSelectValue = '__openexpert_any_available_expert__'
 const widgetKey = computed(() => String(route.params.widgetKey ?? ''))
 const isEmbedded = computed(() => route.query.embed === '1')
 const previewToken = computed(() => (
@@ -51,6 +53,18 @@ const customer = reactive({
   phone: '',
   notes: '',
 })
+const clientClaimPath = computed(() => confirmation.value
+  ? `/client/claim?appointmentId=${encodeURIComponent(confirmation.value.appointment.id)}`
+  : '/client')
+const clientActivationLink = computed(() => authenticatedUser.value
+  ? clientClaimPath.value
+  : {
+      path: '/client/login',
+      query: {
+        email: customer.email.trim().toLowerCase(),
+        redirect: clientClaimPath.value,
+      },
+    })
 
 const emptyWidgetPayload: PublicBookingWidgetPayload = {
   widget: {
@@ -142,9 +156,19 @@ const matchingExperts = computed(() => data.value.experts.filter((expert) => {
 }))
 
 const expertItems = computed(() => [
-  ...(expertRequired.value ? [] : [{ label: 'Dowolny dostępny ekspert', value: '' }]),
+  ...(expertRequired.value
+    ? []
+    : [{ label: 'Dowolny dostępny ekspert', value: anyExpertSelectValue }]),
   ...matchingExperts.value.map(expert => ({ label: expert.name, value: expert.userId })),
 ])
+const selectedExpertSelectValue = computed({
+  get: () => selectedExpertId.value || (
+    expertRequired.value ? '' : anyExpertSelectValue
+  ),
+  set: value => {
+    selectedExpertId.value = value === anyExpertSelectValue ? '' : value
+  },
+})
 const serviceItems = computed(() => bookableServices.value.map(service => ({
   label: `${service.name} · ${service.durationMinutes} min`,
   value: service.id,
@@ -502,10 +526,52 @@ watch(canChooseExpert, (enabled) => {
 watch(() => data.value.widget.fixedExpertUserId, (expertUserId) => {
   if (expertUserId) selectedExpertId.value = expertUserId
 }, { immediate: true })
-watch(bookableServices, (services) => {
-  if (services.some(service => service.id === selectedServiceId.value)) return
-  selectedServiceId.value = services[0]?.id ?? ''
-}, { immediate: true })
+watch(
+  [
+    bookableServices,
+    () => route.query.serviceId,
+    () => route.query.expertId,
+  ],
+  ([services]) => {
+    const requestedServiceId = typeof route.query.serviceId === 'string'
+      ? route.query.serviceId
+      : ''
+    const requestedExpertId = typeof route.query.expertId === 'string'
+      ? route.query.expertId
+      : ''
+    const requestedExpert = canChooseExpert.value
+      ? data.value.experts.find(expert => expert.userId === requestedExpertId)
+      : undefined
+    const requestedService = services.find(service => service.id === requestedServiceId)
+    const requestedPairIsCompatible = requestedService && (
+      !requestedExpert || expertSupportsService(requestedExpert, requestedService.id)
+    )
+    const firstRequestedExpertService = requestedExpert
+      ? services.find(service => expertSupportsService(requestedExpert, service.id))
+      : undefined
+    const nextServiceId = requestedPairIsCompatible
+      ? requestedService.id
+      : firstRequestedExpertService?.id
+        ?? (services.some(service => service.id === selectedServiceId.value)
+          ? selectedServiceId.value
+          : services[0]?.id ?? '')
+
+    if (nextServiceId !== selectedServiceId.value) {
+      selectedServiceId.value = nextServiceId
+    }
+
+    const fixedExpertId = data.value.widget.fixedExpertUserId
+    if (fixedExpertId) {
+      selectedExpertId.value = fixedExpertId
+    } else if (
+      canChooseExpert.value
+      && matchingExperts.value.some(expert => expert.userId === requestedExpertId)
+    ) {
+      selectedExpertId.value = requestedExpertId
+    }
+  },
+  { immediate: true },
+)
 watch(() => data.value.consents, (consents) => {
   const versionIds = new Set(consents.map(consent => consent.versionId))
   for (const versionId of Object.keys(consentDecisions)) {
@@ -597,6 +663,23 @@ onBeforeUnmount(() => {
           <div><dt>Placówka</dt><dd>{{ confirmation.appointment.facilityName }}</dd></div>
         </dl>
         <p class="booking-privacy">Rezerwację zapisano dla adresu {{ customer.email }}.</p>
+        <div class="booking-confirmation__client">
+          <div>
+            <strong>Zachowaj dostęp do konsultacji</strong>
+            <p>
+              Aktywuj panel klienta, aby zobaczyć ten i kolejne terminy
+              powiązane z Twoim potwierdzonym kontaktem.
+            </p>
+          </div>
+          <UButton
+            :to="clientActivationLink"
+            :target="isEmbedded ? '_top' : undefined"
+            size="lg"
+            icon="i-lucide-calendar-heart"
+          >
+            Aktywuj panel klienta
+          </UButton>
+        </div>
       </section>
 
       <section
@@ -679,7 +762,7 @@ onBeforeUnmount(() => {
             </UFormField>
             <UFormField v-if="canChooseExpert" name="expert" label="Ekspert" :required="expertRequired">
               <USelect
-                v-model="selectedExpertId"
+                v-model="selectedExpertSelectValue"
                 class="w-full"
                 :items="expertItems"
                 :placeholder="expertRequired ? 'Wybierz eksperta' : 'Dowolny dostępny ekspert'"
@@ -915,6 +998,10 @@ onBeforeUnmount(() => {
 .booking-confirmation dl div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--ui-border); }
 .booking-confirmation dt { color: var(--ui-text-muted); font-size: 13px; }
 .booking-confirmation dd { margin: 0; color: var(--ui-text-highlighted); font-weight: 600; }
+.booking-confirmation__client { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 20px; margin-top: 28px; border: 1px solid var(--ui-border); border-radius: 16px; padding: 20px; background: var(--ui-bg-elevated); }
+.booking-confirmation__client div { display: grid; gap: 5px; }
+.booking-confirmation__client strong { color: var(--ui-text-highlighted); font-size: 15px; }
+.booking-confirmation__client p { max-width: 48ch; margin: 0; color: var(--ui-text-toned); font-size: 13px; line-height: 1.5; }
 .booking-unavailable { display: grid; justify-items: center; gap: 10px; min-height: 360px; padding: clamp(40px, 8vw, 88px); text-align: center; }
 .booking-unavailable__icon { display: grid; width: 62px; height: 62px; margin-bottom: 12px; place-items: center; border: 1px solid var(--ui-border-accented); border-radius: 19px; background: var(--ui-bg-muted); color: var(--booking-accent); font-size: 27px; }
 .booking-unavailable > p:not(.booking-kicker), .booking-unavailable > small { max-width: 520px; margin: 0; color: var(--ui-text-muted); line-height: 1.55; }
@@ -931,5 +1018,6 @@ onBeforeUnmount(() => {
   .booking-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .booking-submit { align-items: stretch; flex-direction: column; }
   .booking-submit__button { width: 100%; }
+  .booking-confirmation__client { align-items: stretch; flex-direction: column; }
 }
 </style>

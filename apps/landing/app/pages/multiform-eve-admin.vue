@@ -19,6 +19,10 @@ useHead({
       name: 'description',
       content: 'Przeglądaj, waliduj i ręcznie poprawiaj robocze szablony JSON dla Multiform Eve.',
     },
+    {
+      name: 'robots',
+      content: 'noindex, nofollow',
+    },
   ],
 })
 

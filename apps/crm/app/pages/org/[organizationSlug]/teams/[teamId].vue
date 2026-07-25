@@ -11,7 +11,7 @@ import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
 
-type TeamView = 'overview' | 'sales' | 'members' | 'facilities' | 'settings'
+type TeamView = 'overview' | 'calendar' | 'sales' | 'members' | 'facilities' | 'settings'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,7 +23,7 @@ const teamId = computed(() => Array.isArray(route.params.teamId)
   : String(route.params.teamId ?? ''))
 const activeView = computed<TeamView>(() => {
   const raw = Array.isArray(route.query.view) ? route.query.view[0] : route.query.view
-  return raw === 'sales' || raw === 'members' || raw === 'facilities' || raw === 'settings'
+  return raw === 'calendar' || raw === 'sales' || raw === 'members' || raw === 'facilities' || raw === 'settings'
     ? raw
     : 'overview'
 })
@@ -137,6 +137,12 @@ const tabs = computed(() => [
     icon: 'i-lucide-layout-dashboard',
     to: { path: route.path },
     active: activeView.value === 'overview',
+  },
+  {
+    label: 'Kalendarz',
+    icon: 'i-lucide-calendar-range',
+    to: { path: route.path, query: { view: 'calendar' } },
+    active: activeView.value === 'calendar',
   },
   {
     label: 'Sprzedaż',
@@ -515,6 +521,11 @@ async function deleteTeam() {
               </div>
             </template>
             <nav aria-label="Skróty zespołu">
+              <NuxtLink :to="{ path: route.path, query: { view: 'calendar' } }">
+                <span><UIcon name="i-lucide-calendar-range" /></span>
+                <div><strong>Kalendarz zespołu</strong><small>Spotkania, obłożenie i nieobecności</small></div>
+                <UIcon name="i-lucide-arrow-right" />
+              </NuxtLink>
               <NuxtLink :to="{ path: route.path, query: { view: 'sales' } }">
                 <span><UIcon name="i-lucide-chart-no-axes-combined" /></span>
                 <div><strong>Sprzedaż zespołu</strong><small>Wyniki wszystkich ekspertów i podzespołów</small></div>
@@ -571,6 +582,10 @@ async function deleteTeam() {
             </UButton>
           </div>
         </UCard>
+      </section>
+
+      <section v-else-if="activeView === 'calendar'" class="team-calendar">
+        <CalendarTeamCalendarDashboard :team-id="team.id" />
       </section>
 
       <section v-else-if="activeView === 'sales'" class="team-sales">
@@ -877,6 +892,7 @@ async function deleteTeam() {
 .team-kpis,
 .team-overview,
 .team-loading,
+.team-calendar,
 .team-members,
 .team-facilities,
 .team-settings,
@@ -900,6 +916,7 @@ async function deleteTeam() {
 
 .team-loading,
 .team-overview,
+.team-calendar,
 .team-members,
 .team-facilities,
 .team-settings {

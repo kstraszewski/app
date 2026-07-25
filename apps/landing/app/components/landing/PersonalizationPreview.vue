@@ -3,14 +3,7 @@ import {
   personalizationPresets,
   themeToCssVariables,
 } from '~/utils/personalization-theme'
-
-useHead({
-  link: [
-    { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-    { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: 'anonymous' },
-    { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap' },
-  ],
-})
+import { loadThemeFonts } from '~/utils/theme-fonts'
 
 const CYCLE_DURATION = 4400
 const FADE_DURATION = 180
@@ -145,12 +138,14 @@ onMounted(() => {
   if ('IntersectionObserver' in window) {
     previewObserver = new IntersectionObserver(([entry]) => {
       isVisible.value = Boolean(entry?.isIntersecting)
+      if (isVisible.value) loadThemeFonts()
     }, { threshold: 0.25 })
 
     if (previewRoot.value) previewObserver.observe(previewRoot.value)
   }
   else {
     isVisible.value = true
+    loadThemeFonts()
   }
 })
 

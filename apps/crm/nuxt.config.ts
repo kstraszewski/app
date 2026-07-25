@@ -100,6 +100,12 @@ export default defineNuxtConfig({
       },
     },
     public: {
+      openexpert: {
+        landingBaseUrl: process.env.NUXT_PUBLIC_LANDING_BASE_URL
+          || (process.env.NODE_ENV === 'production'
+            ? 'https://www.openexpert.app'
+            : 'http://127.0.0.1:3003'),
+      },
       supabase: {
         url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
         key: process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder',
@@ -118,6 +124,7 @@ export default defineNuxtConfig({
       callback: '/confirm',
       exclude: [
         '/login',
+        '/client/login',
         '/register',
         '/confirm',
         '/forgot-password',

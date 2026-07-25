@@ -229,6 +229,8 @@ export interface ClientAppointmentSummary {
   ends_at: string
   timezone: string
   status: 'hold' | 'confirmed' | 'cancelled' | string
+  meeting_mode: 'office' | 'online'
+  meeting_url: string | null
   confirmed_at: string | null
   cancelled_at: string | null
   cancellation_reason: string | null

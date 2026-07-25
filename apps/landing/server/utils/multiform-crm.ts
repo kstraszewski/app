@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseUser } from './supabase'
 import {
   getTemplate,
   prepareBundle,

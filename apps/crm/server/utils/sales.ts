@@ -165,7 +165,7 @@ async function loadAllOrganizationRows(
   return rows
 }
 
-export async function resolveTeamSalesOwnerUserIds(
+export async function resolveTeamScopeUserIds(
   session: CrmSession,
   teamId: string,
 ): Promise<string[]> {
@@ -192,6 +192,8 @@ export async function resolveTeamSalesOwnerUserIds(
       .filter(Boolean),
   )]
 }
+
+export const resolveTeamSalesOwnerUserIds = resolveTeamScopeUserIds
 
 async function loadSalesItems(session: CrmSession, ownerUserIds: string[]): Promise<Row[]> {
   const rows: Row[] = []

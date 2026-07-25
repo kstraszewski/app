@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
-import type { ClientListItem } from '~/types/clients'
 import type { TeamGraphPayload } from '~/types/organization'
 import type {
   Appointment,
@@ -96,13 +95,6 @@ type CalendarCard = {
   connection: CalendarConnection | null
 }
 
-type StaffAppointmentSlot = {
-  startsAt: string
-  endsAt: string
-  expertUserId: string
-  expertName: string
-}
-
 type FacilityWorkspace = {
   detail: FacilityDetailPayload | null
   members: FacilityMembersPayload
@@ -130,13 +122,6 @@ const facilitySearch = ref('')
 const createFacilityOpen = ref(false)
 const createWidgetOpen = ref(false)
 const createAppointmentOpen = ref(false)
-const createAppointmentOpenModel = computed({
-  get: () => createAppointmentOpen.value,
-  set: (value) => {
-    if (!value && savingAppointment.value) return
-    createAppointmentOpen.value = value
-  },
-})
 const disconnectOpen = ref(false)
 const connectionToDisconnect = ref<CalendarConnection | null>(null)
 const savingFacility = ref(false)
@@ -145,7 +130,6 @@ const savingMember = ref(false)
 const savingHours = ref(false)
 const savingExpertSchedule = ref(false)
 const savingWidget = ref(false)
-const savingAppointment = ref(false)
 const syncingConnectionId = ref('')
 const teamToLink = ref('')
 const selectedExpertId = ref('')
@@ -156,13 +140,6 @@ const appointmentStatus = ref('all')
 const appointmentExpertId = ref('all')
 const appointmentOffset = ref(0)
 const appointmentPageSize = 50
-const selectedAppointmentClient = ref<ClientListItem | null>(null)
-const staffAppointmentSlots = ref<StaffAppointmentSlot[]>([])
-const selectedStaffAppointmentSlot = ref<StaffAppointmentSlot | null>(null)
-const staffAppointmentSlotsPending = ref(false)
-const staffAppointmentSlotsError = ref('')
-const staffAppointmentIdempotencyIntent = ref('')
-let staffSlotsRequestId = 0
 let expertScheduleRequestId = 0
 
 const weekdayLabels = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela']
@@ -260,19 +237,19 @@ const expertOverrideForm = reactive<ExpertOverrideEditor>({
 })
 const widgetDraft = reactive<WidgetDraft>(blankWidgetDraft())
 const widgetForm = reactive<WidgetDraft>(blankWidgetDraft())
-const staffAppointmentForm = reactive({
-  serviceId: '',
-  expertUserId: '',
-  localDate: '',
-  notes: '',
-  idempotencyKey: '',
-})
 const requestFetch = useRequestFetch()
 
 const facilitiesRequest = useAsyncData<FacilityListPayload>(
   `facilities-${organizationSlug.value}`,
   () => requestFetch(orgApiPath('/facilities')),
-  { default: (): FacilityListPayload => ({ data: [], role: 'expert', canCreate: false }) },
+  {
+    default: (): FacilityListPayload => ({
+      data: [],
+      role: 'expert',
+      canCreate: false,
+      defaultFacilityId: null,
+    }),
+  },
 )
 const teamsRequest = useAsyncData<Pick<TeamGraphPayload, 'teams'>>(
   `facility-teams-${organizationSlug.value}`,
@@ -422,15 +399,6 @@ const bookableExpertIds = computed(() => new Set(bookableExperts.value.map(membe
 const staffAppointmentServices = computed(() => activeServices.value.filter(service => (
   service.expertUserIds.some(userId => bookableExpertIds.value.has(userId))
 )))
-const selectedStaffAppointmentService = computed(() => activeServices.value.find(service => (
-  service.id === staffAppointmentForm.serviceId
-)) ?? null)
-const staffAppointmentExpertItems = computed(() => {
-  const allowedExpertIds = new Set(selectedStaffAppointmentService.value?.expertUserIds ?? [])
-  return bookableExperts.value
-    .filter(member => allowedExpertIds.has(member.user_id))
-    .map(member => ({ label: facilityMemberLabel(member), value: member.user_id }))
-})
 const selectedWidget = computed(() => workspace.value.widgets.data.find(widget => widget.id === selectedWidgetId.value) ?? null)
 const canEditSelectedWidget = computed(() => Boolean(selectedWidget.value) && (
   canManage.value || (
@@ -501,29 +469,6 @@ watch(() => workspace.value.detail?.data, (facility) => {
 watch([selectedFacilityId, appointmentStatus, appointmentExpertId], () => {
   appointmentOffset.value = 0
 })
-
-watch([selectedFacilityId, createAppointmentOpen], ([, isOpen]) => {
-  if (!isOpen) return
-  if (!staffAppointmentServices.value.some(service => service.id === staffAppointmentForm.serviceId)) {
-    staffAppointmentForm.serviceId = staffAppointmentServices.value[0]?.id ?? ''
-  }
-})
-
-watch(staffAppointmentExpertItems, (items) => {
-  if (items.some(item => item.value === staffAppointmentForm.expertUserId)) return
-  staffAppointmentForm.expertUserId = items[0]?.value ?? ''
-}, { immediate: true })
-
-watch(
-  () => [
-    createAppointmentOpen.value,
-    selectedFacilityId.value,
-    staffAppointmentForm.serviceId,
-    staffAppointmentForm.expertUserId,
-    staffAppointmentForm.localDate,
-  ],
-  () => { void loadStaffAppointmentSlots() },
-)
 
 watch(facilityMembers, (members) => {
   for (const key of Object.keys(memberDrafts)) delete memberDrafts[key]
@@ -757,144 +702,12 @@ function changeAppointmentPage(delta: number) {
   appointmentOffset.value = Math.max(0, appointmentOffset.value + delta * appointmentPageSize)
 }
 
-function dateInTimezone(timezone: string) {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
-  return `${values.year}-${values.month}-${values.day}`
-}
-
-function staffSlotTime(slot: StaffAppointmentSlot) {
-  return new Intl.DateTimeFormat('pl-PL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: selectedFacility.value?.timezone || 'Europe/Warsaw',
-  }).format(new Date(slot.startsAt))
-}
-
 function openCreateAppointment() {
-  if (savingAppointment.value) return
-  const timezone = selectedFacility.value?.timezone || 'Europe/Warsaw'
-  staffAppointmentForm.serviceId = staffAppointmentServices.value[0]?.id ?? ''
-  staffAppointmentForm.expertUserId = staffAppointmentExpertItems.value[0]?.value ?? ''
-  staffAppointmentForm.localDate = dateInTimezone(timezone)
-  staffAppointmentForm.notes = ''
-  staffAppointmentForm.idempotencyKey = ''
-  staffAppointmentIdempotencyIntent.value = ''
-  selectedAppointmentClient.value = null
-  selectedStaffAppointmentSlot.value = null
-  staffAppointmentSlots.value = []
-  staffAppointmentSlotsError.value = ''
   createAppointmentOpen.value = true
 }
 
-async function loadStaffAppointmentSlots() {
-  const requestId = ++staffSlotsRequestId
-  selectedStaffAppointmentSlot.value = null
-  staffAppointmentSlots.value = []
-  staffAppointmentSlotsError.value = ''
-  if (
-    !createAppointmentOpen.value
-    || !selectedFacilityId.value
-    || !staffAppointmentForm.serviceId
-    || !staffAppointmentForm.expertUserId
-    || !staffAppointmentForm.localDate
-  ) {
-    staffAppointmentSlotsPending.value = false
-    return
-  }
-  staffAppointmentSlotsPending.value = true
-  try {
-    const result = await $fetch<{ slots: StaffAppointmentSlot[] }>(
-      orgApiPath(`/facilities/${encodeURIComponent(selectedFacilityId.value)}/appointment-slots`),
-      {
-        query: {
-          serviceId: staffAppointmentForm.serviceId,
-          expertUserId: staffAppointmentForm.expertUserId,
-          date: staffAppointmentForm.localDate,
-        },
-      },
-    )
-    if (requestId !== staffSlotsRequestId) return
-    staffAppointmentSlots.value = result.slots ?? []
-  } catch (error: unknown) {
-    if (requestId !== staffSlotsRequestId) return
-    staffAppointmentSlotsError.value = apiErrorMessage(error)
-  } finally {
-    if (requestId === staffSlotsRequestId) staffAppointmentSlotsPending.value = false
-  }
-}
-
-async function createStaffAppointment() {
-  if (savingAppointment.value) return
-  const client = selectedAppointmentClient.value
-  const slot = selectedStaffAppointmentSlot.value
-  if (
-    !client
-    || !slot
-    || !selectedFacilityId.value
-    || !staffAppointmentForm.serviceId
-    || !staffAppointmentForm.expertUserId
-  ) return
-
-  const intent = JSON.stringify({
-    facilityId: selectedFacilityId.value,
-    serviceId: staffAppointmentForm.serviceId,
-    expertUserId: staffAppointmentForm.expertUserId,
-    clientId: client.id,
-    startsAt: slot.startsAt,
-    notes: staffAppointmentForm.notes.trim() || null,
-  })
-  if (staffAppointmentIdempotencyIntent.value !== intent) {
-    staffAppointmentIdempotencyIntent.value = intent
-    staffAppointmentForm.idempotencyKey = crypto.randomUUID()
-  }
-
-  savingAppointment.value = true
-  try {
-    await $fetch(orgApiPath('/appointments'), {
-      method: 'POST',
-      body: {
-        facilityId: selectedFacilityId.value,
-        serviceId: staffAppointmentForm.serviceId,
-        expertUserId: staffAppointmentForm.expertUserId,
-        clientId: client.id,
-        startsAt: slot.startsAt,
-        notes: staffAppointmentForm.notes.trim() || null,
-        idempotencyKey: staffAppointmentForm.idempotencyKey,
-      },
-    })
-    createAppointmentOpen.value = false
-    await refreshAppointments()
-    toast.add({
-      title: 'Wizyta została umówiona',
-      description: `${client.display_name} · ${staffSlotTime(slot)}`,
-      color: 'success',
-      icon: 'i-lucide-calendar-check-2',
-    })
-  } catch (error: unknown) {
-    showActionError('Nie udało się umówić wizyty', error)
-    const candidate = error as {
-      statusCode?: number
-      status?: number
-      response?: { status?: number }
-      data?: { statusMessage?: string }
-      message?: string
-    }
-    const statusCode = Number(
-      candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 0,
-    )
-    const detail = candidate.data?.statusMessage || candidate.message || ''
-    if (statusCode === 409 && /slot|termin|available/i.test(detail)) {
-      await loadStaffAppointmentSlots()
-    }
-  } finally {
-    savingAppointment.value = false
-  }
+async function handleAppointmentCreated() {
+  await refreshAppointments()
 }
 
 function facilityAddress(facility: Facility | null) {
@@ -2494,116 +2307,12 @@ async function disconnectCalendar() {
         </template>
       </section>
 
-    <UModal
-      v-model:open="createAppointmentOpenModel"
-      title="Umów wizytę z klientem"
-      description="Wybierz klienta CRM, eksperta i dostępny termin."
-      :dismissible="!savingAppointment"
-      :close="{ disabled: savingAppointment }"
-      :ui="{ content: 'sm:max-w-4xl', footer: 'justify-end' }"
-    >
-      <template #body>
-        <form id="create-appointment-form" class="form-stack" @submit.prevent="createStaffAppointment">
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>1</span>
-              <div>
-                <h3>Klient</h3>
-                <p>Znajdź klienta po danych kontaktowych lub danych osoby.</p>
-              </div>
-            </div>
-            <UFormField name="appointmentClient" label="Klient" required>
-              <ClientPicker v-model="selectedAppointmentClient" autofocus required />
-            </UFormField>
-          </section>
-
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>2</span>
-              <div>
-                <h3>Ekspert i dzień</h3>
-                <p>Dostępność uwzględnia godziny placówki, grafik eksperta i kalendarze zewnętrzne.</p>
-              </div>
-            </div>
-            <div class="form-grid form-grid--two">
-              <UFormField name="appointmentExpert" label="Ekspert" required>
-                <USelect
-                  v-model="staffAppointmentForm.expertUserId"
-                  class="w-full"
-                  :items="staffAppointmentExpertItems"
-                  value-key="value"
-                  placeholder="Wybierz eksperta"
-                />
-              </UFormField>
-              <UFormField name="appointmentDate" label="Data" required>
-                <UInput
-                  v-model="staffAppointmentForm.localDate"
-                  class="w-full"
-                  type="date"
-                  :min="dateInTimezone(selectedFacility?.timezone || 'Europe/Warsaw')"
-                />
-              </UFormField>
-            </div>
-          </section>
-
-          <section class="appointment-booking-section">
-            <div class="appointment-booking-section__heading">
-              <span>3</span>
-              <div>
-                <h3>Dostępny termin</h3>
-                <p>Wybierz konkretną godzinę spotkania.</p>
-              </div>
-            </div>
-            <div v-if="staffAppointmentSlotsPending" class="staff-slot-grid">
-              <USkeleton v-for="index in 6" :key="index" class="h-14 w-full" />
-            </div>
-            <UAlert
-              v-else-if="staffAppointmentSlotsError"
-              color="error"
-              variant="subtle"
-              :description="staffAppointmentSlotsError"
-            />
-            <div v-else-if="staffAppointmentSlots.length" class="staff-slot-grid" role="radiogroup" aria-label="Dostępne terminy">
-              <button
-                v-for="slot in staffAppointmentSlots"
-                :key="`${slot.startsAt}-${slot.expertUserId}`"
-                type="button"
-                class="staff-slot"
-                :class="{ 'staff-slot--selected': selectedStaffAppointmentSlot?.startsAt === slot.startsAt && selectedStaffAppointmentSlot?.expertUserId === slot.expertUserId }"
-                role="radio"
-                :aria-checked="selectedStaffAppointmentSlot?.startsAt === slot.startsAt && selectedStaffAppointmentSlot?.expertUserId === slot.expertUserId"
-                @click="selectedStaffAppointmentSlot = slot"
-              >
-                <strong>{{ staffSlotTime(slot) }}</strong>
-                <small>{{ slot.expertName }}</small>
-              </button>
-            </div>
-            <div v-else class="workspace-empty workspace-empty--small">
-              <UIcon name="i-lucide-calendar-x-2" />
-              <p>Brak wolnych terminów dla wybranego dnia.</p>
-            </div>
-          </section>
-
-          <UFormField name="appointmentNotes" label="Notatka do wizyty" hint="Opcjonalnie">
-            <UTextarea v-model="staffAppointmentForm.notes" class="w-full" :rows="3" autoresize :maxrows="6" />
-          </UFormField>
-        </form>
-      </template>
-      <template #footer="{ close }">
-        <UButton color="neutral" variant="ghost" :disabled="savingAppointment" @click="close">
-          Anuluj
-        </UButton>
-        <UButton
-          type="submit"
-          form="create-appointment-form"
-          icon="i-lucide-calendar-check-2"
-          :disabled="!selectedAppointmentClient || !selectedStaffAppointmentSlot || !staffAppointmentForm.serviceId || !staffAppointmentForm.expertUserId"
-          :loading="savingAppointment"
-        >
-          Umów wizytę
-        </UButton>
-      </template>
-    </UModal>
+    <CalendarCreateAppointmentModal
+      v-model:open="createAppointmentOpen"
+      :facility-id="selectedFacilityId"
+      :initial-expert-id="currentUserId"
+      @created="handleAppointmentCreated"
+    />
 
     <UModal
       v-model:open="createFacilityOpen"

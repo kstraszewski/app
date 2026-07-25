@@ -13,6 +13,7 @@ import {
 } from 'h3'
 import {
   asRecord,
+  resolveTeamAdminScope,
   type CrmSession,
   textValue,
   throwDbError,
@@ -539,7 +540,7 @@ export function verifyBookingWidgetPreviewToken(
 export async function listAccessibleFacilityIds(session: CrmSession): Promise<string[] | null> {
   if (session.role === 'admin') return null
 
-  const [facilityMemberships, teamMemberships] = await Promise.all([
+  const [facilityMemberships, teamMemberships, teamAdminScope] = await Promise.all([
     session.supabase
       .from('facility_memberships')
       .select('facility_id')
@@ -550,6 +551,7 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
       .select('team_id')
       .eq('organization_id', session.organizationId)
       .eq('user_id', session.userId),
+    resolveTeamAdminScope(session),
   ])
   throwDbError(facilityMemberships.error)
   throwDbError(teamMemberships.error)
@@ -557,7 +559,10 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
   const facilityIds = new Set<string>(
     (facilityMemberships.data ?? []).map((row: any) => String(row.facility_id)),
   )
-  const teamIds = (teamMemberships.data ?? []).map((row: any) => String(row.team_id))
+  const teamIds = [...new Set([
+    ...(teamMemberships.data ?? []).map((row: any) => String(row.team_id)),
+    ...teamAdminScope.managedTeamIds,
+  ])]
   if (teamIds.length) {
     const { data, error } = await session.supabase
       .from('team_facilities')
@@ -650,7 +655,15 @@ export async function requireFacilityPermission(
     }
   }
 
-  throw createError({ statusCode: 404, statusMessage: 'Facility not found' })
+  // The facility query above is evaluated with the authenticated user's RLS.
+  // If it succeeded, an inherited team scope may be the access source even
+  // when no direct membership/link was found by the metadata queries.
+  return {
+    facility,
+    source: 'team',
+    role: 'member',
+    canManage: false,
+  }
 }
 
 export async function assertOrganizationMemberIds(
@@ -895,7 +908,33 @@ export function bookingWidgetValues(
     const input = body.isActive ?? body.is_active
     values.is_active = input === undefined ? true : booleanValue(input, 'isActive')
   }
+  if (options.create || 'isDirectoryListed' in body || 'is_directory_listed' in body) {
+    const input = body.isDirectoryListed ?? body.is_directory_listed
+    values.is_directory_listed = input === undefined
+      ? false
+      : booleanValue(input, 'isDirectoryListed')
+  }
   return values
+}
+
+export function assertBookingWidgetDirectoryEligibility(input: {
+  isActive: boolean
+  isDirectoryListed: boolean
+  widgetType: BookingWidgetType
+}): void {
+  if (!input.isDirectoryListed) return
+  if (!input.isActive) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Only an active widget can be listed in the OpenExpert directory',
+    })
+  }
+  if (input.widgetType !== 'calendar') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Only a calendar widget can be listed in the OpenExpert directory',
+    })
+  }
 }
 
 export function decorateBookingWidget(

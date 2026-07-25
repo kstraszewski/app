@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Facility, FacilityListPayload } from '~/types/scheduling'
+import type { Facility, FacilityListItem, FacilityListPayload } from '~/types/scheduling'
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -24,12 +24,21 @@ const toast = useToast()
 const search = ref('')
 const createOpen = ref(false)
 const saving = ref(false)
+const failedCoverUrls = ref<Set<string>>(new Set())
 const form = reactive<FacilityCreateForm>(blankForm())
 const timezoneItems = ['Europe/Warsaw', 'Europe/London', 'Europe/Berlin', 'Europe/Prague', 'UTC']
 
 const { data: payload, status, error, refresh } = await useFetch<FacilityListPayload>(
   () => orgApiPath('/facilities'),
-  { default: (): FacilityListPayload => ({ data: [], role: 'expert', canCreate: false }) },
+  {
+    query: { includeCover: 'true' },
+    default: (): FacilityListPayload => ({
+      data: [],
+      role: 'expert',
+      canCreate: false,
+      defaultFacilityId: null,
+    }),
+  },
 )
 
 const facilities = computed(() => payload.value.data)
@@ -76,6 +85,23 @@ function facilityAddress(facility: Facility) {
     facility.address_line2,
     [facility.postal_code, facility.city].filter(Boolean).join(' '),
   ].filter(Boolean).join(', ')
+}
+
+function facilityCoverSource(facility: FacilityListItem) {
+  const candidates = [
+    facility.coverImage?.thumbnailUrl,
+    facility.coverImage?.fallbackUrl,
+  ]
+  return candidates.find((url): url is string => Boolean(
+    url && !failedCoverUrls.value.has(url),
+  )) ?? ''
+}
+
+function handleFacilityCoverError(event: Event) {
+  const image = event.currentTarget as HTMLImageElement | null
+  const failedUrl = image?.getAttribute('src')
+  if (!failedUrl) return
+  failedCoverUrls.value = new Set([...failedCoverUrls.value, failedUrl])
 }
 
 function openCreate() {
@@ -219,8 +245,19 @@ async function createFacility() {
             :to="orgPath(`/facilities/${facility.id}`)"
             class="facility-row"
           >
-            <span class="facility-row__icon">
-              <UIcon name="i-lucide-building-2" />
+            <span class="facility-row__cover" aria-hidden="true">
+              <img
+                v-if="facilityCoverSource(facility)"
+                :key="facilityCoverSource(facility)"
+                :src="facilityCoverSource(facility)"
+                alt=""
+                width="72"
+                height="54"
+                loading="lazy"
+                decoding="async"
+                @error="handleFacilityCoverError"
+              >
+              <UIcon v-else name="i-lucide-building-2" />
             </span>
             <span class="facility-row__identity">
               <strong>{{ facility.name }}</strong>
@@ -401,9 +438,10 @@ async function createFacility() {
 .facility-index__toolbar > :last-child { width: min(360px, 100%); }
 .facility-index__toolbar-copy > span { display: block; margin-bottom: 5px; }
 .facility-index__rows { display: grid; gap: 8px; }
-.facility-row { display: grid; grid-template-columns: 44px minmax(220px, 1.5fr) minmax(170px, .8fr) auto auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid transparent; border-radius: var(--ui-radius); color: inherit; text-decoration: none; transition: background var(--oe-motion-fast), border-color var(--oe-motion-fast); }
+.facility-row { display: grid; grid-template-columns: 72px minmax(220px, 1.5fr) minmax(170px, .8fr) auto auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid transparent; border-radius: var(--ui-radius); color: inherit; text-decoration: none; transition: background var(--oe-motion-fast), border-color var(--oe-motion-fast); }
 .facility-row:hover { border-color: var(--ui-border-accented); background: var(--ui-bg-muted); }
-.facility-row__icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-bg-muted); color: var(--ui-text-highlighted); }
+.facility-row__cover { display: grid; overflow: hidden; place-items: center; width: 72px; height: 54px; aspect-ratio: 4 / 3; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-bg-muted); color: var(--ui-text-highlighted); }
+.facility-row__cover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .facility-row__identity, .facility-row__meta { display: grid; gap: 3px; min-width: 0; }
 .facility-row__identity strong, .facility-row__identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .facility-row__identity strong { color: var(--ui-text-highlighted); }
@@ -425,7 +463,8 @@ async function createFacility() {
   .facility-index__summary, .facility-form__grid { grid-template-columns: 1fr; }
   .facility-index__toolbar { align-items: stretch; flex-direction: column; }
   .facility-index__toolbar > :last-child { width: 100%; }
-  .facility-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
+  .facility-row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+  .facility-row__cover { width: 56px; height: 42px; border-radius: 9px; }
   .facility-row__meta { display: none; }
   .facility-row > .badge { display: none; }
   .facility-row__open { font-size: 0; }

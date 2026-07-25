@@ -66,6 +66,83 @@ final result: passed
 
 ---
 
+# Design QA — status spotkania w kalendarzu
+
+## Evidence
+
+- Source visual truth: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-7f0d1a5e-0ea8-42b5-89c1-65ee99e11376.png`
+- Browser-rendered implementation: `/private/tmp/openexpert-design-qa/calendar-status-after-final-exact.png`
+- Normalized source: `/private/tmp/openexpert-design-qa/calendar-status-source-normalized.png`
+- Focused side-by-side comparison: `/private/tmp/openexpert-design-qa/calendar-status-comparison.png`
+- Responsive implementation: `/private/tmp/openexpert-design-qa/calendar-status-mobile.png`
+- Local route: `http://127.0.0.1:3004/org/openexpert-local/calendar`
+- Source dimensions: `1268 × 1388` pixels, normalized from DPR 2 to `634 × 694` pixels.
+- Implementation viewport and pixels: `634 × 694` CSS pixels at DPR 1, captured as `634 × 694` pixels.
+- Responsive viewport and pixels: `390 × 700` CSS pixels at DPR 1, captured as `390 × 700` pixels.
+- State: authenticated local administrator, dark theme, Jan Kowalski appointment detail modal open, confirmed appointment.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+- **Fonts and typography:** the status uses the existing compact Nuxt UI badge typography. The full label remains visible and is no longer clipped.
+- **Spacing and layout rhythm:** the appointment summary uses an explicit three-column grid, so the date occupies the flexible track and the status keeps its intrinsic width. At the mobile breakpoint the status moves below the date without horizontal overflow.
+- **Colors and visual tokens:** the badge uses the semantic `success` color and `soft` variant, matching the existing dark-theme tokens while reading as status rather than an action.
+- **Image quality and asset fidelity:** this component contains no raster assets. The status uses the installed Lucide circle-check icon; no custom SVG, CSS illustration, emoji, or placeholder asset was introduced.
+- **Copy and content:** `Potwierdzone` is preserved as the appointment-state label and paired with a check icon for faster recognition.
+- **Accessibility:** the status remains visible text in the DOM; the icon is decorative and hidden from assistive technology by the icon component.
+- **Responsive behavior:** at `390 × 700`, the dialog remains within the viewport, the status is `92.7 × 20` CSS pixels, and the document has no horizontal overflow.
+
+## Focused comparison evidence
+
+- The normalized side-by-side comparison shows the broken `38 × 38` clipped square in the source and the corrected `92.7 × 20` status pill in the implementation.
+- The modal content, appointment data, actions, typography, and surrounding layout remain otherwise unchanged.
+- A separate mobile capture confirms the badge wraps to a dedicated row under the date without colliding with the icon or appointment metadata.
+
+## Comparison history
+
+### Iteration 1 — prevent flex shrinking
+
+- Earlier finding `[P1]`: the status collapsed into a square and clipped most of `Potwierdzone`.
+- Initial fix: replaced the flexible hero row with an explicit grid, prevented status wrapping, and added a semantic status icon.
+- Post-fix evidence: the badge still measured `38 × 38`, revealing that layout shrinking was not the only cause.
+
+### Iteration 2 — use the badge label contract
+
+- Earlier finding `[P1]`: passing text through the default slot together with an icon allowed Nuxt UI to infer an icon-only badge.
+- Fix: passed the status through the `label` prop and retained the semantic icon.
+- Post-fix evidence: runtime DOM exposed the label slot correctly, but the badge still inherited the icon-container dimensions.
+
+### Iteration 3 — scope icon-container styles
+
+- Earlier finding `[P1]`: `.appointment-detail__hero > span` styled every direct span, including the rendered `UBadge` root, forcing `width: 38px; height: 38px`.
+- Fix: added `.appointment-detail__icon` to the calendar icon wrapper and scoped fixed dimensions only to that class.
+- Post-fix evidence: the final browser capture and measured DOM show a `92.7 × 20` badge with full text, correct color, and no overflow.
+
+## Functional verification
+
+- Opened the real Jan Kowalski appointment from the seeded calendar.
+- Verified confirmed, pending, and cancelled states retain their existing label/color mapping in code.
+- Verified the final desktop-equivalent state at `634 × 694` and responsive state at `390 × 700`.
+- Checked browser console errors after the final render: none.
+- CRM typecheck and `git diff --check` pass.
+
+## Open questions
+
+- None for the requested scope.
+
+## Implementation checklist
+
+- [x] Stop the status from inheriting fixed icon dimensions.
+- [x] Use the Nuxt UI badge label contract.
+- [x] Add a semantic status icon.
+- [x] Keep the status readable in desktop and mobile modal layouts.
+- [x] Verify the real appointment state, browser logs, types, and visual comparison.
+
+final result: passed
+
+---
+
 # Design QA — karta klienta CRM
 
 ## Evidence

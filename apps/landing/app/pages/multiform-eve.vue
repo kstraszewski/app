@@ -150,6 +150,10 @@ useHead({
       name: 'description',
       content: 'Uzupełniaj wiele wniosków kredytowych jednym wspólnym formularzem z pomocą Eve.',
     },
+    {
+      name: 'robots',
+      content: 'noindex, nofollow',
+    },
   ],
 })
 

@@ -207,7 +207,10 @@ function formatAppointmentDate(appointment: Appointment) {
 }
 
 function appointmentDetails(appointment: Appointment) {
-  return [appointment.serviceName, appointment.facilityName].filter(Boolean).join(' · ') || 'Spotkanie'
+  return [
+    appointment.serviceName,
+    appointment.meeting_mode === 'online' ? 'Online' : appointment.facilityName,
+  ].filter(Boolean).join(' · ') || 'Spotkanie'
 }
 
 function calendarPath(date?: string) {

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole } from './supabase'
 import {
   getTemplate,
   validateTemplateJson,

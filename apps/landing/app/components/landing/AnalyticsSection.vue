@@ -39,8 +39,8 @@ const opportunities = [
       <article class="analytics-preview" aria-label="Przykładowa analityka szans sprzedażowych">
         <header class="analytics-preview__header">
           <div>
-            <p>Przykładowy pipeline</p>
-            <h3>Szanse sprzedażowe</h3>
+            <p class="analytics-preview__eyebrow">Przykładowy pipeline</p>
+            <p class="analytics-preview__title">Szanse sprzedażowe</p>
           </div>
           <span class="analytics-live"><span aria-hidden="true" /> Aktualizacja na żywo</span>
         </header>
@@ -65,7 +65,7 @@ const opportunities = [
             <div class="opportunity-row__heading">
               <div>
                 <span>{{ opportunity.id }} · {{ opportunity.product }}</span>
-                <h4>{{ opportunity.client }}</h4>
+                <strong class="opportunity-row__client">{{ opportunity.client }}</strong>
               </div>
               <strong :class="`is-${opportunity.tone}`">{{ opportunity.chance }}%</strong>
             </div>
@@ -91,7 +91,7 @@ const opportunities = [
 
       <div class="analytics-copy">
         <p class="analytics-label">Zaawansowana analityka spraw</p>
-        <h2 id="analytics-title">Wiesz, gdzie jest szansa —<br><em>i co zrobić dalej.</em></h2>
+        <h2 id="analytics-title">Wiesz, gdzie jest szansa —{{ ' ' }}<br><em>i co zrobić dalej.</em></h2>
         <p class="analytics-lead">OpenExpert porządkuje sprawy według potencjału sprzedażowego, wyjaśnia każdą ocenę i sugeruje kolejny ruch. Ty ustalasz priorytety i podejmujesz decyzję.</p>
 
         <ol class="analytics-points">
@@ -157,16 +157,16 @@ const opportunities = [
   margin-bottom: 22px;
 }
 
-.analytics-preview__header p {
+.analytics-preview__eyebrow {
   margin-bottom: 7px;
-  color: #777;
+  color: #666;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
-.analytics-preview__header h3 {
+.analytics-preview__title {
   font-size: clamp(21px, 2vw, 26px);
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -242,14 +242,15 @@ const opportunities = [
 .opportunity-row__heading span {
   display: block;
   margin-bottom: 4px;
-  color: #777;
+  color: #666;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.opportunity-row__heading h4 {
+.opportunity-row__client {
+  display: block;
   font-size: 15px;
   font-weight: 600;
 }
@@ -374,7 +375,7 @@ const opportunities = [
 
 .analytics-points li > span {
   padding-top: 4px;
-  color: #777;
+  color: #666;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
 }

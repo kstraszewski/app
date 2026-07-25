@@ -3,7 +3,7 @@
     <div class="settlements-inner">
       <div class="settlements-copy">
         <p class="settlements-label">Proste i przejrzyste rozliczenia</p>
-        <h2 id="settlements-title">Wiesz, ile zarobisz.<br><em>I dokładnie za co.</em></h2>
+        <h2 id="settlements-title">Wiesz, ile zarobisz.{{ ' ' }}<br><em>I dokładnie za co.</em></h2>
         <p class="settlements-lead">Po podpisaniu umowy kredytowej rozliczamy sprawę w ciągu 3 dni. Jasne zasady, aktualne kwoty i pełne wyjaśnienie wyniku — zawsze w jednym miejscu.</p>
 
         <ol class="settlements-points">
@@ -407,7 +407,7 @@
 
 .earnings-reason__disclaimer {
   padding: 12px 20px 15px;
-  color: #777;
+  color: #999;
   font-size: 9.5px;
   line-height: 1.5;
 }
@@ -417,7 +417,7 @@
   justify-content: space-between;
   gap: 24px;
   padding-top: 24px;
-  color: #777;
+  color: #999;
   font-size: 10px;
 }
 

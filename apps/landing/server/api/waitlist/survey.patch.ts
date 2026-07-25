@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole } from '../../utils/supabase'
 import { createError, readBody } from 'h3'
 
 interface SurveyBody {

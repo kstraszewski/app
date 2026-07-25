@@ -5,11 +5,15 @@ import { expandManagedTeamIds, type TeamScopeEdge } from './team-scope'
 
 type CrmSupabaseClient = any
 
-export interface AuthenticatedSession {
+export interface AuthIdentity {
   supabase: CrmSupabaseClient
   userId: string
   email: string
+  phone: string
   fullName: string
+}
+
+export interface AuthenticatedSession extends AuthIdentity {
   defaultOrganizationId: string
 }
 
@@ -26,7 +30,7 @@ export interface TeamAdminScope {
   managedTeamIds: string[]
 }
 
-export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
+export async function requireAuthIdentity(event: H3Event): Promise<AuthIdentity> {
   const supabaseConfig = useRuntimeConfig(event).public.supabase as { url?: string; key?: string }
   if (!supabaseConfig.url || !supabaseConfig.key || supabaseConfig.key === 'local-development-placeholder') {
     throw createError({
@@ -42,10 +46,34 @@ export async function requireAuthenticatedSession(event: H3Event): Promise<Authe
   }
 
   const supabase = await serverSupabaseClient(event) as CrmSupabaseClient
-  const { data: profile, error } = await supabase
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle()
+
+  throwDbError(profileError)
+
+  const claimRecord = asRecord(claims)
+  const metadata = asRecord(claimRecord.user_metadata)
+
+  return {
+    supabase,
+    userId,
+    email: textValue(claimRecord.email) ?? '',
+    phone: textValue(claimRecord.phone) ?? '',
+    fullName: textValue(profile?.display_name)
+      ?? textValue(metadata.full_name)
+      ?? '',
+  }
+}
+
+export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
+  const identity = await requireAuthIdentity(event)
+  const { data: profile, error } = await identity.supabase
     .from('users')
     .select('id, organization_id, email, full_name')
-    .eq('id', userId)
+    .eq('id', identity.userId)
     .single()
 
   if (error || !profile?.organization_id) {
@@ -56,10 +84,9 @@ export async function requireAuthenticatedSession(event: H3Event): Promise<Authe
   }
 
   return {
-    supabase,
-    userId,
-    email: String(profile.email ?? ''),
-    fullName: String(profile.full_name ?? ''),
+    ...identity,
+    email: String(profile.email ?? identity.email),
+    fullName: String(profile.full_name ?? identity.fullName),
     defaultOrganizationId: String(profile.organization_id),
   }
 }

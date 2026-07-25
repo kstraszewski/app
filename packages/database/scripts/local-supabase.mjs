@@ -477,12 +477,37 @@ async function ensureDevAccount(credentials) {
     userId = data.user.id
   }
 
-  const { data: profile, error: profileError } = await supabase
+  let { data: profile, error: profileError } = await supabase
     .from('users')
     .select('id, organization_id, email, role, full_name')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
   assertNoError(profileError, 'Reading the provisioned local profile')
+
+  if (!profile) {
+    const userClient = await authenticatedDevClient(credentials)
+    try {
+      const { error: onboardingError } = await userClient.rpc(
+        'create_organization_with_admin',
+        {
+          organization_name: devAccount.organizationName,
+          full_name: devAccount.fullName,
+        },
+      )
+      assertNoError(onboardingError, 'Creating the local admin organization')
+    } finally {
+      await userClient.auth.signOut({ scope: 'local' })
+    }
+
+    const refreshedProfile = await supabase
+      .from('users')
+      .select('id, organization_id, email, role, full_name')
+      .eq('id', userId)
+      .single()
+    assertNoError(refreshedProfile.error, 'Reading the onboarded local profile')
+    profile = refreshedProfile.data
+  }
+
   if (profile.role !== 'admin' || !profile.organization_id) {
     throw new Error('The local account was created without an admin organization profile.')
   }

@@ -71,7 +71,7 @@ export default defineEventHandler(async (event) => {
   let appointmentsRequest: any = serviceRole
     .from('appointments')
     .select(
-      'id, client_id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status, confirmed_at, cancelled_at, cancellation_reason, customer_name, customer_email, customer_phone, notes, source, created_at, updated_at',
+      'id, client_id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status, meeting_mode, meeting_url, confirmed_at, cancelled_at, cancellation_reason, customer_name, customer_email, customer_phone, notes, source, created_at, updated_at',
       { count: 'exact' },
     )
     .eq('organization_id', session.organizationId)

@@ -12,6 +12,7 @@ const toast = useToast()
 const pendingFiles = ref<File[]>([])
 const uploading = ref(false)
 const deleting = ref(false)
+const selectingCoverId = ref('')
 const imageToDelete = ref<FacilityImage | null>(null)
 
 const { data: payload, status, error, refresh } = await useFetch<FacilityImagesPayload>(
@@ -24,6 +25,14 @@ const { data: payload, status, error, refresh } = await useFetch<FacilityImagesP
 
 const images = computed(() => payload.value.data)
 const remainingSlots = computed(() => Math.max(0, payload.value.limit - images.value.length))
+const deleteImageDescription = computed(() => {
+  const isCover = imageToDelete.value?.id === images.value[0]?.id
+  if (!isCover) return 'Zdjęcie zostanie trwale usunięte z galerii placówki.'
+  if (images.value.length === 1) {
+    return 'Zdjęcie zostanie trwale usunięte, a placówka pozostanie bez miniatury.'
+  }
+  return 'Zdjęcie zostanie trwale usunięte. Kolejne zdjęcie w galerii stanie się główne.'
+})
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -31,7 +40,13 @@ function formatFileSize(bytes: number) {
 }
 
 async function uploadImages() {
-  if (!props.canManage || uploading.value || !pendingFiles.value.length) return
+  if (
+    !props.canManage
+    || uploading.value
+    || deleting.value
+    || selectingCoverId.value
+    || !pendingFiles.value.length
+  ) return
   const accepted = pendingFiles.value.slice(0, remainingSlots.value)
   if (pendingFiles.value.length > remainingSlots.value) {
     toast.add({
@@ -93,7 +108,13 @@ async function uploadImages() {
 }
 
 async function deleteImage() {
-  if (!props.canManage || !imageToDelete.value || deleting.value) return
+  if (
+    !props.canManage
+    || !imageToDelete.value
+    || deleting.value
+    || uploading.value
+    || selectingCoverId.value
+  ) return
   deleting.value = true
   try {
     await $fetch(`${props.endpoint}/${encodeURIComponent(imageToDelete.value.id)}`, {
@@ -117,6 +138,40 @@ async function deleteImage() {
     deleting.value = false
   }
 }
+
+async function setCoverImage(image: FacilityImage) {
+  if (
+    !props.canManage
+    || selectingCoverId.value
+    || deleting.value
+    || uploading.value
+    || images.value[0]?.id === image.id
+  ) return
+
+  selectingCoverId.value = image.id
+  try {
+    await $fetch(`${props.endpoint}/${encodeURIComponent(image.id)}`, {
+      method: 'PATCH',
+      body: { isCover: true },
+    })
+    await refresh()
+    toast.add({
+      title: 'Ustawiono zdjęcie główne',
+      description: 'To zdjęcie będzie używane jako miniatura placówki na listach.',
+      color: 'success',
+      icon: 'i-lucide-star',
+    })
+  } catch (coverError: unknown) {
+    toast.add({
+      title: 'Nie udało się ustawić zdjęcia głównego',
+      description: apiErrorMessage(coverError),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    selectingCoverId.value = ''
+  }
+}
 </script>
 
 <template>
@@ -125,7 +180,7 @@ async function deleteImage() {
       <div>
         <h4 id="facility-photos-title">Zdjęcia placówki</h4>
         <p>
-          Zbuduj galerię lokalizacji i wnętrza placówki. Pierwsze zdjęcie pełni rolę okładki.
+          Wybierz zdjęcie główne — będzie miniaturą placówki na listach. Pozostałe zdjęcia tworzą galerię.
         </p>
       </div>
       <UBadge color="neutral" variant="subtle" icon="i-lucide-images">
@@ -153,6 +208,15 @@ async function deleteImage() {
         :key="image.id"
         class="facility-photo"
       >
+        <UBadge
+          v-if="index === 0"
+          class="facility-photo__cover-badge"
+          color="primary"
+          variant="solid"
+          icon="i-lucide-star"
+        >
+          Zdjęcie główne
+        </UBadge>
         <a
           v-if="image.url"
           :href="image.url"
@@ -171,19 +235,34 @@ async function deleteImage() {
           <UIcon name="i-lucide-image-off" />
         </div>
         <div class="facility-photo__meta">
-          <div>
-            <strong>{{ index === 0 ? 'Zdjęcie okładkowe' : image.original_filename }}</strong>
+          <div class="facility-photo__copy">
+            <strong>{{ image.original_filename }}</strong>
             <small>{{ image.width_px }} × {{ image.height_px }} · {{ formatFileSize(image.size_bytes) }}</small>
           </div>
-          <UButton
-            v-if="canManage"
-            color="error"
-            variant="ghost"
-            icon="i-lucide-trash-2"
-            square
-            :aria-label="`Usuń zdjęcie ${image.original_filename}`"
-            @click="imageToDelete = image"
-          />
+          <div v-if="canManage" class="facility-photo__actions">
+            <UButton
+              v-if="index !== 0"
+              color="neutral"
+              variant="soft"
+              size="xs"
+              icon="i-lucide-star"
+              :loading="selectingCoverId === image.id"
+              :disabled="uploading || deleting || Boolean(selectingCoverId)"
+              :aria-label="`Ustaw zdjęcie ${image.original_filename} jako główne`"
+              @click="setCoverImage(image)"
+            >
+              Ustaw jako główne
+            </UButton>
+            <UButton
+              color="error"
+              variant="ghost"
+              icon="i-lucide-trash-2"
+              square
+              :disabled="uploading || deleting || Boolean(selectingCoverId)"
+              :aria-label="`Usuń zdjęcie ${image.original_filename}`"
+              @click="imageToDelete = image"
+            />
+          </div>
         </div>
       </article>
     </div>
@@ -207,7 +286,7 @@ async function deleteImage() {
         description="JPEG, PNG lub WebP · maks. 8 MB na plik"
         layout="list"
         position="outside"
-        :disabled="uploading"
+        :disabled="uploading || deleting || Boolean(selectingCoverId)"
         :ui="{ base: 'min-h-32', files: 'mt-3' }"
       />
       <div v-if="pendingFiles.length" class="facility-photos__upload-actions">
@@ -215,6 +294,7 @@ async function deleteImage() {
         <UButton
           icon="i-lucide-upload"
           :loading="uploading"
+          :disabled="deleting || Boolean(selectingCoverId)"
           @click="uploadImages"
         >
           Dodaj do galerii
@@ -234,7 +314,7 @@ async function deleteImage() {
     <UModal
       :open="Boolean(imageToDelete)"
       title="Usunąć zdjęcie?"
-      description="Zdjęcie zostanie trwale usunięte z galerii placówki."
+      :description="deleteImageDescription"
       :dismissible="!deleting"
       :close="{ disabled: deleting }"
       :ui="{ footer: 'justify-end' }"
@@ -329,11 +409,20 @@ async function deleteImage() {
 }
 
 .facility-photo {
+  position: relative;
   overflow: hidden;
   min-width: 0;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius);
   background: var(--ui-bg);
+}
+
+.facility-photo__cover-badge {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 24%);
 }
 
 .facility-photo__preview {
@@ -362,10 +451,17 @@ async function deleteImage() {
   padding: 10px 12px;
 }
 
-.facility-photo__meta > div {
+.facility-photo__copy {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.facility-photo__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
 }
 
 .facility-photo__meta strong,
@@ -427,6 +523,15 @@ async function deleteImage() {
   .facility-photos__heading,
   .facility-photos__upload-actions {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .facility-photo__meta {
+    align-items: flex-start;
+  }
+
+  .facility-photo__actions {
+    align-items: flex-end;
     flex-direction: column;
   }
 }

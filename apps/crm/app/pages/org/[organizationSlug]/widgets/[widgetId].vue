@@ -136,6 +136,7 @@ const form = reactive({
   accentColor: '#2563eb',
   allowedOrigins: '',
   serviceIds: [] as string[],
+  isDirectoryListed: false,
 })
 
 const themeItems = [
@@ -173,6 +174,19 @@ const hasAnalytics = computed(() => (
   || summary.value.bookings
 ))
 const isCalculatorWidget = computed(() => widget.value?.widget_type !== 'calendar')
+const canListInDirectory = computed(() => (
+  Boolean(widget.value?.is_active)
+  && form.widgetType === 'calendar'
+))
+const directoryListingDescription = computed(() => {
+  if (!widget.value?.is_active) {
+    return 'Najpierw włącz widget. Wyłączony widget jest automatycznie usuwany z katalogu.'
+  }
+  if (form.widgetType !== 'calendar') {
+    return 'W katalogu można publikować wyłącznie widget typu Kalendarz.'
+  }
+  return 'Włączenie tej opcji pozwala publicznie pokazać powiązanego eksperta, placówkę, wybrane usługi i link do rezerwacji. Wyłączenie usuwa wpis z katalogu. Dane klientów i szczegóły rezerwacji nie są publikowane.'
+})
 const funnelStages = computed(() => {
   const stages = [
     { key: 'views', label: 'Wizyty', value: summary.value.views },
@@ -227,6 +241,10 @@ watch(widget, (value) => {
   loadedWidgetId.value = value.id
 }, { immediate: true })
 
+watch(() => form.widgetType, (widgetType) => {
+  if (widgetType !== 'calendar') form.isDirectoryListed = false
+})
+
 onBeforeRouteLeave(() => {
   if (!isDirty.value || !import.meta.client) return true
   return window.confirm('Masz niezapisane zmiany. Czy na pewno chcesz opuścić stronę?')
@@ -251,6 +269,25 @@ function serializeForm() {
     accentColor: form.accentColor.toLowerCase(),
     allowedOrigins: parseOrigins(form.allowedOrigins),
     serviceIds: [...form.serviceIds].sort(),
+    isDirectoryListed: form.isDirectoryListed,
+  })
+}
+
+function serializeWidget(value: BookingWidget) {
+  return JSON.stringify({
+    name: value.name.trim(),
+    title: value.title.trim(),
+    subtitle: (value.subtitle ?? '').trim(),
+    widgetType: value.widget_type,
+    theme: value.theme,
+    accentColor: (value.accent_color || '#2563eb').toLowerCase(),
+    allowedOrigins: [...value.allowed_origins],
+    serviceIds: [...value.serviceIds].sort(),
+    isDirectoryListed: Boolean(
+      value.is_directory_listed
+      && value.is_active
+      && value.widget_type === 'calendar',
+    ),
   })
 }
 
@@ -264,6 +301,11 @@ function loadWidget(value: BookingWidget) {
     accentColor: value.accent_color || '#2563eb',
     allowedOrigins: value.allowed_origins.join('\n'),
     serviceIds: [...value.serviceIds],
+    isDirectoryListed: Boolean(
+      value.is_directory_listed
+      && value.is_active
+      && value.widget_type === 'calendar',
+    ),
   })
   nextTick(() => {
     savedSnapshot.value = serializeForm()
@@ -319,6 +361,14 @@ async function saveWidget() {
     })
     return
   }
+  if (form.isDirectoryListed && !canListInDirectory.value) {
+    toast.add({
+      title: 'Widget nie może być pokazany w katalogu',
+      description: directoryListingDescription.value,
+      color: 'error',
+    })
+    return
+  }
   saving.value = true
   try {
     const result = await $fetch<{ data: BookingWidget }>(
@@ -337,6 +387,7 @@ async function saveWidget() {
           allowedOrigins: parseOrigins(form.allowedOrigins),
           bookingMode: 'expert',
           serviceIds: form.serviceIds,
+          isDirectoryListed: form.isDirectoryListed,
         },
       },
     )
@@ -357,6 +408,7 @@ async function saveWidget() {
 
 async function updateStatus(isActive: boolean) {
   if (!widget.value || !facility.value || statusSaving.value) return
+  const hadUnsavedChanges = isDirty.value
   statusSaving.value = true
   try {
     const result = await $fetch<{ data: BookingWidget }>(
@@ -366,12 +418,22 @@ async function updateStatus(isActive: boolean) {
       { method: 'PATCH', body: { isActive } },
     )
     detail.value = { ...detail.value, widget: result.data }
+    if (hadUnsavedChanges) {
+      form.isDirectoryListed = Boolean(
+        result.data.is_directory_listed
+        && result.data.is_active
+        && result.data.widget_type === 'calendar',
+      )
+      savedSnapshot.value = serializeWidget(result.data)
+    } else {
+      loadWidget(result.data)
+    }
     disableOpen.value = false
     toast.add({
       title: isActive ? 'Widget został włączony' : 'Widget został wyłączony',
       description: isActive
         ? 'Publiczny link znów przyjmuje rezerwacje.'
-        : 'Zachowaliśmy konfigurację, historię i analitykę.',
+        : 'Zachowaliśmy konfigurację, historię i analitykę. Widget został też usunięty z katalogu.',
       color: isActive ? 'success' : 'neutral',
       icon: isActive ? 'i-lucide-circle-play' : 'i-lucide-circle-pause',
     })
@@ -435,6 +497,14 @@ function percentage(value: number, total: number) {
         </UBadge>
         <UBadge color="neutral" variant="outline" :icon="typeMeta.icon">
           {{ typeMeta.label }}
+        </UBadge>
+        <UBadge
+          v-if="widget.is_directory_listed"
+          color="primary"
+          variant="subtle"
+          icon="i-lucide-search-check"
+        >
+          W katalogu
         </UBadge>
         <UBadge color="neutral" variant="outline" icon="i-lucide-building-2">
           {{ facility.name }}
@@ -567,6 +637,29 @@ function percentage(value: number, total: number) {
                   <UIcon :name="type.icon" />
                   <span><strong>{{ type.label }}</strong><small>{{ type.description }}</small></span>
                 </button>
+              </div>
+            </UFormField>
+
+            <UFormField name="isDirectoryListed" label="Widoczność w katalogu">
+              <div
+                class="directory-listing-setting"
+                :class="{ 'directory-listing-setting--disabled': !canListInDirectory }"
+              >
+                <div class="directory-listing-setting__control">
+                  <span>
+                    <strong>Pokaż w katalogu OpenExpert</strong>
+                    <small>Ta publikacja jest niezależna od publicznego linku i kodu osadzenia.</small>
+                  </span>
+                  <USwitch
+                    v-model="form.isDirectoryListed"
+                    :disabled="!canListInDirectory"
+                    aria-label="Pokaż w katalogu OpenExpert"
+                  />
+                </div>
+                <p>
+                  <UIcon name="i-lucide-shield-check" />
+                  {{ directoryListingDescription }}
+                </p>
               </div>
             </UFormField>
 
@@ -975,7 +1068,7 @@ function percentage(value: number, total: number) {
     <UModal
       v-model:open="disableOpen"
       title="Wyłączyć widget?"
-      description="Publiczny link i osadzenie przestaną działać. Konfiguracja, analityka i istniejące rezerwacje pozostaną bez zmian."
+      description="Publiczny link i osadzenie przestaną działać, a widget zostanie usunięty z katalogu OpenExpert. Konfiguracja, analityka i istniejące rezerwacje pozostaną bez zmian."
       :ui="{ footer: 'justify-end' }"
     >
       <template #body>
@@ -1196,6 +1289,58 @@ function percentage(value: number, total: number) {
 
 .accent-field__picker {
   padding: 12px;
+}
+
+.directory-listing-setting {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 30%, var(--ui-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-primary) 5%, var(--ui-bg));
+}
+
+.directory-listing-setting--disabled {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.directory-listing-setting__control {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.directory-listing-setting__control > span {
+  display: grid;
+  gap: 3px;
+}
+
+.directory-listing-setting__control strong {
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+}
+
+.directory-listing-setting__control small,
+.directory-listing-setting p {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.directory-listing-setting p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.directory-listing-setting p > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--ui-primary);
+  font-size: 13px;
 }
 
 .service-options {

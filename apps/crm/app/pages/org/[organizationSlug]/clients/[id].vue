@@ -795,7 +795,9 @@ const headerMenuItems = computed(() => [[
               <strong>{{ appointment.serviceName || 'Spotkanie' }}</strong>
               <span>
                 {{ appointmentTime(appointment.starts_at) }}
-                · {{ appointment.facilityName || 'Placówka nieokreślona' }}
+                · {{ appointment.meeting_mode === 'online'
+                  ? 'Online'
+                  : appointment.facilityName || 'Placówka nieokreślona' }}
               </span>
             </div>
             <div class="client-appointment-row__expert">

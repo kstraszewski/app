@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
   const serviceRole = serverSupabaseServiceRole(event) as any
   let request = serviceRole
     .from('appointments')
-    .select('id, organization_id, client_id, client_person_id, facility_id, service_id, expert_user_id, widget_id, starts_at, ends_at, timezone, status, hold_expires_at, customer_name, customer_email, customer_phone, notes, created_at, updated_at', { count: 'exact' })
+    .select('id, organization_id, client_id, client_person_id, facility_id, service_id, expert_user_id, widget_id, starts_at, ends_at, timezone, status, hold_expires_at, meeting_mode, meeting_url, customer_name, customer_email, customer_phone, notes, created_at, updated_at', { count: 'exact' })
     .eq('organization_id', session.organizationId)
     .gte('starts_at', startsFrom)
     .lt('starts_at', startsBefore)

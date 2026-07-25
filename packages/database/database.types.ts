@@ -99,7 +99,7 @@ export type Database = {
       }
       appointment_resource_reservations: {
         Row: {
-          appointment_id: string
+          appointment_id: string | null
           busy_period: unknown
           created_at: string
           hold_expires_at: string | null
@@ -108,10 +108,11 @@ export type Database = {
           resource_id: string
           resource_type: string
           status: string
+          time_off_id: string | null
           updated_at: string
         }
         Insert: {
-          appointment_id: string
+          appointment_id?: string | null
           busy_period: unknown
           created_at?: string
           hold_expires_at?: string | null
@@ -120,10 +121,11 @@ export type Database = {
           resource_id: string
           resource_type: string
           status: string
+          time_off_id?: string | null
           updated_at?: string
         }
         Update: {
-          appointment_id?: string
+          appointment_id?: string | null
           busy_period?: unknown
           created_at?: string
           hold_expires_at?: string | null
@@ -132,6 +134,7 @@ export type Database = {
           resource_id?: string
           resource_type?: string
           status?: string
+          time_off_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -140,6 +143,13 @@ export type Database = {
             columns: ["organization_id", "appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "appointment_resource_reservations_time_off_fkey"
+            columns: ["organization_id", "time_off_id"]
+            isOneToOne: false
+            referencedRelation: "expert_time_off"
             referencedColumns: ["organization_id", "id"]
           },
         ]
@@ -165,6 +175,8 @@ export type Database = {
           id: string
           idempotency_key: string | null
           manage_token: string
+          meeting_mode: string
+          meeting_url: string | null
           notes: string | null
           organization_id: string
           request_fingerprint: string | null
@@ -196,6 +208,8 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           manage_token?: string
+          meeting_mode?: string
+          meeting_url?: string | null
           notes?: string | null
           organization_id: string
           request_fingerprint?: string | null
@@ -227,6 +241,8 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           manage_token?: string
+          meeting_mode?: string
+          meeting_url?: string | null
           notes?: string | null
           organization_id?: string
           request_fingerprint?: string | null
@@ -548,6 +564,7 @@ export type Database = {
           fixed_expert_user_id: string | null
           id: string
           is_active: boolean
+          is_directory_listed: boolean
           locale: string
           name: string
           organization_id: string
@@ -570,6 +587,7 @@ export type Database = {
           fixed_expert_user_id?: string | null
           id?: string
           is_active?: boolean
+          is_directory_listed?: boolean
           locale?: string
           name: string
           organization_id: string
@@ -592,6 +610,7 @@ export type Database = {
           fixed_expert_user_id?: string | null
           id?: string
           is_active?: boolean
+          is_directory_listed?: boolean
           locale?: string
           name?: string
           organization_id?: string
@@ -730,6 +749,67 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organization_memberships"
             referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
+      client_account_links: {
+        Row: {
+          auth_user_id: string
+          client_id: string
+          client_person_id: string
+          created_at: string
+          organization_id: string
+          revoked_at: string | null
+          source_appointment_id: string | null
+          verification_method: string
+          verified_at: string
+          verified_contact_normalized: string
+        }
+        Insert: {
+          auth_user_id: string
+          client_id: string
+          client_person_id: string
+          created_at?: string
+          organization_id: string
+          revoked_at?: string | null
+          source_appointment_id?: string | null
+          verification_method: string
+          verified_at: string
+          verified_contact_normalized: string
+        }
+        Update: {
+          auth_user_id?: string
+          client_id?: string
+          client_person_id?: string
+          created_at?: string
+          organization_id?: string
+          revoked_at?: string | null
+          source_appointment_id?: string | null
+          verification_method?: string
+          verified_at?: string
+          verified_contact_normalized?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_account_links_appointment_fkey"
+            columns: ["organization_id", "source_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "client_account_links_auth_user_id_fkey"
+            columns: ["auth_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_account_links_person_fkey"
+            columns: ["organization_id", "client_id", "client_person_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_people"
+            referencedColumns: ["organization_id", "client_id", "id"]
           },
         ]
       }
@@ -2994,6 +3074,75 @@ export type Database = {
           },
         ]
       }
+      expert_time_off: {
+        Row: {
+          all_day: boolean
+          cancelled_at: string | null
+          created_at: string
+          created_by_user_id: string
+          ends_at: string
+          expert_user_id: string
+          id: string
+          kind: string
+          notes: string | null
+          organization_id: string
+          starts_at: string
+          status: string
+          time_off_period: unknown
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by_user_id: string
+          ends_at: string
+          expert_user_id: string
+          id?: string
+          kind?: string
+          notes?: string | null
+          organization_id: string
+          starts_at: string
+          status?: string
+          time_off_period?: unknown
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by_user_id?: string
+          ends_at?: string
+          expert_user_id?: string
+          id?: string
+          kind?: string
+          notes?: string | null
+          organization_id?: string
+          starts_at?: string
+          status?: string
+          time_off_period?: unknown
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expert_time_off_creator_membership_fkey"
+            columns: ["organization_id", "created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "expert_time_off_expert_membership_fkey"
+            columns: ["organization_id", "expert_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
       external_busy_blocks: {
         Row: {
           busy_period: unknown
@@ -3096,6 +3245,85 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facility_images: {
+        Row: {
+          alt_text: string | null
+          created_at: string
+          facility_id: string
+          height_px: number
+          id: string
+          mime_type: string
+          organization_id: string
+          original_filename: string
+          sha256: string
+          size_bytes: number
+          sort_order: number
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          uploaded_by: string
+          width_px: number
+        }
+        Insert: {
+          alt_text?: string | null
+          created_at?: string
+          facility_id: string
+          height_px: number
+          id?: string
+          mime_type?: string
+          organization_id: string
+          original_filename: string
+          sha256: string
+          size_bytes: number
+          sort_order?: number
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          uploaded_by: string
+          width_px: number
+        }
+        Update: {
+          alt_text?: string | null
+          created_at?: string
+          facility_id?: string
+          height_px?: number
+          id?: string
+          mime_type?: string
+          organization_id?: string
+          original_filename?: string
+          sha256?: string
+          size_bytes?: number
+          sort_order?: number
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string
+          width_px?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_images_facility_fkey"
+            columns: ["organization_id", "facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "facility_images_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facility_images_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -4699,6 +4927,45 @@ export type Database = {
           },
         ]
       }
+      organization_user_preferences: {
+        Row: {
+          created_at: string
+          default_facility_id: string | null
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_facility_id?: string | null
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          default_facility_id?: string | null
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_preferences_default_facility_fkey"
+            columns: ["organization_id", "default_facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "organization_user_preferences_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string
@@ -4738,6 +5005,30 @@ export type Database = {
           granted_by?: string | null
           role?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          locale: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+          locale?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          locale?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -5179,21 +5470,43 @@ export type Database = {
         }
         Returns: Json
       }
-      create_staff_appointment: {
-        Args: {
-          p_client_id: string
-          p_client_person_id: string
-          p_created_by_user_id: string
-          p_expert_user_id: string
-          p_facility_id: string
-          p_idempotency_key: string
-          p_notes: string
-          p_organization_id: string
-          p_service_id: string
-          p_starts_at: string
-        }
+      create_organization_with_admin: {
+        Args: { full_name?: string; organization_name: string }
         Returns: Json
       }
+      create_staff_appointment:
+        | {
+            Args: {
+              p_client_id: string
+              p_client_person_id: string
+              p_created_by_user_id: string
+              p_expert_user_id: string
+              p_facility_id: string
+              p_idempotency_key: string
+              p_notes: string
+              p_organization_id: string
+              p_service_id: string
+              p_starts_at: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_client_id: string
+              p_client_person_id: string
+              p_created_by_user_id: string
+              p_expert_user_id: string
+              p_facility_id: string
+              p_idempotency_key: string
+              p_meeting_mode: string
+              p_meeting_url: string
+              p_notes: string
+              p_organization_id: string
+              p_service_id: string
+              p_starts_at: string
+            }
+            Returns: Json
+          }
       create_widget_booking: {
         Args: {
           p_booking_context: Json
@@ -5378,6 +5691,14 @@ export type Database = {
           p_organization_id: string
         }
         Returns: Json
+      }
+      set_facility_cover_image: {
+        Args: {
+          p_facility_id: string
+          p_image_id: string
+          p_organization_id: string
+        }
+        Returns: undefined
       }
       sign_crm_case_contract: {
         Args: {

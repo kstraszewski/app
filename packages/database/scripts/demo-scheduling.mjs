@@ -684,6 +684,7 @@ export async function seedDemoScheduling({
       created_by_user_id: expertUserId,
       locale: 'pl-PL',
       is_active: true,
+      is_directory_listed: true,
       analytics_started_at: analyticsStartedAt,
       updated_at: nowIso,
     },

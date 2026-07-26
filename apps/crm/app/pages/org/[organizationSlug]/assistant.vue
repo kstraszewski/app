@@ -120,7 +120,7 @@ function openHistory() {
   width: 100%;
 }
 
-.assistant-page-shell :deep(.crm-header) {
+.assistant-page-shell :deep(.crm-page-header) {
   flex: 0 0 auto;
   align-items: center;
   min-height: 76px;
@@ -128,13 +128,13 @@ function openHistory() {
   padding-bottom: 18px;
 }
 
-.assistant-page-shell :deep(.crm-header h1) {
+.assistant-page-shell :deep(.crm-page-header h1) {
   margin-top: 0;
   font-size: 32px;
   font-weight: 420;
 }
 
-.assistant-page-shell :deep(.crm-header__meta) { margin-top: 7px; }
+.assistant-page-shell :deep(.crm-page-header__meta) { margin-top: 7px; }
 
 .assistant-page__meta {
   display: flex;
@@ -226,14 +226,17 @@ function openHistory() {
 .assistant-history__empty p { max-width: 280px; margin: 0; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 900px) {
-  .assistant-page-shell :deep(.crm-header) { align-items: stretch; }
-  .assistant-page-shell :deep(.crm-header__actions) { align-items: center; }
+  .assistant-page-shell :deep(.crm-page-header) { align-items: stretch; }
+  .assistant-page-shell :deep(.crm-page-header__actions) { align-items: center; }
   .assistant-page-shell :deep(.crm-eve-assistant--page) { flex: 1 1 auto; }
 }
 
 @media (max-width: 640px) {
-  .assistant-page-shell :deep(.crm-header h1) { font-size: 28px; }
+  .assistant-page-shell :deep(.crm-page-header h1) { font-size: 28px; }
   .assistant-page__model { display: none; }
-  .assistant-page-shell :deep(.crm-header__actions > button) { flex: 1 1 150px; }
+  .assistant-page-shell :deep(.crm-page-header__actions > *) {
+    flex: 1 1 150px;
+    min-height: 44px;
+  }
 }
 </style>

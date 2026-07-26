@@ -1017,6 +1017,12 @@ async function copyTokens() {
   background: var(--ui-error);
 }
 
+.design-system-shell :deep(.crm-page-header__actions button),
+.design-system-shell :deep(.crm-page-header__actions a),
+.editor-footer :deep(button) {
+  min-height: 44px;
+}
+
 .design-editor {
   grid-template-columns: minmax(440px, 0.9fr) minmax(440px, 1.1fr);
   grid-template-areas:
@@ -1360,10 +1366,20 @@ async function copyTokens() {
   }
 }
 
-@media (max-width: 620px) {
+@media (max-width: 760px) {
+  .design-section-bar {
+    padding-inline: 14px;
+  }
+
+  .design-editor__panel,
+  .design-preview {
+    padding: 18px;
+  }
+
   .editor-section__head--inline,
   .design-preview__head,
-  .preview-toolbar {
+  .preview-toolbar,
+  .preview-card-head {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1380,6 +1396,15 @@ async function copyTokens() {
     width: 100%;
   }
 
+  .editor-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .editor-footer :deep(button) {
+    flex: 1 1 150px;
+  }
+
   .token-control {
     grid-template-columns: 38px minmax(0, 1fr);
   }
@@ -1389,18 +1414,52 @@ async function copyTokens() {
   }
 
   .preview-dashboard {
-    grid-template-columns: 58px minmax(0, 1fr);
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .preview-dashboard > aside {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 10px;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .preview-dashboard__brand {
+    flex: 0 0 auto;
+    margin: 0 6px 0 0;
   }
 
   .preview-dashboard__brand strong,
-  .preview-dashboard > aside a:not(.active),
   .preview-dashboard__section {
     display: none;
   }
 
+  .preview-dashboard > aside a,
+  .preview-dashboard > aside a:not(.active) {
+    display: inline-flex;
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: 12px;
+    white-space: nowrap;
+  }
+
   .preview-dashboard > aside a.active {
-    justify-content: center;
-    font-size: 0;
+    justify-content: flex-start;
+    font-size: 9px;
+  }
+
+  .preview-dashboard > main {
+    padding: 16px;
+  }
+
+  .preview-toolbar :deep(button),
+  .preview-card-head :deep(button) {
+    min-height: 44px;
   }
 
   .preview-activity-list > div {

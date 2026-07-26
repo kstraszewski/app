@@ -1792,6 +1792,11 @@ watch(
   align-items: start;
 }
 
+.case-credit-view {
+  container-name: case-credit-view;
+  container-type: inline-size;
+}
+
 .panel-head,
 .client-row,
 .saved-offer,
@@ -2230,6 +2235,12 @@ watch(
   .case-detail-grid,
   .case-history__grid,
   .case-command-loading {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container case-credit-view (max-width: 900px) {
+  .case-detail-grid {
     grid-template-columns: 1fr;
   }
 }

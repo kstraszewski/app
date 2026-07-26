@@ -1909,16 +1909,52 @@ const headerMenuItems = computed(() => [[
     grid-template-columns: 42px minmax(0, 1fr) 20px;
   }
 
+  .client-case-row__icon {
+    grid-row: 1 / span 2;
+  }
+
+  .client-case-row__title {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .client-case-row__facts {
-    display: none;
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
+  .client-case-row__arrow {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
   }
 
   .client-appointment-row {
     grid-template-columns: 58px minmax(0, 1fr) auto;
   }
 
+  .client-appointment-row__date {
+    grid-row: 1 / span 2;
+  }
+
+  .client-appointment-row__body {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .client-appointment-row__expert {
-    display: none;
+    display: flex;
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .client-appointment-row > :last-child {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
   }
 }
 
@@ -1935,6 +1971,23 @@ const headerMenuItems = computed(() => [[
   .workspace-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .client-appointment-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 10px 12px;
+  }
+
+  .client-appointment-row__date {
+    grid-row: 1 / span 3;
+    width: 48px;
+    height: 48px;
+  }
+
+  .client-appointment-row > :last-child {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
   }
 
   .related-people article {

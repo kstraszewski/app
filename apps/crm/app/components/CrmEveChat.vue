@@ -838,6 +838,8 @@ defineExpose({ focusComposer })
   min-height: 0;
   overflow: hidden;
   color: var(--ui-text);
+  container-name: assistant-chat;
+  container-type: inline-size;
 }
 
 .assistant-chat--page {
@@ -851,6 +853,7 @@ defineExpose({ focusComposer })
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   height: min(760px, calc(100vh - 130px));
+  height: min(760px, calc(100dvh - 130px));
 }
 
 .assistant-chat__toolbar,
@@ -1357,6 +1360,22 @@ defineExpose({ focusComposer })
   .assistant-readiness > :nth-child(n + 3) { border-top: 1px solid var(--ui-border-muted); }
 }
 
+@container assistant-chat (max-width: 760px) {
+  .assistant-readiness { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assistant-readiness > * + * { border-left: 0; }
+  .assistant-readiness > :nth-child(even) { border-left: 1px solid var(--ui-border-muted); }
+  .assistant-readiness > :nth-child(n + 3) { border-top: 1px solid var(--ui-border-muted); }
+}
+
+@container assistant-chat (max-width: 520px) {
+  .assistant-readiness { grid-template-columns: 1fr; }
+  .assistant-readiness > * + * {
+    border-top: 1px solid var(--ui-border-muted);
+    border-left: 0 !important;
+  }
+  .assistant-readiness > :deep(a) { justify-self: stretch; }
+}
+
 @media (max-width: 760px) {
   .assistant-chat__empty {
     grid-template-columns: 42px minmax(0, 1fr);
@@ -1382,7 +1401,10 @@ defineExpose({ focusComposer })
 
 @media (max-width: 640px) {
   .assistant-chat--page { height: 100%; min-height: 0; }
-  .assistant-chat--slideover { height: calc(100vh - 120px); }
+  .assistant-chat--slideover {
+    height: calc(100vh - 120px);
+    height: calc(100dvh - 120px);
+  }
   .assistant-chat__toolbar { flex-wrap: wrap; }
   .assistant-chat__status { order: 3; width: 100%; }
   .assistant-chat__empty { grid-template-columns: 1fr; }

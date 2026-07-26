@@ -259,10 +259,10 @@ async function createFacility() {
               <span><UIcon name="i-lucide-map-pin" /> {{ facility.city || 'Miasto nieuzupełnione' }}</span>
               <span><UIcon name="i-lucide-clock-3" /> {{ facility.timezone }}</span>
             </span>
-            <UBadge :color="facility.is_active ? 'success' : 'neutral'" variant="subtle">
+            <UBadge class="facility-row__status" :color="facility.is_active ? 'success' : 'neutral'" variant="subtle">
               {{ facility.is_active ? 'Aktywna' : 'Nieaktywna' }}
             </UBadge>
-            <span class="facility-row__open">
+            <span class="facility-row__open" aria-hidden="true">
               Otwórz
               <UIcon name="i-lucide-arrow-right" />
             </span>
@@ -345,6 +345,8 @@ async function createFacility() {
 .facility-index {
   display: grid;
   gap: 22px;
+  container-name: facility-index;
+  container-type: inline-size;
 }
 
 .facility-index__scope {
@@ -432,7 +434,7 @@ async function createFacility() {
 .facility-row__identity small, .facility-row__meta { color: var(--ui-text-muted); font-size: 11px; }
 .facility-row__meta span { display: flex; align-items: center; gap: 6px; }
 .facility-row__meta .iconify { flex: none; font-size: 12px; }
-.facility-row__open { display: inline-flex; align-items: center; gap: 7px; color: var(--ui-text-muted); font-size: 11px; font-weight: 600; transition: color var(--oe-motion-fast); }
+.facility-row__open { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 44px; min-height: 44px; color: var(--ui-text-muted); font-size: 11px; font-weight: 600; transition: color var(--oe-motion-fast); }
 .facility-row:hover .facility-row__open { color: var(--ui-text-highlighted); }
 .facility-index__empty { display: grid; place-items: center; gap: 10px; min-height: 280px; text-align: center; }
 .facility-index__empty > .iconify { width: 34px; height: 34px; color: var(--ui-text-muted); }
@@ -440,15 +442,37 @@ async function createFacility() {
 .facility-index__empty p { color: var(--ui-text-muted); }
 .facility-form { display: grid; gap: 18px; }
 .facility-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-@media (max-width: 780px) {
-  .facility-form__grid { grid-template-columns: 1fr; }
+@container facility-index (max-width: 760px) {
   .facility-index__toolbar { align-items: stretch; flex-direction: column; }
   .facility-index__toolbar > :last-child { width: 100%; }
-  .facility-row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+  .facility-row {
+    grid-template-columns: 56px minmax(0, 1fr) 44px;
+    gap: 10px 12px;
+    padding: 14px;
+    border-color: var(--ui-border);
+    background: var(--ui-bg);
+  }
   .facility-row__cover { width: 56px; height: 42px; border-radius: 9px; }
-  .facility-row__meta { display: none; }
-  .facility-row > .badge { display: none; }
-  .facility-row__open { font-size: 0; }
+  .facility-row__cover { grid-column: 1; grid-row: 1 / span 3; }
+  .facility-row__identity { grid-column: 2; grid-row: 1; align-self: center; }
+  .facility-row__meta {
+    display: grid;
+    grid-column: 2 / -1;
+    grid-row: 2;
+    gap: 6px;
+  }
+  .facility-row__meta span { min-width: 0; overflow-wrap: anywhere; }
+  .facility-row__status { grid-column: 2 / -1; grid-row: 3; justify-self: start; }
+  .facility-row__open {
+    grid-column: 3;
+    grid-row: 1;
+    width: 44px;
+    height: 44px;
+    font-size: 0;
+  }
   .facility-row__open .iconify { font-size: 15px; }
+}
+@media (max-width: 780px) {
+  .facility-form__grid { grid-template-columns: 1fr; }
 }
 </style>

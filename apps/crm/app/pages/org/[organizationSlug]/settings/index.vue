@@ -93,8 +93,9 @@ async function createProvider() {
     eyebrow="Administracja organizacji"
     description="Dostęp, struktura, procesy i wygląd CRM dla bieżącej organizacji."
   >
-    <div class="settings-grid">
-      <div class="stack">
+    <div class="settings-layout">
+      <div class="settings-grid">
+        <div class="stack">
         <UCard>
           <template #header>
             <div class="panel-head">
@@ -113,10 +114,12 @@ async function createProvider() {
               <span>Źródło</span>
             </div>
             <div v-for="item in productTypes.data" :key="item.id" class="table-row">
-              <strong>{{ item.name }}</strong>
-              <span>{{ domainLabel(item.domain) }}</span>
-              <code>{{ item.code }}</code>
-              <UBadge color="neutral" variant="outline">{{ item.is_system ? 'system' : 'własny' }}</UBadge>
+              <strong data-label="Nazwa">{{ item.name }}</strong>
+              <span data-label="Domena">{{ domainLabel(item.domain) }}</span>
+              <code data-label="Kod">{{ item.code }}</code>
+              <span class="table-row__source" data-label="Źródło">
+                <UBadge color="neutral" variant="outline">{{ item.is_system ? 'system' : 'własny' }}</UBadge>
+              </span>
             </div>
           </div>
         </UCard>
@@ -143,9 +146,9 @@ async function createProvider() {
             </div>
           </div>
         </UCard>
-      </div>
+        </div>
 
-      <div class="stack">
+        <div class="stack">
         <UCard>
           <template #header>
             <div class="panel-head">
@@ -210,12 +213,18 @@ async function createProvider() {
             </div>
           </div>
         </UCard>
+        </div>
       </div>
     </div>
   </CrmShell>
 </template>
 
 <style scoped>
+.settings-layout {
+  container-name: settings-layout;
+  container-type: inline-size;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -287,6 +296,10 @@ async function createProvider() {
   text-transform: uppercase;
 }
 
+.table-row__source {
+  min-width: 0;
+}
+
 .workflow-card,
 .provider-row {
   display: grid;
@@ -320,6 +333,58 @@ async function createProvider() {
 
   .table-row--head {
     display: none;
+  }
+
+  .table-row:not(.table-row--head) > [data-label] {
+    display: grid;
+    grid-template-columns: minmax(92px, .42fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .table-row:not(.table-row--head) > [data-label]::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+}
+
+@container settings-layout (max-width: 1000px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container settings-layout (max-width: 700px) {
+  .table-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .table-row--head {
+    display: none;
+  }
+
+  .table-row:not(.table-row--head) > [data-label] {
+    display: grid;
+    grid-template-columns: minmax(92px, .42fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .table-row:not(.table-row--head) > [data-label]::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
   }
 }
 </style>

@@ -38,6 +38,7 @@ import { apiErrorMessage } from '~/utils/api-error'
 type SourceKind = 'registered' | 'generated'
 type ResizeHandle = 'move' | 'nw' | 'ne' | 'sw' | 'se'
 type FieldBrowserMode = 'mapped' | 'catalog'
+type MobileStudioPanel = 'fields' | 'pdf' | 'inspector'
 
 interface Props {
   templateText: string
@@ -173,6 +174,7 @@ const selectedFieldKey = ref('')
 const fieldSearch = ref('')
 const fieldTypeFilter = ref<'all' | 'text' | 'mark'>('all')
 const fieldBrowserMode = ref<FieldBrowserMode>('mapped')
+const mobilePanel = ref<MobileStudioPanel>('pdf')
 const catalogSearch = ref('')
 const catalogPlacementKind = ref<OverlayPlacementKind>('text')
 const catalogDragState = shallowRef<CatalogDragState | null>(null)
@@ -412,6 +414,9 @@ watch(allFields, (fields) => {
 })
 
 onMounted(() => {
+  if (window.matchMedia('(max-width: 900px)').matches) {
+    zoom.value = window.matchMedia('(max-width: 480px)').matches ? 0.5 : 0.65
+  }
   void loadPdf()
 })
 
@@ -608,6 +613,7 @@ function releaseLocalPdf() {
 function chooseField(field: VisualField) {
   selectedFieldKey.value = field.key
   if (pageNumber.value !== field.page) pageNumber.value = field.page
+  mobilePanel.value = 'pdf'
 }
 
 function catalogItemMeta(item: CatalogItem) {
@@ -663,6 +669,7 @@ function addCatalogItem(
     )
     selectedFieldKey.value = `${result.bindingIndex}:overlay`
     editEnabled.value = true
+    mobilePanel.value = 'pdf'
   }
   catch (error) {
     visualNotice.value = ''
@@ -1575,6 +1582,7 @@ function fieldKindLabel(field: VisualField) {
           <UIcon name="i-lucide-search" aria-hidden="true" />
           <span class="sr-only">Powiększenie podglądu</span>
           <select v-model.number="zoom">
+            <option :value="0.5">50%</option>
             <option :value="0.65">65%</option>
             <option :value="0.85">85%</option>
             <option :value="1">100%</option>
@@ -1590,8 +1598,51 @@ function fieldKindLabel(field: VisualField) {
       <span>{{ templateError }}</span>
     </div>
 
-    <div v-if="activeTemplate" class="visual-layout">
-      <aside class="field-browser" aria-label="Pola szablonu">
+    <nav v-if="activeTemplate" class="mobile-panel-switch" aria-label="Panele studia PDF">
+      <button
+        type="button"
+        :aria-pressed="mobilePanel === 'fields'"
+        aria-controls="pdf-studio-fields"
+        @click="mobilePanel = 'fields'"
+      >
+        <UIcon name="i-lucide-layers-3" aria-hidden="true" />
+        <span>
+          <strong>Pola</strong>
+          <small>{{ allFields.length }} mapowań</small>
+        </span>
+      </button>
+      <button
+        type="button"
+        :aria-pressed="mobilePanel === 'pdf'"
+        aria-controls="pdf-studio-preview"
+        @click="mobilePanel = 'pdf'"
+      >
+        <UIcon name="i-lucide-file-text" aria-hidden="true" />
+        <span>
+          <strong>PDF</strong>
+          <small>Strona {{ pageNumber }}/{{ pages.length }}</small>
+        </span>
+      </button>
+      <button
+        type="button"
+        :aria-pressed="mobilePanel === 'inspector'"
+        aria-controls="pdf-studio-inspector"
+        @click="mobilePanel = 'inspector'"
+      >
+        <UIcon name="i-lucide-panel-right" aria-hidden="true" />
+        <span>
+          <strong>Inspektor</strong>
+          <small>{{ selectedField ? 'Pole wybrane' : 'Brak pola' }}</small>
+        </span>
+      </button>
+    </nav>
+
+    <div
+      v-if="activeTemplate"
+      class="visual-layout"
+      :class="`visual-layout--mobile-${mobilePanel}`"
+    >
+      <aside id="pdf-studio-fields" class="field-browser" aria-label="Pola szablonu">
         <div class="pane-heading">
           <span class="pane-heading__title">
             <UIcon name="i-lucide-layers-3" aria-hidden="true" />
@@ -1671,7 +1722,12 @@ function fieldKindLabel(field: VisualField) {
 
         <template v-else>
           <p v-if="canPlaceFields" class="catalog-hint">
-            Przeciągnij pozycję na PDF. Kliknięcie doda ją na środku bieżącej strony.
+            <span class="catalog-hint__desktop">
+              Przeciągnij pozycję na PDF. Kliknięcie doda ją na środku bieżącej strony.
+            </span>
+            <span class="catalog-hint__mobile">
+              Dotknij pola, aby dodać je na środku strony i przejść do podglądu PDF.
+            </span>
           </p>
           <p v-else class="catalog-hint catalog-hint--warning">
             Dodawanie jest dostępne po poprawnym załadowaniu źródłowego PDF-u.
@@ -1718,7 +1774,7 @@ function fieldKindLabel(field: VisualField) {
         </template>
       </aside>
 
-      <section class="pdf-pane" aria-label="Podgląd PDF z polami">
+      <section id="pdf-studio-preview" class="pdf-pane" aria-label="Podgląd PDF z polami">
         <div v-if="pdfError" class="pdf-message">
           <span class="pdf-message__icon" aria-hidden="true">
             <UIcon name="i-lucide-file-warning" />
@@ -1810,7 +1866,7 @@ function fieldKindLabel(field: VisualField) {
         <input ref="fileInputRef" class="sr-only" type="file" accept="application/pdf,.pdf" @change="attachPdf">
       </section>
 
-      <aside class="property-pane" aria-label="Właściwości pola">
+      <aside id="pdf-studio-inspector" class="property-pane" aria-label="Właściwości pola">
         <div class="pane-heading">
           <span class="pane-heading__title">
             <UIcon name="i-lucide-panel-right" aria-hidden="true" />
@@ -2374,6 +2430,10 @@ function fieldKindLabel(field: VisualField) {
   font-size: 12px;
 }
 
+.mobile-panel-switch {
+  display: none;
+}
+
 .visual-layout {
   min-height: 0;
   display: grid;
@@ -2554,6 +2614,10 @@ function fieldKindLabel(field: VisualField) {
   color: var(--ui-text-muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.catalog-hint__mobile {
+  display: none;
 }
 
 .catalog-hint--warning {
@@ -3642,16 +3706,280 @@ summary:focus-visible {
   }
 }
 
-@media (max-width: 899px) {
+@media (max-width: 900px) {
   .visual-editor {
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
+    min-height: 640px;
     height: 760px;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    overflow: hidden;
   }
 
   .visual-toolbar,
   .visual-layout,
+  .studio-statusbar,
+  .studio-global-message {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .visual-toolbar {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  .studio-identity {
+    display: none;
+  }
+
+  .visual-toolbar__page-actions,
+  .visual-toolbar__group {
+    min-width: max-content;
+    flex: 0 0 auto;
+  }
+
+  .visual-toolbar__group:last-child {
+    justify-self: auto;
+  }
+
+  .visual-toolbar__page-actions :deep(button),
+  .visual-toolbar__page-actions :deep([role='button']),
+  .tool-button,
+  .toolbar-check,
+  .zoom-control,
+  .zoom-control select {
+    min-height: 44px;
+  }
+
+  .tool-button--icon {
+    width: 44px;
+  }
+
+  .toolbar-check input {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mobile-panel-switch {
+    z-index: 5;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 4px;
+    background: var(--ui-bg);
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .mobile-panel-switch button {
+    min-width: 0;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 5px 7px;
+    color: var(--ui-text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .mobile-panel-switch button[aria-pressed='true'] {
+    color: var(--ui-primary);
+    background: color-mix(in srgb, var(--ui-primary) 9%, var(--ui-bg));
+    border-color: color-mix(in srgb, var(--ui-primary) 30%, var(--ui-border));
+  }
+
+  .mobile-panel-switch button > .icon {
+    flex: 0 0 auto;
+    font-size: 17px;
+  }
+
+  .mobile-panel-switch button > span {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+    text-align: left;
+  }
+
+  .mobile-panel-switch strong,
+  .mobile-panel-switch small {
+    overflow: hidden;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-panel-switch strong {
+    color: currentColor;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .mobile-panel-switch small {
+    color: var(--ui-text-muted);
+    font-size: 9px;
+  }
+
+  .visual-layout {
+    display: block;
+    overflow: hidden;
+  }
+
+  .visual-layout .field-browser,
+  .visual-layout .pdf-pane,
+  .visual-layout .property-pane {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-width: 0;
+    border: 0;
+  }
+
+  .visual-layout .field-browser,
+  .visual-layout .property-pane,
+  .visual-layout .pdf-pane {
+    display: none;
+  }
+
+  .visual-layout--mobile-fields .field-browser,
+  .visual-layout--mobile-pdf .pdf-pane,
+  .visual-layout--mobile-inspector .property-pane {
+    display: flex;
+  }
+
+  .stage-scroll {
+    max-width: 100%;
+    padding: 10px;
+    overscroll-behavior: contain;
+  }
+
+  .catalog-hint__desktop {
+    display: none;
+  }
+
+  .catalog-hint__mobile {
+    display: inline;
+  }
+
+  .browser-tabs button,
+  .field-search input,
+  .field-filters button,
+  .attach-button,
+  .semantic-generate,
+  .semantic-apply,
+  .semantic-reset,
+  .semantic-proposal-apply,
+  .semantic-proposal-dismiss,
+  .reset-placement,
+  .remove-mapping,
+  .property-pane input,
+  .property-pane select,
+  .semantic-contract summary {
+    min-height: 44px;
+  }
+
+  .semantic-contract summary {
+    display: flex;
+    align-items: center;
+  }
+
+  .semantic-actions > *,
+  .semantic-ai-proposal footer > * {
+    flex: 1 1 140px;
+  }
+
+  .canvas-toast {
+    bottom: 10px;
+    max-width: calc(100% - 20px);
+  }
+
+  .canvas-toast button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .resize-handle {
+    width: 16px;
+    height: 16px;
+  }
+
+  .resize-handle::before {
+    position: absolute;
+    inset: -14px;
+    content: '';
+  }
+
+  .resize-handle--nw { left: -10px; top: -10px; }
+  .resize-handle--ne { right: -10px; top: -10px; }
+  .resize-handle--sw { left: -10px; bottom: -10px; }
+  .resize-handle--se { right: -10px; bottom: -10px; }
+
   .studio-statusbar {
-    min-width: 1024px;
+    min-height: 52px;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .status-group--mapping,
+  .status-group--selection {
+    display: none;
+  }
+
+  .status-group--page {
+    min-width: 0;
+    min-height: 52px;
+    justify-content: center;
+    padding: 4px 8px;
+    overflow-x: auto;
+    border: 0;
+    overscroll-behavior-x: contain;
+  }
+
+  .status-group--page select,
+  .page-button {
+    min-height: 44px;
+  }
+
+  .page-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .status-group--page > .status-divider,
+  .status-group--page > .status-item {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .mobile-panel-switch button {
+    gap: 5px;
+    padding-inline: 5px;
+  }
+
+  .mobile-panel-switch button > .icon {
+    font-size: 16px;
+  }
+
+  .mobile-panel-switch small {
+    font-size: 8px;
+  }
+
+  .number-grid {
+    grid-template-columns: 1fr;
   }
 }
 

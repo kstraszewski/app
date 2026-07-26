@@ -928,6 +928,7 @@ function confirmCancellation() {
 
   .delegations-panel__header :deep(button) {
     justify-content: center;
+    min-height: 44px;
   }
 
   .delegations-empty {
@@ -937,6 +938,7 @@ function confirmCancellation() {
   .delegations-empty :deep(button) {
     grid-column: 1 / -1;
     justify-content: center;
+    min-height: 44px;
   }
 
   .delegation-card {
@@ -976,6 +978,21 @@ function confirmCancellation() {
   .delegation-card__meetings li > span:nth-child(2) {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+@media (max-width: 480px) {
+  .delegation-card__actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .delegation-card__actions :deep(button),
+  .delegation-card__actions :deep(a) {
+    flex: 1 1 100%;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
   }
 }
 </style>

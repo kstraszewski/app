@@ -626,6 +626,8 @@ function caseBanks(item: CaseListResponse['data'][number]) {
 
 .cases-register {
   min-width: 0;
+  container-name: cases-register;
+  container-type: inline-size;
 }
 
 .filters {
@@ -883,6 +885,38 @@ function caseBanks(item: CaseListResponse['data'][number]) {
   }
 
   .case-row:first-child { border-top: 1px solid var(--ui-border); }
+
+  .client-chips,
+  .offer-summary {
+    grid-column: 1;
+  }
+
+  .row-arrow {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+}
+
+@container cases-register (max-width: 820px) {
+  .case-table-head {
+    display: none;
+  }
+
+  .case-list {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .case-row {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: calc(var(--ui-radius) * .8);
+  }
+
+  .case-row:first-child {
+    border-top: 1px solid var(--ui-border);
+  }
 
   .client-chips,
   .offer-summary {

@@ -483,6 +483,7 @@ function percentage(value: number, total: number) {
 
 <template>
   <CrmShell
+    class="widget-detail-page"
     :title="pageTitle"
     eyebrow="Widget · szczegóły"
     :description="pageDescription"
@@ -1091,6 +1092,11 @@ function percentage(value: number, total: number) {
 </template>
 
 <style scoped>
+.widget-detail-page {
+  container-name: widget-detail;
+  container-type: inline-size;
+}
+
 .widget-detail__meta {
   display: flex;
   flex-wrap: wrap;
@@ -1801,7 +1807,7 @@ function percentage(value: number, total: number) {
   font-size: 10px;
 }
 
-@media (max-width: 900px) {
+@container widget-detail (max-width: 820px) {
   .personalization-layout {
     grid-template-columns: 1fr;
   }

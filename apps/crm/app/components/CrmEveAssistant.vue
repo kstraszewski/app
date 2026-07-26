@@ -278,8 +278,8 @@ defineExpose({ newConversation })
 <style scoped>
 .crm-eve-assistant__launcher {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  right: calc(24px + env(safe-area-inset-right, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   z-index: 40;
   border-radius: 999px;
   box-shadow: 0 16px 40px rgb(0 0 0 / 16%);
@@ -287,8 +287,10 @@ defineExpose({ newConversation })
 
 @media (max-width: 640px) {
   .crm-eve-assistant__launcher {
-    right: 16px;
-    bottom: 16px;
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    min-width: 48px;
+    min-height: 48px;
   }
 
   .crm-eve-assistant__launcher span { display: none; }

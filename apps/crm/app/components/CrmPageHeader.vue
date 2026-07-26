@@ -27,6 +27,9 @@ const props = withDefaults(defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const tabsElement = ref<HTMLElement | null>(null)
+let tabsResizeObserver: ResizeObserver | null = null
+let tabScrollFrame: number | null = null
 
 function tabIsActive(tab: PageHeaderTab) {
   if (tab.active !== undefined) return tab.active
@@ -37,6 +40,69 @@ function tabIsActive(tab: PageHeaderTab) {
   }
   return route.path === target.path || route.path.startsWith(`${target.path}/`)
 }
+
+const tabSignature = computed(() => props.tabs.map((tab) => {
+  const target = router.resolve(tab.to)
+  return `${tab.label}:${target.fullPath}:${String(tab.active)}`
+}).join('|'))
+
+async function revealActiveTab(smooth = false) {
+  if (!import.meta.client) return
+  await nextTick()
+
+  if (tabScrollFrame !== null) window.cancelAnimationFrame(tabScrollFrame)
+  tabScrollFrame = window.requestAnimationFrame(() => {
+    tabScrollFrame = null
+    const container = tabsElement.value
+    const activeTab = container?.querySelector<HTMLElement>('[aria-current="page"]')
+    if (!container || !activeTab) return
+
+    const containerRect = container.getBoundingClientRect()
+    const activeTabRect = activeTab.getBoundingClientRect()
+    const edgePadding = 8
+    const hiddenAtStart = activeTabRect.left < containerRect.left + edgePadding
+    const hiddenAtEnd = activeTabRect.right > containerRect.right - edgePadding
+    if (!hiddenAtStart && !hiddenAtEnd) return
+
+    const offset = hiddenAtStart
+      ? activeTabRect.left - containerRect.left - edgePadding
+      : activeTabRect.right - containerRect.right + edgePadding
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    container.scrollBy({
+      left: offset,
+      behavior: smooth && !prefersReducedMotion ? 'smooth' : 'auto',
+    })
+  })
+}
+
+watch(
+  [() => route.fullPath, tabSignature],
+  () => {
+    void revealActiveTab(true)
+  },
+  { flush: 'post' },
+)
+
+watch(tabsElement, (element, previousElement) => {
+  if (previousElement) tabsResizeObserver?.unobserve(previousElement)
+  if (element) tabsResizeObserver?.observe(element)
+})
+
+onMounted(() => {
+  if ('ResizeObserver' in window) {
+    tabsResizeObserver = new ResizeObserver(() => {
+      void revealActiveTab()
+    })
+    if (tabsElement.value) tabsResizeObserver.observe(tabsElement.value)
+  }
+  void revealActiveTab()
+})
+
+onBeforeUnmount(() => {
+  tabsResizeObserver?.disconnect()
+  if (tabScrollFrame !== null) window.cancelAnimationFrame(tabScrollFrame)
+})
 </script>
 
 <template>
@@ -70,6 +136,7 @@ function tabIsActive(tab: PageHeaderTab) {
 
     <nav
       v-if="props.tabs.length"
+      ref="tabsElement"
       class="crm-page-header__tabs"
       aria-label="Nawigacja strony"
     >
@@ -174,7 +241,13 @@ function tabIsActive(tab: PageHeaderTab) {
   align-items: flex-end;
   align-self: stretch;
   gap: 28px;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 8px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .crm-page-header__tab {
@@ -190,6 +263,12 @@ function tabIsActive(tab: PageHeaderTab) {
   text-decoration: none;
   white-space: nowrap;
   transition: color var(--oe-motion-fast);
+}
+
+.crm-page-header__tab:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 3px;
 }
 
 .crm-page-header__tab::after {
@@ -259,6 +338,16 @@ function tabIsActive(tab: PageHeaderTab) {
     grid-row: 3;
     min-height: 36px;
   }
+
+  .crm-page-header__tab,
+  .crm-page-header__actions :deep(button),
+  .crm-page-header__actions :deep(a) {
+    min-height: 44px;
+  }
+
+  .crm-page-header__tab:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -278,7 +367,13 @@ function tabIsActive(tab: PageHeaderTab) {
     grid-column: 1;
     grid-row: 3;
     gap: 22px;
-    overflow-x: auto;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-page-header__tabs {
+    scroll-behavior: auto;
   }
 }
 </style>

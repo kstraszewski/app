@@ -534,5 +534,10 @@ async function setCoverImage(image: FacilityImage) {
     align-items: flex-end;
     flex-direction: column;
   }
+
+  .facility-photo__actions :deep(button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 </style>

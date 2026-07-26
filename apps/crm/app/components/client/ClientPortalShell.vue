@@ -49,14 +49,29 @@ async function signOut() {
       </a>
 
       <nav v-if="showNavigation || showLogout" class="client-shell__nav" aria-label="Panel klienta">
-        <NuxtLink v-if="showNavigation" to="/client">
-          Moje konsultacje
+        <NuxtLink
+          v-if="showNavigation"
+          to="/client"
+          class="client-shell__nav-link client-shell__nav-link--appointments"
+          aria-label="Moje konsultacje"
+          title="Moje konsultacje"
+        >
+          <UIcon class="client-shell__appointments-icon" name="i-lucide-calendar-days" aria-hidden="true" />
+          <span class="client-shell__appointments-label">Moje konsultacje</span>
         </NuxtLink>
-        <NuxtLink v-if="showNavigation && showAccountSwitcher" to="/account">
-          Przełącz konto
+        <NuxtLink
+          v-if="showNavigation && showAccountSwitcher"
+          to="/account"
+          class="client-shell__nav-link client-shell__nav-link--switcher"
+          aria-label="Przełącz konto"
+          title="Przełącz konto"
+        >
+          <UIcon class="client-shell__switch-icon" name="i-lucide-repeat-2" aria-hidden="true" />
+          <span class="client-shell__switch-label">Przełącz konto</span>
         </NuxtLink>
         <UButton
           v-if="showLogout"
+          class="client-shell__logout"
           type="button"
           color="neutral"
           variant="ghost"
@@ -64,7 +79,7 @@ async function signOut() {
           :loading="signingOut"
           @click="signOut"
         >
-          Wyloguj
+          <span class="client-shell__logout-label">Wyloguj</span>
         </UButton>
       </nav>
     </header>
@@ -137,6 +152,8 @@ async function signOut() {
 }
 
 .client-shell__nav a {
+  display: inline-flex;
+  align-items: center;
   border-radius: 8px;
   padding: 8px 10px;
   text-decoration: none;
@@ -145,6 +162,11 @@ async function signOut() {
 .client-shell__nav a:hover {
   background: var(--ui-bg-elevated);
   color: var(--ui-text-highlighted);
+}
+
+.client-shell__appointments-icon,
+.client-shell__switch-icon {
+  display: none;
 }
 
 .client-shell__body {
@@ -190,15 +212,53 @@ async function signOut() {
 
 @media (max-width: 720px) {
   .client-shell__bar {
-    align-items: flex-start;
+    align-items: center;
+    gap: 12px;
   }
 
   .client-shell__nav {
-    align-items: flex-end;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
   }
 
   .client-shell__nav a {
+    min-height: 44px;
+  }
+
+  .client-shell__nav-link--appointments,
+  .client-shell__nav-link--switcher,
+  .client-shell__nav :deep(.client-shell__logout) {
+    display: inline-flex;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .client-shell__appointments-icon,
+  .client-shell__switch-icon {
+    display: block;
+    width: 18px;
+    height: 18px;
+  }
+
+  .client-shell__appointments-label,
+  .client-shell__switch-label,
+  .client-shell__logout-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .client-shell__brand > span,
+  .client-shell__brand > small {
     display: none;
   }
 }

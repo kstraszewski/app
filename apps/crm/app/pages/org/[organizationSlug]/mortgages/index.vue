@@ -765,5 +765,5 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
 .chip.active,
 .primary{color:var(--ui-text-inverted)}
 @media(max-width:1100px){.workspace{grid-template-columns:1fr}.scenario-panel{position:static;grid-template-columns:repeat(2,minmax(0,1fr))}.panel-heading,.panel-heading--compact,fieldset{grid-column:1/-1}.offer-grid{grid-template-columns:1fr}.detail-columns{grid-template-columns:1fr}.notice{grid-template-columns:auto 1fr}.notice>span{grid-column:2}}
-@media(max-width:700px){.scenario-panel{grid-template-columns:1fr}.results-toolbar,.source,.schedule-heading{align-items:stretch;flex-direction:column}.results-toolbar label{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.notice>span{grid-column:1}.offer dl{grid-template-columns:1fr}.primary-price strong{font-size:24px}}
+@media(max-width:700px){.scenario-panel{grid-template-columns:1fr}.results-toolbar,.source,.schedule-heading{align-items:stretch;flex-direction:column}.results-toolbar label{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.notice>span{grid-column:1}.offer dl{grid-template-columns:1fr}.offer-options__change{grid-template-columns:1fr;align-items:stretch}.primary-price strong{font-size:24px}}
 </style>

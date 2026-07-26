@@ -462,10 +462,12 @@ function formatMetric(metric: DashboardMetric) {
           <span>Aktualizacja</span>
         </div>
         <div v-for="item in dashboard.items" :key="item.id" class="item-row">
-          <strong>{{ item.title }}</strong>
-          <CrmStatusBadge :status="item.status_code" />
-          <span>{{ item.amount_value ? `${Number(item.amount_value).toLocaleString('pl-PL')} ${item.currency}` : '—' }}</span>
-          <span>{{ new Date(item.updated_at).toLocaleDateString('pl-PL') }}</span>
+          <strong data-label="Produkt">{{ item.title }}</strong>
+          <span class="item-row__status" data-label="Status">
+            <CrmStatusBadge :status="item.status_code" />
+          </span>
+          <span data-label="Wartość">{{ item.amount_value ? `${Number(item.amount_value).toLocaleString('pl-PL')} ${item.currency}` : '—' }}</span>
+          <span data-label="Aktualizacja">{{ new Date(item.updated_at).toLocaleDateString('pl-PL') }}</span>
         </div>
         <div v-if="!dashboard.items.length" class="empty-line">Brak produktów w sprawach.</div>
       </div>
@@ -903,6 +905,8 @@ function formatMetric(metric: DashboardMetric) {
 
 .item-table {
   display: grid;
+  container-name: dashboard-items;
+  container-type: inline-size;
 }
 
 .item-row {
@@ -983,12 +987,62 @@ function formatMetric(metric: DashboardMetric) {
 
   .item-row {
     grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 8px;
     padding: 12px 0;
   }
 
   .item-row--head {
     display: none;
+  }
+
+  .item-row:not(.item-row--head) > [data-label] {
+    display: grid;
+    grid-template-columns: minmax(92px, .45fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .item-row:not(.item-row--head) > [data-label]::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .item-row__status {
+    min-width: 0;
+  }
+}
+
+@container dashboard-items (max-width: 720px) {
+  .item-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .item-row--head {
+    display: none;
+  }
+
+  .item-row:not(.item-row--head) > [data-label] {
+    display: grid;
+    grid-template-columns: minmax(92px, .45fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .item-row:not(.item-row--head) > [data-label]::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
   }
 }
 </style>

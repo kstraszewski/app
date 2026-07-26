@@ -374,10 +374,10 @@ function confirmDisable() {
                 <small>{{ item.widget.title }}</small>
               </span>
             </span>
-            <span class="widget-register__facility">{{ item.facility.name }}</span>
-            <span>{{ bookingWidgetTypeMeta(item.widget.widget_type).label }}</span>
-            <span class="widget-register__metric">{{ item.widget.bookings30Days ?? 0 }}</span>
-            <span>
+            <span class="widget-register__facility" data-label="Placówka">{{ item.facility.name }}</span>
+            <span data-label="Typ">{{ bookingWidgetTypeMeta(item.widget.widget_type).label }}</span>
+            <span class="widget-register__metric" data-label="Rezerwacje · 30 dni">{{ item.widget.bookings30Days ?? 0 }}</span>
+            <span data-label="Status">
               <UBadge :color="item.widget.is_active ? 'success' : 'neutral'" variant="subtle">
                 {{ item.widget.is_active ? 'Aktywny' : 'Wyłączony' }}
               </UBadge>
@@ -619,6 +619,8 @@ button.widget-summary__item:hover,
   border: 1px solid var(--ui-border);
   border-radius: 12px;
   background: var(--ui-bg);
+  container-name: widget-register;
+  container-type: inline-size;
 }
 
 .widget-register__head,
@@ -860,12 +862,73 @@ button.widget-summary__item:hover,
   }
 
   .widget-register__link {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
     min-height: 86px;
+    padding-block: 14px;
+  }
+
+  .widget-register__identity {
+    grid-column: 1 / -1;
   }
 
   .widget-register__link > span:not(.widget-register__identity) {
+    display: grid;
+    gap: 3px;
+    padding-right: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .widget-register__link > span:not(.widget-register__identity)::before {
+    content: attr(data-label);
+    color: var(--ui-text-dimmed);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+}
+
+@container widget-register (max-width: 820px) {
+  .widget-register__head {
     display: none;
+  }
+
+  .widget-register__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .widget-register__link {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    min-height: 86px;
+    padding-block: 14px;
+  }
+
+  .widget-register__identity {
+    grid-column: 1 / -1;
+  }
+
+  .widget-register__link > span:not(.widget-register__identity) {
+    display: grid;
+    gap: 3px;
+    padding-right: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .widget-register__link > span:not(.widget-register__identity)::before {
+    content: attr(data-label);
+    color: var(--ui-text-dimmed);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
   }
 }
 
@@ -888,6 +951,10 @@ button.widget-summary__item:hover,
   .widget-empty {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .widget-register__link {
+    grid-template-columns: 1fr;
   }
 }
 </style>

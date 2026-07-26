@@ -2053,6 +2053,7 @@ onBeforeUnmount(() => {
 
   .booking-steps button {
     gap: 6px;
+    min-height: 44px;
   }
 
   .booking-steps button > span {

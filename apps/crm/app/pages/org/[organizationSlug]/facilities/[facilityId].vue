@@ -1649,25 +1649,26 @@ async function disconnectCalendar() {
                     <UInput v-model="period.startsAt" type="time" :disabled="!canManage" aria-label="Godzina otwarcia" />
                     <span>—</span>
                     <UInput v-model="period.endsAt" type="time" :disabled="!canManage" aria-label="Godzina zamknięcia" />
-                    <UButton
-                      v-if="canManage"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-x"
-                      square
-                      aria-label="Usuń przedział"
-                      @click="removePeriod(day, index)"
-                    />
-                    <UButton
-                      v-if="canManage && index === day.periods.length - 1"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-plus"
-                      square
-                      aria-label="Dodaj przedział"
-                      title="Dodaj przedział"
-                      @click="addPeriod(day)"
-                    />
+                    <div v-if="canManage" class="period-row__actions">
+                      <UButton
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-x"
+                        square
+                        aria-label="Usuń przedział"
+                        @click="removePeriod(day, index)"
+                      />
+                      <UButton
+                        v-if="index === day.periods.length - 1"
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-plus"
+                        square
+                        aria-label="Dodaj przedział"
+                        title="Dodaj przedział"
+                        @click="addPeriod(day)"
+                      />
+                    </div>
                   </div>
                 </div>
                 <span v-else class="schedule-day__closed">Zamknięte</span>
@@ -1797,25 +1798,26 @@ async function disconnectCalendar() {
                       <UInput v-model="period.startsAt" type="time" :disabled="!canEditSelectedExpert" aria-label="Dostępny od" />
                       <span>—</span>
                       <UInput v-model="period.endsAt" type="time" :disabled="!canEditSelectedExpert" aria-label="Dostępny do" />
-                      <UButton
-                        v-if="canEditSelectedExpert"
-                        color="neutral"
-                        variant="ghost"
-                        icon="i-lucide-x"
-                        square
-                        aria-label="Usuń przedział"
-                        @click="removePeriod(day, index)"
-                      />
-                      <UButton
-                        v-if="canEditSelectedExpert && index === day.periods.length - 1"
-                        color="neutral"
-                        variant="ghost"
-                        icon="i-lucide-plus"
-                        square
-                        aria-label="Dodaj przedział"
-                        title="Dodaj przedział"
-                        @click="addPeriod(day)"
-                      />
+                      <div v-if="canEditSelectedExpert" class="period-row__actions">
+                        <UButton
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-x"
+                          square
+                          aria-label="Usuń przedział"
+                          @click="removePeriod(day, index)"
+                        />
+                        <UButton
+                          v-if="index === day.periods.length - 1"
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-plus"
+                          square
+                          aria-label="Dodaj przedział"
+                          title="Dodaj przedział"
+                          @click="addPeriod(day)"
+                        />
+                      </div>
                     </div>
                   </div>
                   <span v-else class="schedule-day__closed">Niedostępny</span>
@@ -2988,9 +2990,16 @@ async function disconnectCalendar() {
 
 .period-row {
   display: grid;
-  grid-template-columns: 120px auto 120px 34px 34px;
+  grid-template-columns: 120px auto 120px auto;
   gap: 8px;
   align-items: center;
+}
+
+.period-row__actions {
+  display: grid;
+  grid-auto-columns: 34px;
+  grid-auto-flow: column;
+  gap: 8px;
 }
 
 .schedule-day__closed {
@@ -3386,8 +3395,17 @@ async function disconnectCalendar() {
   }
 
   .period-row {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 34px 34px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
     width: 100%;
+  }
+
+  .period-row__actions {
+    grid-auto-columns: 44px;
+  }
+
+  .period-row__actions :deep(button) {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .override-form {
@@ -3413,6 +3431,17 @@ async function disconnectCalendar() {
   .calendar-card__details div {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+}
+
+@media (max-width: 480px) {
+  .period-row {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .period-row__actions {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 }
 </style>

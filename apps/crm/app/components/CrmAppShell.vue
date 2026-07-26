@@ -14,6 +14,8 @@ const sidebarCollapsed = useCookie<boolean>('openexpert-crm-nav-collapsed', {
 const mobileNavigationOpen = ref(false)
 const mobileViewport = ref(false)
 let viewportMedia: MediaQueryList | null = null
+let previousBodyOverflow = ''
+let bodyScrollLocked = false
 const organizationDesign = useOrganizationDesignState()
 const user = useSupabaseUser()
 const supabase = useHasSupabaseConfig() ? useSupabaseClient() : null
@@ -72,7 +74,27 @@ const sidebarToggleIcon = computed(() => {
 })
 
 watch(() => route.fullPath, () => {
-  mobileNavigationOpen.value = false
+  if (mobileNavigationOpen.value) closeMobileNavigation()
+})
+
+function setBodyScrollLock(locked: boolean) {
+  if (!import.meta.client) return
+
+  if (locked && !bodyScrollLocked) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    bodyScrollLocked = true
+    return
+  }
+
+  if (!locked && bodyScrollLocked) {
+    document.body.style.overflow = previousBodyOverflow
+    bodyScrollLocked = false
+  }
+}
+
+watch([mobileNavigationOpen, mobileViewport], ([open, mobile]) => {
+  setBodyScrollLock(open && mobile)
 })
 
 function updateViewport() {
@@ -80,14 +102,63 @@ function updateViewport() {
   if (!mobileViewport.value) mobileNavigationOpen.value = false
 }
 
+function closeMobileNavigation() {
+  mobileNavigationOpen.value = false
+  if (import.meta.client) {
+    nextTick(() => {
+      document.querySelector<HTMLButtonElement>('.crm-nav__toggle')?.focus()
+    })
+  }
+}
+
+function handleShellKeydown(event: KeyboardEvent) {
+  if (!mobileNavigationOpen.value) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMobileNavigation()
+    return
+  }
+
+  if (event.key !== 'Tab') return
+
+  const navigation = document.querySelector<HTMLElement>('#crm-primary-navigation')
+  if (!navigation) return
+
+  const focusable = Array.from(navigation.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )).filter(element => (
+    element.getAttribute('aria-hidden') !== 'true'
+    && element.getClientRects().length > 0
+  ))
+  if (!focusable.length) return
+
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  const activeElement = document.activeElement
+  const focusOutsideNavigation = !navigation.contains(activeElement)
+
+  if (event.shiftKey && (activeElement === first || focusOutsideNavigation)) {
+    event.preventDefault()
+    last.focus()
+  }
+  else if (!event.shiftKey && (activeElement === last || focusOutsideNavigation)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 onMounted(() => {
   viewportMedia = window.matchMedia('(max-width: 900px)')
   updateViewport()
   viewportMedia.addEventListener('change', updateViewport)
+  window.addEventListener('keydown', handleShellKeydown)
 })
 
 onBeforeUnmount(() => {
   viewportMedia?.removeEventListener('change', updateViewport)
+  window.removeEventListener('keydown', handleShellKeydown)
+  setBodyScrollLock(false)
 })
 
 function toggleSidebar() {
@@ -246,7 +317,22 @@ async function signOut() {
       'crm-shell--mobile-open': mobileNavigationOpen,
     }"
   >
-    <aside class="crm-nav">
+    <button
+      v-if="mobileNavigationOpen"
+      type="button"
+      class="crm-nav-backdrop"
+      tabindex="-1"
+      aria-hidden="true"
+      @click="closeMobileNavigation"
+    />
+
+    <aside
+      id="crm-primary-navigation"
+      class="crm-nav"
+      :role="mobileNavigationOpen ? 'dialog' : undefined"
+      :aria-modal="mobileNavigationOpen ? 'true' : undefined"
+      :aria-label="mobileNavigationOpen ? 'Nawigacja CRM' : undefined"
+    >
       <div class="crm-nav__head">
         <NuxtLink
           :to="organizationBase ? `${organizationBase}/dashboard` : '/'"
@@ -270,6 +356,8 @@ async function signOut() {
           :icon="sidebarToggleIcon"
           :aria-label="sidebarToggleLabel"
           :title="sidebarToggleLabel"
+          :aria-expanded="mobileViewport ? mobileNavigationOpen : !sidebarCollapsed"
+          aria-controls="crm-primary-navigation"
           @click="toggleSidebar"
         />
       </div>
@@ -314,7 +402,7 @@ async function signOut() {
               :aria-label="item.label"
               :aria-current="isNavigationActive(item) ? 'page' : undefined"
               :title="sidebarCollapsed ? item.label : undefined"
-              @click="mobileNavigationOpen = false"
+              @click="closeMobileNavigation"
             >
               <UIcon :name="item.icon" />
               <span class="crm-link__label">{{ item.label }}</span>
@@ -393,6 +481,7 @@ async function signOut() {
 
     <section
       class="crm-content"
+      :inert="mobileNavigationOpen || undefined"
       :class="{
         'crm-content--assistant': props.assistantPage,
         'crm-content--workspace': props.workspacePage,
@@ -404,6 +493,8 @@ async function signOut() {
     <CrmEveAssistant
       v-if="!props.assistantPage"
       :key="organizationSlug"
+      :inert="mobileNavigationOpen || undefined"
+      :aria-hidden="mobileNavigationOpen ? 'true' : undefined"
     />
   </main>
 </template>
@@ -442,6 +533,10 @@ async function signOut() {
   transition:
     gap var(--oe-motion-base),
     padding var(--oe-motion-base);
+}
+
+.crm-nav-backdrop {
+  display: none;
 }
 
 .crm-nav__head {
@@ -752,16 +847,56 @@ async function signOut() {
 
   .crm-nav,
   .crm-shell--collapsed .crm-nav {
-    position: static;
+    position: sticky;
+    z-index: 40;
+    top: 0;
     gap: 12px;
     height: auto;
     overflow: visible;
-    padding: 14px 16px;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      16px
+      14px;
     border-bottom: 1px solid color-mix(in srgb, var(--ui-text-inverted) 12%, transparent);
+  }
+
+  .crm-shell--mobile-open .crm-nav,
+  .crm-shell--mobile-open.crm-shell--collapsed .crm-nav {
+    position: fixed;
+    z-index: 60;
+    inset: 0 auto 0 0;
+    width: min(360px, calc(100vw - 24px));
+    height: 100vh;
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      16px
+      max(18px, env(safe-area-inset-bottom));
+    border-right: 1px solid color-mix(in srgb, var(--ui-text-inverted) 12%, transparent);
+    border-bottom: 0;
+    box-shadow: 24px 0 64px rgb(0 0 0 / 34%);
+  }
+
+  .crm-nav-backdrop {
+    position: fixed;
+    z-index: 50;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgb(0 0 0 / 62%);
+    cursor: default;
   }
 
   .crm-nav__head :deep(.crm-nav__toggle) {
     display: inline-flex;
+    width: 44px;
+    min-height: 44px;
   }
 
   .crm-shell--collapsed .crm-nav__head {
@@ -808,7 +943,7 @@ async function signOut() {
   }
 
   .crm-links {
-    flex: none;
+    flex: 1 0 auto;
     grid-template-columns: 1fr;
     gap: 16px;
     min-height: auto;
@@ -819,6 +954,13 @@ async function signOut() {
 
   .crm-link-group__items {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crm-link,
+  .crm-organization-select :deep(button),
+  .crm-nav__footer :deep(button),
+  .crm-nav__footer :deep(a) {
+    min-height: 44px;
   }
 
   .crm-shell--collapsed .crm-link-group {
@@ -865,7 +1007,10 @@ async function signOut() {
   }
 
   .crm-content {
-    padding: 18px 16px 28px;
+    padding:
+      18px
+      16px
+      max(88px, calc(28px + env(safe-area-inset-bottom)));
   }
 
   .crm-content--assistant {
@@ -883,5 +1028,18 @@ async function signOut() {
     padding: 0;
   }
 
+}
+
+@media (max-width: 480px) {
+  .crm-link-group__items {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .crm-shell--mobile-open .crm-nav,
+  .crm-shell--mobile-open.crm-shell--collapsed .crm-nav {
+    width: min(304px, calc(100vw - 16px));
+  }
 }
 </style>

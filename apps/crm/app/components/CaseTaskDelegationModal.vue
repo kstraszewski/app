@@ -340,13 +340,31 @@ const selectedAccessLabels = computed<string[]>(() => (
 
 const primaryActionBlocked = computed<boolean>(() => (
   (
+    activeStep.value === 0
+    && !draft.title.trim()
+  )
+  || (
     activeStep.value === 1
-    && (props.loadingAssignees || Boolean(props.assigneesError) || !allAssignees.value.length)
+    && (
+      props.loadingAssignees
+      || Boolean(props.assigneesError)
+      || !allAssignees.value.length
+      || !draft.assigneeUserId
+    )
   )
   || (
     activeStep.value === 2
     && scheduleMode.value === 'appointment'
-    && appointmentOptionsPending.value
+    && (
+      appointmentOptionsPending.value
+      || !appointmentSelectedSlot.value
+      || !selectedAppointmentContext.value
+    )
+  )
+  || (
+    activeStep.value === 2
+    && scheduleMode.value === 'deadline'
+    && !draft.dueAt
   )
 ))
 
@@ -2660,6 +2678,13 @@ watch(
 }
 
 @media (max-width: 639px) {
+  :global([role="dialog"]:has(.delegation-modal) button[data-slot="close"]) {
+    min-width: 44px;
+    min-height: 44px;
+    top: 10px;
+    right: 10px;
+  }
+
   .delegation-modal {
     min-height: auto;
   }
@@ -2677,8 +2702,24 @@ watch(
     padding: 12px 16px 10px;
   }
 
+  .delegation-stepper :deep(button[data-slot="trigger"]) {
+    width: 44px;
+    height: 44px;
+  }
+
   .delegation-form {
     padding: 18px 16px 24px;
+  }
+
+  .delegation-form :deep(input),
+  .delegation-form :deep(button[role="combobox"]) {
+    min-height: 44px;
+  }
+
+  .delegation-suggestions button,
+  .delegation-due-date__presets button {
+    min-height: 44px;
+    padding: 8px 12px;
   }
 
   .delegation-form--assignee {
@@ -2755,6 +2796,7 @@ watch(
   .delegation-footer > div > :deep(button) {
     flex: 1;
     justify-content: center;
+    min-height: 44px;
   }
 
   .delegation-success {

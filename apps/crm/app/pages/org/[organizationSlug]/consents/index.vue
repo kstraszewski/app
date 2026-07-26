@@ -189,6 +189,7 @@ function clearFilters() {
       :description="`Możesz przeglądać definicje i ich historię. Edycja wymaga roli administratora (bieżąca rola: ${data.role}).`"
     />
 
+    <div class="consent-index">
     <section class="legal-review" aria-label="Informacja prawna">
       <UIcon name="i-lucide-scale" />
       <div>
@@ -246,15 +247,17 @@ function clearFilters() {
             <strong>{{ version.display_title }}</strong>
             <small>{{ definition.code }}</small>
           </span>
-          <span>v{{ version.version }}</span>
-          <span>
-            <UBadge :color="statusColor(version.status)" variant="subtle">
-              {{ statusLabel(version.status) }}
-            </UBadge>
+          <span class="consent-register__details">
+            <span class="consent-register__field" data-label="Wersja">v{{ version.version }}</span>
+            <span class="consent-register__field" data-label="Status">
+              <UBadge :color="statusColor(version.status)" variant="subtle">
+                {{ statusLabel(version.status) }}
+              </UBadge>
+            </span>
+            <span class="consent-register__field" data-label="Utworzona">{{ formatDateTime(version.created_at) }}</span>
+            <span class="consent-register__field consent-register__note" data-label="Notatka">{{ version.change_note || 'Bez notatki do zmiany' }}</span>
           </span>
-          <span>{{ formatDateTime(version.created_at) }}</span>
-          <span class="consent-register__note">{{ version.change_note || 'Bez notatki do zmiany' }}</span>
-          <UIcon name="i-lucide-chevron-right" />
+          <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
         </NuxtLink>
       </section>
     </template>
@@ -280,19 +283,21 @@ function clearFilters() {
             <strong>{{ definitionTitle(definition) }}</strong>
             <small>{{ definition.code }}</small>
           </span>
-          <span>{{ channelLabel(currentVersionFor(definition)?.channel || 'other') }}</span>
-          <span>
-            <UBadge
-              v-if="currentVersionFor(definition)"
-              :color="statusColor(currentVersionFor(definition)!.status)"
-              variant="subtle"
-            >
-              {{ statusLabel(currentVersionFor(definition)!.status) }}
-            </UBadge>
+          <span class="consent-register__details">
+            <span class="consent-register__field" data-label="Kanał">{{ channelLabel(currentVersionFor(definition)?.channel || 'other') }}</span>
+            <span class="consent-register__field" data-label="Status">
+              <UBadge
+                v-if="currentVersionFor(definition)"
+                :color="statusColor(currentVersionFor(definition)!.status)"
+                variant="subtle"
+              >
+                {{ statusLabel(currentVersionFor(definition)!.status) }}
+              </UBadge>
+            </span>
+            <span class="consent-register__field" data-label="Wymagalność">{{ requirementLabel(currentVersionFor(definition)?.is_required || false) }}</span>
+            <span class="consent-register__field" data-label="Aktualna wersja">v{{ currentVersionFor(definition)?.version || '—' }}</span>
           </span>
-          <span>{{ requirementLabel(currentVersionFor(definition)?.is_required || false) }}</span>
-          <span>v{{ currentVersionFor(definition)?.version || '—' }}</span>
-          <UIcon name="i-lucide-chevron-right" />
+          <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
         </NuxtLink>
       </section>
     </template>
@@ -320,10 +325,16 @@ function clearFilters() {
       <span v-if="showHistory">Wybierz wersję, aby przejść do pełnej historii zgody.</span>
       <span v-else>Wybierz zgodę, aby zobaczyć treść, ustawienia i historię wersji.</span>
     </p>
+    </div>
   </CrmShell>
 </template>
 
 <style scoped>
+.consent-index {
+  container-name: consent-index;
+  container-type: inline-size;
+}
+
 .consent-state {
   margin-bottom: 18px;
 }
@@ -396,7 +407,7 @@ function clearFilters() {
 .consent-register__head,
 .consent-register__row {
   display: grid;
-  grid-template-columns: minmax(240px, 1.45fr) minmax(140px, .8fr) minmax(140px, .75fr) minmax(130px, .7fr) minmax(110px, .55fr) 24px;
+  grid-template-columns: minmax(240px, 1.45fr) minmax(140px, .8fr) minmax(140px, .75fr) minmax(130px, .7fr) minmax(110px, .55fr) 44px;
   gap: 18px;
   align-items: center;
 }
@@ -426,15 +437,6 @@ function clearFilters() {
   color: var(--ui-text-highlighted);
 }
 
-.consent-register__row > .iconify {
-  color: var(--ui-text-muted);
-  transition: transform var(--oe-motion-fast);
-}
-
-.consent-register__row:hover > .iconify {
-  transform: translateX(3px);
-}
-
 .consent-register__identity {
   display: grid;
   gap: 4px;
@@ -460,9 +462,17 @@ function clearFilters() {
   white-space: nowrap;
 }
 
+.consent-register__details {
+  display: contents;
+}
+
+.consent-register__field {
+  min-width: 0;
+}
+
 .consent-register--history .consent-register__head,
 .consent-register__row--history {
-  grid-template-columns: minmax(220px, 1.2fr) 70px 140px 180px minmax(180px, 1fr) 24px;
+  grid-template-columns: minmax(220px, 1.2fr) 70px 140px 180px minmax(180px, 1fr) 44px;
 }
 
 .consent-register__note {
@@ -470,6 +480,19 @@ function clearFilters() {
   color: var(--ui-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.consent-register__open {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--ui-text-muted);
+  transition: transform var(--oe-motion-fast);
+}
+
+.consent-register__row:hover .consent-register__open {
+  transform: translateX(3px);
 }
 
 .consent-helper {
@@ -509,7 +532,7 @@ function clearFilters() {
   font-size: 22px;
 }
 
-@media (max-width: 1120px) {
+@container consent-index (max-width: 1040px) {
   .consent-toolbar {
     grid-template-columns: minmax(240px, 1fr) repeat(2, minmax(160px, .65fr));
   }
@@ -519,52 +542,68 @@ function clearFilters() {
     text-align: left;
   }
 
-  .consent-register__head,
-  .consent-register__row {
-    grid-template-columns: minmax(220px, 1.4fr) minmax(130px, .8fr) minmax(130px, .75fr) minmax(100px, .55fr) 24px;
+  .consent-register {
+    display: grid;
+    gap: 10px;
+    overflow: visible;
+    border: 0;
   }
-
-  .consent-register__head > :nth-child(4),
-  .consent-register__row > :nth-child(4) {
-    display: none;
-  }
-
-  .consent-register--history .consent-register__head,
-  .consent-register__row--history {
-    grid-template-columns: minmax(220px, 1.2fr) 70px 130px 170px 24px;
-  }
-
-  .consent-register--history .consent-register__head > :nth-child(5),
-  .consent-register__row--history > :nth-child(5) {
-    display: none;
-  }
-}
-
-@media (max-width: 760px) {
-  .consent-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .consent-toolbar__count {
-    grid-column: auto;
-  }
-
   .consent-register__head {
     display: none;
   }
-
   .consent-register__row,
   .consent-register__row--history {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 14px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 14px;
     min-height: 0;
+    padding: 15px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: var(--ui-bg);
   }
-
-  .consent-register__row > :not(.consent-register__identity, .iconify),
-  .consent-register__row--history > :not(.consent-register__identity, .iconify) {
-    display: none;
+  .consent-register__identity { grid-column: 1; grid-row: 1; }
+  .consent-register__details {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--ui-border-muted);
   }
+  .consent-register__field {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+  }
+  .consent-register__field::before {
+    content: attr(data-label);
+    color: var(--ui-text-dimmed);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .consent-register__note {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .consent-register__open { grid-column: 2; grid-row: 1; }
+}
 
+@container consent-index (max-width: 620px) {
+  .consent-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .consent-toolbar__count {
+    grid-column: auto;
+  }
+  .consent-register__details {
+    grid-template-columns: 1fr;
+  }
   .legal-review p {
     line-height: 1.5;
   }

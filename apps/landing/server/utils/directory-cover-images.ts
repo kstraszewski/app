@@ -3,6 +3,7 @@ import type { Database } from '../../../../packages/database/database.types'
 import type {
   DirectoryCoverImage,
   DirectoryFacility,
+  DirectoryFacilityGalleryImage,
 } from '../../shared/types/directory'
 
 export const DIRECTORY_COVER_IMAGE_BATCH_SIZE = 80
@@ -15,6 +16,10 @@ const COVER_IMAGE_TRANSFORM = {
   height: 405,
   resize: 'cover',
   quality: 76,
+} as const
+const GALLERY_IMAGE_TRANSFORM = {
+  width: 1280,
+  quality: 82,
 } as const
 
 type ServiceRoleClient = SupabaseClient<Database, 'public'>
@@ -62,6 +67,20 @@ export function directoryCoverImagePayload(
     fallbackUrl,
     alt: image.alt_text?.trim() || `${facilityName} — zdjęcie placówki`,
   }
+}
+
+export function directoryGalleryImagePayload(
+  image: Pick<FacilityImageRow, 'alt_text'>,
+  facilityName: string,
+  thumbnailUrl: string,
+  fallbackUrl: string,
+): DirectoryFacilityGalleryImage {
+  return directoryCoverImagePayload(
+    image,
+    facilityName,
+    thumbnailUrl,
+    fallbackUrl,
+  )
 }
 
 function errorMessage(error: unknown): string {
@@ -214,6 +233,60 @@ async function signDirectoryCoverImage(
   }
 }
 
+async function signDirectoryGalleryImage(
+  serviceRole: ServiceRoleClient,
+  image: FacilityImageRow,
+  facilityName: string,
+): Promise<DirectoryFacilityGalleryImage | null> {
+  try {
+    const storage = serviceRole.storage.from(FACILITY_IMAGES_BUCKET)
+    const [thumbnailResult, fallbackResult] = await Promise.all([
+      storage.createSignedUrl(
+        image.storage_path,
+        COVER_IMAGE_SIGNED_URL_TTL_SECONDS,
+        { transform: GALLERY_IMAGE_TRANSFORM },
+      ),
+      storage.createSignedUrl(
+        image.storage_path,
+        COVER_IMAGE_SIGNED_URL_TTL_SECONDS,
+      ),
+    ])
+
+    if (thumbnailResult.error) {
+      console.warn('[directory] transformed gallery image signing failed', {
+        imageId: image.id,
+        message: thumbnailResult.error.message,
+      })
+    }
+    if (fallbackResult.error) {
+      console.warn('[directory] original gallery image signing failed', {
+        imageId: image.id,
+        message: fallbackResult.error.message,
+      })
+    }
+
+    const thumbnailUrl = thumbnailResult.data?.signedUrl
+      ?? fallbackResult.data?.signedUrl
+    const fallbackUrl = fallbackResult.data?.signedUrl
+      ?? thumbnailResult.data?.signedUrl
+    if (!thumbnailUrl || !fallbackUrl) return null
+
+    return directoryGalleryImagePayload(
+      image,
+      facilityName,
+      thumbnailUrl,
+      fallbackUrl,
+    )
+  }
+  catch (error) {
+    console.warn('[directory] gallery image signing failed', {
+      imageId: image.id,
+      message: errorMessage(error),
+    })
+    return null
+  }
+}
+
 export async function loadDirectoryCoverImages(
   serviceRole: ServiceRoleClient,
   facilities: PublishedFacility[],
@@ -241,4 +314,49 @@ export async function loadDirectoryCoverImages(
   return new Map(signedImages.flatMap(({ facilityId, coverImage }) => (
     coverImage ? [[facilityId, coverImage] as const] : []
   )))
+}
+
+export async function loadDirectoryFacilityGallery(
+  serviceRole: ServiceRoleClient,
+  organizationId: string,
+  facilityId: string,
+  facilityName: string,
+): Promise<DirectoryFacilityGalleryImage[]> {
+  const { data, error } = await serviceRole
+    .from('facility_images')
+    .select(`
+      id,
+      facility_id,
+      storage_bucket,
+      storage_path,
+      alt_text
+    `)
+    .eq('organization_id', organizationId)
+    .eq('facility_id', facilityId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (error) {
+    console.error('[directory] gallery image query failed', {
+      code: error.code,
+      message: error.message,
+      facilityId,
+    })
+    throw new Error('Directory gallery query failed.')
+  }
+
+  const images = ((data ?? []) as FacilityImageRow[]).filter(image => (
+    image.facility_id === facilityId
+    && image.storage_bucket === FACILITY_IMAGES_BUCKET
+  ))
+  const signedImages = await mapWithConcurrency(
+    images,
+    COVER_IMAGE_SIGNING_CONCURRENCY,
+    image => signDirectoryGalleryImage(serviceRole, image, facilityName),
+  )
+
+  return signedImages.filter(
+    (image): image is DirectoryFacilityGalleryImage => Boolean(image),
+  )
 }

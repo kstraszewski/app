@@ -440,6 +440,8 @@ async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
       postal_code: '70-475',
       city: 'Szczecin',
       country_code: 'PL',
+      latitude: 53.4305362,
+      longitude: 14.5418219,
       phone: '+48 91 881 24 60',
       email: 'szczecin@openexpert.local',
       is_active: true,
@@ -1145,11 +1147,17 @@ async function verifyPasswordLogin(credentials) {
 
   const { data: facility, error: facilityError } = await serviceClient
     .from('facilities')
-    .select('id')
+    .select('id, latitude, longitude')
     .eq('organization_id', profile.organization_id)
     .eq('slug', 'szczecin-centrum')
     .single()
   assertNoError(facilityError, 'Reading the seeded facility')
+  if (
+    facility.latitude !== 53.4305362
+    || facility.longitude !== 14.5418219
+  ) {
+    throw new Error('The Szczecin demo facility must have stable map coordinates.')
+  }
 
   const { data: facilityImages, error: facilityImagesError } = await supabase
     .from('facility_images')

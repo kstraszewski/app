@@ -3338,6 +3338,8 @@ export type Database = {
           email: string | null
           id: string
           is_active: boolean
+          latitude: number | null
+          longitude: number | null
           name: string
           organization_id: string
           phone: string | null
@@ -3356,6 +3358,8 @@ export type Database = {
           email?: string | null
           id?: string
           is_active?: boolean
+          latitude?: number | null
+          longitude?: number | null
           name: string
           organization_id: string
           phone?: string | null
@@ -3374,6 +3378,8 @@ export type Database = {
           email?: string | null
           id?: string
           is_active?: boolean
+          latitude?: number | null
+          longitude?: number | null
           name?: string
           organization_id?: string
           phone?: string | null
@@ -3700,6 +3706,138 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "booking_services"
             referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      mail_connections: {
+        Row: {
+          account_email: string
+          account_id: string
+          created_at: string
+          encrypted_access_token: string | null
+          encrypted_refresh_token: string | null
+          id: string
+          last_error: string | null
+          organization_id: string
+          owner_user_id: string
+          provider: string
+          scopes: string[]
+          status: string
+          token_expires_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_email: string
+          account_id: string
+          created_at?: string
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
+          id?: string
+          last_error?: string | null
+          organization_id: string
+          owner_user_id: string
+          provider?: string
+          scopes?: string[]
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_email?: string
+          account_id?: string
+          created_at?: string
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
+          id?: string
+          last_error?: string | null
+          organization_id?: string
+          owner_user_id?: string
+          provider?: string
+          scopes?: string[]
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mail_connections_owner_fkey"
+            columns: ["organization_id", "owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
+      mail_send_requests: {
+        Row: {
+          attempts: number
+          connection_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          idempotency_key: string
+          message_id_header: string
+          organization_id: string
+          owner_user_id: string
+          provider_message_id: string | null
+          provider_thread_id: string | null
+          request_hash: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          connection_id: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key: string
+          message_id_header: string
+          organization_id: string
+          owner_user_id: string
+          provider_message_id?: string | null
+          provider_thread_id?: string | null
+          request_hash: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          connection_id?: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key?: string
+          message_id_header?: string
+          organization_id?: string
+          owner_user_id?: string
+          provider_message_id?: string | null
+          provider_thread_id?: string | null
+          request_hash?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_send_requests_connection_fkey"
+            columns: ["organization_id", "owner_user_id", "connection_id"]
+            isOneToOne: false
+            referencedRelation: "mail_connections"
+            referencedColumns: ["organization_id", "owner_user_id", "id"]
+          },
+          {
+            foreignKeyName: "mail_send_requests_membership_fkey"
+            columns: ["organization_id", "owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
           },
         ]
       }

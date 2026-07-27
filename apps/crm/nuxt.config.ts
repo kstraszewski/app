@@ -112,6 +112,14 @@ export default defineNuxtConfig({
         tenant: 'common',
       },
     },
+    mailOAuth: {
+      encryptionKey: '',
+      google: {
+        clientId: '',
+        clientSecret: '',
+        redirectUri: '',
+      },
+    },
     public: {
       openexpert: {
         landingBaseUrl: process.env.NUXT_PUBLIC_LANDING_BASE_URL

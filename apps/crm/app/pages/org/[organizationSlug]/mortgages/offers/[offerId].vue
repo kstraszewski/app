@@ -76,6 +76,7 @@ type OrganizationProductSettingsPayload = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const offerId = computed(() => String(route.params.offerId ?? ''))
@@ -376,7 +377,24 @@ watch(detail, (value) => {
 
 watch(() => draft.value.features, syncPreviewSelections, { deep: true })
 watch(() => draft.value.costs, syncPreviewCostSettlements, { deep: true })
-watch(() => route.query.step, value => { activeStep.value = editorStepFromQuery(value) })
+watch(() => route.query.step, (value) => {
+  const step = editorStepFromQuery(value)
+  if (activeStep.value !== step) activeStep.value = step
+})
+watch(activeStep, (value) => {
+  const step = editorStepFromQuery(value)
+  const routeStep = editorStepFromQuery(route.query.step)
+  const hasCanonicalQuery = step === 'basics'
+    ? route.query.step === undefined
+    : route.query.step === step
+
+  if (routeStep === step && hasCanonicalQuery) return
+
+  const query = { ...route.query }
+  if (step === 'basics') delete query.step
+  else query.step = step
+  void router.replace({ query })
+})
 useHead(() => ({ title: `${detail.value?.product.name ?? 'Edycja oferty'} — OpenExpert` }))
 
 defineShortcuts({
@@ -1109,13 +1127,21 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
           @submit="submitDraft"
         >
           <UCard class="offer-editor__workspace">
-            <UStepper
+            <UTabs
               v-model="activeStep"
               :items="editorSteps"
               value-key="value"
-              :linear="false"
-              class="offer-editor__stepper"
+              label-key="title"
+              class="offer-editor__tabs"
+              aria-label="Sekcje konfiguracji produktu"
             >
+              <template #default="{ item }">
+                <span class="offer-editor__tab-label">
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.description }}</small>
+                </span>
+              </template>
+
               <template #basics>
                 <section class="editor-section">
                   <header class="editor-section__header">
@@ -1437,7 +1463,7 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
                   </div>
                 </section>
               </template>
-            </UStepper>
+            </UTabs>
           </UCard>
         </UForm>
       </template>
@@ -1467,9 +1493,55 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 .offer-editor__statusbar strong { color: var(--ui-text-highlighted); font-size: 12px; }
 .offer-editor__status-icon { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px; color: var(--ui-text-toned); background: var(--ui-bg-elevated); }
 .offer-editor__workspace { min-width: 0; max-width: 100%; }
-.offer-editor__stepper { min-width: 0; max-width: 100%; }
-.offer-editor__stepper :deep([data-slot="header"]) { overflow-x: auto; max-width: 100%; padding-bottom: 6px; overscroll-behavior-inline: contain; scrollbar-width: thin; }
-.offer-editor__stepper :deep([data-slot="item"]) { min-width: 128px; }
+.offer-editor__tabs { min-width: 0; max-width: 100%; }
+.offer-editor__tabs :deep([data-slot="list"]) {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.offer-editor__tabs :deep([data-slot="indicator"]) { display: none; }
+.offer-editor__tabs :deep([data-slot="trigger"]) {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: 10px;
+  min-width: 0;
+  min-height: 70px;
+  padding: 11px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+  text-align: left;
+}
+.offer-editor__tabs :deep([data-slot="trigger"]:hover) {
+  border-color: var(--ui-border-accented);
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+}
+.offer-editor__tabs :deep([data-slot="trigger"][data-state="active"]) {
+  border-color: var(--ui-primary);
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 8%, var(--ui-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-primary) 24%, transparent);
+}
+.offer-editor__tabs :deep([data-slot="leadingIcon"]) { width: 22px; height: 22px; justify-self: center; }
+.offer-editor__tabs :deep([data-slot="label"]) {
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.offer-editor__tab-label { display: grid; gap: 2px; min-width: 0; }
+.offer-editor__tab-label strong { color: var(--ui-text-highlighted); font-size: 12px; line-height: 1.2; }
+.offer-editor__tab-label small { color: var(--ui-text-muted); font-size: 10px; font-weight: 400; line-height: 1.25; }
+.offer-editor__tabs :deep([data-slot="trigger"][data-state="active"]) .offer-editor__tab-label strong { color: var(--ui-primary); }
 .editor-section { display: grid; gap: 22px; padding-top: 22px; }
 .editor-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--ui-border); }
 .editor-section__header--actions { align-items: center; }
@@ -1532,25 +1604,7 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 @media (max-width: 1200px) {
   .organization-product-settings__form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .organization-product-settings__notes { grid-column: 1 / -1; }
-  .offer-editor__stepper :deep([data-slot="header"]) {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-    overflow-x: visible;
-    padding-bottom: 0;
-  }
-  .offer-editor__stepper :deep([data-slot="item"]) {
-    min-width: 0;
-    padding: 10px 8px;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--ui-radius);
-    background: var(--ui-bg-muted);
-  }
-  .offer-editor__stepper :deep([data-slot="item"][data-state="active"]) {
-    border-color: var(--ui-border-accented);
-    background: var(--ui-bg-elevated);
-  }
-  .offer-editor__stepper :deep([data-slot="separator"]) { display: none; }
+  .offer-editor__tabs :deep([data-slot="list"]) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .offer-editor__statusbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .offer-editor__statusbar > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--ui-border); }
   .offer-editor__statusbar > div:nth-child(4) { border-top: 1px solid var(--ui-border); }
@@ -1566,7 +1620,7 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
   .organization-product-settings__form { grid-template-columns: 1fr; }
   .organization-product-settings__notes, .organization-product-settings__actions { grid-column: auto; }
   .organization-product-settings__actions { align-items: stretch; flex-direction: column-reverse; }
-  .offer-editor__stepper :deep([data-slot="header"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .offer-editor__tabs :deep([data-slot="list"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .offer-editor__statusbar, .form-grid--2, .form-grid--3, .form-grid--4, .result-metrics { grid-template-columns: 1fr; }
   .offer-editor__statusbar > div { border-top: 1px solid var(--ui-border); border-left: 0; }
   .offer-editor__statusbar > div:first-child { border-top: 0; }

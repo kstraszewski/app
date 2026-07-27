@@ -275,6 +275,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
       { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
       { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
       { label: 'Spotkania', to: `${organizationBase.value}/meetings`, icon: 'i-lucide-video' },
+      { label: 'Poczta', to: `${organizationBase.value}/mail`, icon: 'i-lucide-mail' },
       { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
       { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
     ],

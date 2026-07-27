@@ -128,6 +128,7 @@ export default defineNuxtConfig({
         crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL
           || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004'),
         siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://www.openexpert.app',
+        mapboxAccessToken: process.env.NUXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
       },
       supabase: {
         url: supabaseUrl,
@@ -157,6 +158,11 @@ export default defineNuxtConfig({
       },
     },
     '/placowki': {
+      headers: {
+        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+      },
+    },
+    '/placowki/**': {
       headers: {
         'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
       },

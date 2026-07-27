@@ -5,6 +5,7 @@ import {
   DIRECTORY_COVER_IMAGE_BATCH_SIZE,
   directoryCoverImagePayload,
   directoryFacilityIdBatches,
+  directoryGalleryImagePayload,
 } from '../server/utils/directory-cover-images.ts'
 
 describe('directoryFacilityIdBatches', () => {
@@ -61,5 +62,21 @@ describe('directoryCoverImagePayload', () => {
     )
 
     assert.equal(payload.alt, 'OpenExpert Szczecin — zdjęcie placówki')
+  })
+
+  it('uses the same storage-safe shape for a detail gallery image', () => {
+    const payload = directoryGalleryImagePayload(
+      { alt_text: 'Pokój konsultacyjny' },
+      'OpenExpert Szczecin',
+      'thumbnail',
+      'original',
+    )
+
+    assert.deepEqual(payload, {
+      thumbnailUrl: 'thumbnail',
+      fallbackUrl: 'original',
+      alt: 'Pokój konsultacyjny',
+    })
+    assert.equal('storage_path' in payload, false)
   })
 })

@@ -686,3 +686,75 @@ No visual P0 finding remains. The subsequent lifecycle and integrity audit ident
 - [x] Verify desktop, mobile, browser logs, database constraints, types, build, and automated tests.
 
 final result: passed with known P1 follow-up
+
+---
+
+# Design QA — katalog i podstrona placówki z Mapbox
+
+## Evidence
+
+- Source visual truth — katalog: `/Users/konradstraszewski/.codex/generated_images/019f9bc0-9451-7a10-8df5-a3cc570b1a76/call_A1ytgKZgDGTmMgA9AINWj3Eu.png`
+- Source visual truth — podstrona placówki: `/Users/konradstraszewski/.codex/generated_images/019f9bc0-9451-7a10-8df5-a3cc570b1a76/call_7hbts4eLpo7e3H0SkoVTrnsa.png`
+- Browser-rendered implementation screenshot: unavailable — the in-app browser refused navigation to the local preview during the required QA capture.
+- Intended local routes: `http://127.0.0.1:3003/placowki` and `http://127.0.0.1:3003/placowki/openexpert-local/szczecin-centrum`
+- Intended comparison viewport: `1487 × 1058` CSS pixels at DPR 1.
+- Source image dimensions: both references are `1487 × 1058` pixels.
+- Implementation pixel dimensions, CSS size, and density normalization: unavailable because no browser-rendered capture could be produced.
+- State: public local demo with one published facility, real seeded gallery, four services, four experts, five opening-hour ranges, and Mapbox coordinates.
+
+## Findings
+
+- **[P0] Required browser-rendered comparison evidence is missing**
+  - Location: catalog and public facility detail page.
+  - Evidence: both selected source visuals opened successfully, but the browser rejected navigation to the local preview before an implementation screenshot, console log pass, or interaction pass could be captured.
+  - Impact: typography, spacing, colors, image crop, popup placement, responsive layout, and visual polish cannot be truthfully passed from code and API evidence alone.
+  - Fix: allow the in-app browser to open the local preview, capture both routes at `1487 × 1058` and mobile `390 × 844`, combine each implementation capture with its matching source visual, fix any P0/P1/P2 drift, and repeat the comparison.
+
+## Required fidelity surfaces
+
+- **Fonts and typography:** implemented with existing OpenExpert DM Sans and mono tokens, but visual weight, wrapping, and optical hierarchy remain unverified.
+- **Spacing and layout rhythm:** the selected list/map split, detail gallery/summary split, sticky map rail, borders, and responsive breakpoints are implemented, but the rendered proportions remain unverified.
+- **Colors and visual tokens:** the neutral black/white palette and existing OpenExpert tokens are used; rendered Mapbox basemap balance and contrast remain unverified.
+- **Image quality and asset fidelity:** the real three-image seeded facility gallery and stored alt text are used; final crop, sharpness, and thumbnail rhythm remain unverified.
+- **Copy and content:** Polish catalog, contact, service, expert, opening-hours, directions, sharing, and booking copy is present and driven by the public API.
+- **Accessibility:** semantic headings, breadcrumbs, address/contact links, keyboard-operable map markers, map attribution, search, mobile list/map controls, gallery dialog, focus states, and reduced-motion handling are implemented; browser keyboard verification remains outstanding.
+
+## Full-view and focused comparison evidence
+
+- Full-view comparison: blocked because no implementation screenshot is available.
+- Focused region comparison: blocked for the same reason. Required future regions are the catalog list/map seam and popup, the detail gallery/summary grid, and the sticky location/booking rail.
+- No side-by-side comparison artifact was created; separate source inspection is not being represented as a valid comparison.
+
+## Comparison history
+
+- No visual iteration can be counted. Build, API, typecheck, and route smoke checks do not satisfy the design-QA comparison requirement.
+- After the user explicitly approved opening the local catalog for QA, the in-app browser still refused navigation to the preview. No alternative browser surface was used, so the evidence requirement remains blocked.
+
+## Functional verification completed outside browser QA
+
+- Public directory API returns one facility with stable organization/facility slugs, city, address, cover image, and valid WGS84 coordinates.
+- Public detail API returns contact data, five opening-hour ranges, three gallery images, four services, and four experts.
+- The public detail endpoint returns `404` unless the facility is active and backed by an active, directory-listed calendar widget with a valid bookable catalog.
+- Landing tests pass `40/40`.
+- Landing typecheck passes.
+- Production build passes.
+- Database verification, migration checks, SQL constraints, and the seeded-coordinate assertion pass.
+- Primary browser interactions tested: none; browser navigation was blocked before the page opened.
+- Console errors checked: unavailable; browser navigation was blocked before the page opened.
+
+## Implementation checklist
+
+- [x] Add WGS84 coordinates with pair and range constraints.
+- [x] Seed the Szczecin facility coordinates.
+- [x] Add Mapbox GL JS with a local ignored public token and documented environment placeholder.
+- [x] Build the responsive list/map catalog.
+- [x] Add canonical `/placowki/:organizationSlug/:facilitySlug` routes.
+- [x] Add a gated public facility-detail API.
+- [x] Build gallery, services, experts, contact, directions, opening hours, sharing, map, and booking rail.
+- [x] Add facility URLs to the dynamic sitemap and structured data.
+- [x] Pass automated tests, typecheck, build, API smoke, and database verification.
+- [ ] Capture and compare the browser-rendered desktop and mobile states.
+- [ ] Check browser console and primary interactions.
+- [ ] Fix any visual P0/P1/P2 findings and repeat the comparison.
+
+final result: blocked

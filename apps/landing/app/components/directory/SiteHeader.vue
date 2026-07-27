@@ -1,7 +1,12 @@
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   active?: 'experts' | 'facilities' | 'about'
-}>()
+  ctaHref?: string
+  ctaLabel?: string
+}>(), {
+  ctaHref: '/placowki#katalog-placowek',
+  ctaLabel: 'Umów konsultację',
+})
 </script>
 
 <template>
@@ -10,11 +15,14 @@ defineProps<{
 
     <div class="directory-header__inner">
       <NuxtLink to="/" class="directory-brand" aria-label="OpenExpert — strona główna">
-        <img src="/assets/logo-dark.svg" alt="" width="30" height="30">
+        <img src="/assets/logo-light.svg" alt="" width="30" height="30">
         <span>OpenExpert</span>
       </NuxtLink>
 
       <nav class="directory-nav" aria-label="Katalog OpenExpert">
+        <NuxtLink class="directory-nav__secondary" to="/">
+          Strona główna
+        </NuxtLink>
         <NuxtLink
           to="/eksperci"
           :aria-current="active === 'experts' ? 'page' : undefined"
@@ -35,8 +43,8 @@ defineProps<{
         </NuxtLink>
       </nav>
 
-      <NuxtLink to="/#dla-ekspertow" class="directory-header__cta">
-        Dla ekspertów
+      <NuxtLink :to="ctaHref" class="directory-header__cta">
+        {{ ctaLabel }}
         <Icon name="lucide:arrow-right" aria-hidden="true" />
       </NuxtLink>
     </div>
@@ -47,9 +55,9 @@ defineProps<{
 .directory-header {
   position: relative;
   z-index: 20;
-  border-bottom: 1px solid #252525;
-  background: #030303;
-  color: #f7f7f7;
+  border-bottom: 1px solid #deded9;
+  background: #fafaf8;
+  color: #111;
 }
 
 .directory-header__inner {
@@ -66,7 +74,7 @@ defineProps<{
   width: fit-content;
   align-items: center;
   gap: 13px;
-  color: #f7f7f7;
+  color: #111;
   font-size: 22px;
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -86,7 +94,7 @@ defineProps<{
 .directory-nav a {
   position: relative;
   padding: 10px 0;
-  color: #aaa;
+  color: #484844;
   font-size: 14px;
   text-decoration: none;
   transition: color var(--transition-fast);
@@ -94,7 +102,7 @@ defineProps<{
 
 .directory-nav a:hover,
 .directory-nav a[aria-current='page'] {
-  color: #fff;
+  color: #111;
 }
 
 .directory-nav a[aria-current='page']::after {
@@ -113,11 +121,11 @@ defineProps<{
   align-items: center;
   justify-self: end;
   gap: 10px;
-  border: 1px solid #eee;
+  border: 1px solid #111;
   border-radius: 4px;
   padding: 9px 15px;
-  background: #f7f7f7;
-  color: #111;
+  background: #111;
+  color: #fff;
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
@@ -127,7 +135,7 @@ defineProps<{
 }
 
 .directory-header__cta:hover {
-  background: #dcdcdc;
+  background: #363636;
 }
 
 .directory-header__cta :deep(svg) {
@@ -141,8 +149,8 @@ defineProps<{
   left: 16px;
   z-index: 2;
   padding: 9px 13px;
-  background: #fff;
-  color: #111;
+  background: #111;
+  color: #fff;
   text-decoration: none;
   transform: translateY(-150%);
 }
@@ -152,7 +160,7 @@ defineProps<{
 }
 
 .directory-header :is(a):focus-visible {
-  outline-color: #fff;
+  outline-color: #111;
   outline-offset: 4px;
 }
 
@@ -177,7 +185,7 @@ defineProps<{
   .directory-nav {
     grid-column: 1 / -1;
     grid-row: 2;
-    gap: 28px;
+    gap: 24px;
   }
 
   .directory-nav a {
@@ -188,6 +196,13 @@ defineProps<{
     min-height: 38px;
     padding: 8px 12px;
     font-size: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .directory-nav__secondary,
+  .directory-nav a:last-child {
+    display: none;
   }
 }
 

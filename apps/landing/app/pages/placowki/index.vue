@@ -440,6 +440,19 @@ useHead(() => ({
                     </span>
                   </button>
 
+                  <div class="facility-results__actions">
+                    <NuxtLink :to="facilityHref(facility)">
+                      <Icon name="lucide:external-link" aria-hidden="true" />
+                      Zobacz placówkę
+                      <Icon name="lucide:arrow-right" aria-hidden="true" />
+                    </NuxtLink>
+                    <a :href="bookingHref(facility.widgetKey)">
+                      <Icon name="lucide:calendar-days" aria-hidden="true" />
+                      Zobacz terminy
+                      <Icon name="lucide:arrow-right" aria-hidden="true" />
+                    </a>
+                  </div>
+
                   <img
                     v-if="facility.coverImage"
                     class="facility-results__image"
@@ -453,19 +466,6 @@ useHead(() => ({
                   <span v-else class="facility-results__image-empty" aria-hidden="true">
                     <Icon name="lucide:landmark" />
                   </span>
-
-                  <div class="facility-results__actions">
-                    <NuxtLink :to="facilityHref(facility)">
-                      <Icon name="lucide:external-link" aria-hidden="true" />
-                      Zobacz placówkę
-                      <Icon name="lucide:arrow-right" aria-hidden="true" />
-                    </NuxtLink>
-                    <a :href="bookingHref(facility.widgetKey)">
-                      <Icon name="lucide:calendar-days" aria-hidden="true" />
-                      Zobacz terminy
-                      <Icon name="lucide:arrow-right" aria-hidden="true" />
-                    </a>
-                  </div>
                 </li>
               </ol>
             </div>
@@ -1520,7 +1520,7 @@ useHead(() => ({
   align-items: start;
   gap: 16px;
   border: 0;
-  padding: 33px 0 41px;
+  padding: 33px 0 22px;
   background: transparent;
   color: #111;
   cursor: pointer;
@@ -1613,12 +1613,12 @@ useHead(() => ({
 .facility-results__actions {
   display: grid;
   gap: 12px;
-  margin-top: 32px;
+  margin-bottom: 24px;
 }
 
 .facility-results__actions a {
   display: grid;
-  min-height: 60px;
+  min-height: 48px;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 11px;

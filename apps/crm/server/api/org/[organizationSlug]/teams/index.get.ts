@@ -7,7 +7,7 @@ import {
 type MemberRow = {
   user_id: string
   role: 'expert' | 'admin'
-  user: { id: string; email: string; full_name: string | null } | null
+  user: { id: string; email: string; full_name: string | null; avatar_url: string | null } | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
       .order('created_at'),
     session.supabase
       .from('organization_memberships')
-      .select('user_id, role, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
+      .select('user_id, role, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name, avatar_url)')
       .eq('organization_id', session.organizationId),
   ])
 
@@ -105,6 +105,7 @@ export default defineEventHandler(async (event) => {
       userId: membership.user_id,
       email: membership.user?.email ?? '',
       fullName: membership.user?.full_name ?? '',
+      avatarUrl: membership.user?.avatar_url ?? null,
       role: membership.role,
     })),
     access,

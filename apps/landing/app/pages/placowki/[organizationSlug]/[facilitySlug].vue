@@ -273,6 +273,9 @@ useHead(() => {
             employee: currentFacility.experts.map(expert => ({
               '@type': 'Person',
               name: expert.name,
+              image: expert.avatarUrl
+                ? new URL(expert.avatarUrl, `${siteOrigin}/`).toString()
+                : undefined,
             })),
             makesOffer: currentFacility.services.map(service => ({
               '@type': 'Offer',
@@ -473,7 +476,14 @@ onBeforeUnmount(() => {
                   :key="expert.expertId"
                 >
                   <span class="facility-detail-expert__avatar" aria-hidden="true">
-                    <Icon name="lucide:user-round" />
+                    <img
+                      v-if="expert.avatarUrl"
+                      :src="expert.avatarUrl"
+                      alt=""
+                      width="96"
+                      height="96"
+                    >
+                    <Icon v-else name="lucide:user-round" />
                   </span>
                   <div>
                     <h3>{{ expert.name }}</h3>
@@ -806,6 +816,13 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: #fff;
   color: #222;
+}
+
+.facility-detail-expert__avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .facility-detail-service__icon :deep(svg),

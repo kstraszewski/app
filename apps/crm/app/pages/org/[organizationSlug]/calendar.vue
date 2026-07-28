@@ -176,6 +176,10 @@ const expertItems = computed(() => membersPayload.value.members.map(member => ({
     ? `${member.fullName || member.email} · Ty`
     : member.fullName || member.email,
   value: member.userId,
+  avatar: {
+    src: member.avatarUrl || undefined,
+    alt: member.fullName || member.email,
+  },
 })))
 
 watch(expertItems, (items) => {
@@ -673,7 +677,7 @@ async function deleteSelectedTimeOff() {
         class="calendar-expert-select"
         :items="expertItems"
         value-key="value"
-        icon="i-lucide-user-round"
+        :avatar="selectedExpert?.avatar"
         :loading="membersStatus === 'pending'"
         :disabled="!expertItems.length"
         aria-label="Ekspert wyświetlany w kalendarzu"

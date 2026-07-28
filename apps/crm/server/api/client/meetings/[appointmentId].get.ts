@@ -100,7 +100,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     serviceRole
       .from('users')
-      .select('id, full_name')
+      .select('id, full_name, avatar_url')
       .eq('id', appointment.expert_user_id)
       .maybeSingle(),
     context.shared.kind === 'mortgage-offers' && context.shared.offerIds.length
@@ -152,6 +152,7 @@ export default defineEventHandler(async (event) => {
         ? {
             id: String(expert.id),
             name: String(expert.full_name || 'Ekspert OpenExpert'),
+            avatarUrl: expert.avatar_url ? String(expert.avatar_url) : null,
           }
         : null,
       shared: {

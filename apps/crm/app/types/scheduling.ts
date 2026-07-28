@@ -91,6 +91,7 @@ export interface FacilityMember {
     id: string
     email: string
     full_name: string | null
+    avatar_url: string | null
   } | null
 }
 
@@ -354,6 +355,7 @@ export interface TeamCalendarMember {
   userId: string
   email: string
   fullName: string
+  avatarUrl: string | null
 }
 
 export interface TeamCalendarAppointment {

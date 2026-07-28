@@ -1568,7 +1568,11 @@ async function disconnectCalendar() {
             <div class="member-list">
               <article v-for="row in memberRows" :key="row.member.user_id" class="member-card">
                 <div class="member-card__identity">
-                  <UAvatar :alt="facilityMemberLabel(row.member)" size="lg" />
+                  <UAvatar
+                    :src="row.member.user?.avatar_url || undefined"
+                    :alt="facilityMemberLabel(row.member)"
+                    size="lg"
+                  />
                   <div>
                     <strong>{{ facilityMemberLabel(row.member) }}</strong>
                     <p>{{ row.member.user?.email || row.member.user_id }}</p>

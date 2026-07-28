@@ -236,9 +236,14 @@ function aprLabel(offer: ClientMeetingSharedOffer) {
                 ? 'Spotkanie zakończone'
                 : 'Spotkanie zaplanowane' }}
           </span>
-          <strong>
-            {{ meeting.expert?.name ?? 'Twój ekspert' }}
-          </strong>
+          <span class="meeting-expert">
+            <UAvatar
+              :src="meeting.expert?.avatarUrl || undefined"
+              :alt="meeting.expert?.name ?? 'Twój ekspert'"
+              size="sm"
+            />
+            <strong>{{ meeting.expert?.name ?? 'Twój ekspert' }}</strong>
+          </span>
           <small v-if="meeting.status === 'scheduled'">
             Ta strona automatycznie pokaże spotkanie, gdy ekspert je rozpocznie.
           </small>
@@ -483,6 +488,12 @@ function aprLabel(offer: ClientMeetingSharedOffer) {
   font-weight: 800;
   letter-spacing: .1em;
   text-transform: uppercase;
+}
+
+.meeting-expert {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .meeting-status strong {

@@ -10,6 +10,7 @@ export interface DirectoryFacilityReference {
 
 export interface DirectoryExpertReference {
   name: string
+  avatarUrl?: string | null
 }
 
 export interface DirectoryCoverImage {
@@ -26,6 +27,7 @@ export interface DirectoryCoordinates {
 export interface DirectoryExpert {
   expertId: string
   name: string
+  avatarUrl?: string | null
   services: DirectoryService[]
   facilities: DirectoryFacilityReference[]
   widgetKey: string
@@ -70,6 +72,7 @@ export interface DirectoryFacilityDetailService {
 export interface DirectoryFacilityDetailExpert {
   expertId: string
   name: string
+  avatarUrl?: string | null
   serviceIds: string[]
 }
 

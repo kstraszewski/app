@@ -42,108 +42,119 @@ const caseSteps = [
 </script>
 
 <template>
-  <article class="theme-case" aria-label="Podgląd spersonalizowanej sprawy klienta w OpenExpert CRM">
-    <aside class="theme-case__rail" aria-label="Nawigacja podglądu CRM">
-      <img src="/assets/logo-dark.svg" alt="OpenExpert" width="30" height="30" class="theme-case__logo">
+  <div class="theme-case-container">
+    <article class="theme-case" aria-label="Podgląd spersonalizowanej sprawy klienta w OpenExpert CRM">
+      <aside class="theme-case__rail" aria-label="Nawigacja podglądu CRM">
+        <img src="/assets/logo-dark.svg" alt="OpenExpert" width="30" height="30" class="theme-case__logo">
 
-      <div class="theme-case__rail-items">
+        <div class="theme-case__rail-items">
+          <span
+            v-for="item in railItems"
+            :key="item.label"
+            class="theme-case__rail-item"
+            :class="{ 'theme-case__rail-item--active': item.active }"
+            :aria-label="item.label"
+          >
+            <Icon :name="item.icon" aria-hidden="true" />
+          </span>
+        </div>
+
         <span
-          v-for="item in railItems"
+          class="theme-case__rail-item theme-case__rail-settings"
+          aria-label="Ustawienia"
+        >
+          <Icon name="lucide:settings" aria-hidden="true" />
+        </span>
+      </aside>
+
+      <div class="theme-case__body">
+        <header class="theme-case__header">
+          <div>
+            <p class="theme-case__eyebrow">Sprawa OE-2048</p>
+            <h2>Nowe mieszkanie</h2>
+          </div>
+          <button type="button" class="theme-case__agent-button">
+            <Icon name="lucide:bot" aria-hidden="true" />
+            Jak pracują agenci
+          </button>
+        </header>
+
+        <div class="theme-case__people">
+          <div class="theme-person">
+            <span class="theme-person__label">Klient</span>
+            <span class="theme-person__name">
+              <Icon name="lucide:user-round" aria-hidden="true" />
+              Marta Kowalska
+            </span>
+          </div>
+          <div class="theme-person">
+            <span class="theme-person__label">Ekspert prowadzący</span>
+            <span class="theme-person__name">
+              <Icon name="lucide:user-round" aria-hidden="true" />
+              Jan Nowak
+            </span>
+          </div>
+        </div>
+
+        <section class="theme-agents" aria-labelledby="preview-agents-title">
+          <div class="theme-agents__heading">
+            <span class="theme-agents__icon" aria-hidden="true">
+              <Icon name="lucide:bot" />
+            </span>
+            <span>
+              <small>Aktywność w sprawie</small>
+              <strong id="preview-agents-title">Agenci pracują na wspólnym kontekście</strong>
+            </span>
+          </div>
+
+          <ul class="theme-agents__activity">
+            <li v-for="activity in agentActivity" :key="activity.name">
+              <span>
+                <i :class="`is-${activity.state}`" aria-hidden="true" />
+                {{ activity.name }}
+              </span>
+              <small>{{ activity.detail }}</small>
+            </li>
+          </ul>
+        </section>
+
+        <ol class="theme-case__steps" aria-label="Etapy sprawy klienta">
+          <li v-for="step in caseSteps" :key="step.index" class="theme-step">
+            <span class="theme-step__index">{{ step.index }}</span>
+            <span class="theme-step__connector" aria-hidden="true"><i /></span>
+            <span class="theme-step__icon" aria-hidden="true">
+              <Icon :name="step.icon" />
+            </span>
+            <span class="theme-step__copy">
+              <strong>{{ step.title }}</strong>
+              <small>{{ step.description }}</small>
+            </span>
+            <span class="theme-step__status" :class="`is-${step.state}`">{{ step.status }}</span>
+          </li>
+        </ol>
+      </div>
+
+      <nav class="theme-case__mobile-nav" aria-label="Mobilna nawigacja podglądu CRM">
+        <span
+          v-for="item in railItems.slice(0, 4)"
           :key="item.label"
-          class="theme-case__rail-item"
-          :class="{ 'theme-case__rail-item--active': item.active }"
-          :aria-label="item.label"
+          :class="{ 'is-active': item.active }"
         >
           <Icon :name="item.icon" aria-hidden="true" />
+          <small>{{ item.label }}</small>
         </span>
-      </div>
-
-      <span class="theme-case__rail-item theme-case__rail-settings" aria-label="Ustawienia">
-        <Icon name="lucide:settings" aria-hidden="true" />
-      </span>
-    </aside>
-
-    <div class="theme-case__body">
-      <header class="theme-case__header">
-        <div>
-          <p class="theme-case__eyebrow">Sprawa OE-2048</p>
-          <h2>Nowe mieszkanie</h2>
-        </div>
-        <button type="button" class="theme-case__agent-button">
-          <Icon name="lucide:bot" aria-hidden="true" />
-          Jak pracują agenci
-        </button>
-      </header>
-
-      <div class="theme-case__people">
-        <div class="theme-person">
-          <span class="theme-person__label">Klient</span>
-          <span class="theme-person__name">
-            <Icon name="lucide:user-round" aria-hidden="true" />
-            Marta Kowalska
-          </span>
-        </div>
-        <div class="theme-person">
-          <span class="theme-person__label">Ekspert prowadzący</span>
-          <span class="theme-person__name">
-            <Icon name="lucide:user-round" aria-hidden="true" />
-            Jan Nowak
-          </span>
-        </div>
-      </div>
-
-      <section class="theme-agents" aria-labelledby="preview-agents-title">
-        <div class="theme-agents__heading">
-          <span class="theme-agents__icon" aria-hidden="true">
-            <Icon name="lucide:bot" />
-          </span>
-          <span>
-            <small>Aktywność w sprawie</small>
-            <strong id="preview-agents-title">Agenci pracują na wspólnym kontekście</strong>
-          </span>
-        </div>
-
-        <ul class="theme-agents__activity">
-          <li v-for="activity in agentActivity" :key="activity.name">
-            <span>
-              <i :class="`is-${activity.state}`" aria-hidden="true" />
-              {{ activity.name }}
-            </span>
-            <small>{{ activity.detail }}</small>
-          </li>
-        </ul>
-      </section>
-
-      <ol class="theme-case__steps" aria-label="Etapy sprawy klienta">
-        <li v-for="step in caseSteps" :key="step.index" class="theme-step">
-          <span class="theme-step__index">{{ step.index }}</span>
-          <span class="theme-step__connector" aria-hidden="true"><i /></span>
-          <span class="theme-step__icon" aria-hidden="true">
-            <Icon :name="step.icon" />
-          </span>
-          <span class="theme-step__copy">
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.description }}</small>
-          </span>
-          <span class="theme-step__status" :class="`is-${step.state}`">{{ step.status }}</span>
-        </li>
-      </ol>
-    </div>
-
-    <nav class="theme-case__mobile-nav" aria-label="Mobilna nawigacja podglądu CRM">
-      <span
-        v-for="item in railItems.slice(0, 4)"
-        :key="item.label"
-        :class="{ 'is-active': item.active }"
-      >
-        <Icon :name="item.icon" aria-hidden="true" />
-        <small>{{ item.label }}</small>
-      </span>
-    </nav>
-  </article>
+      </nav>
+    </article>
+  </div>
 </template>
 
 <style scoped>
+.theme-case-container {
+  min-width: 0;
+  container-name: theme-case-preview;
+  container-type: inline-size;
+}
+
 .theme-case {
   position: relative;
   display: grid;
@@ -156,7 +167,6 @@ const caseSteps = [
   background: var(--theme-surface);
   box-shadow: 0 20px 60px rgba(17, 25, 40, 0.08);
   color: var(--theme-text);
-  container-type: inline-size;
   font-family: var(--theme-font-body);
   transition: background 220ms ease, border-color 220ms ease, color 220ms ease, border-radius 220ms ease;
 }
@@ -542,7 +552,7 @@ const caseSteps = [
   display: none;
 }
 
-@container (max-width: 820px) {
+@container theme-case-preview (max-width: 820px) {
   .theme-case__body {
     padding-right: 28px;
     padding-left: 28px;
@@ -577,7 +587,7 @@ const caseSteps = [
   }
 }
 
-@container (max-width: 620px) {
+@container theme-case-preview (max-width: 620px) {
   .theme-case {
     display: block;
     min-height: 0;

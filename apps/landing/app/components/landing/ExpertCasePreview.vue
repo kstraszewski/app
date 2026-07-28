@@ -33,16 +33,16 @@ const caseSteps = [
 
 const agentActivity = [
   {
-    name: 'CRM',
-    detail: 'Kontekst gotowy',
+    name: 'Poczta',
+    detail: '3 wiadomości w sprawie',
+  },
+  {
+    name: 'Status',
+    detail: 'Kredyt · analiza',
   },
   {
     name: 'Eve',
     detail: '4 brakujące dane',
-  },
-  {
-    name: 'Eksport PDF',
-    detail: 'Po zatwierdzeniu',
   },
 ]
 </script>
@@ -100,7 +100,7 @@ const agentActivity = [
           </span>
           <span>
             <small>Aktywność w sprawie</small>
-            <h3 id="case-agents-title">Agenci pracują na wspólnym kontekście</h3>
+            <h3 id="case-agents-title">Poczta, dane i status w jednym kontekście</h3>
           </span>
         </div>
 

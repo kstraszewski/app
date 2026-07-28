@@ -19,6 +19,7 @@ export interface DirectoryCatalogService {
 export interface DirectoryCatalogExpert {
   expertId: string
   name: string
+  avatarUrl: string | null
   serviceKeys: string[]
 }
 
@@ -119,6 +120,7 @@ export function directoryCatalogSnapshot(
       const expert = recordValue(input)
       const expertId = textValue(expert.userId ?? expert.user_id, 80)
       const name = textValue(expert.name ?? expert.full_name, 200)
+      const avatarUrl = nullableText(expert.avatarUrl ?? expert.avatar_url, 2_000)
       if (!uuidPattern.test(expertId) || !name) return []
 
       const rawServiceIds = expert.serviceIds ?? expert.service_ids
@@ -128,7 +130,7 @@ export function directoryCatalogSnapshot(
             .filter(serviceId => availableServiceKeys.has(serviceId)))]
         : [...availableServiceKeys]
 
-      return [{ expertId, name, serviceKeys }]
+      return [{ expertId, name, avatarUrl, serviceKeys }]
     })
 
   const rawFixedExpertId = textValue(
@@ -197,6 +199,7 @@ export function buildDirectory(
         return [{
           expertId,
           name: expert.name,
+          ...(expert.avatarUrl ? { avatarUrl: expert.avatarUrl } : {}),
           services: expert.serviceKeys
             .flatMap(key => servicesById.get(key) ?? [])
             .sort(serviceSort),
@@ -222,7 +225,10 @@ export function buildDirectory(
             .map(service => service.value)
             .sort(serviceSort),
           experts: catalog.experts
-            .map(expert => ({ name: expert.name }))
+            .map(expert => ({
+              name: expert.name,
+              ...(expert.avatarUrl ? { avatarUrl: expert.avatarUrl } : {}),
+            }))
             .sort((left, right) => left.name.localeCompare(right.name, 'pl-PL')),
           widgetKey,
           coverImage: null,

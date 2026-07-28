@@ -649,15 +649,17 @@ async function removePortrait() {
               <img :src="draft.branding.logoOnDark" alt="">
               <strong>{{ draft.branding.productName }}</strong>
             </div>
+            <a class="active"><UIcon name="i-lucide-layout-dashboard" />Dashboard</a>
             <span class="preview-dashboard__section">Kalkulatory</span>
             <a><UIcon name="i-lucide-calculator" />Zdolność</a>
             <a><UIcon name="i-lucide-house" />Hipoteki</a>
             <span class="preview-dashboard__section">Ekspert</span>
-            <a class="active"><UIcon name="i-lucide-layout-dashboard" />Dashboard</a>
             <a><UIcon name="i-lucide-briefcase-business" />Sprawy</a>
-            <a><UIcon name="i-lucide-calendar-days" />Kalendarz</a>
             <a><UIcon name="i-lucide-users" />Klienci</a>
+            <a><UIcon name="i-lucide-calendar-days" />Kalendarz</a>
+            <a><UIcon name="i-lucide-mail" />Poczta</a>
             <a><UIcon name="i-lucide-code-xml" />Widgety</a>
+            <a><UIcon name="i-lucide-chart-no-axes-combined" />Moja sprzedaż</a>
           </aside>
           <main>
             <div class="preview-toolbar">

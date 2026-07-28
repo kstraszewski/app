@@ -497,7 +497,12 @@ function statusColor(statusValue: AppointmentStatus) {
               <tr v-for="item in visibleMembers" :key="item.member.userId">
                 <th scope="row">
                   <NuxtLink :to="individualCalendarTo(item.member.userId)">
-                    <span class="team-calendar-avatar">{{ memberInitials(item) }}</span>
+                    <UAvatar
+                      :src="item.member.avatarUrl || undefined"
+                      :alt="memberName(item)"
+                      :text="memberInitials(item)"
+                      size="lg"
+                    />
                     <span>
                       <strong>{{ memberName(item) }}</strong>
                       <small>{{ item.confirmed }} spot. · {{ formatDuration(item.scheduledMinutes) }}</small>
@@ -564,7 +569,12 @@ function statusColor(statusValue: AppointmentStatus) {
           <ol v-if="visibleMembers.length">
             <li v-for="item in visibleMembers" :key="item.member.userId">
               <span class="team-calendar-ranking__position">{{ memberRank(item.member.userId) }}</span>
-              <span class="team-calendar-avatar">{{ memberInitials(item) }}</span>
+              <UAvatar
+                :src="item.member.avatarUrl || undefined"
+                :alt="memberName(item)"
+                :text="memberInitials(item)"
+                size="lg"
+              />
               <div>
                 <NuxtLink :to="individualCalendarTo(item.member.userId)">
                   {{ memberName(item) }}
@@ -937,20 +947,6 @@ function statusColor(statusValue: AppointmentStatus) {
   color: var(--ui-text-muted);
   font-size: 10px;
   font-weight: 400;
-}
-
-.team-calendar-avatar {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  color: var(--ui-text-highlighted);
-  background: var(--ui-bg-accented);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 750;
 }
 
 .team-calendar-matrix td {

@@ -126,7 +126,7 @@ export default defineEventHandler(async (event) => {
       .in('id', serviceIds),
     serviceRole
       .from('users')
-      .select('id, full_name')
+      .select('id, full_name, avatar_url')
       .in('id', expertIds),
   ])
 
@@ -184,6 +184,7 @@ export default defineEventHandler(async (event) => {
             ? {
                 id: String(expert.id),
                 name: String(expert.full_name),
+                avatarUrl: expert.avatar_url ? String(expert.avatar_url) : null,
               }
             : null,
         }

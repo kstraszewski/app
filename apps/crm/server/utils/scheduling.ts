@@ -58,6 +58,7 @@ export interface PublicWidgetCatalog {
   experts: Array<{
     userId: string
     name: string
+    avatarUrl?: string | null
     serviceIds?: string[]
   }>
   consents: Array<{
@@ -1231,6 +1232,9 @@ export function sanitizePublicCatalog(raw: unknown, widgetKey: string): PublicWi
       return [{
         userId: String(userId),
         name: String(expert.name ?? expert.full_name ?? ''),
+        avatarUrl: typeof (expert.avatarUrl ?? expert.avatar_url) === 'string'
+          ? String(expert.avatarUrl ?? expert.avatar_url)
+          : null,
         ...(Array.isArray(serviceIds)
           ? { serviceIds: serviceIds.map(String) }
           : {}),

@@ -109,6 +109,9 @@ useHead(() => ({
                   '@type': 'Person',
                   '@id': `${canonicalUrl}#ekspert-${expert.expertId}`,
                   name: expert.name,
+                  image: expert.avatarUrl
+                    ? new URL(expert.avatarUrl, `${siteOrigin}/`).toString()
+                    : undefined,
                   knowsAbout: expert.services.map(service => service.name),
                   worksFor: expert.facilities.map(facility => ({
                     '@type': 'Organization',

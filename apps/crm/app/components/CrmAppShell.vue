@@ -255,6 +255,7 @@ type NavigationItem = {
 type NavigationGroup = {
   key: string
   label: string
+  hideLabel?: boolean
   items: NavigationItem[]
 }
 
@@ -269,7 +270,14 @@ function isNavigationActive(item: NavigationItem) {
 }
 
 const navGroups = computed<NavigationGroup[]>(() => {
-  const groups = [{
+  const groups: NavigationGroup[] = [{
+    key: 'overview',
+    label: 'Główne',
+    hideLabel: true,
+    items: [
+      { label: 'Dashboard', to: `${organizationBase.value}/dashboard`, icon: 'i-lucide-layout-dashboard' },
+    ],
+  }, {
     key: 'calculators',
     label: 'Kalkulatory',
     items: [
@@ -280,15 +288,12 @@ const navGroups = computed<NavigationGroup[]>(() => {
     key: 'expert',
     label: 'Ekspert',
     items: [
-      { label: 'Dashboard', to: `${organizationBase.value}/dashboard`, icon: 'i-lucide-layout-dashboard' },
-      { label: 'Moja sprzedaż', to: `${organizationBase.value}/sales`, icon: 'i-lucide-chart-no-axes-combined' },
-      { label: 'Agent AI', to: `${organizationBase.value}/assistant`, icon: 'i-lucide-sparkles' },
       { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
-      { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
-      { label: 'Spotkania', to: `${organizationBase.value}/meetings`, icon: 'i-lucide-video' },
-      { label: 'Poczta', to: `${organizationBase.value}/mail`, icon: 'i-lucide-mail' },
       { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
+      { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
+      { label: 'Poczta', to: `${organizationBase.value}/mail`, icon: 'i-lucide-mail' },
       { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
+      { label: 'Moja sprzedaż', to: `${organizationBase.value}/sales`, icon: 'i-lucide-chart-no-axes-combined' },
     ],
   }]
 
@@ -378,9 +383,9 @@ const navGroups = computed<NavigationGroup[]>(() => {
 const omnisearchPages = computed(() => {
   const pageGroups = (isOrganizationAdmin.value || isSuperAdmin.value)
     ? [...navGroups.value].sort((left, right) => {
-        const priority = { admin: 0, 'team-admin': 1, expert: 2, calculators: 3 }
-        return (priority[left.key as keyof typeof priority] ?? 4)
-          - (priority[right.key as keyof typeof priority] ?? 4)
+        const priority = { admin: 0, 'team-admin': 1, overview: 2, expert: 3, calculators: 4 }
+        return (priority[left.key as keyof typeof priority] ?? 5)
+          - (priority[right.key as keyof typeof priority] ?? 5)
       })
     : navGroups.value
 
@@ -564,7 +569,7 @@ async function signOut() {
           role="group"
           :aria-label="group.label"
         >
-          <p class="crm-link-group__label">{{ group.label }}</p>
+          <p v-if="!group.hideLabel" class="crm-link-group__label">{{ group.label }}</p>
           <div class="crm-link-group__items">
             <NuxtLink
               v-for="item in group.items"

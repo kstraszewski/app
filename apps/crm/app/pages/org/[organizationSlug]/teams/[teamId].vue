@@ -564,7 +564,12 @@ async function deleteTeam() {
           </template>
           <div v-if="members.length" class="member-preview">
             <article v-for="item in members.slice(0, 6)" :key="item.membership.user_id">
-              <span class="member-avatar">{{ memberInitials(item.user) }}</span>
+              <UAvatar
+                :src="item.user.avatarUrl || undefined"
+                :alt="memberLabel(item.user)"
+                :text="memberInitials(item.user)"
+                size="xl"
+              />
               <div>
                 <strong>{{ memberLabel(item.user) }}</strong>
                 <small>{{ item.user.email }}</small>
@@ -619,7 +624,12 @@ async function deleteTeam() {
 
         <div v-if="members.length" class="member-directory">
           <article v-for="item in members" :key="item.membership.user_id" class="member-row">
-            <span class="member-avatar">{{ memberInitials(item.user) }}</span>
+            <UAvatar
+              :src="item.user.avatarUrl || undefined"
+              :alt="memberLabel(item.user)"
+              :text="memberInitials(item.user)"
+              size="xl"
+            />
             <div class="member-row__identity">
               <strong>{{ memberLabel(item.user) }}</strong>
               <small>{{ item.user.email }}</small>
@@ -1139,19 +1149,6 @@ async function deleteTeam() {
   border: 1px solid var(--ui-border);
   border-radius: 12px;
   background: var(--ui-bg);
-}
-
-.member-avatar {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  color: var(--ui-text-highlighted);
-  background: var(--ui-bg-accented);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 750;
 }
 
 .view-intro {

@@ -156,7 +156,14 @@ function isClientMeetingUrl(value: string | null) {
             <dl>
               <div>
                 <dt><UIcon name="i-lucide-user-round" /> Ekspert</dt>
-                <dd>{{ appointment.expert?.name ?? 'Ekspert placówki' }}</dd>
+                <dd class="appointment-expert">
+                  <UAvatar
+                    :src="appointment.expert?.avatarUrl || undefined"
+                    :alt="appointment.expert?.name ?? 'Ekspert placówki'"
+                    size="xs"
+                  />
+                  <span>{{ appointment.expert?.name ?? 'Ekspert placówki' }}</span>
+                </dd>
               </div>
               <div>
                 <dt>
@@ -205,8 +212,13 @@ function isClientMeetingUrl(value: string | null) {
               </UBadge>
             </div>
             <h3>{{ appointment.service?.name ?? 'Konsultacja' }}</h3>
-            <p>
-              {{ appointment.expert?.name ?? 'Ekspert placówki' }}
+            <p class="appointment-expert">
+              <UAvatar
+                :src="appointment.expert?.avatarUrl || undefined"
+                :alt="appointment.expert?.name ?? 'Ekspert placówki'"
+                size="xs"
+              />
+              <span>{{ appointment.expert?.name ?? 'Ekspert placówki' }}</span>
               · {{ appointment.meetingMode === 'online'
                 ? 'Online'
                 : appointment.facility?.name ?? appointment.organization?.name ?? 'Placówka' }}
@@ -237,6 +249,12 @@ function isClientMeetingUrl(value: string | null) {
   display: grid;
   gap: 16px;
   margin-bottom: 42px;
+}
+
+.appointment-expert {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .appointments-section > h2 {

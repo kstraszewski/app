@@ -229,6 +229,9 @@ useHead(() => ({
                     employee: facility.experts.map(expert => ({
                       '@type': 'Person',
                       name: expert.name,
+                      image: expert.avatarUrl
+                        ? new URL(expert.avatarUrl, `${siteOrigin}/`).toString()
+                        : undefined,
                     })),
                   },
                 }

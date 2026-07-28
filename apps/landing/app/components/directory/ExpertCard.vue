@@ -19,7 +19,16 @@ const initials = computed(() => props.expert.name
 <template>
   <article :id="`ekspert-${expert.expertId}`" class="expert-card">
     <header class="expert-card__header">
-      <span class="expert-card__avatar" aria-hidden="true">{{ initials || 'OE' }}</span>
+      <span class="expert-card__avatar" aria-hidden="true">
+        <img
+          v-if="expert.avatarUrl"
+          :src="expert.avatarUrl"
+          alt=""
+          width="54"
+          height="54"
+        >
+        <template v-else>{{ initials || 'OE' }}</template>
+      </span>
       <div>
         <p>Ekspert OpenExpert</p>
         <h3>{{ expert.name }}</h3>
@@ -106,6 +115,13 @@ const initials = computed(() => props.expert.name
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.05em;
+}
+
+.expert-card__avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .expert-card__header p,

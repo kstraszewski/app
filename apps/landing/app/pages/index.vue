@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { siteOrigin } = useLandingSeo({
   title: 'OpenExpert — Agentowy system pracy dla ekspertów',
-  description: 'Prowadź klienta przez nieruchomość, kredyt i ubezpieczenie. Agenci AI pracują na jednej sprawie: porządkują CRM, aktualizują proces i pomagają przygotować wnioski.',
+  description: 'Akredytacja i wypłata do 5 dni roboczych, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu — w jednym systemie pracy dla ekspertów.',
   path: '/',
   socialImageAlt: 'OpenExpert — jeden ekspert i zespół agentów AI pracujących na wspólnej sprawie',
 })
@@ -32,7 +32,7 @@ useHead({
           },
           email: 'hello@openexpert.app',
           sameAs: ['https://github.com/OpenExpertApp/OpenExpert'],
-          description: 'System pracy, publiczny katalog i rezerwacje konsultacji dla ekspertów wspieranych przez agentów AI.',
+          description: 'System pracy dla ekspertów: szybka akredytacja i wypłata, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu.',
         },
         {
           '@type': 'WebSite',
@@ -55,7 +55,7 @@ useHead({
           '@id': homePageId,
           url: homeUrl,
           name: 'OpenExpert — Agentowy system pracy dla ekspertów',
-          description: 'Prowadź klienta przez nieruchomość, kredyt i ubezpieczenie z pomocą agentów AI pracujących na jednej sprawie.',
+          description: 'Akredytacja i wypłata do 5 dni roboczych, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu.',
           isPartOf: { '@id': websiteId },
           about: { '@id': organizationId },
           primaryImageOfPage: { '@id': primaryImageId },
@@ -76,27 +76,51 @@ const mobileMenuOpen = ref(false)
 const platformRows = [
   {
     index: '01',
-    icon: 'lucide:users-round',
-    title: 'Agent CRM porządkuje sprawę',
-    description: 'Wyszukuje i tworzy klientów oraz sprawy, zapisuje aktualne zgody i porządkuje kontekst dalszej obsługi.',
+    icon: 'lucide:landmark',
+    role: 'Agent rozliczeń',
+    title: 'Domyka sprawę i uruchamia wypłatę.',
+    description: 'Po wgraniu finalnych dokumentów sprawdza ich kompletność, automatycznie rozlicza sprawę i przekazuje wypłatę do realizacji.',
+    flow: [
+      { label: 'Start', value: 'Finalne dokumenty' },
+      { label: 'Praca', value: 'Analiza i rozliczenie' },
+      { label: 'Efekt', value: 'Wypłata w realizacji' },
+    ],
   },
   {
     index: '02',
-    icon: 'lucide:workflow',
-    title: 'Agent procesu utrzymuje porządek',
-    description: 'Aktualizuje statusy i dodaje notatki do osi czasu, dzięki czemu zawsze widzisz stan nieruchomości, kredytu i ubezpieczenia.',
+    icon: 'lucide:file-check-2',
+    role: 'Agent wniosków',
+    title: 'Uzupełnia wnioski za Ciebie.',
+    description: 'Pobiera dane klienta i sprawy, dopasowuje je do formularza oraz przygotowuje kompletny wniosek do weryfikacji.',
+    flow: [
+      { label: 'Start', value: 'Dane sprawy' },
+      { label: 'Praca', value: 'Uzupełnienie wniosku' },
+      { label: 'Efekt', value: 'Gotowy do zatwierdzenia' },
+    ],
   },
   {
     index: '03',
-    icon: 'lucide:bot',
-    title: 'Eve scala pola i wskazuje braki',
-    description: 'Porównuje wspólne pola formularzy i pokazuje brakujące dane. Po zatwierdzeniu system generuje gotowy pakiet dokumentów.',
+    icon: 'lucide:search',
+    role: 'Agent okazji',
+    title: 'Szuka kolejnej sprzedaży w Twoim portfelu.',
+    description: 'Analizuje klientów i sprawy, aby wykrywać potencjał refinansowania, dosprzedaży oraz ponownego kontaktu.',
+    flow: [
+      { label: 'Start', value: 'Portfel klientów' },
+      { label: 'Praca', value: 'Analiza potencjału' },
+      { label: 'Efekt', value: 'Nowa okazja' },
+    ],
   },
   {
     index: '04',
-    icon: 'lucide:file-check-2',
-    title: 'Agent przygotowuje, Ty zatwierdzasz',
-    description: 'Rozpoznaje strukturę formularzy i przygotowuje mapowanie pól. Niepewne miejsca kieruje do zatwierdzenia, zamiast podejmować decyzję za Ciebie.',
+    icon: 'lucide:building-2',
+    role: 'Agent wiedzy',
+    title: 'Znajduje odpowiedź w wiedzy całej firmy.',
+    description: 'Przeszukuje zagregowane procedury, dokumenty, materiały i historię spraw, podając odpowiedź we właściwym kontekście.',
+    flow: [
+      { label: 'Start', value: 'Pytanie' },
+      { label: 'Praca', value: 'Wiedza firmowa' },
+      { label: 'Efekt', value: 'Odpowiedź z kontekstem' },
+    ],
   },
 ]
 
@@ -171,7 +195,7 @@ async function submitWaitlist() {
         </a>
 
         <nav class="desktop-nav" aria-label="Główna nawigacja">
-          <a href="#jak-to-dziala">Jak to działa</a>
+          <a href="#korzysci">Korzyści</a>
           <a href="#agenci-ai">Agenci AI</a>
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
@@ -193,7 +217,7 @@ async function submitWaitlist() {
 
         <Transition name="mobile-menu">
           <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
-            <a href="#jak-to-dziala" @click="closeMobileMenu">Jak to działa</a>
+            <a href="#korzysci" @click="closeMobileMenu">Korzyści</a>
             <a href="#agenci-ai" @click="closeMobileMenu">Agenci AI</a>
             <NuxtLink to="/eksperci" @click="closeMobileMenu">Eksperci</NuxtLink>
             <NuxtLink to="/placowki" @click="closeMobileMenu">Placówki</NuxtLink>
@@ -214,10 +238,10 @@ async function submitWaitlist() {
               <em aria-hidden="true">Jeden ekspert.</em>
               <span aria-hidden="true">Zespół agentów AI.</span>
             </h1>
-            <p class="hero-lead">Ty prowadzisz relację i podejmujesz decyzje. Agenci pracują bezpośrednio na sprawie: porządkują CRM, aktualizują proces i wskazują, czego brakuje do gotowych wniosków.</p>
+            <p class="hero-lead">Ty prowadzisz relację i podejmujesz decyzje. OpenExpert łączy CRM, pocztę i agentów AI, automatycznie pilnuje etapu kredytu oraz przyspiesza akredytację i wypłatę.</p>
             <div class="hero-actions">
               <a href="#dolacz" class="button button--light">Dołącz do waitlisty</a>
-              <a href="#agenci-ai" class="button button--dark">Zobacz agentów</a>
+              <a href="#korzysci" class="button button--dark">Zobacz korzyści</a>
             </div>
           </div>
 
@@ -225,40 +249,7 @@ async function submitWaitlist() {
         </div>
       </section>
 
-      <section class="speed-results" aria-labelledby="speed-results-title">
-        <h2 id="speed-results-title" class="visually-hidden">Szybki start sprzedaży i przygotowanie sprawy kredytowej</h2>
-
-        <div class="speed-results__grid">
-          <article class="speed-result">
-            <div class="speed-result__meta">
-              <span>01</span>
-              <strong>Do 3 dni</strong>
-            </div>
-            <h3>Zacznij sprzedawać nawet w 3 dni.</h3>
-            <p>CRM, proces i agenci AI gotowi do obsługi pierwszej sprawy — bez wielomiesięcznego wdrożenia.</p>
-          </article>
-
-          <article class="speed-result">
-            <div class="speed-result__meta">
-              <span>02</span>
-              <strong>Do 3 dni</strong>
-            </div>
-            <h3>Agenci AI mogą przygotować sprawę kredytową nawet w 3 dni.</h3>
-            <p>Porządkują dane, wykrywają braki i kompletują dokumenty do weryfikacji eksperta.</p>
-          </article>
-
-          <article class="speed-result speed-result--note">
-            <div class="speed-result__meta">
-              <span>03</span>
-              <strong>Ważne</strong>
-            </div>
-            <h3>Decyzję kredytową zawsze wydaje bank.</h3>
-            <p>OpenExpert przyspiesza przygotowanie sprawy, ale nie gwarantuje finansowania ani terminu decyzji banku.</p>
-          </article>
-        </div>
-
-        <p class="speed-results__disclaimer">Czas wdrożenia i przygotowania sprawy zależy od zakresu konfiguracji oraz kompletności danych i dokumentów.</p>
-      </section>
+      <LazyLandingBenefitsSection hydrate-never />
       </div>
 
       <LazyLandingJourneySection hydrate-never />
@@ -285,21 +276,48 @@ async function submitWaitlist() {
       <section id="agenci-ai" class="platform-section" aria-labelledby="platform-title">
         <div class="platform-inner">
           <div class="platform-intro">
-            <p class="section-label section-label--dark">Agentowy rdzeń OpenExpert</p>
-            <h2 id="platform-title">Nie kolejny czat.{{ ' ' }}<br><em>Agenci, którzy pracują na sprawie.</em></h2>
-            <p>OpenExpert udostępnia agentom dane i konkretne narzędzia przez MCP. Dzięki temu mogą wyszukiwać, zapisywać i aktualizować informacje w tym samym kontekście, który widzisz w CRM — a decyzje pozostają po Twojej stronie.</p>
+            <p class="section-label section-label--dark">Wyspecjalizowani agenci</p>
+            <h2 id="platform-title">Czterech agentów.{{ ' ' }}<br><em>Od wniosku do kolejnej sprzedaży.</em></h2>
+            <p>Każdy odpowiada za konkretny etap pracy — uzupełnia dane, domyka sprawy, odkrywa okazje i udostępnia wiedzę całej firmy.</p>
           </div>
 
-          <ol class="platform-list">
-            <li v-for="row in platformRows" :key="row.index" class="platform-row">
-              <span class="platform-row__index">{{ row.index }}</span>
-              <span class="platform-row__icon" aria-hidden="true"><Icon :name="row.icon" /></span>
-              <span class="platform-row__copy">
-                <strong>{{ row.title }}</strong>
-                <small>{{ row.description }}</small>
+          <div class="platform-board">
+            <div class="platform-board__bar">
+              <span>Agentowy zespół OpenExpert</span>
+              <span class="platform-board__status">
+                <Icon name="lucide:circle-check" aria-hidden="true" />
+                4 agentów gotowych do pracy
               </span>
-            </li>
-          </ol>
+            </div>
+
+            <ol class="platform-list">
+              <li
+                v-for="row in platformRows"
+                :key="row.index"
+                class="platform-row"
+                :class="{ 'platform-row--featured': row.index === '01' }"
+              >
+                <div class="platform-row__top">
+                  <span class="platform-row__index">{{ row.index }}</span>
+                  <span class="platform-row__icon" aria-hidden="true"><Icon :name="row.icon" /></span>
+                </div>
+
+                <div class="platform-row__copy">
+                  <p>{{ row.role }}</p>
+                  <h3>{{ row.title }}</h3>
+                  <span>{{ row.description }}</span>
+                </div>
+
+                <ol class="platform-flow" :aria-label="`Przebieg pracy: ${row.role}`">
+                  <li v-for="(step, stepIndex) in row.flow" :key="step.label" class="platform-flow__step">
+                    <small>{{ step.label }}</small>
+                    <strong>{{ step.value }}</strong>
+                    <Icon v-if="stepIndex < row.flow.length - 1" name="lucide:arrow-right" aria-hidden="true" />
+                  </li>
+                </ol>
+              </li>
+            </ol>
+          </div>
         </div>
       </section>
 
@@ -624,94 +642,6 @@ async function submitWaitlist() {
   white-space: nowrap;
 }
 
-.speed-results {
-  width: min(1340px, calc(100% - 96px));
-  margin: 0 auto;
-  border-top: 1px solid #303030;
-  padding-bottom: 42px;
-}
-
-.speed-results__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.speed-result {
-  min-width: 0;
-  padding: 30px 36px 24px;
-}
-
-.speed-result:first-child {
-  padding-left: 0;
-}
-
-.speed-result:last-child {
-  padding-right: 0;
-}
-
-.speed-result + .speed-result {
-  border-left: 1px solid #303030;
-}
-
-.speed-result__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 24px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.speed-result__meta span {
-  color: #999;
-}
-
-.speed-result__meta strong {
-  border: 1px solid #4a4a4a;
-  border-radius: 999px;
-  padding: 6px 10px;
-  color: #dcdcdc;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.09em;
-}
-
-.speed-result h3 {
-  max-width: 350px;
-  margin-bottom: 10px;
-  color: #f4f4f4;
-  font-size: clamp(20px, 1.7vw, 25px);
-  font-weight: 500;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-}
-
-.speed-result p {
-  max-width: 365px;
-  color: #929292;
-  font-size: 13.5px;
-  line-height: 1.65;
-}
-
-.speed-result--note h3 {
-  color: #d3d3d3;
-}
-
-.speed-result--note p {
-  color: #7d7d7d;
-}
-
-.speed-results__disclaimer {
-  border-top: 1px solid #242424;
-  padding-top: 16px;
-  color: #999;
-  font-size: 10.5px;
-  line-height: 1.55;
-}
-
 .platform-section,
 .personalize-section,
 .experts-section,
@@ -794,9 +724,6 @@ async function submitWaitlist() {
 }
 
 .platform-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(520px, 1.18fr);
-  gap: clamp(64px, 8vw, 126px);
   padding: 104px 0;
 }
 
@@ -819,9 +746,8 @@ async function submitWaitlist() {
 }
 
 .platform-intro h2 {
-  max-width: 610px;
-  margin-bottom: 26px;
-  font-size: clamp(42px, 4vw, 58px);
+  max-width: 780px;
+  font-size: clamp(42px, 4.2vw, 62px);
 }
 
 .platform-intro h2 em,
@@ -834,68 +760,244 @@ async function submitWaitlist() {
 }
 
 .platform-intro > p:last-child {
-  max-width: 530px;
+  max-width: 500px;
   color: #a8a8a8;
   font-size: 17px;
   line-height: 1.7;
 }
 
+.platform-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(360px, 0.82fr);
+  align-items: end;
+  gap: 28px 80px;
+  margin-bottom: 42px;
+}
+
+.platform-intro .section-label {
+  grid-column: 1 / -1;
+  margin-bottom: -8px;
+}
+
+.platform-board {
+  overflow: hidden;
+  border: 1px solid #353535;
+  border-radius: 6px;
+  background: #080808;
+}
+
+.platform-board__bar {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid #353535;
+  padding: 0 26px;
+  color: #888;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.platform-board__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #aaa;
+}
+
+.platform-board__status :deep(svg) {
+  width: 14px;
+  height: 14px;
+  color: #48b986;
+  stroke-width: 1.8;
+}
+
 .platform-list {
-  border-top: 1px solid #353535;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   list-style: none;
 }
 
 .platform-row {
-  display: grid;
-  min-height: 142px;
-  grid-template-columns: 42px 52px minmax(0, 1fr);
-  align-items: center;
-  gap: 20px;
+  display: flex;
+  min-width: 0;
+  min-height: 292px;
+  flex-direction: column;
   border-bottom: 1px solid #353535;
+  padding: 28px 30px 26px;
+  background: #080808;
+  transition: background 180ms ease-out;
+}
+
+.platform-row:nth-child(odd) {
+  border-right: 1px solid #353535;
+}
+
+.platform-row:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.platform-row:not(.platform-row--featured):hover {
+  background: #101010;
+}
+
+.platform-row--featured {
+  border-color: #c7c7c2;
+  background: #f1f1ed;
+  color: #111;
+}
+
+.platform-row__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
 }
 
 .platform-row__index {
-  align-self: start;
-  padding-top: 28px;
   color: #999;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .platform-row__icon {
   display: grid;
-  width: 52px;
-  height: 52px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  border: 1px solid #404040;
-  border-radius: 5px;
   color: #ededed;
 }
 
 .platform-row__icon :deep(svg) {
-  width: 24px;
-  height: 24px;
+  width: 27px;
+  height: 27px;
   stroke-width: 1.4;
 }
 
+.platform-row--featured .platform-row__index {
+  color: #666;
+}
+
+.platform-row--featured .platform-row__icon {
+  color: #222;
+}
+
 .platform-row__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 26px 0;
+  margin: 20px 0 24px;
 }
 
-.platform-row__copy strong {
-  font-size: 19px;
+.platform-row__copy > p {
+  margin-bottom: 8px;
+  color: #8b8b8b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.platform-row__copy h3 {
+  max-width: 480px;
+  margin-bottom: 10px;
+  font-size: clamp(23px, 2.05vw, 30px);
   font-weight: 500;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
 }
 
-.platform-row__copy small {
-  max-width: 540px;
+.platform-row__copy > span {
+  display: block;
+  max-width: 500px;
   color: #9d9d9d;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.55;
+}
+
+.platform-row--featured .platform-row__copy > p,
+.platform-row--featured .platform-row__copy > span {
+  color: #5f5f5f;
+}
+
+.platform-flow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: auto;
+  border-top: 1px solid #353535;
+  padding-top: 18px;
+  list-style: none;
+}
+
+.platform-flow__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  border-left: 1px solid #353535;
+  padding: 0 24px 0 14px;
+}
+
+.platform-flow__step:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.platform-flow__step:last-child {
+  padding-right: 0;
+}
+
+.platform-flow__step small {
+  color: #6f6f6f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.platform-flow__step strong {
+  overflow-wrap: anywhere;
+  color: #c9c9c9;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.platform-flow__step :deep(svg) {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  color: #5e5e5e;
+  stroke-width: 1.5;
+  transform: translateY(-50%);
+}
+
+.platform-row--featured .platform-flow {
+  border-color: #c7c7c2;
+}
+
+.platform-row--featured .platform-flow__step {
+  border-color: #c7c7c2;
+}
+
+.platform-row--featured .platform-flow__step small {
+  color: #6b6b6b;
+}
+
+.platform-row--featured .platform-flow__step strong {
+  color: #282828;
+}
+
+.platform-row--featured .platform-flow__step :deep(svg) {
+  color: #777;
 }
 
 .experts-section {
@@ -1148,7 +1250,6 @@ async function submitWaitlist() {
   }
 
   .hero,
-  .speed-results,
   .personalize-inner,
   .platform-inner,
   .experts-inner,
@@ -1179,11 +1280,38 @@ async function submitWaitlist() {
     width: 100%;
   }
 
-  .platform-inner,
   .personalize-inner,
   .join-inner {
     grid-template-columns: 1fr;
     gap: 64px;
+  }
+
+  .platform-intro {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .platform-intro .section-label {
+    grid-column: auto;
+    margin-bottom: 0;
+  }
+
+  .platform-intro > p:last-child {
+    max-width: 620px;
+  }
+
+  .platform-row {
+    min-height: 304px;
+    padding: 26px 24px 24px;
+  }
+
+  .platform-row__copy h3 {
+    font-size: 25px;
+  }
+
+  .platform-flow__step {
+    padding-right: 18px;
+    padding-left: 11px;
   }
 
   .personalize-copy {
@@ -1290,7 +1418,6 @@ async function submitWaitlist() {
   }
 
   .hero,
-  .speed-results,
   .personalize-inner,
   .platform-inner,
   .experts-inner,
@@ -1339,42 +1466,6 @@ async function submitWaitlist() {
     font-size: 13.5px;
   }
 
-  .speed-results {
-    padding-bottom: 32px;
-  }
-
-  .speed-results__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .speed-result,
-  .speed-result:first-child,
-  .speed-result:last-child {
-    padding: 25px 0;
-  }
-
-  .speed-result + .speed-result {
-    border-top: 1px solid #303030;
-    border-left: 0;
-  }
-
-  .speed-result__meta {
-    margin-bottom: 17px;
-  }
-
-  .speed-result h3 {
-    max-width: 520px;
-    font-size: 21px;
-  }
-
-  .speed-result p {
-    max-width: 540px;
-  }
-
-  .speed-results__disclaimer {
-    margin-top: 4px;
-  }
-
   .platform-inner,
   .personalize-inner,
   .experts-inner,
@@ -1405,27 +1496,68 @@ async function submitWaitlist() {
     padding: 20px;
   }
 
-  .platform-row {
+  .platform-intro {
+    margin-bottom: 32px;
+  }
+
+  .platform-board__bar {
     min-height: 0;
-    grid-template-columns: 32px 46px minmax(0, 1fr);
-    gap: 13px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 14px 20px;
+  }
+
+  .platform-list {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-row,
+  .platform-row:nth-child(odd),
+  .platform-row:nth-last-child(-n + 2) {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid #353535;
+    padding: 24px 22px 22px;
+  }
+
+  .platform-row:last-child {
+    border-bottom: 0;
   }
 
   .platform-row__icon {
-    width: 46px;
-    height: 46px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .platform-row__icon :deep(svg) {
+    width: 24px;
+    height: 24px;
   }
 
   .platform-row__copy {
-    padding: 24px 0;
+    margin: 16px 0 20px;
   }
 
-  .platform-row__copy strong {
-    font-size: 17px;
+  .platform-row__copy h3 {
+    font-size: 22px;
   }
 
-  .platform-row__copy small {
+  .platform-row__copy > span {
     font-size: 13px;
+  }
+
+  .platform-flow {
+    padding-top: 16px;
+  }
+
+  .platform-flow__step {
+    padding-right: 16px;
+    padding-left: 10px;
+  }
+
+  .platform-flow__step strong {
+    font-size: 10.5px;
   }
 
   .experts-heading {
@@ -1496,7 +1628,6 @@ async function submitWaitlist() {
   .site-header,
   .site-footer__inner,
   .hero,
-  .speed-results,
   .personalize-inner,
   .platform-inner,
   .experts-inner,
@@ -1512,14 +1643,33 @@ async function submitWaitlist() {
     grid-template-columns: 1fr;
   }
 
-  .platform-row {
-    grid-template-columns: 28px 42px minmax(0, 1fr);
-    gap: 9px;
+  .platform-board__bar {
+    padding-right: 18px;
+    padding-left: 18px;
   }
 
-  .platform-row__icon {
-    width: 42px;
-    height: 42px;
+  .platform-row,
+  .platform-row:nth-child(odd),
+  .platform-row:nth-last-child(-n + 2) {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .platform-flow__step {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .platform-flow__step:first-child {
+    padding-left: 0;
+  }
+
+  .platform-flow__step :deep(svg) {
+    display: none;
+  }
+
+  .platform-flow__step strong {
+    font-size: 9.5px;
   }
 
   .site-footer__inner {

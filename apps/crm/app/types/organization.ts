@@ -18,6 +18,7 @@ export interface OrganizationMember {
   userId: string
   email: string
   fullName: string
+  avatarUrl: string | null
   role: 'expert' | 'admin'
 }
 
@@ -68,6 +69,7 @@ export interface TeamDetailMember {
     id: string
     email: string
     fullName: string
+    avatarUrl: string | null
   }
 }
 

@@ -174,6 +174,7 @@ export function buildDirectoryFacilityDetail(input: {
       .map(expert => ({
         expertId: expert.expertId,
         name: cleanText(expert.name, 200),
+        ...(expert.avatarUrl ? { avatarUrl: expert.avatarUrl } : {}),
         serviceIds: expert.serviceKeys.filter(
           serviceId => publishedServiceIds.has(serviceId),
         ),

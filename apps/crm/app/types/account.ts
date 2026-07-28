@@ -47,6 +47,7 @@ export interface ClientAppointment {
   expert: {
     id: string
     name: string
+    avatarUrl: string | null
   } | null
 }
 
@@ -90,6 +91,7 @@ export interface ClientMeeting {
   expert: {
     id: string
     name: string
+    avatarUrl: string | null
   } | null
   shared: ClientMeetingSharedContent
 }

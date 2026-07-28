@@ -86,6 +86,7 @@ interface DelegationMemberRow {
   user_id: string
   email: string
   full_name: string | null
+  avatar_url: string | null
   role: 'expert' | 'admin'
   open_task_count?: number
   team_name?: string | null
@@ -581,6 +582,7 @@ function mapDelegationMember(member: DelegationMemberRow): CaseTaskDelegationAss
     userId: member.user_id,
     email: member.email,
     fullName: member.full_name ?? '',
+    avatarUrl: member.avatar_url,
     role: member.role,
     teamName: member.team_name
       ?? (member.role === 'admin' ? 'Administrator organizacji' : 'Ekspert'),

@@ -105,6 +105,7 @@ export interface OrganizationProfile {
   user_id: string
   email: string
   full_name: string
+  avatar_url: string | null
   role: 'expert' | 'admin'
 }
 
@@ -477,7 +478,8 @@ export async function loadOrganizationProfiles(
       role,
       user:users!organization_memberships_user_id_fkey!inner(
         email,
-        full_name
+        full_name,
+        avatar_url
       )
     `)
     .eq('organization_id', session.organizationId)
@@ -497,6 +499,7 @@ export async function loadOrganizationProfiles(
       user_id: String(membership.user_id),
       email: String(user.email ?? ''),
       full_name: String(user.full_name ?? ''),
+      avatar_url: typeof user.avatar_url === 'string' ? user.avatar_url : null,
       role: membership.role === 'admin' ? 'admin' : 'expert',
     }
     return [[profile.user_id, profile] as const]

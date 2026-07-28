@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
           </span>
           <span class="personalization-demo__agent-state">
             <Icon name="lucide:bot" aria-hidden="true" />
-            3 agentów aktywnych
+            <span class="personalization-demo__agent-state-label">3 agentów aktywnych</span>
           </span>
         </div>
 
@@ -293,6 +293,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .personalization-demo {
   min-width: 0;
+  container-name: personalization-demo;
+  container-type: inline-size;
   font-family: var(--font-sans);
 }
 
@@ -491,9 +493,10 @@ onBeforeUnmount(() => {
     color 680ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.personalization-demo__agent-state :deep(svg) {
+.personalization-demo__agent-state :deep(.iconify) {
   width: 14px;
   height: 14px;
+  flex: 0 0 auto;
   stroke-width: 1.7;
 }
 
@@ -832,7 +835,7 @@ onBeforeUnmount(() => {
   to { width: 100%; }
 }
 
-@media (max-width: 560px) {
+@container personalization-demo (max-width: 560px) {
   .personalization-demo__app {
     min-height: 0;
     grid-template-columns: 1fr;
@@ -847,14 +850,20 @@ onBeforeUnmount(() => {
   }
 
   .personalization-demo__agent-state {
-    max-width: 38px;
-    overflow: hidden;
-    padding: 8px 11px;
-    white-space: nowrap;
+    width: 34px;
+    min-height: 34px;
+    justify-content: center;
+    padding: 0;
   }
 
-  .personalization-demo__agent-state :deep(svg) {
-    flex: 0 0 auto;
+  .personalization-demo__agent-state-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .personalization-demo__cards {

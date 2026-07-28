@@ -2,16 +2,16 @@
   <section id="rozliczenia" class="settlements-section" aria-labelledby="settlements-title">
     <div class="settlements-inner">
       <div class="settlements-copy">
-        <p class="settlements-label">Proste i przejrzyste rozliczenia</p>
-        <h2 id="settlements-title">Wiesz, ile zarobisz.{{ ' ' }}<br><em>I dokładnie za co.</em></h2>
-        <p class="settlements-lead">Po podpisaniu umowy kredytowej rozliczamy sprawę w ciągu 3 dni. Jasne zasady, aktualne kwoty i pełne wyjaśnienie wyniku — zawsze w jednym miejscu.</p>
+        <p class="settlements-label">Szybkie i przejrzyste wypłaty</p>
+        <h2 id="settlements-title">Wiesz, ile zarobisz.{{ ' ' }}<br><em>I kiedy otrzymasz środki.</em></h2>
+        <p class="settlements-lead">Po spełnieniu warunków rozliczenia wypłacamy środki w ciągu maksymalnie 5 dni roboczych. Jasne zasady, aktualne kwoty i pełne wyjaśnienie wyniku — zawsze w jednym miejscu.</p>
 
         <ol class="settlements-points">
           <li>
             <span class="settlements-points__index">01</span>
             <div>
-              <h3>Rozliczenie do 3 dni</h3>
-              <p>Od podpisania umowy kredytowej do gotowego rozliczenia — maksymalnie 3 dni.</p>
+              <h3>Wypłata do 5 dni roboczych</h3>
+              <p>Od spełnienia warunków rozliczenia do wypłaty środków — maksymalnie 5 dni roboczych.</p>
             </div>
           </li>
           <li>
@@ -61,8 +61,8 @@
             <strong>9 120 zł</strong>
           </span>
           <span>
-            <small>Termin rozliczenia</small>
-            <strong>do 3 dni</strong>
+            <small>Termin wypłaty</small>
+            <strong>do 5 dni roboczych</strong>
           </span>
         </div>
 

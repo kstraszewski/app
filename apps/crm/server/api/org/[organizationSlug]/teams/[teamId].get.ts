@@ -10,7 +10,7 @@ import { uuidValue } from '~~/server/utils/scheduling'
 type Row = Record<string, any>
 type OrganizationMemberRow = {
   user_id: string
-  user: { id: string; email: string; full_name: string | null } | null
+  user: { id: string; email: string; full_name: string | null; avatar_url: string | null } | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -87,7 +87,7 @@ export default defineEventHandler(async (event) => {
     userIds.length
       ? session.supabase
           .from('organization_memberships')
-          .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
+          .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name, avatar_url)')
           .eq('organization_id', session.organizationId)
           .in('user_id', userIds)
       : Promise.resolve({ data: [], error: null }),
@@ -141,6 +141,7 @@ export default defineEventHandler(async (event) => {
         id: String(user?.id ?? userId),
         email: String(user?.email ?? ''),
         fullName: String(user?.full_name ?? ''),
+        avatarUrl: typeof user?.avatar_url === 'string' ? user.avatar_url : null,
       },
     }
   })

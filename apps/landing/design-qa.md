@@ -55,6 +55,75 @@ final result: passed
 
 ---
 
+# Personalizacja — RWD regression fix
+
+## Comparison target
+
+- Source visual truth 1: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-a2b5916f-ed82-44ef-bbed-b48c3d9affa8.png`
+- Source 1 pixels: `672 × 1188`; normalized to `336 × 593` for a `336 × 593` CSS viewport at `deviceScaleFactor: 1`.
+- Implementation 1: [`design/personalization/personalization-rwd-final-336.jpg`](design/personalization/personalization-rwd-final-336.jpg), `336 × 593`.
+- Same-input comparison 1: [`design/personalization/personalization-rwd-comparison.png`](design/personalization/personalization-rwd-comparison.png), `672 × 593`, source on the left and implementation on the right.
+- Source visual truth 2: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-a16091b1-8f31-4308-9c7b-93913bb070ed.png`
+- Source 2 pixels: `724 × 1210`; normalized to `362 × 605` for a `362 × 605` CSS viewport at `deviceScaleFactor: 1`.
+- Implementation 2: [`design/personalization/personalization-home-rwd-final-362.jpg`](design/personalization/personalization-home-rwd-final-362.jpg), `362 × 605`.
+- Same-input comparison 2: [`design/personalization/personalization-home-rwd-comparison.png`](design/personalization/personalization-home-rwd-comparison.png), `724 × 605`, source on the left and implementation on the right.
+- Routes and states:
+  - `/personalizacja`, Ocean selected, mobile `Podgląd` tab active.
+  - `/#personalizuj`, Ocean selected, compact landing preview visible.
+
+## Full-view and focused comparison evidence
+
+Comparison 1 is both the full mobile viewport and the focused failing region. Before the fix, the hidden rail left its `70 px` desktop grid track active, forcing the case body and CTA into a narrow column. After the fix, the case root switches to a single block column: the card measures `258 px`, its body `256 px`, and the CTA `216 px` at the `336 px` viewport. The title, people, agent activity and bottom navigation now use the intended compact hierarchy.
+
+Comparison 2 focuses on the landing preview. The clipped `3 ag…` status is replaced with a deliberate `34 px` icon chip. Its `14 px` existing Iconify/Lucide bot remains visible, while the full `3 agentów aktywnych` label stays available to assistive technology.
+
+## Required fidelity surfaces
+
+- Fonts and typography: no font family, weight, size, line-height or letter-spacing tokens changed. The fix removes accidental one-word wrapping in the case preview and preserves the existing title, metadata and ellipsis hierarchy.
+- Spacing and layout rhythm: the compact case now uses its full container width and the existing mobile padding. Named container queries switch the landing preview at its own `560 px` width instead of depending on the viewport. No horizontal overflow was measured at `336`, `390`, `560`, `640`, `641`, `672`, `768`, `820` or `960 px`.
+- Colors and visual tokens: Ocean, Ember and Plum theme variables are unchanged. Borders, surfaces, shadows, radii and state colors remain product-owned.
+- Image quality and asset fidelity: existing OpenExpert logo assets and the installed Iconify/Lucide icons remain in use. No raster placeholder, handmade SVG, CSS drawing or replacement asset was introduced.
+- Copy and content: all case, client, expert and activity copy is unchanged. The compact agent label is visually hidden rather than removed from the accessibility tree.
+
+## Findings and comparison history
+
+### Pass 1
+
+- P1 — `/personalizacja` combined mobile descendants with a desktop root grid. The self-querying `.theme-case` could not apply `display: block`, while its rail was hidden, leaving the body in the `70 px` rail column.
+  - Fix: added a named `theme-case-preview` wrapper container and moved the container query responsibility off the element being restyled.
+  - Post-fix evidence: comparison 1 shows a full-width case column, full-width CTA, readable people/activity sections and no page overflow.
+- P1 — the landing preview intentionally clipped a full status label with `max-width` and `overflow`, leaving the visible fragment `3 ag…`.
+  - Fix: wrapped the label separately, retained it for accessibility, and rendered a centered existing bot icon in the compact `34 px` chip.
+  - Post-fix evidence: comparison 2 shows a stable icon-only chip with no clipped characters.
+- P2 — landing compact behavior used a viewport media query even though the component is nested in a variable-width panel.
+  - Fix: changed the compact rules to a named `personalization-demo` container query.
+  - Post-fix evidence: the full variant remains active at a `578 px` component width and the compact variant activates at `559 px`.
+
+### Pass 2
+
+- No actionable P0/P1/P2 differences remain. The second pass caught and fixed an intermediate selector that visually hid the Iconify span together with the label; the final selector targets only `.personalization-demo__agent-state-label`, and the icon measures `14 × 14 px`.
+
+## Interaction, responsive and automated verification
+
+- Mobile `Ustawienia` / `Podgląd` switching was exercised and the pressed state updated correctly.
+- Theme selection was exercised on the landing preview; Ocean, automatic cycling and the pause control remained functional.
+- `/personalizacja` retained its desktop grid and visible rail at `1440 px`.
+- The page `scrollWidth` equalled `clientWidth` at every checked breakpoint.
+- Final browser-rendered captures were inspected together with both normalized sources.
+- In-app browser logging was checked. It contained module-loader instrumentation messages, with no visible application overlay or source-component runtime failure; the final production Nuxt build and production-rendered responsive measurements passed.
+- `pnpm --filter @openexpert/landing test` — `40/40` passed.
+- `pnpm --filter @openexpert/landing typecheck` — passed.
+- `pnpm --filter @openexpert/landing build` — passed.
+- `git diff --check -- apps/landing/app/components/personalization/CasePreview.vue apps/landing/app/components/landing/PersonalizationPreview.vue apps/landing/design-qa.md` — passed.
+
+## Follow-up polish
+
+- No P3 visual follow-up is required for this regression.
+
+final result: passed
+
+---
+
 # Design QA — `/placowki` search focus
 
 ## Comparison target

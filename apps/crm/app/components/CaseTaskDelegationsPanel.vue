@@ -4,6 +4,7 @@ interface DelegationProfile {
   user_id?: string
   email?: string | null
   full_name?: string | null
+  avatar_url?: string | null
 }
 
 interface DelegationHistoryEntry {
@@ -305,7 +306,12 @@ function confirmCancellation() {
             </div>
 
             <div class="delegation-card__assignee">
-              <span class="delegation-avatar">{{ initials(task.assignee) }}</span>
+              <UAvatar
+                :src="task.assignee?.avatar_url || undefined"
+                :alt="profileName(task.assignee)"
+                :text="initials(task.assignee)"
+                size="lg"
+              />
               <div>
                 <small>Realizator</small>
                 <strong>{{ profileName(task.assignee) }}</strong>
@@ -696,19 +702,6 @@ function confirmCancellation() {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.delegation-avatar {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--ui-primary) 34%, var(--ui-border));
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-bg));
-  color: var(--ui-primary);
-  font-size: 0.75rem;
-  font-weight: 800;
 }
 
 .delegation-card__assignee div {

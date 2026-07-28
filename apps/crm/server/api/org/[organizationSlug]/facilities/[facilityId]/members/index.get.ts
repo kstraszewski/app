@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const userIds = (memberships ?? []).map((row: any) => String(row.user_id))
   const { data: users, error: usersError } = userIds.length
-    ? await session.supabase.from('users').select('id, email, full_name').in('id', userIds)
+    ? await session.supabase.from('users').select('id, email, full_name, avatar_url').in('id', userIds)
     : { data: [], error: null }
   throwDbError(usersError)
   const usersById = new Map((users ?? []).map((user: any) => [String(user.id), user]))

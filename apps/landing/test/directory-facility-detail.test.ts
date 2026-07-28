@@ -96,11 +96,16 @@ describe('directory catalog exposure gate', () => {
       experts: [{
         userId: EXPERT_ID,
         name: 'Anna Nowak',
+        avatarUrl: '/avatars/experts/anna-nowak.webp',
         serviceIds: [SERVICE_ID, OTHER_SERVICE_ID],
       }],
     }, WIDGET_ID)
 
     assert.deepEqual(snapshot?.experts[0]?.serviceKeys, [SERVICE_ID])
+    assert.equal(
+      snapshot?.experts[0]?.avatarUrl,
+      '/avatars/experts/anna-nowak.webp',
+    )
     assert.equal(snapshot?.services.length, 1)
     assert.equal(directoryCatalogSnapshot({
       widget: { key: WIDGET_ID, widgetType: 'mortgage_capacity' },

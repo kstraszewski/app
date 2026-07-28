@@ -189,7 +189,7 @@ export default defineEventHandler(async (event) => {
     memberIds.length
       ? serviceRole
           .from('organization_memberships')
-          .select('user_id, user:users!organization_memberships_user_id_fkey!inner(email, full_name)')
+          .select('user_id, user:users!organization_memberships_user_id_fkey!inner(email, full_name, avatar_url)')
           .eq('organization_id', session.organizationId)
           .in('user_id', memberIds)
       : Promise.resolve({ data: [], error: null }),
@@ -237,6 +237,7 @@ export default defineEventHandler(async (event) => {
         userId: String(membership.user_id),
         email: String(user?.email ?? ''),
         fullName: String(user?.full_name ?? ''),
+        avatarUrl: typeof user?.avatar_url === 'string' ? user.avatar_url : null,
       }
     })
     .sort((left, right) => (

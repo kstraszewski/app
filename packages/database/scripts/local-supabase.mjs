@@ -18,6 +18,7 @@ const devAccount = {
   organizationName: process.env.OPENEXPERT_DEV_ORGANIZATION ?? 'OpenExpert Local',
   organizationSlug: process.env.OPENEXPERT_DEV_ORGANIZATION_SLUG ?? 'openexpert-local',
   fullName: process.env.OPENEXPERT_DEV_FULL_NAME ?? 'Local Administrator',
+  avatarUrl: '/avatars/experts/local-administrator.webp',
 }
 
 const demoDelegateAccounts = [
@@ -27,6 +28,7 @@ const demoDelegateAccounts = [
     password: 'OpenExpert123!',
     fullName: 'Anna Nowak',
     specialty: 'Nieruchomości',
+    avatarUrl: '/avatars/experts/anna-nowak.webp',
   },
   {
     key: 'piotr-zielinski',
@@ -34,6 +36,7 @@ const demoDelegateAccounts = [
     password: 'OpenExpert123!',
     fullName: 'Piotr Zieliński',
     specialty: 'Ubezpieczenia',
+    avatarUrl: '/avatars/experts/piotr-zielinski.webp',
   },
   {
     key: 'marta-wojcik',
@@ -41,6 +44,7 @@ const demoDelegateAccounts = [
     password: 'OpenExpert123!',
     fullName: 'Marta Wójcik',
     specialty: 'Obsługa klienta',
+    avatarUrl: '/avatars/experts/marta-wojcik.webp',
   },
 ]
 
@@ -377,6 +381,7 @@ async function ensureDemoDelegateAccounts(supabase, credentials, organizationId)
       .update({
         email: account.email,
         full_name: account.fullName,
+        avatar_url: account.avatarUrl,
       })
       .eq('id', authUser.id)
     assertNoError(userUpdateError, `Stabilizing demo delegate ${account.fullName}`)
@@ -404,6 +409,7 @@ async function ensureDemoDelegateAccounts(supabase, credentials, organizationId)
       email: account.email,
       fullName: account.fullName,
       specialty: account.specialty,
+      avatarUrl: account.avatarUrl,
     })
   }
 
@@ -737,6 +743,12 @@ async function ensureDevAccount(credentials) {
   if (profile.role !== 'admin' || !profile.organization_id) {
     throw new Error('The local account was created without an admin organization profile.')
   }
+
+  const { error: avatarError } = await supabase
+    .from('users')
+    .update({ avatar_url: devAccount.avatarUrl })
+    .eq('id', profile.id)
+  assertNoError(avatarError, 'Setting the local administrator avatar')
 
   const { error: platformRoleError } = await supabase
     .from('platform_user_roles')

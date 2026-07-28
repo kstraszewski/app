@@ -155,16 +155,19 @@ export default defineNuxtConfig({
     '/eksperci': {
       headers: {
         'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+        'x-robots-tag': 'noindex, nofollow',
       },
     },
     '/placowki': {
       headers: {
         'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+        'x-robots-tag': 'noindex, nofollow',
       },
     },
     '/placowki/**': {
       headers: {
         'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+        'x-robots-tag': 'noindex, nofollow',
       },
     },
     '/placówki': {

@@ -1,7 +1,5 @@
 export const INDEXABLE_PUBLIC_PATHS = [
   '/',
-  '/eksperci',
-  '/placowki',
   '/personalizacja',
   '/o-nas',
 ] as const

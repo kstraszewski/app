@@ -37,6 +37,6 @@ test('sitemap contains only canonical, indexable URLs and no ignored hints', () 
     assert.match(sitemap, new RegExp(`<loc>${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</loc>`))
   }
 
-  assert.doesNotMatch(sitemap, /plac%C3%B3wki|waitlist|multiform-eve|<priority>|<changefreq>/)
+  assert.doesNotMatch(sitemap, /eksperci|placowki|plac%C3%B3wki|waitlist|multiform-eve|<priority>|<changefreq>/)
   assert.equal((sitemap.match(/<url>/g) ?? []).length, INDEXABLE_PUBLIC_PATHS.length)
 })

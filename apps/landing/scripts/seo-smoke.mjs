@@ -5,8 +5,8 @@ const canonicalOrigin = new URL(
   process.env.SEO_CANONICAL_ORIGIN || 'https://www.openexpert.app',
 ).origin
 
-const publicRoutes = ['/', '/eksperci', '/placowki', '/personalizacja', '/o-nas']
-const noindexRoutes = ['/waitlist', '/multiform-eve', '/multiform-eve/admin']
+const publicRoutes = ['/', '/personalizacja', '/o-nas']
+const noindexRoutes = ['/waitlist', '/multiform-eve', '/multiform-eve/admin', '/eksperci', '/placowki']
 const socialImages = new Map([
   ['/', '/openexpert-og.png'],
   ['/eksperci', '/eksperci-og.png'],
@@ -99,7 +99,7 @@ assert.match(robots.text, new RegExp(`Sitemap: ${escapeRegExp(canonicalOrigin)}/
 
 const sitemap = await request('/sitemap.xml')
 assert.equal(sitemap.response.status, 200)
-assert.doesNotMatch(sitemap.text, /<priority>|<changefreq>|plac%C3%B3wki|waitlist/)
+assert.doesNotMatch(sitemap.text, /<priority>|<changefreq>|eksperci|placowki|plac%C3%B3wki|waitlist/)
 for (const path of publicRoutes) {
   assert.match(sitemap.text, new RegExp(`<loc>${escapeRegExp(new URL(path, `${canonicalOrigin}/`).toString())}</loc>`))
 }

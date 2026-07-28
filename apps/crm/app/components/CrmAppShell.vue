@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CrmMeetingListResponse } from '~/types/crm-meeting'
+import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
 
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
@@ -58,6 +59,11 @@ const selectedOrganizationLabel = computed(() => (
 const activeOrganization = computed(() => (
   organizations.value.data.find(organization => organization.slug === organizationSlug.value)
 ))
+const omnisearchOpen = ref(false)
+const canUseOmnisearch = computed(() => canAccessCrmOmnisearch(activeOrganization.value?.role))
+watch(canUseOmnisearch, (canUse) => {
+  if (!canUse) omnisearchOpen.value = false
+})
 const isOrganizationAdmin = computed(() => (
   activeOrganization.value?.role === 'admin'
   || activeOrganization.value?.capabilities?.organizationAdmin === true
@@ -233,6 +239,11 @@ function openMeetingPage() {
   void navigateTo(activeMeetingPath.value)
 }
 
+function openOmnisearch() {
+  mobileNavigationOpen.value = false
+  omnisearchOpen.value = true
+}
+
 type NavigationItem = {
   label: string
   to: string
@@ -364,6 +375,58 @@ const navGroups = computed<NavigationGroup[]>(() => {
   return groups
 })
 
+const omnisearchPages = computed(() => {
+  const pageGroups = (isOrganizationAdmin.value || isSuperAdmin.value)
+    ? [...navGroups.value].sort((left, right) => {
+        const priority = { admin: 0, 'team-admin': 1, expert: 2, calculators: 3 }
+        return (priority[left.key as keyof typeof priority] ?? 4)
+          - (priority[right.key as keyof typeof priority] ?? 4)
+      })
+    : navGroups.value
+
+  const pages = pageGroups.flatMap(group => group.items.map((item) => {
+    const label = item.to === `${organizationBase.value}/settings/capacity`
+      ? 'Ustawienia zdolności'
+      : item.label
+
+    return {
+      id: `page:${group.key}:${item.to}`,
+      label,
+      description: group.label,
+      suffix: 'Strona',
+      icon: item.icon,
+      to: item.to,
+      keywords: `${group.label} ${item.label} ${label}`,
+    }
+  }))
+
+  if (isOrganizationAdmin.value) {
+    pages.push({
+      id: 'page:admin:consents-history',
+      label: 'Historia zmian zgód',
+      description: 'Administracja organizacji',
+      suffix: 'Zakładka',
+      icon: 'i-lucide-history',
+      to: `${organizationBase.value}/consents?view=history`,
+      keywords: 'zgody historia zmian rejestr',
+    })
+  }
+
+  if (isSuperAdmin.value) {
+    pages.push({
+      id: 'page:admin:products',
+      label: 'Produkty',
+      description: 'Administracja organizacji',
+      suffix: 'Strona',
+      icon: 'i-lucide-package-search',
+      to: `${organizationBase.value}/settings/products`,
+      keywords: 'produkty oferty banki instytucje',
+    })
+  }
+
+  return pages
+})
+
 async function signOut() {
   try {
     if (supabase) await supabase.auth.signOut({ scope: 'local' })
@@ -414,18 +477,32 @@ async function signOut() {
           <span class="crm-brand__label">{{ organizationDesign.branding.productName }}</span>
         </NuxtLink>
 
-        <UButton
-          class="crm-nav__toggle"
-          color="neutral"
-          variant="ghost"
-          square
-          :icon="sidebarToggleIcon"
-          :aria-label="sidebarToggleLabel"
-          :title="sidebarToggleLabel"
-          :aria-expanded="mobileViewport ? mobileNavigationOpen : !sidebarCollapsed"
-          aria-controls="crm-primary-navigation"
-          @click="toggleSidebar"
-        />
+        <div class="crm-nav__head-actions">
+          <UButton
+            v-if="canUseOmnisearch"
+            class="crm-omnisearch-mobile"
+            color="neutral"
+            variant="ghost"
+            square
+            icon="i-lucide-search"
+            aria-label="Wyszukaj w CRM"
+            title="Wyszukaj w CRM"
+            @click="openOmnisearch"
+          />
+
+          <UButton
+            class="crm-nav__toggle"
+            color="neutral"
+            variant="ghost"
+            square
+            :icon="sidebarToggleIcon"
+            :aria-label="sidebarToggleLabel"
+            :title="sidebarToggleLabel"
+            :aria-expanded="mobileViewport ? mobileNavigationOpen : !sidebarCollapsed"
+            aria-controls="crm-primary-navigation"
+            @click="toggleSidebar"
+          />
+        </div>
       </div>
 
       <div class="crm-organization-select">
@@ -448,6 +525,36 @@ async function signOut() {
         :title="selectedOrganizationLabel"
         @click="expandSidebar"
       />
+
+      <div v-if="canUseOmnisearch" class="crm-omnisearch-trigger">
+        <UButton
+          class="crm-omnisearch-trigger__full"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-search"
+          label="Wyszukaj w CRM"
+          aria-label="Wyszukaj w CRM"
+          @click="openOmnisearch"
+        >
+          <template #trailing>
+            <span class="crm-omnisearch-trigger__shortcut" aria-hidden="true">
+              <UKbd value="meta" />
+              <UKbd value="k" />
+            </span>
+          </template>
+        </UButton>
+
+        <UButton
+          class="crm-omnisearch-trigger__mini"
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-search"
+          aria-label="Wyszukaj w CRM"
+          title="Wyszukaj w CRM"
+          @click="openOmnisearch"
+        />
+      </div>
 
       <nav class="crm-links" aria-label="Nawigacja CRM">
         <div
@@ -582,6 +689,12 @@ async function signOut() {
     />
 
     <CrmMeetingPrototype />
+    <CrmOmnisearch
+      v-if="canUseOmnisearch"
+      v-model:open="omnisearchOpen"
+      :organization-slug="organizationSlug"
+      :pages="omnisearchPages"
+    />
   </main>
 </template>
 
@@ -632,6 +745,13 @@ async function signOut() {
   gap: 10px;
 }
 
+.crm-nav__head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
 .crm-brand,
 .crm-link {
   display: flex;
@@ -660,6 +780,7 @@ async function signOut() {
 }
 
 .crm-nav__head :deep(.crm-nav__toggle),
+.crm-nav__head :deep(.crm-omnisearch-mobile),
 .crm-nav :deep(.crm-organization-mini) {
   flex: 0 0 auto;
   color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
@@ -667,9 +788,51 @@ async function signOut() {
 }
 
 .crm-nav__head :deep(.crm-nav__toggle:hover),
+.crm-nav__head :deep(.crm-omnisearch-mobile:hover),
 .crm-nav :deep(.crm-organization-mini:hover) {
   color: var(--ui-text-inverted);
   background: color-mix(in srgb, var(--ui-text-inverted) 10%, transparent);
+}
+
+.crm-nav__head :deep(.crm-omnisearch-mobile) {
+  display: none;
+}
+
+.crm-omnisearch-trigger {
+  width: 100%;
+}
+
+.crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__full) {
+  width: 100%;
+  justify-content: flex-start;
+  color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
+  background: color-mix(in srgb, var(--ui-text-inverted) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-text-inverted) 14%, transparent);
+}
+
+.crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__full:hover),
+.crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__mini:hover) {
+  color: var(--ui-text-inverted);
+  background: color-mix(in srgb, var(--ui-text-inverted) 10%, transparent);
+}
+
+.crm-omnisearch-trigger__shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.crm-omnisearch-trigger__shortcut :deep(kbd) {
+  color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
+  background: color-mix(in srgb, var(--ui-text-inverted) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-text-inverted) 14%, transparent);
+}
+
+.crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__mini) {
+  display: none;
+  color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
+  background: transparent;
 }
 
 .crm-links {
@@ -869,6 +1032,19 @@ async function signOut() {
   align-self: center;
 }
 
+.crm-shell--collapsed .crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__full) {
+  display: none;
+}
+
+.crm-shell--collapsed .crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__mini) {
+  display: inline-flex;
+}
+
+.crm-shell--collapsed .crm-omnisearch-trigger {
+  display: flex;
+  justify-content: center;
+}
+
 .crm-shell--collapsed .crm-link {
   justify-content: center;
   padding-inline: 0;
@@ -1002,6 +1178,16 @@ async function signOut() {
     display: inline-flex;
     width: 44px;
     min-height: 44px;
+  }
+
+  .crm-nav__head :deep(.crm-omnisearch-mobile) {
+    display: inline-flex;
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .crm-omnisearch-trigger {
+    display: none;
   }
 
   .crm-shell--collapsed .crm-nav__head {

@@ -68,6 +68,39 @@ const DEMO_IDS = Object.freeze({
 
 const WIDGET_IDS = Object.values(DEMO_IDS.widgets).map(widget => widget.id)
 const APPOINTMENT_IDS = [...DEMO_IDS.appointments]
+const APPOINTMENT_RECONCILE_SELECT = [
+  'id',
+  'organization_id',
+  'facility_id',
+  'service_id',
+  'expert_user_id',
+  'widget_id',
+  'crm_task_id',
+  'client_id',
+  'client_person_id',
+  'starts_at',
+  'ends_at',
+  'timezone',
+  'status',
+  'hold_expires_at',
+  'confirmed_at',
+  'cancelled_at',
+  'cancellation_reason',
+  'customer_name',
+  'customer_email',
+  'customer_phone',
+  'notes',
+  'source',
+  'idempotency_key',
+  'manage_token',
+  'created_by_user_id',
+  'booking_context',
+  'request_fingerprint',
+  'meeting_mode',
+  'meeting_url',
+  'created_at',
+  'updated_at',
+].join(', ')
 
 function errorDetail(error) {
   if (error instanceof Error) return error.message
@@ -914,7 +947,7 @@ export async function seedDemoScheduling({
 
   const { data: existingAppointments, error: existingAppointmentsError } = await adminClient
     .from('appointments')
-    .select('*')
+    .select(APPOINTMENT_RECONCILE_SELECT)
     .eq('organization_id', organizationId)
     .in('id', APPOINTMENT_IDS)
   assertNoError(existingAppointmentsError, 'Reading existing demo appointments')
@@ -1131,7 +1164,7 @@ export async function seedDemoScheduling({
       const { data, error } = await adminClient
         .from('appointments')
         .insert(desired)
-        .select('*')
+        .select(APPOINTMENT_RECONCILE_SELECT)
         .single()
       assertNoError(error, `Creating demo appointment ${desired.id}`)
       reconciledAppointments.push(data)
@@ -1155,7 +1188,7 @@ export async function seedDemoScheduling({
       .update({ ...changed, updated_at: nowIso })
       .eq('organization_id', organizationId)
       .eq('id', desired.id)
-      .select('*')
+      .select(APPOINTMENT_RECONCILE_SELECT)
       .single()
     assertNoError(error, `Updating demo appointment ${desired.id}`)
     reconciledAppointments.push(data)

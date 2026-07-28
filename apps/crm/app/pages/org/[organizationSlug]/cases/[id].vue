@@ -2,6 +2,7 @@
 import type { FormError, FormSubmitEvent } from '@nuxt/ui'
 import type {
   CaseDetailResponse,
+  CaseDocument,
   CaseFiltersResponse,
   CaseProperty,
   DocumentRequirement,
@@ -289,6 +290,41 @@ const currentView = computed<CaseView>(() => {
   return validViews.includes(value as CaseView) ? value as CaseView : 'overview'
 })
 
+const queryUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function queryUuid(value: unknown) {
+  const candidate = Array.isArray(value) ? value[0] : value
+  return typeof candidate === 'string' && queryUuidPattern.test(candidate)
+    ? candidate
+    : ''
+}
+
+const focusedTaskId = computed(() => queryUuid(route.query.task))
+const focusedDocumentId = computed(() => queryUuid(route.query.document))
+const focusedApplicationId = computed(() => queryUuid(route.query.application))
+
+watch(
+  [currentView, focusedTaskId, focusedDocumentId, pending, delegatedTasksPending],
+  async ([view, taskId, documentId, casePending, tasksPending]) => {
+    if (!import.meta.client || casePending) return
+    if (view === 'delegations' && tasksPending) return
+
+    const recordId = view === 'documents'
+      ? documentId
+      : view === 'delegations' || view === 'history'
+        ? taskId
+        : ''
+    if (!recordId) return
+
+    await nextTick()
+    window.requestAnimationFrame(() => {
+      document.getElementById(`case-${view === 'documents' ? 'document' : 'task'}-${recordId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  },
+  { immediate: true, flush: 'post' },
+)
+
 const caseTabs = computed(() => [
   { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
   { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
@@ -486,6 +522,29 @@ function money(value: number | null | undefined, offer?: SavedCaseOffer) {
 
 function formatDate(value: string) {
   return date.format(new Date(value))
+}
+
+function caseDocumentOwner(document: CaseDocument) {
+  if (!document.client_id) return 'Dokument sprawy'
+  return data.value.data.clients.find(client => client.id === document.client_id)?.display_name
+    ?? 'Dokument klienta'
+}
+
+function caseDocumentStatus(document: CaseDocument) {
+  if (document.verified_at || document.status_code === 'verified') {
+    return { label: 'Zweryfikowany', color: 'success' as const }
+  }
+  if (document.status_code === 'missing') {
+    return { label: 'Brakuje pliku', color: 'warning' as const }
+  }
+  if (document.status_code === 'received') {
+    return { label: 'Odebrany', color: 'info' as const }
+  }
+  return { label: 'Dodany', color: 'neutral' as const }
+}
+
+function caseDocumentDownloadUrl(documentId: string) {
+  return crmApiPath(`/cases/${caseId.value}/documents/${documentId}`)
 }
 
 function scenarioLabel(offer: SavedCaseOffer) {
@@ -1308,9 +1367,58 @@ watch(
         </UButton>
       </div>
 
+      <UCard v-if="data.data.documents.length" class="case-files">
+        <template #header>
+          <div class="case-files__header">
+            <div>
+              <p>Pliki w teczce</p>
+              <h3>Wszystkie dokumenty sprawy</h3>
+            </div>
+            <UBadge color="neutral" variant="subtle">
+              {{ data.data.documents.length }}
+            </UBadge>
+          </div>
+        </template>
+
+        <ul class="case-files__list">
+          <li
+            v-for="document in data.data.documents"
+            :id="`case-document-${document.id}`"
+            :key="document.id"
+            :class="{ 'is-selected': document.id === focusedDocumentId }"
+          >
+            <span class="case-files__icon"><UIcon name="i-lucide-file-text" /></span>
+            <div>
+              <strong>{{ document.name }}</strong>
+              <small>
+                {{ caseDocumentOwner(document) }}
+                · {{ document.document_type.replaceAll('_', ' ') }}
+                · {{ formatDate(document.received_at || document.created_at) }}
+              </small>
+            </div>
+            <UBadge :color="caseDocumentStatus(document).color" variant="subtle" size="sm">
+              {{ caseDocumentStatus(document).label }}
+            </UBadge>
+            <UButton
+              v-if="document.status_code !== 'missing'"
+              :to="caseDocumentDownloadUrl(document.id)"
+              target="_blank"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-download"
+              aria-label="Pobierz dokument"
+            >
+              Pobierz
+            </UButton>
+          </li>
+        </ul>
+      </UCard>
+
       <CaseDocumentChecklist
         v-if="data.data.bank_applications.length"
         :case-data="data.data"
+        :focus-application-id="focusedApplicationId"
         @refresh="refresh()"
       />
 
@@ -1377,6 +1485,7 @@ watch(
         :loading="delegatedTasksPending"
         :current-user-id="delegationCurrentUserId"
         :updating-task-id="updatingDelegatedTaskId"
+        :selected-task-id="focusedTaskId"
         @delegate="openDelegation"
         @respond="respondToDelegatedTask"
         @update-status="updateDelegatedTaskStatus"
@@ -1399,7 +1508,12 @@ watch(
             <UBadge color="neutral" variant="subtle">{{ data.data.open_tasks.length }}</UBadge>
           </header>
           <ol v-if="data.data.open_tasks.length" class="task-list">
-            <li v-for="task in data.data.open_tasks" :key="task.id">
+            <li
+              v-for="task in data.data.open_tasks"
+              :id="`case-task-${task.id}`"
+              :key="task.id"
+              :class="{ 'is-selected': task.id === focusedTaskId }"
+            >
               <span class="task-list__status" />
               <div>
                 <strong>{{ task.title }}</strong>
@@ -2053,6 +2167,96 @@ watch(
   font-size: 12px;
 }
 
+.case-files {
+  margin: 16px 0 20px;
+}
+
+.case-files__header,
+.case-files__list li {
+  display: flex;
+  align-items: center;
+}
+
+.case-files__header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.case-files__header p,
+.case-files__header h3 {
+  margin: 0;
+}
+
+.case-files__header p {
+  color: var(--ui-primary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.case-files__header h3 {
+  margin-top: 3px;
+  color: var(--ui-text-highlighted);
+  font-size: 15px;
+}
+
+.case-files__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case-files__list li {
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 2px;
+  border-radius: 10px;
+}
+
+.case-files__list li + li {
+  border-top: 1px solid var(--ui-border);
+}
+
+.case-files__list li.is-selected {
+  scroll-margin: 110px;
+  padding-inline: 10px;
+  background: color-mix(in srgb, var(--ui-primary) 10%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-primary) 22%, transparent);
+}
+
+.case-files__icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-primary);
+}
+
+.case-files__list li > div {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.case-files__list strong {
+  overflow: hidden;
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-files__list small {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
 .case-documents__empty {
   align-items: center;
   justify-content: space-between;
@@ -2138,6 +2342,13 @@ watch(
 .task-list li + li,
 .full-activity-list li + li {
   border-top: 1px solid var(--ui-border);
+}
+
+.task-list li.is-selected {
+  scroll-margin: 110px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-primary) 10%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-primary) 22%, transparent);
 }
 
 .task-list__status {
@@ -2245,6 +2456,14 @@ watch(
 
   .case-workflow li {
     flex-basis: 100%;
+  }
+
+  .case-files__list li {
+    flex-wrap: wrap;
+  }
+
+  .case-files__list li > div {
+    min-width: calc(100% - 48px);
   }
 }
 

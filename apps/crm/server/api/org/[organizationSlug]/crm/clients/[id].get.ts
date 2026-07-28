@@ -184,7 +184,7 @@ export default defineEventHandler(async (event) => {
   const [tasksResult, openTasksResult, documentsResult, activitiesResult] = await Promise.all([
     session.supabase
       .from('crm_tasks')
-      .select('*', { count: 'exact' })
+      .select('accepted_at, assignee_user_id, cancelled_at, case_id, case_item_id, client_id, completed_at, created_at, data_access_scope, delegated_at, delegation_status, delegator_user_id, description, due_at, id, idempotency_fingerprint, idempotency_key, metadata, organization_id, priority, rejected_at, rejection_reason, responded_at, status_code, title, updated_at', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('due_at', { ascending: true, nullsFirst: false })
@@ -197,7 +197,7 @@ export default defineEventHandler(async (event) => {
       .neq('status_code', 'done'),
     session.supabase
       .from('crm_documents')
-      .select('*', { count: 'exact' })
+      .select('case_id, case_item_id, client_id, created_at, document_type, id, metadata, mime_type, name, organization_id, received_at, sha256, size_bytes, status_code, storage_bucket, storage_path, submission_id, updated_at, uploaded_by_user_id, verified_at', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('created_at', { ascending: false })

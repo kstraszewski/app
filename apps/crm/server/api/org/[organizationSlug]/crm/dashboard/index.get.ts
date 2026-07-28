@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     session.supabase.from('crm_clients').select('id, display_name, status_code, updated_at').eq('organization_id', session.organizationId).order('updated_at', { ascending: false }).limit(8),
     session.supabase.from('crm_cases').select('id, client_id, title, status_code, priority, updated_at').eq('organization_id', session.organizationId).order('updated_at', { ascending: false }).limit(20),
     session.supabase.from('crm_case_items').select('id, case_id, title, status_code, amount_value, currency, updated_at').eq('organization_id', session.organizationId).order('updated_at', { ascending: false }).limit(20),
-    session.supabase.from('crm_tasks').select('*').eq('organization_id', session.organizationId).neq('status_code', 'done').lte('due_at', endOfToday.toISOString()).order('due_at', { ascending: true }).limit(12),
+    session.supabase.from('crm_tasks').select('accepted_at, assignee_user_id, cancelled_at, case_id, case_item_id, client_id, completed_at, created_at, data_access_scope, delegated_at, delegation_status, delegator_user_id, description, due_at, id, idempotency_fingerprint, idempotency_key, metadata, organization_id, priority, rejected_at, rejection_reason, responded_at, status_code, title, updated_at').eq('organization_id', session.organizationId).neq('status_code', 'done').lte('due_at', endOfToday.toISOString()).order('due_at', { ascending: true }).limit(12),
     session.supabase.from('crm_case_item_settlements').select('status_code, expected_amount, due_amount, paid_amount, currency').eq('organization_id', session.organizationId),
     session.supabase.from('crm_item_submissions').select('status_code').eq('organization_id', session.organizationId).limit(500),
   ])

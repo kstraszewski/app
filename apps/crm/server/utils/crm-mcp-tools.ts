@@ -358,13 +358,16 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         if (!table) {
           throw createError({ statusCode: 400, statusMessage: `Unsupported CRM entity: ${entity}` })
         }
+        const selectedColumns = entity === 'submission'
+          ? 'case_item_id, created_at, currency, decision_at, external_reference, id, metadata, notes, offered_amount, organization_id, premium_amount, provider_id, status_code, submitted_at, updated_at'
+          : '*'
 
         const { data, error } = await session.supabase
           .from(table)
           .update({ status_code: statusCode })
           .eq('organization_id', session.organizationId)
           .eq('id', id)
-          .select('*')
+          .select(selectedColumns)
           .single()
         throwDbError(error)
 

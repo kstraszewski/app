@@ -88,6 +88,12 @@ function startOfWeek(date: Date) {
 const initialDate = isDateKey(route.query.date) ? route.query.date : dateKey(new Date())
 const selectedDate = ref(initialDate)
 const selectedExpertId = ref(typeof route.query.expert === 'string' ? route.query.expert : '')
+const requestedAppointmentId = computed(() => (
+  typeof route.query.appointment === 'string' ? route.query.appointment : ''
+))
+const requestedAppointmentStartsAt = computed(() => (
+  typeof route.query.appointmentAt === 'string' ? route.query.appointmentAt : ''
+))
 const selectedAppointment = ref<Appointment | null>(null)
 const selectedTimeOff = ref<ExpertTimeOff | null>(null)
 const appointmentOpen = ref(false)
@@ -181,6 +187,35 @@ watch(expertItems, (items) => {
     ?? ''
 }, { immediate: true })
 
+watch(
+  [() => route.query.date, () => route.query.expert, expertItems],
+  ([requestedDate, requestedExpert, items]) => {
+    if (isDateKey(requestedDate) && requestedDate !== selectedDate.value) {
+      selectedDate.value = requestedDate
+    }
+    if (
+      typeof requestedExpert === 'string'
+      && requestedExpert !== selectedExpertId.value
+      && items.some(item => item.value === requestedExpert)
+    ) {
+      selectedExpertId.value = requestedExpert
+    }
+  },
+  { immediate: true, flush: 'sync' },
+)
+
+watch(
+  [requestedAppointmentId, requestedAppointmentStartsAt],
+  ([appointmentId, appointmentStartsAt]) => {
+    if (!import.meta.client || !appointmentId || !appointmentStartsAt) return
+    const appointmentDate = new Date(appointmentStartsAt)
+    if (Number.isNaN(appointmentDate.valueOf())) return
+    const targetDate = dateKey(appointmentDate)
+    if (targetDate !== selectedDate.value) selectedDate.value = targetDate
+  },
+  { immediate: true, flush: 'sync' },
+)
+
 const {
   data: appointmentsPayload,
   status: appointmentsStatus,
@@ -269,6 +304,30 @@ const today = computed(() => dateKey(new Date()))
 const isCurrentWeek = computed(() => {
   const current = dateFromKey(today.value)
   return current >= weekStart.value && current < addDays(weekStart.value, 7)
+})
+
+watch(
+  [appointments, requestedAppointmentId, appointmentsStatus],
+  ([items, appointmentId, status]) => {
+    if (!import.meta.client || !appointmentId || status === 'pending') return
+    const appointment = items.find(item => item.id === appointmentId)
+    if (!appointment) return
+    if (appointmentOpen.value && selectedAppointment.value?.id === appointment.id) return
+    openAppointment(appointment)
+  },
+  { immediate: true, flush: 'post' },
+)
+
+watch(appointmentOpen, (isOpen, wasOpen) => {
+  if (!import.meta.client || isOpen || !wasOpen) return
+  if (!selectedAppointment.value || requestedAppointmentId.value !== selectedAppointment.value.id) return
+  void router.replace({
+    query: {
+      ...route.query,
+      appointment: undefined,
+      appointmentAt: undefined,
+    },
+  })
 })
 
 const weekLabel = computed(() => {

@@ -55,6 +55,54 @@ final result: passed
 
 ---
 
+# Design QA — `/placowki` search focus
+
+## Comparison target
+
+- Source visual truth: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-ffb1ff8e-4374-465c-8a8b-1c8ab6154366.png`, 940 × 224 px.
+- Browser-rendered full view after the fix: `.design-qa/focus-after-viewport.png`, 919 × 863 px.
+- Focused before crop: `.design-qa/focus-double-border-before.png`, 480 × 96 px.
+- Focused after crop: `.design-qa/focus-single-border-after.png`, 480 × 96 px.
+- Same-input comparison, before on the left and after on the right: `.design-qa/focus-border-comparison.png`, 960 × 96 px.
+- Route and state: `http://127.0.0.1:3003/placowki`, search input focused, one published facility.
+
+## Capture normalization
+
+- Both browser comparison states used the same 919 × 863 CSS px viewport at device scale factor 1.
+- In both states the search wrapper measured 449 × 64 CSS px at the same position.
+- Both focused crops use the same 480 × 96 px crop and were placed together without scaling.
+- The source attachment is a higher-density crop of the same focused control; the browser before/after pair is the density-normalized evidence used for the final judgment.
+
+## Evidence and findings
+
+- P2 — The input received its own 2 px `outline` while the wrapper simultaneously rendered its border and focus ring. This produced the two internal vertical lines visible in the source and the left side of the comparison.
+- Fix — The wrapper ring now responds specifically to `input:focus-visible`, while the input suppresses its duplicate outline. Focus remains clearly visible around the complete search control.
+- The clear button keeps its independent button focus treatment and no longer causes the wrapper input ring through a generic `:focus-within` state.
+- Full-view inspection confirms the search placement, size, radius, typography, map context, result count, and surrounding layout are unchanged.
+
+### Required fidelity surfaces
+
+- Fonts and typography: unchanged; placeholder family, size, line height, weight, and wrapping match the pre-fix control.
+- Spacing and layout rhythm: unchanged; the 449 × 64 px control geometry, padding, dividers, radius, shadow, and position are stable.
+- Colors and visual tokens: the existing black focus token and neutral border/shadow tokens remain in use.
+- Image quality and asset fidelity: no image or icon assets were changed; the existing search icon remains intact.
+- Copy and content: placeholder and result-count copy are unchanged.
+
+## Interaction and technical verification
+
+- Clicking the text input produces one focus treatment around the complete control.
+- Entering `Szczecin` updates the search and exposes the clear control; activating clear resets the value.
+- Browser console check returned no warnings or errors.
+- `pnpm --filter @openexpert/landing typecheck` — passed on Node 24.
+- `pnpm --filter @openexpert/landing test` — 40 passed, 0 failed.
+- `git diff --check` for the edited page and QA artifacts — passed.
+
+No actionable P0, P1, or P2 findings remain in the focused search state.
+
+final result: passed
+
+---
+
 # Landing personalizacja — animowany podgląd motywów
 
 ## Comparison target

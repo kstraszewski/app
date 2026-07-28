@@ -179,6 +179,8 @@ export type Database = {
           meeting_mode: string
           meeting_url: string | null
           notes: string | null
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           request_fingerprint: string | null
           service_id: string
@@ -213,6 +215,8 @@ export type Database = {
           meeting_mode?: string
           meeting_url?: string | null
           notes?: string | null
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id: string
           request_fingerprint?: string | null
           service_id: string
@@ -247,6 +251,8 @@ export type Database = {
           meeting_mode?: string
           meeting_url?: string | null
           notes?: string | null
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id?: string
           request_fingerprint?: string | null
           service_id?: string
@@ -980,6 +986,8 @@ export type Database = {
           ltv_pct: number | null
           net_loan_amount: number | null
           offer_id: string
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           property_id: string | null
           purchase_price_amount: number | null
@@ -1013,6 +1021,8 @@ export type Database = {
           ltv_pct?: number | null
           net_loan_amount?: number | null
           offer_id: string
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id: string
           property_id?: string | null
           purchase_price_amount?: number | null
@@ -1046,6 +1056,8 @@ export type Database = {
           ltv_pct?: number | null
           net_loan_amount?: number | null
           offer_id?: string
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id?: string
           property_id?: string | null
           purchase_price_amount?: number | null
@@ -2226,6 +2238,8 @@ export type Database = {
           metadata: Json
           mime_type: string | null
           name: string
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           received_at: string | null
           sha256: string | null
@@ -2248,6 +2262,8 @@ export type Database = {
           metadata?: Json
           mime_type?: string | null
           name: string
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id: string
           received_at?: string | null
           sha256?: string | null
@@ -2270,6 +2286,8 @@ export type Database = {
           metadata?: Json
           mime_type?: string | null
           name?: string
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id?: string
           received_at?: string | null
           sha256?: string | null
@@ -2398,6 +2416,8 @@ export type Database = {
           metadata: Json
           notes: string | null
           offered_amount: number | null
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           premium_amount: number | null
           provider_id: string | null
@@ -2415,6 +2435,8 @@ export type Database = {
           metadata?: Json
           notes?: string | null
           offered_amount?: number | null
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id: string
           premium_amount?: number | null
           provider_id?: string | null
@@ -2432,6 +2454,8 @@ export type Database = {
           metadata?: Json
           notes?: string | null
           offered_amount?: number | null
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id?: string
           premium_amount?: number | null
           provider_id?: string | null
@@ -2786,6 +2810,8 @@ export type Database = {
           idempotency_fingerprint: string | null
           idempotency_key: string | null
           metadata: Json
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           priority: string
           rejected_at: string | null
@@ -2814,6 +2840,8 @@ export type Database = {
           idempotency_fingerprint?: string | null
           idempotency_key?: string | null
           metadata?: Json
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id: string
           priority?: string
           rejected_at?: string | null
@@ -2842,6 +2870,8 @@ export type Database = {
           idempotency_fingerprint?: string | null
           idempotency_key?: string | null
           metadata?: Json
+          omnisearch_text?: string
+          omnisearch_vector?: unknown
           organization_id?: string
           priority?: string
           rejected_at?: string | null
@@ -5595,6 +5625,10 @@ export type Database = {
         }
         Returns: number
       }
+      crm_omnisearch_normalize: {
+        Args: { input: string }
+        Returns: string
+      }
       create_crm_case_bank_application: {
         Args: {
           target_case_id: string
@@ -5625,6 +5659,8 @@ export type Database = {
           ltv_pct: number | null
           net_loan_amount: number | null
           offer_id: string
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           property_id: string | null
           purchase_price_amount: number | null
@@ -5676,6 +5712,8 @@ export type Database = {
           ltv_pct: number | null
           net_loan_amount: number | null
           offer_id: string
+          omnisearch_text: string
+          omnisearch_vector: unknown
           organization_id: string
           property_id: string | null
           purchase_price_amount: number | null
@@ -5964,6 +6002,10 @@ export type Database = {
       }
       search_crm_clients_ranked: {
         Args: { p_filters?: Json; p_organization_id: string }
+        Returns: Json
+      }
+      search_crm_omnisearch: {
+        Args: { p_limit?: number; p_organization_id: string; p_query: string }
         Returns: Json
       }
       set_crm_case_clients: {

@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     .update(patch)
     .eq('organization_id', session.organizationId)
     .eq('id', id)
-    .select('*, crm_case_items(case_id, crm_cases(client_id))')
+    .select('case_item_id, created_at, currency, decision_at, external_reference, id, metadata, notes, offered_amount, organization_id, premium_amount, provider_id, status_code, submitted_at, updated_at, crm_case_items(case_id, crm_cases(client_id))')
     .single()
 
   throwDbError(error)

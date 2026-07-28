@@ -14,8 +14,10 @@ import {
 const props = withDefaults(defineProps<{
   caseData: CaseDetail
   compact?: boolean
+  focusApplicationId?: string
 }>(), {
   compact: false,
+  focusApplicationId: '',
 })
 
 const emit = defineEmits<{
@@ -140,6 +142,25 @@ watch(() => props.caseData.bank_applications.map(application => `${application.i
   ))
   selectedApplicationId.value = focusedApplication?.id ?? applications.value[0]?.id ?? ''
 }, { immediate: true })
+
+watch([
+  () => props.focusApplicationId,
+  () => applications.value.map(application => `${application.id}:${application.submission_id}`).join('|'),
+], async ([focusApplicationId]) => {
+  if (!focusApplicationId) return
+  const focusedApplication = applications.value.find(application => (
+    application.id === focusApplicationId
+    || application.submission_id === focusApplicationId
+  ))
+  if (!focusedApplication) return
+
+  selectedApplicationId.value = focusedApplication.id
+  await nextTick()
+  if (import.meta.client) {
+    document.getElementById(`case-application-${focusedApplication.id}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+  }
+}, { immediate: true, flush: 'post' })
 
 watch(uploadTypeItems, (items) => {
   if (!items.some(item => item.value === selectedDocumentType.value)) {
@@ -425,11 +446,19 @@ function documentDownloadUrl(documentId: string) {
     <div class="offer-tabs" role="tablist" aria-label="Wniosek bankowy dla checklisty">
       <button
         v-for="application in applications"
+        :id="`case-application-${application.id}`"
         :key="application.id"
         type="button"
         role="tab"
         :aria-selected="application.id === selectedApplication?.id"
-        :class="['offer-tab', { active: application.id === selectedApplication?.id }]"
+        :class="[
+          'offer-tab',
+          {
+            active: application.id === selectedApplication?.id,
+            'is-focused': focusApplicationId === application.id
+              || focusApplicationId === application.submission_id,
+          },
+        ]"
         @click="previewApplication(application.id)"
       >
         <span>Wniosek {{ application.slot }} · {{ offerFor(application)?.bank_name ?? 'Bank' }}</span>
@@ -645,6 +674,7 @@ function documentDownloadUrl(documentId: string) {
 .offer-tab { display: grid; flex: 0 0 min(230px, 75vw); gap: 2px; padding: 11px 13px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-bg); color: inherit; text-align: left; cursor: pointer; }
 .offer-tab:hover, .offer-tab:focus-visible { border-color: var(--ui-primary); outline: none; }
 .offer-tab.active { border-color: var(--ui-primary); background: color-mix(in srgb, var(--ui-primary) 8%, var(--ui-bg)); box-shadow: inset 0 0 0 1px var(--ui-primary); }
+.offer-tab.is-focused { scroll-margin: 110px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-primary) 20%, transparent), inset 0 0 0 1px var(--ui-primary); }
 .offer-tab span, .offer-tab small { color: var(--ui-text-muted); font-size: 10px; }
 .offer-tab strong { color: var(--ui-text-highlighted); font-size: 12px; }
 .offer-tab small { color: var(--ui-primary); font-weight: 700; }

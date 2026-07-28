@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
       notes: textValue(body.notes) ?? null,
       metadata: asRecord(body.metadata),
     })
-    .select('*')
+    .select('case_item_id, created_at, currency, decision_at, external_reference, id, metadata, notes, offered_amount, organization_id, premium_amount, provider_id, status_code, submitted_at, updated_at')
     .single()
 
   throwDbError(error)

@@ -53,6 +53,7 @@ const props = defineProps<{
   loading?: boolean
   currentUserId?: string | null
   updatingTaskId?: string | null
+  selectedTaskId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -269,8 +270,17 @@ function confirmCancellation() {
     </div>
 
     <ol v-else class="delegations-list">
-      <li v-for="task in sortedTasks" :key="task.id">
-        <article class="delegation-card">
+      <li
+        v-for="task in sortedTasks"
+        :id="`case-task-${task.id}`"
+        :key="task.id"
+      >
+        <article
+          :class="[
+            'delegation-card',
+            { 'delegation-card--selected': task.id === selectedTaskId },
+          ]"
+        >
           <div class="delegation-card__lead">
             <div class="delegation-card__title">
               <span :class="`delegation-card__state delegation-card__state--${taskState(task).color}`">
@@ -618,6 +628,12 @@ function confirmCancellation() {
   border: 1px solid var(--ui-border);
   border-radius: 16px;
   background: var(--ui-bg-elevated);
+}
+
+.delegation-card--selected {
+  scroll-margin: 110px;
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-primary) 18%, transparent);
 }
 
 .delegation-card__lead {

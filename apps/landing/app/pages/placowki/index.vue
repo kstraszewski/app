@@ -1325,7 +1325,7 @@ useHead(() => ({
     transform var(--transition-fast);
 }
 
-.facility-explorer__search-control:focus-within {
+.facility-explorer__search-control:has(input:focus-visible) {
   border-color: #111;
   box-shadow:
     0 0 0 1px #111,
@@ -1350,6 +1350,10 @@ useHead(() => ({
   color: #111;
   font: inherit;
   font-size: 15px;
+}
+
+.facility-explorer__search input:focus-visible {
+  outline: none;
 }
 
 .facility-explorer__search input::placeholder {

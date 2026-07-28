@@ -156,3 +156,90 @@ The side-by-side component comparison shows that the implementation retains the 
 - All presets use fonts already available to the application or system, so the demo does not depend on licensed brand font files.
 
 final result: passed
+
+---
+
+# Design QA — `/placowki`
+
+## Scope
+
+- Source visual truth: `.design-qa/reference-option-3.png`
+- Final implementation: `.design-qa/implementation-desktop-final.png`
+- Combined comparison: `.design-qa/comparison-desktop-final.png`
+- Responsive evidence:
+  - `.design-qa/implementation-mobile-list-final.png`
+  - `.design-qa/implementation-mobile-map-final.png`
+- Tested state: one published facility, selected by default, live Mapbox map loaded
+
+## Capture normalization
+
+- Source: 1448 × 1086 px
+- Desktop implementation viewport: 1448 × 1086 CSS px
+- Desktop implementation screenshot: 1448 × 1086 px
+- Effective density: 1 screenshot pixel per CSS pixel
+- Combined comparison: 2896 × 1086 px, source on the left and implementation on the right
+- Mobile verification viewport and screenshots: 390 × 844 CSS px / px
+
+## Final comparison
+
+The final full-view comparison was inspected as one combined image. The implementation preserves the selected map-first composition: compact editorial intro, full map canvas, floating search, left results drawer, numbered selected marker, mid-map controls, and bottom selected-facility dock.
+
+The implementation intentionally keeps the existing OpenExpert header, typography, real facility imagery, live Mapbox tiles, Lucide icon family, and current directory data. Differences in map labels and road density come from the live map renderer rather than replacement artwork.
+
+Focused responsive inspection used the mobile list and mobile map screenshots. The mobile list has usable wrapping and tap targets. The mobile map exposes the selected facility dock immediately, keeps map controls reachable, and recenters after a breakpoint or orientation resize.
+
+## Interaction verification
+
+- Search query with no match produced the zero-results copy, `0 placówek`, and an empty map state.
+- Search query `Szczecin` restored the facility, marker, selected state, and result count.
+- Closing the drawer moved keyboard focus to `Pokaż listę placówek`; the hidden drawer became inert.
+- Reopening the drawer moved focus to `Ukryj listę placówek`.
+- Mobile `Lista` and `Mapa` tabs switched the visible surface and updated their pressed state.
+- The mobile map retained a visible, linked selected-facility card instead of becoming a dead end.
+- Numbering is consistent between the result list, marker, and selected-facility dock.
+- The location control uses the browser geolocation API and reports progress or failure through the map live region.
+- Final browser console check returned no warnings or errors.
+
+## Motion and accessibility
+
+- Entry motion covers the heading, map, search bar, drawer, and drawer restore control.
+- Drawer open/close, selected-facility dock, selected card, marker, image, CTA arrow, focus, and hover states use short eased transitions.
+- Map camera changes use non-essential easing and recalculate framing after resize.
+- `prefers-reduced-motion: reduce` removes entry animations, transitions, hover transforms, marker scaling, camera duration, and the loading spinner animation.
+- Search has a programmatic label and live result copy.
+- Map markers are keyboard-accessible buttons with pressed state and descriptive labels.
+- Drawer controls preserve focus order; hidden controls are inert.
+
+## QA history
+
+### Pass 1
+
+- P1 — Intro copy inherited an old mono uppercase rule and drifted from the selected source.
+- P1 — The marker was too small and its number was not visibly legible.
+- P1 — The map camera ignored the left drawer and centered the selected location too far left.
+- P2 — The selected source included a location control that was missing.
+- Fixed by correcting selector specificity, matching the source intro grid and type scale, using a larger numbered Mapbox marker, adding overlay-aware camera padding, and adding a functional Lucide location control.
+
+### Pass 2
+
+- P0 — A duplicate `defineExpose()` macro caused a Vite runtime overlay.
+- P1 — A visually hidden drawer remained keyboard-focusable.
+- P1 — Mobile map mode hid both the list and the selected-facility CTA.
+- P2 — Marker numbering could diverge from list numbering when a facility lacked coordinates.
+- P2 — Reduced-motion coverage missed the drawer-close hover transform and loading spinner.
+- Fixed by merging the exposed map API, adding inert state and focus transfer, adding the mobile selected-facility dock, deriving all numbers from the visible facility list, and extending reduced-motion rules.
+
+### Pass 3
+
+- P2 — Drawer content was denser than the selected source and the map framing remained slightly misaligned.
+- Fixed by matching horizontal card padding, image height, CTA height and rhythm, fine-tuning map zoom, and aligning the selected marker with the source composition.
+
+## Automated checks
+
+- `pnpm --filter @openexpert/landing typecheck` — passed
+- `pnpm --filter @openexpert/landing test` — 40 passed, 0 failed
+- `git diff --check` for the two edited source files — passed
+
+No actionable P0, P1, or P2 findings remain.
+
+final result: passed

@@ -5,8 +5,16 @@ export interface DirectoryMapFacilityMarker {
   address: string | null
   latitude: number
   longitude: number
+  label?: string
   href?: string
   bookingHref?: string
+}
+
+export interface DirectoryMapCameraPadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
 }
 
 export type DirectoryMapPresentation = 'compact' | 'detail'
@@ -27,9 +35,12 @@ const props = withDefaults(defineProps<{
   presentation?: DirectoryMapPresentation
   height?: string
   ariaLabel?: string
+  openPopupOnSelection?: boolean
+  cameraPadding?: DirectoryMapCameraPadding
 }>(), {
   presentation: 'compact',
   ariaLabel: 'Mapa placówek OpenExpert',
+  openPopupOnSelection: true,
 })
 
 const emit = defineEmits<{
@@ -171,6 +182,10 @@ function revealSelectedMarker(moveCamera: boolean) {
   const selectedId = effectiveSelectedFacilityId.value
   updateMarkerSelection()
 
+  if (!props.openPopupOnSelection) {
+    closePopups()
+  }
+
   if (!selectedId) {
     closePopups()
     return
@@ -181,18 +196,21 @@ function revealSelectedMarker(moveCamera: boolean) {
   )
   if (!record) return
 
-  closePopups(selectedId)
-  if (!record.popup.isOpen()) {
-    record.popup
-      .setLngLat([record.facility.longitude, record.facility.latitude])
-      .addTo(map)
-    localizePopupCloseButton(record.popup)
+  if (props.openPopupOnSelection) {
+    closePopups(selectedId)
+    if (!record.popup.isOpen()) {
+      record.popup
+        .setLngLat([record.facility.longitude, record.facility.latitude])
+        .addTo(map)
+      localizePopupCloseButton(record.popup)
+    }
   }
 
   if (moveCamera) {
     map.easeTo({
       center: [record.facility.longitude, record.facility.latitude],
-      zoom: Math.max(map.getZoom(), props.presentation === 'detail' ? 14 : 13),
+      zoom: Math.max(map.getZoom(), props.presentation === 'detail' ? 14 : 13.3),
+      padding: effectiveCameraPadding(),
       duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches
         ? 0
         : 550,
@@ -203,12 +221,17 @@ function revealSelectedMarker(moveCamera: boolean) {
 
 function selectMarker(record: MarkerRecord) {
   internalSelectedFacilityId.value = record.facility.facilityId
-  closePopups(record.facility.facilityId)
-  if (map && !record.popup.isOpen()) {
-    record.popup
-      .setLngLat([record.facility.longitude, record.facility.latitude])
-      .addTo(map)
-    localizePopupCloseButton(record.popup)
+  if (props.openPopupOnSelection) {
+    closePopups(record.facility.facilityId)
+    if (map && !record.popup.isOpen()) {
+      record.popup
+        .setLngLat([record.facility.longitude, record.facility.latitude])
+        .addTo(map)
+      localizePopupCloseButton(record.popup)
+    }
+  }
+  else {
+    closePopups()
   }
 
   updateMarkerSelection()
@@ -304,7 +327,9 @@ function rebuildMarkers() {
     const marker = new mapboxModule!.Marker({
       className: 'directory-map__marker',
       color: '#111111',
-      scale: props.presentation === 'detail' ? 0.92 : 0.82,
+      scale: facility.label
+        ? 1.28
+        : props.presentation === 'detail' ? 0.92 : 0.82,
     })
       .setLngLat([facility.longitude, facility.latitude])
       .addTo(map!)
@@ -314,6 +339,16 @@ function rebuildMarkers() {
     element.setAttribute('tabindex', '0')
     element.setAttribute('aria-label', markerAriaLabel(facility))
     element.setAttribute('aria-pressed', 'false')
+
+    const markerLabel = facility.label?.trim()
+    if (markerLabel) {
+      element.classList.add('directory-map__marker--numbered')
+      const label = document.createElement('span')
+      label.className = 'directory-map__marker-label'
+      label.textContent = markerLabel
+      label.setAttribute('aria-hidden', 'true')
+      element.append(label)
+    }
 
     const record = {
       facility,
@@ -352,7 +387,8 @@ function fitBounds() {
     const facility = validMarkers.value[0]!
     map.easeTo({
       center: [facility.longitude, facility.latitude],
-      zoom: props.presentation === 'detail' ? 14 : 13,
+      zoom: props.presentation === 'detail' ? 14 : 13.3,
+      padding: effectiveCameraPadding(),
       duration,
       essential: false,
     })
@@ -366,13 +402,61 @@ function fitBounds() {
 
   const containerWidth = mapContainer.value?.clientWidth ?? 0
   map.fitBounds(bounds, {
-    padding: containerWidth < 640
-      ? 42
-      : props.presentation === 'detail' ? 72 : 56,
+    padding: effectiveCameraPadding()
+      ?? (containerWidth < 640
+        ? 42
+        : props.presentation === 'detail' ? 72 : 56),
     maxZoom: 13,
     duration,
     essential: false,
   })
+}
+
+function effectiveCameraPadding() {
+  if (!props.cameraPadding) return undefined
+
+  const containerWidth = mapContainer.value?.clientWidth ?? 0
+  if (containerWidth < 760) {
+    return {
+      top: 42,
+      right: 42,
+      bottom: 42,
+      left: 42,
+    }
+  }
+
+  return props.cameraPadding
+}
+
+function locateUser() {
+  if (!map || !navigator.geolocation) {
+    liveMessage.value = 'Twoja lokalizacja nie jest dostępna w tej przeglądarce.'
+    return
+  }
+
+  liveMessage.value = 'Ustalamy Twoją lokalizację.'
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => {
+      map?.easeTo({
+        center: [coords.longitude, coords.latitude],
+        zoom: Math.max(map.getZoom(), 13),
+        padding: effectiveCameraPadding(),
+        duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 0
+          : 650,
+        essential: false,
+      })
+      liveMessage.value = 'Mapa została przesunięta do Twojej lokalizacji.'
+    },
+    () => {
+      liveMessage.value = 'Nie udało się ustalić Twojej lokalizacji.'
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 60_000,
+      timeout: 8_000,
+    },
+  )
 }
 
 function scheduleFitBounds() {
@@ -513,7 +597,7 @@ async function initializeMap() {
 
     if ('ResizeObserver' in window) {
       resizeObserver = new ResizeObserver(() => {
-        map?.resize()
+        scheduleFitBounds()
       })
       resizeObserver.observe(mapContainer.value)
     }
@@ -568,6 +652,22 @@ watch(
   },
 )
 
+watch(
+  () => props.openPopupOnSelection,
+  () => {
+    revealSelectedMarker(false)
+  },
+)
+
+watch(
+  () => props.cameraPadding,
+  () => {
+    scheduleFitBounds()
+    revealSelectedMarker(false)
+  },
+  { deep: true },
+)
+
 onMounted(async () => {
   await nextTick()
   void initializeMap()
@@ -581,6 +681,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   fitBounds,
+  locateUser,
   retry: initializeMap,
 })
 </script>
@@ -854,11 +955,46 @@ defineExpose({
     filter var(--transition-fast);
 }
 
+.directory-map :deep(.directory-map__marker > svg) {
+  transform-origin: 50% 100%;
+  transition: transform var(--transition-fast);
+}
+
+.directory-map :deep(.directory-map__marker--numbered > svg circle) {
+  fill: #111;
+}
+
+.directory-map :deep(.directory-map__marker-label) {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  z-index: 2;
+  max-width: 20px;
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+  pointer-events: none;
+  text-align: center;
+  text-overflow: clip;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
 .directory-map :deep(.directory-map__marker:hover),
 .directory-map :deep(.directory-map__marker:focus-visible),
 .directory-map :deep(.directory-map__marker--selected) {
   opacity: 1;
   filter: drop-shadow(0 3px 4px rgb(0 0 0 / 22%));
+}
+
+.directory-map :deep(.directory-map__marker:hover > svg),
+.directory-map :deep(.directory-map__marker:focus-visible > svg),
+.directory-map :deep(.directory-map__marker--selected > svg) {
+  transform: scale(1.08);
 }
 
 .directory-map :deep(.directory-map__marker:focus-visible) {
@@ -1043,7 +1179,8 @@ defineExpose({
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .directory-map :deep(.directory-map__marker) {
+  .directory-map :deep(.directory-map__marker),
+  .directory-map :deep(.directory-map__marker > svg) {
     transition: none;
   }
 }

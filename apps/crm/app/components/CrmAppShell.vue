@@ -330,12 +330,6 @@ const navGroups = computed<NavigationGroup[]>(() => {
     if (isOrganizationAdmin.value) {
       adminItems.push(
         { label: 'Zgody', to: `${organizationBase.value}/consents`, icon: 'i-lucide-shield-check' },
-        {
-          label: 'Konfiguracja CRM',
-          to: `${organizationBase.value}/settings`,
-          icon: 'i-lucide-sliders-horizontal',
-          exact: true,
-        },
       )
     }
 

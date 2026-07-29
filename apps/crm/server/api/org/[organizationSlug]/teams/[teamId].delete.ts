@@ -1,13 +1,13 @@
 import {
   getRequiredParam,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'structure.manage')
   const teamId = getRequiredParam(event, 'teamId')
   const { error } = await session.supabase
     .from('teams')

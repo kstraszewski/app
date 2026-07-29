@@ -138,13 +138,100 @@ export function requireOrganizationAdmin(session: CrmSession): void {
   }
 }
 
-export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAdminScope> {
-  const directMembershipsResult = await session.supabase
-    .from('team_memberships')
-    .select('team_id')
+export async function hasAdministrativePermission(
+  session: CrmSession,
+  permissionKey: string,
+): Promise<boolean> {
+  const now = new Date().toISOString()
+  const [rolePermissionsResult, directGrantResult] = await Promise.all([
+    session.supabase
+      .from('administrative_role_permissions')
+      .select('role_key')
+      .eq('permission_key', permissionKey),
+    session.supabase
+      .from('organization_user_direct_grants')
+      .select('id')
+      .eq('organization_id', session.organizationId)
+      .eq('user_id', session.userId)
+      .eq('permission_key', permissionKey)
+      .eq('status', 'active')
+      .lte('valid_from', now)
+      .gt('expires_at', now)
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  throwDbError(rolePermissionsResult.error)
+  throwDbError(directGrantResult.error)
+
+  if (directGrantResult.data) return true
+
+  const permittedRoleKeys = Array.from(new Set<string>(
+    ((rolePermissionsResult.data ?? []) as Array<{ role_key: unknown }>)
+      .map(row => String(row.role_key)),
+  ))
+  if (
+    session.role === 'admin'
+    && permittedRoleKeys.includes('organization_admin')
+  ) {
+    return true
+  }
+
+  const directRoleKeys = permittedRoleKeys.filter(roleKey => roleKey !== 'organization_admin')
+  if (!directRoleKeys.length) return false
+
+  const roleAssignmentResult = await session.supabase
+    .from('organization_user_admin_roles')
+    .select('role_key')
     .eq('organization_id', session.organizationId)
     .eq('user_id', session.userId)
-    .eq('role', 'admin')
+    .in('role_key', directRoleKeys)
+    .limit(1)
+    .maybeSingle()
+
+  throwDbError(roleAssignmentResult.error)
+  return Boolean(roleAssignmentResult.data)
+}
+
+export async function requireAdministrativePermission(
+  session: CrmSession,
+  permissionKey: string,
+): Promise<void> {
+  if (!await hasAdministrativePermission(session, permissionKey)) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: `Administrative permission required: ${permissionKey}`,
+    })
+  }
+}
+
+export async function requireOrganizationMember(
+  session: CrmSession,
+  userId: string,
+): Promise<void> {
+  const { data, error } = await session.supabase
+    .from('organization_memberships')
+    .select('user_id')
+    .eq('organization_id', session.organizationId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  throwDbError(error)
+  if (!data) {
+    throw createError({ statusCode: 404, statusMessage: 'Organization member not found' })
+  }
+}
+
+export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAdminScope> {
+  const [directMembershipsResult, canManageStructure] = await Promise.all([
+    session.supabase
+      .from('team_memberships')
+      .select('team_id')
+      .eq('organization_id', session.organizationId)
+      .eq('user_id', session.userId)
+      .eq('role', 'admin'),
+    hasAdministrativePermission(session, 'structure.manage'),
+  ])
   throwDbError(directMembershipsResult.error)
 
   const directAdminTeamIds: string[] = Array.from(new Set<string>(
@@ -152,7 +239,7 @@ export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAd
       .map(membership => String(membership.team_id)),
   )).sort()
 
-  if (session.role === 'admin') {
+  if (canManageStructure) {
     const teamsResult = await session.supabase
       .from('teams')
       .select('id')
@@ -220,7 +307,7 @@ export async function requireFacilityAdminMembership(
   session: CrmSession,
   facilityId: string,
 ): Promise<void> {
-  if (session.role === 'admin') return
+  if (await hasAdministrativePermission(session, 'structure.manage')) return
 
   const { data, error } = await session.supabase
     .from('facility_memberships')
@@ -242,7 +329,7 @@ export async function requireSafeTeamAdminRemoval(
   teamId: string,
   userId: string,
 ): Promise<{ role: string }> {
-  await requireTeamAdmin(session, teamId)
+  const scope = await requireTeamAdmin(session, teamId)
 
   const membershipResult = await session.supabase
     .from('team_memberships')
@@ -258,7 +345,7 @@ export async function requireSafeTeamAdminRemoval(
   }
 
   const role = String(membershipResult.data.role ?? 'member')
-  if (session.role !== 'admin' && role === 'admin') {
+  if (!scope.organizationAdmin && role === 'admin') {
     const adminCountResult = await session.supabase
       .from('team_memberships')
       .select('*', { count: 'exact', head: true })

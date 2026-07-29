@@ -1,8 +1,8 @@
 import { createError, readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 import {
@@ -12,7 +12,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'crm.configuration.manage')
   const body = asRecord(await readBody(event))
   const expectedRevision = capacityExpectedRevision(body.expectedRevision)
   const { data: existing, error: existingError } = await session.supabase

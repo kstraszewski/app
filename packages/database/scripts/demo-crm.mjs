@@ -225,7 +225,7 @@ const clientSeeds = [
     leadSource: 'website',
     email: 'katarzyna.wojcik@example.local',
     phone: '+48 507 870 708',
-    tags: ['refinansowanie', 'utracona', 'demo'],
+    tags: ['refinansowanie', 'utracona', 'żądanie-anonimizacji', 'demo'],
     notes: 'Sprawa zamknięta po wyborze oferty konkurencyjnego pośrednika.',
     metadata: { client_type: 'person', contact_block_reason: 'client_request' },
     people: [
@@ -1172,6 +1172,148 @@ async function ensureClientRecords({
   }
 }
 
+async function ensureAnonymizationRequests({
+  adminClient,
+  organizationId,
+  ownerUserId,
+  seedNow,
+  clientByKey,
+  personByKey,
+}) {
+  const requestKey = 'anonymization-request:client-katarzyna-wojcik'
+  const client = clientByKey.get('client-katarzyna-wojcik')
+  const subjectPerson = personByKey.get(primaryPersonSeedKey('client-katarzyna-wojcik'))
+  if (!client?.id) {
+    throw new Error('Demo anonymization request requires the Katarzyna Wójcik client')
+  }
+  if (!subjectPerson?.id) {
+    throw new Error('Demo anonymization request requires the Katarzyna Wójcik primary person')
+  }
+
+  const requestId = stableUuid(requestKey)
+  const requestMetadata = metadataFor(requestKey, {
+    demo_seed_kind: 'crm_client_anonymization_request',
+  })
+  const existingRequests = assertResult(
+    await adminClient
+      .from('crm_client_anonymization_requests')
+      .select('id')
+      .eq('id', requestId)
+      .limit(1),
+    'Reading the demo client anonymization request',
+  ) ?? []
+
+  const requestQuery = existingRequests.length
+    ? adminClient
+        .from('crm_client_anonymization_requests')
+        .update({
+          status: 'approved',
+          request_channel: 'email',
+          legal_basis: 'RODO art. 17',
+          justification: 'Klientka zażądała usunięcia danych po zakończeniu obsługi.',
+          review_note: 'Tożsamość i zakres żądania zweryfikowane. Wykonanie wymaga osobnego, czasowego grantu.',
+          completed_at: null,
+          completed_by_user_id: null,
+          metadata: requestMetadata,
+        })
+        .eq('id', requestId)
+    : adminClient
+        .from('crm_client_anonymization_requests')
+        .insert({
+          id: requestId,
+          organization_id: organizationId,
+          client_id: client.id,
+          subject_person_id: subjectPerson.id,
+          idempotency_key: stableUuid(`${requestKey}:idempotency`),
+          request_number: 'ANO-2026-0042',
+          status: 'approved',
+          request_channel: 'email',
+          legal_basis: 'RODO art. 17',
+          requested_at: isoOffset(seedNow, -5),
+          identity_verified_at: isoOffset(seedNow, -4),
+          identity_verified_by_user_id: ownerUserId,
+          approved_at: isoOffset(seedNow, -3),
+          approved_by_user_id: ownerUserId,
+          due_at: isoOffset(seedNow, 25),
+          justification: 'Klientka zażądała usunięcia danych po zakończeniu obsługi.',
+          review_note: 'Tożsamość i zakres żądania zweryfikowane. Wykonanie wymaga osobnego, czasowego grantu.',
+          completed_at: null,
+          completed_by_user_id: null,
+          created_by_user_id: ownerUserId,
+          metadata: requestMetadata,
+        })
+
+  const request = assertResult(
+    await requestQuery
+      .select('id, client_id, request_number, status, due_at')
+      .single(),
+    'Seeding the demo client anonymization request',
+  )
+
+  const eventSeeds = [
+    {
+      key: `${requestKey}:event:received`,
+      event_type: 'request_received',
+      from_status: null,
+      to_status: 'received',
+      reason_code: 'client_request_received',
+      created_at: isoOffset(seedNow, -5),
+    },
+    {
+      key: `${requestKey}:event:identity-verified`,
+      event_type: 'identity_verified',
+      from_status: 'received',
+      to_status: 'legal_review',
+      reason_code: 'identity_confirmed',
+      created_at: isoOffset(seedNow, -4),
+    },
+    {
+      key: `${requestKey}:event:approved`,
+      event_type: 'approved',
+      from_status: 'legal_review',
+      to_status: 'approved',
+      reason_code: 'erasure_scope_approved',
+      created_at: isoOffset(seedNow, -3),
+    },
+  ]
+  const eventIds = eventSeeds.map(event => stableUuid(event.key))
+  const existingEvents = assertResult(
+    await adminClient
+      .from('crm_client_anonymization_request_events')
+      .select('id')
+      .in('id', eventIds),
+    'Reading demo client anonymization request events',
+  ) ?? []
+  const existingEventIds = new Set(existingEvents.map(event => String(event.id)))
+  const missingEvents = eventSeeds
+    .filter(event => !existingEventIds.has(stableUuid(event.key)))
+    .map(event => ({
+      id: stableUuid(event.key),
+      organization_id: organizationId,
+      request_id: request.id,
+      event_type: event.event_type,
+      from_status: event.from_status,
+      to_status: event.to_status,
+      actor_user_id: ownerUserId,
+      reason_code: event.reason_code,
+      evidence_reference: `demo-seed:${event.key}`,
+      created_at: event.created_at,
+    }))
+  if (missingEvents.length) {
+    assertResult(
+      await adminClient
+        .from('crm_client_anonymization_request_events')
+        .insert(missingEvents),
+      'Seeding demo client anonymization request events',
+    )
+  }
+
+  return {
+    ...request,
+    event_count: eventSeeds.length,
+  }
+}
+
 async function ensureCases({
   adminClient,
   userClient,
@@ -1915,6 +2057,14 @@ export async function seedDemoCrm({
     seedNow: referenceNow,
     consentCatalogue,
   })
+  const anonymizationRequest = await ensureAnonymizationRequests({
+    adminClient,
+    organizationId,
+    ownerUserId,
+    seedNow: referenceNow,
+    clientByKey: clientResult.clientByKey,
+    personByKey: clientResult.personByKey,
+  })
   const caseByKey = await ensureCases({
     adminClient,
     userClient,
@@ -1984,6 +2134,11 @@ export async function seedDemoCrm({
 
   return {
     clients: clientResult.clients,
+    anonymizationRequests: [{
+      ...anonymizationRequest,
+      id: String(anonymizationRequest.id),
+      client_id: String(anonymizationRequest.client_id),
+    }],
     tasks: [...taskByKey.entries()].map(([seedKey, task]) => ({
       ...task,
       id: String(task.id),
@@ -2003,6 +2158,8 @@ export async function seedDemoCrm({
       clients: clientResult.clients.length,
       people: clientResult.peopleCount,
       consentEvents: consentCountResult.count ?? 0,
+      anonymizationRequests: 1,
+      anonymizationRequestEvents: anonymizationRequest.event_count,
       cases: caseByKey.size,
       caseItems: itemByKey.size,
       settlements: settlementByItemId.size,

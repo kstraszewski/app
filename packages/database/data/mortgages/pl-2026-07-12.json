@@ -63,7 +63,7 @@
       }
     },
     {
-      "bank": { "slug": "erste", "name": "Erste Bank Polska", "websiteUrl": "https://www.erste.pl", "logoUrl": "https://cdn0.erstegroup.com/content/dam/at/eh/common/pictures/logos/holding/Holding_Logo_screen_white_404x192.png", "logoBackgroundColor": "#2870ED" },
+      "bank": { "slug": "erste", "name": "Erste Bank Polska", "websiteUrl": "https://www.erste.pl", "logoUrl": "https://cdn0.erstegroup.com/content/dam/at/eh/common/pictures/logos/holding/Holding_Logo_screen_white_404x192.png", "logoBackgroundColor": "#2870ED", "aliases": [{ "value": "Santander Bank Polska", "type": "former_name" }, { "value": "santander.pl", "type": "former_domain" }] },
       "product": { "slug": "housing-fixed-5y", "name": "Kredyt mieszkaniowy — stała stopa 5 lat", "category": "housing" },
       "sourceKey": "erste-general-mortgage-2026-07-12",
       "version": {

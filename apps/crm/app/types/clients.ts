@@ -123,6 +123,7 @@ export interface ClientPerson {
   id: string
   organization_id: string
   client_id: string
+  subject_person_id: string
   role: string
   first_name: string | null
   last_name: string | null
@@ -323,6 +324,64 @@ export interface ClientConsentState {
   created_at?: string
 }
 
+export type ClientAnonymizationRequestStatus =
+  | 'received'
+  | 'identity_verification'
+  | 'legal_review'
+  | 'approved'
+  | 'in_progress'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+
+export type ClientAnonymizationRequestChannel =
+  | 'email'
+  | 'phone'
+  | 'in_person'
+  | 'letter'
+  | 'other'
+
+export interface ClientAnonymizationRequest {
+  id: string
+  organization_id: string
+  client_id: string
+  request_number: string
+  status: ClientAnonymizationRequestStatus
+  request_channel: ClientAnonymizationRequestChannel
+  legal_basis: string
+  requested_at: string
+  identity_verified_at: string | null
+  identity_verified_by_user_id: string | null
+  approved_at: string | null
+  approved_by_user_id: string | null
+  due_at: string
+  justification: string
+  review_note: string | null
+  completed_at: string | null
+  completed_by_user_id: string | null
+  created_by_user_id: string
+  created_at: string
+  updated_at: string
+  identity_verified_by: ClientUserSummary | null
+  approved_by: ClientUserSummary | null
+  completed_by: ClientUserSummary | null
+  created_by: ClientUserSummary | null
+}
+
+export interface ClientPrivacyAccess {
+  can_view_requests: boolean
+  can_execute_anonymization: boolean
+  execute_permission_key: 'clients.anonymization.execute'
+  execution_requires_temporary_grant: true
+  execution_grant: {
+    id: string
+    revision: number
+    status: 'active'
+    expires_at: string
+    approved_at: string
+  } | null
+}
+
 /** Wire shape accepted from both SQL JSON facets (camelCase) and REST aliases. */
 export interface ClientConsentVersionPayload {
   id: string
@@ -406,6 +465,9 @@ export interface ClientDetailResponse {
   consent_definitions: ClientDetailConsentDefinition[]
   consent_history: ClientConsentHistoryEvent[]
   consent_history_count: number
+  anonymization_requests: ClientAnonymizationRequest[]
+  current_anonymization_request: ClientAnonymizationRequest | null
+  privacy_access: ClientPrivacyAccess
   appointments: ClientAppointmentSummary[]
   appointment_count: number
   appointments_page_info: ClientAppointmentsPageInfo

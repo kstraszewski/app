@@ -19,6 +19,7 @@
     "test:mail": "node --test --experimental-strip-types test/gmail-message.test.ts test/gmail-send.test.ts test/mail-multipart.test.ts",
     "test:property-import": "node --test --experimental-strip-types test/property-import.test.ts",
     "test:team-scope": "node --test --experimental-strip-types test/team-scope.test.ts",
+    "seed:bank-files": "node ./scripts/import-official-bank-files.mjs",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
@@ -34,7 +35,7 @@
     "ai": "7.0.34",
     "eve": "0.25.1",
     "h3": "1.15.11",
-    "nuxt": "^4.5.0",
+    "nuxt": "^4.5.1",
     "nuxt-charts": "2.2.1",
     "pdfjs-dist": "^6.1.200",
     "sharp": "0.35.3",

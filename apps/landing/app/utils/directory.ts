@@ -7,6 +7,18 @@ export function normalizeDirectoryQuery(value: string): string {
     .replaceAll('ł', 'l')
 }
 
+export function directoryHydrationData<T>(
+  isHydrating: boolean,
+  payloadData: Record<string, unknown>,
+  key: string,
+): T | undefined {
+  // Directory payloads contain expiring signed image URLs. Reuse them only
+  // while hydrating the matching SSR response, never on a later client visit.
+  return isHydrating
+    ? payloadData[key] as T | undefined
+    : undefined
+}
+
 export function directoryBookingUrl(
   crmBaseUrl: string,
   widgetKey: string,

@@ -13,6 +13,7 @@ import {
 } from 'h3'
 import {
   asRecord,
+  hasAdministrativePermission,
   resolveTeamAdminScope,
   type CrmSession,
   textValue,
@@ -581,7 +582,7 @@ export function verifyBookingWidgetPreviewToken(
 }
 
 export async function listAccessibleFacilityIds(session: CrmSession): Promise<string[] | null> {
-  if (session.role === 'admin') return null
+  if (await hasAdministrativePermission(session, 'structure.manage')) return null
 
   const [facilityMemberships, teamMemberships, teamAdminScope] = await Promise.all([
     session.supabase
@@ -635,7 +636,7 @@ export async function requireFacilityPermission(
     throw createError({ statusCode: 404, statusMessage: 'Facility not found' })
   }
 
-  if (session.role === 'admin') {
+  if (await hasAdministrativePermission(session, 'structure.manage')) {
     return {
       facility,
       source: 'organization_admin',

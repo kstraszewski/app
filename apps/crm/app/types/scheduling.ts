@@ -1,4 +1,4 @@
-import type { OrganizationMember, TeamNode } from './organization'
+import type { OrganizationMember, TeamMembership, TeamNode } from './organization'
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
 
 export type FacilityRole = 'admin' | 'member'
@@ -97,6 +97,27 @@ export interface FacilityMember {
 
 export interface FacilityMembersPayload {
   data: FacilityMember[]
+}
+
+export interface UserStructureTeamAssignment {
+  team: TeamNode
+  membership: TeamMembership
+}
+
+export interface UserStructureFacilityAssignment {
+  facility: Facility
+  membership: Omit<FacilityMember, 'user'>
+}
+
+export interface UserStructureAssignmentsPayload {
+  data: {
+    teams: UserStructureTeamAssignment[]
+    facilities: UserStructureFacilityAssignment[]
+  }
+  catalog: {
+    teams: TeamNode[]
+    facilities: Facility[]
+  }
 }
 
 export interface FacilityTeamLink {
@@ -419,5 +440,12 @@ export interface OrganizationMembersPayload {
   currentUserId: string
   role: 'admin' | 'expert'
   canAssignOthers: boolean
+  capabilities?: {
+    canManageAccess: boolean
+    canManageStructure: boolean
+    canReadAudit: boolean
+    canRequestPrivacyGrants: boolean
+    canApprovePrivacyGrants: boolean
+  }
   members: OrganizationMember[]
 }

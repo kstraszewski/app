@@ -1,8 +1,8 @@
 import { readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 import {
@@ -15,7 +15,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'structure.manage')
   const body = asRecord(await readBody(event))
   const name = limitedText(body.name, 'name', 160, { required: true }) as string
   const countryCode = limitedText(body.countryCode ?? body.country_code ?? 'PL', 'countryCode', 2, { required: true }) as string

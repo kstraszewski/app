@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const [{ data, error }, superAdmin] = await Promise.all([
     session.supabase
       .from('organization_memberships')
-      .select('role, organization:organizations!inner(id, name, slug)')
+      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
       .eq('user_id', session.userId),
     hasSuperAdminRole(session),
   ])

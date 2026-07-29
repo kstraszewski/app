@@ -1,8 +1,8 @@
 import { createError, readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 import {
@@ -15,7 +15,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'crm.configuration.manage')
   const body = asRecord(await readBody(event))
   const settings = sanitizeMortgageCapacityPolicy(body.settings)
   const notes = capacityNotes(body.notes)

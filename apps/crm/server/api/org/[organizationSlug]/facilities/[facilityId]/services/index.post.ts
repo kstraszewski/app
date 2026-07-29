@@ -1,8 +1,8 @@
 import { readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 import {
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     if (!data) throw createError({ statusCode: 404, statusMessage: 'Booking service not found' })
     service = data
   } else {
-    requireOrganizationAdmin(session)
+    await requireAdministrativePermission(session, 'structure.manage')
     const { data, error } = await session.supabase
       .from('booking_services')
       .insert({

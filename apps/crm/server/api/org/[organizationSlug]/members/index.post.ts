@@ -1,8 +1,8 @@
 import { readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   requiredText,
   textValue,
   throwDbError,
@@ -10,7 +10,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'iam.members.manage')
   const body = asRecord(await readBody(event))
   const { data, error } = await session.supabase.rpc('add_organization_member_by_email', {
     organization_id: session.organizationId,

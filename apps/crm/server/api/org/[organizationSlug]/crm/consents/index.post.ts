@@ -5,15 +5,24 @@ import {
 } from '~~/server/utils/consents'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   throwDbError,
 } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(
+    session,
+    'compliance.consents.definitions.manage',
+  )
   const input = parseConsentDefinitionCreate(asRecord(await readBody(event)))
+  if (input.status === 'published') {
+    await requireAdministrativePermission(
+      session,
+      'compliance.consents.definitions.publish',
+    )
+  }
 
   const { data: definitionId, error } = await session.supabase.rpc(
     'create_crm_consent_definition',

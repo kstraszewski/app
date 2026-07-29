@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import {
+  searchInstitutions,
+  type InstitutionSearchAlias,
+  type InstitutionSearchMatch,
+} from '~/utils/mortgage-institution-search'
+
 definePageMeta({
   middleware: ['auth', 'organization'],
   path: '/org/:organizationSlug/settings/institutions',
@@ -29,6 +35,7 @@ type Bank = {
   isEnabled: boolean
   logoUrl: string | null
   productCount: number
+  aliases: InstitutionSearchAlias[]
   override: BankOverride | null
 }
 
@@ -72,16 +79,13 @@ const { data, status, error, refresh } = await useFetch<Payload>(apiBase, {
 
 const pending = computed(() => status.value === 'pending')
 const isSuperAdmin = computed(() => data.value.superAdmin)
-const visibleBanks = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase('pl')
-
-  return data.value.banks.filter((bank) => {
-    const matchesSearch = !query || [
-      bank.name,
-      bank.baseName,
-      bank.slug,
-      bank.websiteUrl,
-    ].some(value => String(value ?? '').toLocaleLowerCase('pl').includes(query))
+const searchHits = computed(() => searchInstitutions(data.value.banks, search.value))
+const searchMatchByBankId = computed(() => new Map(
+  searchHits.value.map(hit => [hit.item.id, hit.matchedOn]),
+))
+const visibleBanks = computed(() => searchHits.value
+  .map(hit => hit.item)
+  .filter((bank) => {
     const matchesVisibility = visibilityFilter.value === 'all'
       || (visibilityFilter.value === 'enabled' && bank.isEnabled)
       || (visibilityFilter.value === 'hidden' && !bank.isEnabled)
@@ -89,10 +93,13 @@ const visibleBanks = computed(() => {
       || (sourceFilter.value === 'custom' && Boolean(bank.override))
       || (sourceFilter.value === 'source' && !bank.override)
 
-    return matchesSearch && matchesVisibility && matchesSource
-  })
-})
-
+    return matchesVisibility && matchesSource
+  }))
+const hasActiveFilters = computed(() => (
+  Boolean(search.value.trim())
+  || visibilityFilter.value !== 'all'
+  || sourceFilter.value !== 'all'
+))
 const visibleCountLabel = computed(() => {
   const count = visibleBanks.value.length
   if (count === 1) return 'instytucja'
@@ -106,6 +113,53 @@ function initials(name: string) {
 
 function profilePath(bankId: string) {
   return `${institutionsPath.value}/${encodeURIComponent(bankId)}`
+}
+
+function websiteHost(value: string) {
+  if (!value) return 'Brak adresu'
+  try {
+    return new URL(value).hostname.replace(/^www\./u, '')
+  } catch {
+    return value.replace(/^https?:\/\/(www\.)?/u, '').replace(/\/.*$/u, '')
+  }
+}
+
+function productCountLabel(count: number) {
+  if (count === 1) return '1 produkt'
+  return `${count} produktów`
+}
+
+function formerNames(bank: Bank) {
+  return bank.aliases
+    .filter(alias => alias.kind === 'former_name')
+    .map(alias => alias.name)
+}
+
+function formerNamesLabel(bank: Bank) {
+  const names = formerNames(bank)
+  if (names.length <= 2) return names.join(' · ')
+  return `${names.slice(0, 2).join(' · ')} +${names.length - 2}`
+}
+
+function searchMatchContext(match: InstitutionSearchMatch | null | undefined) {
+  if (!search.value.trim() || !match || match.source === 'name') return null
+
+  const labels: Partial<Record<InstitutionSearchMatch['source'], string>> = {
+    base_name: 'Trafienie w nazwie źródłowej',
+    former_name: 'Trafienie w dawnej nazwie',
+    short_name: 'Trafienie po skrócie',
+    legal_name: 'Trafienie w nazwie prawnej',
+    former_domain: 'Trafienie w dawnej domenie',
+    search_term: 'Trafienie w powiązanym haśle',
+    slug: 'Trafienie po kodzie',
+    website: 'Trafienie w domenie',
+  }
+  const label = labels[match.source]
+  return label ? `${label}: ${match.label}` : null
+}
+
+function clearSearch() {
+  search.value = ''
 }
 
 function clearFilters() {
@@ -168,194 +222,718 @@ function clearFilters() {
 
     <template v-else>
       <div class="institution-content">
-      <section class="organization-notice" aria-label="Zakres ustawień">
-        <UIcon name="i-lucide-building-2" />
-        <div>
-          <strong>Ustawienia obowiązują tylko w tej organizacji</strong>
-          <p>Zmiana widoczności instytucji wpływa na wszystkie jej produkty w porównywarce. Dane globalne pozostają bez zmian.</p>
-        </div>
-      </section>
+        <section class="institution-discovery" aria-labelledby="institution-search-title">
+          <div class="institution-discovery__intro">
+            <span class="institution-discovery__icon" aria-hidden="true">
+              <UIcon name="i-lucide-search" />
+            </span>
+            <div>
+              <span>Katalog organizacji</span>
+              <h2 id="institution-search-title">Znajdź właściwą instytucję</h2>
+              <p>Wyszukuj po obecnej lub dawnej nazwie, skrócie, kodzie albo domenie. Literówki też są tolerowane.</p>
+            </div>
+          </div>
 
-      <div class="institution-toolbar">
-        <UInput
-          v-model="search"
-          class="institution-toolbar__search"
-          icon="i-lucide-search"
-          placeholder="Szukaj po nazwie, kodzie lub adresie"
-          aria-label="Szukaj instytucji"
-        />
-        <USelect
-          v-model="visibilityFilter"
-          :items="visibilityItems"
-          aria-label="Filtruj według widoczności"
-        />
-        <USelect
-          v-model="sourceFilter"
-          :items="sourceItems"
-          aria-label="Filtruj według źródła danych"
-        />
-        <span class="institution-toolbar__count">
-          {{ visibleBanks.length }} {{ visibleCountLabel }}
-        </span>
-      </div>
-
-      <div v-if="pending && !data.banks.length" class="institution-skeleton">
-        <USkeleton class="h-14 w-full" />
-        <USkeleton v-for="index in 5" :key="index" class="h-20 w-full" />
-      </div>
-
-      <section
-        v-else-if="visibleBanks.length"
-        class="institution-register"
-        aria-label="Rejestr instytucji finansowych"
-      >
-        <div class="institution-register__head" aria-hidden="true">
-          <span>Instytucja</span>
-          <span>Produkty</span>
-          <span>Widoczność</span>
-          <span>Dane organizacji</span>
-          <span>Strona</span>
-          <span />
-        </div>
-
-        <NuxtLink
-          v-for="bank in visibleBanks"
-          :key="bank.id"
-          :to="profilePath(bank.id)"
-          class="institution-register__row"
-        >
-          <span class="institution-register__identity">
-            <span
-              class="institution-logo"
-              :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
+          <div role="search" class="institution-search">
+            <UInput
+              v-model="search"
+              class="institution-search__input"
+              leading-icon="i-lucide-search"
+              size="xl"
+              placeholder="Np. Erste, Santander, santader lub santander.pl"
+              aria-label="Szukaj instytucji"
+              aria-describedby="institution-search-help"
             >
-              <img v-if="bank.logoUrl" :src="bank.logoUrl" :alt="`Logo ${bank.name}`">
-              <span v-else>{{ initials(bank.name) }}</span>
-            </span>
-            <span>
-              <strong>{{ bank.name }}</strong>
-              <small>{{ bank.slug }}</small>
-            </span>
-          </span>
-          <span class="institution-register__details">
-            <span class="institution-register__products" data-label="Produkty">
-              <strong>{{ bank.productCount }}</strong>
-              <small>{{ bank.productCount === 1 ? 'produkt' : 'produktów' }}</small>
-            </span>
-            <span class="institution-register__field" data-label="Widoczność">
-              <UBadge :color="bank.isEnabled ? 'success' : 'warning'" variant="subtle">
-                {{ bank.isEnabled ? 'Widoczna' : 'Ukryta' }}
-              </UBadge>
-            </span>
-            <span class="institution-register__field" data-label="Dane organizacji">
-              <UBadge v-if="bank.override" color="primary" variant="outline">
-                Zmienione · r{{ bank.override.revision }}
-              </UBadge>
-              <span v-else class="institution-register__muted">Dane źródłowe</span>
-            </span>
-            <span class="institution-register__website" data-label="Strona">
-              {{ bank.websiteUrl || 'Brak adresu' }}
-            </span>
-          </span>
-          <span class="institution-register__open" aria-hidden="true">
-            <UIcon name="i-lucide-chevron-right" />
-          </span>
-        </NuxtLink>
-      </section>
+              <template #trailing>
+                <UButton
+                  v-if="search"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  square
+                  icon="i-lucide-x"
+                  aria-label="Wyczyść wyszukiwanie"
+                  @click="clearSearch"
+                />
+              </template>
+            </UInput>
+            <p id="institution-search-help">
+              <UIcon name="i-lucide-sparkles" aria-hidden="true" />
+              Najtrafniejsze wyniki pojawią się jako pierwsze.
+            </p>
+          </div>
 
-      <section v-else class="institution-empty">
-        <UIcon name="i-lucide-search-x" />
-        <h2>Nie znaleziono instytucji</h2>
-        <p>Zmień wyszukiwaną frazę lub wyczyść filtry rejestru.</p>
-        <UButton color="neutral" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
-      </section>
+          <div class="institution-filters">
+            <div class="institution-filters__fields">
+              <USelect
+                v-model="visibilityFilter"
+                :items="visibilityItems"
+                value-key="value"
+                aria-label="Filtruj według widoczności"
+              />
+              <USelect
+                v-model="sourceFilter"
+                :items="sourceItems"
+                value-key="value"
+                aria-label="Filtruj według źródła danych"
+              />
+              <UButton
+                v-if="hasActiveFilters"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-rotate-ccw"
+                @click="clearFilters"
+              >
+                Wyczyść
+              </UButton>
+            </div>
+            <span class="institution-filters__scope">
+              <UIcon name="i-lucide-building-2" aria-hidden="true" />
+              Widoczność i zmiany dotyczą tylko tej organizacji
+            </span>
+          </div>
+        </section>
+
+        <div class="institution-results-heading">
+          <div>
+            <span>Rejestr finansowy</span>
+            <h2>{{ search.trim() ? 'Wyniki wyszukiwania' : 'Wszystkie instytucje' }}</h2>
+          </div>
+          <p aria-live="polite" aria-atomic="true">
+            <strong>{{ visibleBanks.length }}</strong> {{ visibleCountLabel }}
+            <template v-if="hasActiveFilters"> z {{ data.banks.length }}</template>
+          </p>
+        </div>
+
+        <div v-if="pending && !data.banks.length" class="institution-skeleton" aria-label="Ładowanie instytucji">
+          <USkeleton v-for="index in 6" :key="index" class="institution-skeleton__card" />
+        </div>
+
+        <ul
+          v-else-if="visibleBanks.length"
+          class="institution-grid"
+          aria-label="Rejestr instytucji finansowych"
+        >
+          <li v-for="bank in visibleBanks" :key="bank.id">
+            <NuxtLink
+              :to="profilePath(bank.id)"
+              class="institution-card"
+              :class="{ 'institution-card--hidden': !bank.isEnabled }"
+            >
+              <article>
+                <header class="institution-card__header">
+                  <span
+                    class="institution-logo"
+                    :style="bank.logoBackground ? { backgroundColor: bank.logoBackground } : undefined"
+                  >
+                    <img v-if="bank.logoUrl" :src="bank.logoUrl" alt="">
+                    <span v-else>{{ initials(bank.name) }}</span>
+                  </span>
+                  <span class="institution-card__identity">
+                    <strong>{{ bank.name }}</strong>
+                    <small>{{ websiteHost(bank.websiteUrl) }}</small>
+                  </span>
+                  <UBadge
+                    :color="bank.isEnabled ? 'success' : 'warning'"
+                    variant="subtle"
+                    size="sm"
+                    class="institution-card__status"
+                  >
+                    {{ bank.isEnabled ? 'Widoczna' : 'Ukryta' }}
+                  </UBadge>
+                </header>
+
+                <div v-if="formerNames(bank).length" class="institution-card__history">
+                  <UIcon name="i-lucide-history" aria-hidden="true" />
+                  <span>
+                    <small>Dawniej</small>
+                    <strong>{{ formerNamesLabel(bank) }}</strong>
+                  </span>
+                </div>
+
+                <div
+                  v-if="searchMatchContext(searchMatchByBankId.get(bank.id))"
+                  class="institution-card__match"
+                >
+                  <UIcon name="i-lucide-search-check" aria-hidden="true" />
+                  <span>{{ searchMatchContext(searchMatchByBankId.get(bank.id)) }}</span>
+                </div>
+
+                <dl class="institution-card__facts">
+                  <div>
+                    <dt>
+                      <UIcon name="i-lucide-package" aria-hidden="true" />
+                      Produkty
+                    </dt>
+                    <dd>{{ productCountLabel(bank.productCount) }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <UIcon name="i-lucide-database" aria-hidden="true" />
+                      Dane
+                    </dt>
+                    <dd>{{ bank.override ? `Zmiany · r${bank.override.revision}` : 'Źródłowe' }}</dd>
+                  </div>
+                </dl>
+
+                <footer class="institution-card__footer">
+                  <span>{{ bank.slug }}</span>
+                  <strong>
+                    Otwórz profil
+                    <UIcon name="i-lucide-arrow-up-right" aria-hidden="true" />
+                  </strong>
+                </footer>
+              </article>
+            </NuxtLink>
+          </li>
+        </ul>
+
+        <section v-else class="institution-empty">
+          <span aria-hidden="true"><UIcon name="i-lucide-search-x" /></span>
+          <h2>Nie znaleziono instytucji</h2>
+          <p>Spróbuj innej pisowni albo wyczyść aktywne filtry.</p>
+          <UButton color="neutral" variant="outline" icon="i-lucide-rotate-ccw" @click="clearFilters">
+            Wyczyść filtry
+          </UButton>
+        </section>
       </div>
     </template>
   </CrmShell>
 </template>
 
 <style scoped>
-.institution-state { margin-bottom: 18px; }
-.institution-content { container-name: institution-content; container-type: inline-size; }
-.organization-notice { display: flex; align-items: flex-start; gap: 14px; padding: 17px 19px; margin-bottom: 18px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); background: var(--ui-bg); }
-.organization-notice > svg { flex: 0 0 auto; width: 21px; height: 21px; margin-top: 1px; color: var(--ui-primary); }
-.organization-notice strong { font-size: 14px; }
-.organization-notice p { max-width: 860px; margin: 4px 0 0; color: var(--ui-text-muted); font-size: 13px; line-height: 1.5; }
-.institution-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 180px auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--ui-border); border-bottom: 0; border-radius: var(--ui-radius) var(--ui-radius) 0 0; background: var(--ui-bg); }
-.institution-toolbar__search { width: 100%; }
-.institution-toolbar__count { padding: 0 8px; color: var(--ui-text-muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
-.institution-skeleton { display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 0 0 var(--ui-radius) var(--ui-radius); }
-.institution-register { overflow: hidden; border: 1px solid var(--ui-border); border-radius: 0 0 var(--ui-radius) var(--ui-radius); background: var(--ui-bg); }
-.institution-register__head, .institution-register__row { display: grid; grid-template-columns: minmax(260px, 1.45fr) minmax(88px, .45fr) minmax(116px, .6fr) minmax(160px, .8fr) minmax(180px, 1fr) 44px; align-items: center; gap: 18px; }
-.institution-register__head { min-height: 42px; padding: 0 18px; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-muted); background: var(--ui-bg-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.institution-register__row { min-height: 76px; padding: 11px 18px; border-top: 1px solid var(--ui-border); color: var(--ui-text-toned); text-decoration: none; transition: background-color var(--oe-motion-fast), box-shadow var(--oe-motion-fast); }
-.institution-register__row:first-of-type { border-top: 0; }
-.institution-register__row:hover { background: var(--ui-bg-muted); box-shadow: inset 3px 0 0 var(--ui-primary); }
-.institution-register__identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
-.institution-register__identity > span:last-child, .institution-register__products, .institution-register__field, .institution-register__website { display: grid; min-width: 0; }
-.institution-register__details { display: contents; }
-.institution-register__identity strong, .institution-register__identity small, .institution-register__website { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.institution-register__identity strong { color: var(--ui-text-highlighted); font-size: 14px; }
-.institution-register__identity small, .institution-register__products small { color: var(--ui-text-muted); font-size: 11px; }
-.institution-register__products strong { color: var(--ui-text-highlighted); font-size: 14px; }
-.institution-register__website, .institution-register__muted { color: var(--ui-text-muted); font-size: 12px; }
-.institution-register__open { display: grid; place-items: center; width: 44px; height: 44px; color: var(--ui-text-muted); }
-.institution-logo { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 11px; color: var(--ui-color-neutral-900); background: white; font-size: 11px; font-weight: 750; }
-.institution-logo img { width: 100%; height: 100%; padding: 7px; object-fit: contain; }
-.institution-empty { display: grid; place-items: center; min-height: 290px; padding: 36px; border: 1px dashed var(--ui-border-accented); border-radius: 0 0 var(--ui-radius) var(--ui-radius); background: var(--ui-bg); text-align: center; }
-.institution-empty > svg { width: 34px; height: 34px; margin-bottom: 10px; color: var(--ui-text-muted); }
-.institution-empty h2, .institution-empty p { margin: 0; }
-.institution-empty h2 { font-size: 19px; }
-.institution-empty p { margin: 6px 0 16px; color: var(--ui-text-muted); font-size: 13px; }
-@container institution-content (max-width: 980px) {
-  .institution-register { display: grid; gap: 10px; overflow: visible; border: 0; background: transparent; }
-  .institution-register__head { display: none; }
-  .institution-register__row {
-    grid-template-columns: minmax(0, 1fr) 44px;
-    gap: 14px;
-    min-height: 0;
-    padding: 15px;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--ui-radius);
-    background: var(--ui-bg);
-  }
-  .institution-register__row:first-of-type { border-top: 1px solid var(--ui-border); }
-  .institution-register__identity { grid-column: 1; grid-row: 1; }
-  .institution-register__details {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-row: 2;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 18px;
-    padding-top: 12px;
-    border-top: 1px solid var(--ui-border-muted);
-  }
-  .institution-register__details > span { align-content: start; gap: 4px; min-width: 0; }
-  .institution-register__details > span::before {
-    content: attr(data-label);
-    color: var(--ui-text-dimmed);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .05em;
-    text-transform: uppercase;
-  }
-  .institution-register__website { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
-  .institution-register__open { grid-column: 2; grid-row: 1; }
+.institution-state {
+  margin-bottom: 18px;
 }
-@container institution-content (max-width: 820px) {
-  .institution-toolbar { grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
-  .institution-toolbar__search { grid-column: 1 / -1; }
-  .institution-toolbar__count { justify-self: end; }
-  .institution-register { margin-top: 12px; border-radius: var(--ui-radius); }
+
+.institution-content {
+  container-name: institution-content;
+  container-type: inline-size;
 }
+
+.institution-discovery {
+  overflow: hidden;
+  margin-bottom: 26px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-surface);
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--ui-primary) 10%, transparent), transparent 34%),
+    var(--ui-bg);
+}
+
+.institution-discovery__intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 21px 22px 16px;
+}
+
+.institution-discovery__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 24%, var(--ui-border));
+  border-radius: 12px;
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 9%, var(--ui-bg));
+}
+
+.institution-discovery__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.institution-discovery__intro > div {
+  min-width: 0;
+}
+
+.institution-discovery__intro > div > span,
+.institution-results-heading > div > span {
+  color: var(--ui-text-dimmed);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.institution-discovery h2,
+.institution-discovery p,
+.institution-results-heading h2,
+.institution-results-heading p {
+  margin: 0;
+}
+
+.institution-discovery h2 {
+  margin-top: 2px;
+  color: var(--ui-text-highlighted);
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.institution-discovery__intro p {
+  max-width: 720px;
+  margin-top: 4px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.institution-search {
+  padding: 0 22px 20px 78px;
+}
+
+.institution-search__input {
+  width: 100%;
+}
+
+.institution-search > p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--ui-text-dimmed);
+  font-size: 11px;
+}
+
+.institution-search > p svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--ui-primary);
+}
+
+.institution-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 60px;
+  padding: 10px 22px;
+  border-top: 1px solid var(--ui-border-muted);
+  background: color-mix(in srgb, var(--ui-bg-muted) 62%, transparent);
+}
+
+.institution-filters__fields {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.institution-filters__fields > :deep(*) {
+  min-width: 156px;
+}
+
+.institution-filters__fields > :deep(button) {
+  min-width: auto;
+}
+
+.institution-filters__scope {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.institution-filters__scope svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.institution-results-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 0 2px;
+}
+
+.institution-results-heading h2 {
+  margin-top: 2px;
+  color: var(--ui-text-highlighted);
+  font-size: 18px;
+}
+
+.institution-results-heading > p {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.institution-results-heading > p strong {
+  color: var(--ui-text-highlighted);
+  font-size: 15px;
+}
+
+.institution-skeleton,
+.institution-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.institution-skeleton {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+}
+
+.institution-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+}
+
+.institution-skeleton__card {
+  height: 230px;
+  border-radius: var(--oe-radius-surface);
+}
+
+.institution-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.institution-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+.institution-card {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-surface);
+  color: inherit;
+  background: var(--ui-bg);
+  text-decoration: none;
+  transition:
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast),
+    box-shadow var(--oe-motion-fast),
+    transform var(--oe-motion-fast);
+}
+
+.institution-card:hover {
+  border-color: color-mix(in srgb, var(--ui-primary) 42%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-primary) 2.5%, var(--ui-bg));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--ui-color-neutral-950) 8%, transparent);
+  transform: translateY(-2px);
+}
+
+.institution-card:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 3px;
+}
+
+.institution-card--hidden {
+  background: color-mix(in srgb, var(--ui-bg-muted) 42%, var(--ui-bg));
+}
+
+.institution-card article {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 16px;
+}
+
+.institution-card__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.institution-logo {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 50px;
+  height: 50px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 13px;
+  color: var(--ui-color-neutral-900);
+  background: white;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.institution-logo img {
+  width: 100%;
+  height: 100%;
+  padding: 7px;
+  object-fit: contain;
+}
+
+.institution-card__identity {
+  display: grid;
+  min-width: 0;
+}
+
+.institution-card__identity strong,
+.institution-card__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.institution-card__identity strong {
+  color: var(--ui-text-highlighted);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.institution-card__identity small {
+  margin-top: 2px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.institution-card__status {
+  justify-self: end;
+  width: max-content;
+}
+
+.institution-card__history,
+.institution-card__match {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 13px;
+  border-radius: 10px;
+}
+
+.institution-card__history {
+  padding: 10px 11px;
+  border: 1px solid var(--ui-border-muted);
+  background: var(--ui-bg-muted);
+}
+
+.institution-card__history > svg,
+.institution-card__match > svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+}
+
+.institution-card__history > svg {
+  color: var(--ui-text-muted);
+}
+
+.institution-card__history > span {
+  display: grid;
+  min-width: 0;
+}
+
+.institution-card__history small {
+  color: var(--ui-text-dimmed);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.institution-card__history strong {
+  overflow: hidden;
+  color: var(--ui-text-toned);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.institution-card__match {
+  padding: 8px 10px;
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 9%, transparent);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.institution-card__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 15px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border-muted);
+}
+
+.institution-card__facts > div {
+  min-width: 0;
+}
+
+.institution-card__facts dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-dimmed);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.institution-card__facts dt svg {
+  width: 13px;
+  height: 13px;
+}
+
+.institution-card__facts dd {
+  overflow: hidden;
+  margin: 5px 0 0;
+  color: var(--ui-text-toned);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.institution-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 15px;
+}
+
+.institution-card__footer > span {
+  overflow: hidden;
+  color: var(--ui-text-dimmed);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.institution-card__footer > strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  transition: color var(--oe-motion-fast);
+}
+
+.institution-card:hover .institution-card__footer > strong {
+  color: var(--ui-primary);
+}
+
+.institution-card__footer svg {
+  width: 14px;
+  height: 14px;
+}
+
+.institution-empty {
+  display: grid;
+  place-items: center;
+  min-height: 290px;
+  padding: 36px;
+  border: 1px dashed var(--ui-border-accented);
+  border-radius: var(--oe-radius-surface);
+  background: var(--ui-bg);
+  text-align: center;
+}
+
+.institution-empty > span {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+}
+
+.institution-empty > span svg {
+  width: 23px;
+  height: 23px;
+}
+
+.institution-empty h2,
+.institution-empty p {
+  margin: 0;
+}
+
+.institution-empty h2 {
+  color: var(--ui-text-highlighted);
+  font-size: 19px;
+}
+
+.institution-empty p {
+  margin: 6px 0 16px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+@container institution-content (max-width: 760px) {
+  .institution-search {
+    padding-left: 22px;
+  }
+
+  .institution-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .institution-filters__scope {
+    text-align: left;
+  }
+}
+
 @container institution-content (max-width: 540px) {
-  .institution-toolbar { grid-template-columns: 1fr; }
-  .institution-toolbar__search { grid-column: 1; }
-  .institution-toolbar__count { justify-self: start; }
-  .organization-notice { padding: 15px; }
-  .institution-register__row { padding: 11px 13px; }
-  .institution-register__details { grid-template-columns: 1fr; }
-  .institution-logo { width: 44px; height: 44px; }
+  .institution-discovery__intro {
+    padding: 17px 16px 13px;
+  }
+
+  .institution-discovery__icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .institution-discovery h2 {
+    font-size: 17px;
+  }
+
+  .institution-search {
+    padding: 0 16px 16px;
+  }
+
+  .institution-filters {
+    padding: 12px 16px;
+  }
+
+  .institution-filters__fields {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .institution-filters__fields > :deep(*) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .institution-results-heading {
+    align-items: flex-start;
+  }
+
+  .institution-card__header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .institution-card__status {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 </style>

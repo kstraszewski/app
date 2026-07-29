@@ -20,6 +20,18 @@ export interface OrganizationMember {
   fullName: string
   avatarUrl: string | null
   role: 'expert' | 'admin'
+  adminRoles?: Array<
+    | 'organization_admin'
+    | 'access_admin'
+    | 'structure_admin'
+    | 'consents_admin'
+    | 'crm_config_admin'
+  >
+  status?: 'active' | 'pending' | 'inactive'
+  teams?: string[]
+  facilities?: string[]
+  createdAt?: string
+  lastActivityAt?: string | null
 }
 
 export interface TeamNode {

@@ -40,6 +40,15 @@ const emptyDetail = (): ClientDetailResponse => ({
   consent_history: [],
   consent_history_count: 0,
   consent_history_page_info: { offset: 0, limit: 100, has_more: false },
+  anonymization_requests: [],
+  current_anonymization_request: null,
+  privacy_access: {
+    can_view_requests: false,
+    can_execute_anonymization: false,
+    execute_permission_key: 'clients.anonymization.execute',
+    execution_requires_temporary_grant: true,
+    execution_grant: null,
+  },
   appointments: [],
   appointment_count: 0,
   appointments_page_info: { offset: 0, limit: 20, has_more: false },
@@ -73,7 +82,7 @@ const {
 
 useHead(() => ({ title: `${data.value.data.display_name || 'Klient'} — OpenExpert CRM` }))
 
-const validViews = ['overview', 'cases', 'consents', 'appointments', 'history'] as const
+const validViews = ['overview', 'cases', 'consents', 'privacy', 'appointments', 'history'] as const
 type ClientView = typeof validViews[number]
 
 const currentView = computed<ClientView>(() => {
@@ -106,6 +115,14 @@ const clientTabs = computed(() => [
     count: data.value.summary.consent_definition_count,
     to: viewLocation('consents'),
   },
+  ...(data.value.privacy_access.can_view_requests
+    ? [{
+        label: 'Prywatność danych',
+        icon: 'i-lucide-shield-alert',
+        count: data.value.anonymization_requests.length,
+        to: viewLocation('privacy'),
+      }]
+    : []),
   {
     label: 'Wizyty',
     icon: 'i-lucide-calendar-days',
@@ -174,6 +191,45 @@ function formatHeaderDate(value: string | null | undefined) {
 const clientInitials = computed(() => {
   const words = data.value.data.display_name.trim().split(/\s+/).filter(Boolean)
   return words.slice(0, 2).map(word => word[0]?.toUpperCase()).join('') || 'K'
+})
+
+const currentAnonymizationRequest = computed(() => data.value.current_anonymization_request)
+
+const anonymizationStatuses = {
+  received: { label: 'Otrzymane', color: 'info', icon: 'i-lucide-inbox' },
+  identity_verification: { label: 'Weryfikacja tożsamości', color: 'warning', icon: 'i-lucide-scan-face' },
+  legal_review: { label: 'Ocena podstawy prawnej', color: 'warning', icon: 'i-lucide-scale' },
+  approved: { label: 'Zatwierdzone do anonimizacji', color: 'success', icon: 'i-lucide-badge-check' },
+  in_progress: { label: 'Anonimizacja w toku', color: 'warning', icon: 'i-lucide-loader-circle' },
+  completed: { label: 'Zanonimizowane', color: 'neutral', icon: 'i-lucide-shield-check' },
+  rejected: { label: 'Odrzucone', color: 'error', icon: 'i-lucide-circle-x' },
+  cancelled: { label: 'Anulowane', color: 'neutral', icon: 'i-lucide-ban' },
+} as const
+
+function anonymizationStatusMeta(status: string) {
+  return anonymizationStatuses[status as keyof typeof anonymizationStatuses]
+    ?? { label: status.replaceAll('_', ' '), color: 'neutral' as const, icon: 'i-lucide-circle-help' }
+}
+
+function anonymizationChannelLabel(channel: string) {
+  return ({
+    email: 'E-mail',
+    phone: 'Telefon',
+    in_person: 'Osobiście',
+    letter: 'List',
+    other: 'Inny',
+  })[channel] ?? channel
+}
+
+const anonymizationDeadlineLabel = computed(() => {
+  const dueAt = currentAnonymizationRequest.value?.due_at
+  if (!dueAt) return '—'
+  const dueTime = new Date(dueAt).getTime()
+  if (Number.isNaN(dueTime)) return '—'
+  const days = Math.ceil((dueTime - Date.now()) / (24 * 60 * 60 * 1000))
+  if (days < 0) return `${Math.abs(days)} dni po terminie`
+  if (days === 0) return 'Termin upływa dziś'
+  return `${days} dni do terminu`
 })
 
 function consentDecisionLabel(decision: string) {
@@ -390,6 +446,9 @@ async function createCase() {
 }
 
 const editOpen = ref(false)
+const anonymizationExecutionOpen = ref(false)
+const anonymizationExecutionConfirmation = ref('')
+const executingAnonymization = ref(false)
 const savingClient = ref(false)
 const editForm = reactive({
   display_name: '',
@@ -441,18 +500,71 @@ async function saveClient() {
   }
 }
 
-const headerMenuItems = computed(() => [[
-  {
-    label: 'Edytuj dane klienta',
-    icon: 'i-lucide-pencil',
-    onSelect: openEdit,
-  },
-  {
-    label: 'Odśwież dane',
-    icon: 'i-lucide-refresh-cw',
-    onSelect: () => refresh(),
-  },
-]])
+async function executeAnonymization() {
+  const request = currentAnonymizationRequest.value
+  const grant = data.value.privacy_access.execution_grant
+  if (
+    !request
+    || !grant
+    || anonymizationExecutionConfirmation.value.trim() !== 'ANONIMIZUJ'
+  ) return
+
+  executingAnonymization.value = true
+  try {
+    await $fetch(crmApiPath(`/anonymization-requests/${request.id}/execute`), {
+      method: 'POST',
+      body: {
+        grantId: grant.id,
+        expectedRevision: grant.revision,
+        idempotencyKey: crypto.randomUUID(),
+        confirmation: 'ANONIMIZUJ',
+      },
+    })
+    anonymizationExecutionOpen.value = false
+    anonymizationExecutionConfirmation.value = ''
+    await refresh()
+    toast.add({
+      title: 'Dane klienta zostały zanonimizowane',
+      description: `${request.request_number} zakończono, a jednorazowy grant został zużyty.`,
+      color: 'success',
+      icon: 'i-lucide-shield-check',
+    })
+  }
+  catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się wykonać anonimizacji',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+    await refresh()
+  }
+  finally {
+    executingAnonymization.value = false
+  }
+}
+
+const headerMenuItems = computed(() => [
+  [
+    {
+      label: 'Edytuj dane klienta',
+      icon: 'i-lucide-pencil',
+      onSelect: openEdit,
+    },
+    {
+      label: 'Odśwież dane',
+      icon: 'i-lucide-refresh-cw',
+      onSelect: () => refresh(),
+    },
+  ],
+  ...(data.value.privacy_access.can_view_requests && currentAnonymizationRequest.value
+    ? [[{
+        label: 'Otwórz żądanie anonimizacji',
+        icon: 'i-lucide-shield-alert',
+        onSelect: () => navigateTo(viewLocation('privacy')),
+      }]]
+    : []),
+])
 </script>
 
 <template>
@@ -467,6 +579,15 @@ const headerMenuItems = computed(() => [[
     <template #meta>
       <div v-if="data.data.id" class="client-header-meta">
         <UBadge :color="statusMeta.color" variant="subtle">{{ statusMeta.label }}</UBadge>
+        <UBadge
+          v-if="currentAnonymizationRequest"
+          :color="anonymizationStatusMeta(currentAnonymizationRequest.status).color"
+          variant="subtle"
+          :icon="anonymizationStatusMeta(currentAnonymizationRequest.status).icon"
+        >
+          {{ currentAnonymizationRequest.request_number }} ·
+          {{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}
+        </UBadge>
         <span class="client-header-meta__separator" aria-hidden="true" />
         <span>
           Opiekun:
@@ -665,6 +786,55 @@ const headerMenuItems = computed(() => [[
               </div>
             </section>
 
+            <section
+              v-if="data.privacy_access.can_view_requests"
+              class="client-panel client-privacy-preview"
+              aria-labelledby="privacy-preview-title"
+            >
+              <header class="client-panel__header">
+                <div>
+                  <p>Prywatność danych</p>
+                  <h2 id="privacy-preview-title">Anonimizacja</h2>
+                </div>
+                <UButton
+                  :to="viewLocation('privacy')"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  trailing-icon="i-lucide-arrow-right"
+                >
+                  Szczegóły
+                </UButton>
+              </header>
+
+              <template v-if="currentAnonymizationRequest">
+                <div class="client-privacy-preview__status">
+                  <span>
+                    <UIcon :name="anonymizationStatusMeta(currentAnonymizationRequest.status).icon" />
+                  </span>
+                  <div>
+                    <strong>{{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}</strong>
+                    <small>{{ currentAnonymizationRequest.request_number }}</small>
+                  </div>
+                </div>
+                <dl class="client-privacy-preview__facts">
+                  <div>
+                    <dt>Wpłynęło</dt>
+                    <dd>{{ formatShortDate(currentAnonymizationRequest.requested_at) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Termin</dt>
+                    <dd>{{ anonymizationDeadlineLabel }}</dd>
+                  </div>
+                </dl>
+              </template>
+
+              <div v-else class="client-empty client-empty--compact">
+                <UIcon name="i-lucide-shield-check" />
+                <span>Brak aktywnego żądania anonimizacji.</span>
+              </div>
+            </section>
+
             <section class="client-panel" aria-labelledby="recent-activity-title">
               <header class="client-panel__header">
                 <div>
@@ -772,6 +942,204 @@ const headerMenuItems = computed(() => [[
           <span><UIcon name="i-lucide-shield-question" /></span>
           <h3>Brak aktywnych definicji zgód</h3>
           <p>Po opublikowaniu zgód ich aktualny stan pojawi się tutaj.</p>
+        </div>
+      </section>
+
+      <section
+        v-else-if="currentView === 'privacy'"
+        class="client-workspace"
+        aria-labelledby="client-privacy-title"
+      >
+        <header class="workspace-heading">
+          <div>
+            <p>Prawa osoby, której dane dotyczą</p>
+            <h2 id="client-privacy-title">Prywatność danych</h2>
+            <span>Zweryfikowane żądania, terminy i kontrolowane wykonanie anonimizacji.</span>
+          </div>
+          <UBadge
+            v-if="currentAnonymizationRequest"
+            :color="anonymizationStatusMeta(currentAnonymizationRequest.status).color"
+            variant="subtle"
+            :icon="anonymizationStatusMeta(currentAnonymizationRequest.status).icon"
+          >
+            {{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}
+          </UBadge>
+        </header>
+
+        <div v-if="currentAnonymizationRequest" class="client-privacy-layout">
+          <section class="client-panel client-privacy-request" aria-labelledby="anonymization-request-title">
+            <header class="client-panel__header">
+              <div>
+                <p>Żądanie klienta</p>
+                <h2 id="anonymization-request-title">{{ currentAnonymizationRequest.request_number }}</h2>
+              </div>
+              <UBadge color="neutral" variant="outline">
+                {{ currentAnonymizationRequest.legal_basis }}
+              </UBadge>
+            </header>
+
+            <div class="client-privacy-request__hero">
+              <span>
+                <UIcon :name="anonymizationStatusMeta(currentAnonymizationRequest.status).icon" />
+              </span>
+              <div>
+                <strong>{{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}</strong>
+                <p>{{ currentAnonymizationRequest.justification }}</p>
+              </div>
+            </div>
+
+            <dl class="client-privacy-request__details">
+              <div>
+                <dt>Kanał zgłoszenia</dt>
+                <dd>{{ anonymizationChannelLabel(currentAnonymizationRequest.request_channel) }}</dd>
+              </div>
+              <div>
+                <dt>Data otrzymania</dt>
+                <dd>{{ formatDateTime(currentAnonymizationRequest.requested_at) }}</dd>
+              </div>
+              <div>
+                <dt>Termin realizacji</dt>
+                <dd>
+                  {{ formatShortDate(currentAnonymizationRequest.due_at) }}
+                  <small>{{ anonymizationDeadlineLabel }}</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Zatwierdził(a)</dt>
+                <dd>
+                  {{ currentAnonymizationRequest.approved_by?.full_name
+                    || currentAnonymizationRequest.approved_by?.email
+                    || '—' }}
+                </dd>
+              </div>
+            </dl>
+
+            <div v-if="currentAnonymizationRequest.review_note" class="client-privacy-request__note">
+              <UIcon name="i-lucide-notebook-text" />
+              <div>
+                <strong>Notatka z weryfikacji</strong>
+                <p>{{ currentAnonymizationRequest.review_note }}</p>
+              </div>
+            </div>
+
+            <ol class="client-privacy-timeline" aria-label="Etapy żądania anonimizacji">
+              <li class="client-privacy-timeline__item client-privacy-timeline__item--done">
+                <span><UIcon name="i-lucide-check" /></span>
+                <div>
+                  <strong>Żądanie otrzymane</strong>
+                  <small>{{ formatDateTime(currentAnonymizationRequest.requested_at) }}</small>
+                </div>
+              </li>
+              <li
+                class="client-privacy-timeline__item"
+                :class="{ 'client-privacy-timeline__item--done': currentAnonymizationRequest.identity_verified_at }"
+              >
+                <span><UIcon name="i-lucide-check" /></span>
+                <div>
+                  <strong>Tożsamość zweryfikowana</strong>
+                  <small>{{ formatDateTime(currentAnonymizationRequest.identity_verified_at, 'Oczekuje') }}</small>
+                </div>
+              </li>
+              <li
+                class="client-privacy-timeline__item"
+                :class="{ 'client-privacy-timeline__item--done': currentAnonymizationRequest.approved_at }"
+              >
+                <span><UIcon name="i-lucide-check" /></span>
+                <div>
+                  <strong>Zakres zatwierdzony</strong>
+                  <small>{{ formatDateTime(currentAnonymizationRequest.approved_at, 'Oczekuje') }}</small>
+                </div>
+              </li>
+              <li
+                class="client-privacy-timeline__item"
+                :class="{ 'client-privacy-timeline__item--done': currentAnonymizationRequest.completed_at }"
+              >
+                <span><UIcon :name="currentAnonymizationRequest.completed_at ? 'i-lucide-check' : 'i-lucide-lock-keyhole'" /></span>
+                <div>
+                  <strong>Anonimizacja danych</strong>
+                  <small>{{ formatDateTime(currentAnonymizationRequest.completed_at, 'Oczekuje na uprawnionego wykonawcę') }}</small>
+                </div>
+              </li>
+            </ol>
+          </section>
+
+          <aside class="client-privacy-sidebar">
+            <section class="client-panel client-privacy-execution" aria-labelledby="privacy-execution-title">
+              <header class="client-panel__header">
+                <div>
+                  <p>Operacja wysokiego ryzyka</p>
+                  <h2 id="privacy-execution-title">Wykonanie anonimizacji</h2>
+                </div>
+                <span class="client-privacy-execution__icon">
+                  <UIcon name="i-lucide-lock-keyhole" />
+                </span>
+              </header>
+
+              <UAlert
+                v-if="currentAnonymizationRequest.completed_at"
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-shield-check"
+                title="Anonimizacja zakończona"
+                :description="`Dane zanonimizowano ${formatDateTime(currentAnonymizationRequest.completed_at)}. Jednorazowy grant został zużyty i nie można wykonać operacji ponownie.`"
+              />
+
+              <template v-else>
+                <ul class="client-execution-checks">
+                  <li class="client-execution-checks__item--ok">
+                    <UIcon name="i-lucide-circle-check" />
+                    <span>Żądanie zweryfikowane i zatwierdzone</span>
+                  </li>
+                  <li class="client-execution-checks__item--ok">
+                    <UIcon name="i-lucide-circle-check" />
+                    <span>Klient i termin realizacji potwierdzone</span>
+                  </li>
+                  <li :class="{ 'client-execution-checks__item--ok': data.privacy_access.can_execute_anonymization }">
+                    <UIcon :name="data.privacy_access.can_execute_anonymization ? 'i-lucide-circle-check' : 'i-lucide-circle-alert'" />
+                    <span>
+                      {{ data.privacy_access.can_execute_anonymization
+                        ? 'Jednorazowy grant jest aktywny'
+                        : `Brak aktywnego grantu ${data.privacy_access.execute_permission_key}` }}
+                    </span>
+                  </li>
+                </ul>
+
+                <UAlert
+                  :color="data.privacy_access.can_execute_anonymization ? 'success' : 'warning'"
+                  variant="subtle"
+                  :icon="data.privacy_access.can_execute_anonymization ? 'i-lucide-shield-check' : 'i-lucide-key-round'"
+                  :title="data.privacy_access.can_execute_anonymization ? 'Możesz wykonać anonimizację' : 'Wymagany jednorazowy grant'"
+                  :description="data.privacy_access.execution_grant
+                    ? `Grant zatwierdzony przez drugą osobę wygasa ${formatDateTime(data.privacy_access.execution_grant.expires_at)}.`
+                    : 'Grant musi wskazywać to żądanie i klienta, mieć krótki termin ważności oraz zatwierdzenie drugiej osoby.'"
+                />
+
+                <UButton
+                  block
+                  color="error"
+                  :variant="data.privacy_access.can_execute_anonymization ? 'solid' : 'soft'"
+                  icon="i-lucide-shield-alert"
+                  @click="anonymizationExecutionOpen = true"
+                >
+                  Anonimizuj dane klienta
+                </UButton>
+              </template>
+            </section>
+
+            <section class="client-panel client-privacy-retention">
+              <span><UIcon name="i-lucide-database-zap" /></span>
+              <div>
+                <strong>Anonimizacja, nie zwykłe usunięcie</strong>
+                <p>Proces usuwa dane identyfikujące z całego grafu klienta, zachowując wyłącznie informacje wymagane przepisami i ślad audytowy.</p>
+              </div>
+            </section>
+          </aside>
+        </div>
+
+        <div v-else class="client-empty client-empty--workspace">
+          <span><UIcon name="i-lucide-shield-check" /></span>
+          <h3>Brak żądania anonimizacji</h3>
+          <p>Dla tego klienta nie zarejestrowano aktywnego procesu usunięcia danych.</p>
         </div>
       </section>
 
@@ -889,6 +1257,109 @@ const headerMenuItems = computed(() => [[
         </aside>
       </section>
     </template>
+
+    <UModal
+      v-model:open="anonymizationExecutionOpen"
+      title="Anonimizacja danych klienta"
+      description="Operacja jest nieodwracalna i wymaga jednorazowego dostępu do konkretnego żądania."
+      :dismissible="!executingAnonymization"
+      :ui="{ footer: 'justify-end' }"
+      @after:leave="!executingAnonymization && (anonymizationExecutionConfirmation = '')"
+    >
+      <template #body>
+        <div v-if="currentAnonymizationRequest" class="client-anonymization-gate">
+          <div class="client-anonymization-gate__request">
+            <span><UIcon name="i-lucide-file-lock-2" /></span>
+            <div>
+              <small>Zweryfikowane żądanie</small>
+              <strong>{{ currentAnonymizationRequest.request_number }}</strong>
+              <p>{{ data.data.display_name }} · termin {{ formatShortDate(currentAnonymizationRequest.due_at) }}</p>
+            </div>
+          </div>
+
+          <template v-if="data.privacy_access.can_execute_anonymization && data.privacy_access.execution_grant">
+            <UAlert
+              color="error"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              title="Tej operacji nie można cofnąć"
+              description="Dane identyfikujące zostaną usunięte z rekordu klienta i powiązanych danych operacyjnych. Identyfikatory techniczne, wymagane fakty rozliczeniowe i ślad audytowy pozostaną."
+            />
+
+            <div class="client-anonymization-confirmation">
+              <div>
+                <strong>Potwierdź świadome wykonanie</strong>
+                <p>
+                  Grant jest jednorazowy i wygaśnie
+                  {{ formatDateTime(data.privacy_access.execution_grant.expires_at) }}.
+                  Wpisz <code>ANONIMIZUJ</code>.
+                </p>
+              </div>
+              <UInput
+                v-model="anonymizationExecutionConfirmation"
+                class="w-full"
+                autocomplete="off"
+                :disabled="executingAnonymization"
+                placeholder="ANONIMIZUJ"
+              />
+            </div>
+          </template>
+
+          <template v-else>
+            <UAlert
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-lock-keyhole"
+              title="Wykonanie jest zablokowane"
+              :description="`Brak aktywnego grantu ${data.privacy_access.execute_permission_key} przypisanego do tego klienta i żądania.`"
+            />
+
+            <ol class="client-anonymization-gate__steps">
+              <li>
+                <span>1</span>
+                <p>Nadaj wybranemu pracownikowi jednorazowy grant na karcie użytkownika.</p>
+              </li>
+              <li>
+                <span>2</span>
+                <p>Druga uprawniona osoba zatwierdza grant, który wygasa najpóźniej po 24 godzinach.</p>
+              </li>
+              <li>
+                <span>3</span>
+                <p>Wykonawca wraca tutaj, przegląda zakres retencji i potwierdza operację.</p>
+              </li>
+            </ol>
+          </template>
+        </div>
+      </template>
+      <template #footer="{ close }">
+        <UButton
+          color="neutral"
+          variant="outline"
+          :disabled="executingAnonymization"
+          @click="close"
+        >
+          Anuluj
+        </UButton>
+        <UButton
+          v-if="data.privacy_access.can_execute_anonymization"
+          color="error"
+          icon="i-lucide-shield-alert"
+          :loading="executingAnonymization"
+          :disabled="anonymizationExecutionConfirmation.trim() !== 'ANONIMIZUJ'"
+          @click="executeAnonymization"
+        >
+          Anonimizuj nieodwracalnie
+        </UButton>
+        <UButton
+          v-else
+          :to="orgPath('/users')"
+          color="neutral"
+          icon="i-lucide-users"
+        >
+          Przejdź do użytkowników
+        </UButton>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="createCaseOpen"
@@ -1372,6 +1843,82 @@ const headerMenuItems = computed(() => [[
   border-bottom: 0;
 }
 
+.client-privacy-preview__status,
+.client-privacy-request__hero,
+.client-privacy-request__note,
+.client-privacy-retention,
+.client-anonymization-gate__request,
+.client-anonymization-gate__steps li {
+  display: flex;
+  align-items: flex-start;
+}
+
+.client-privacy-preview__status {
+  align-items: center;
+  gap: 11px;
+}
+
+.client-privacy-preview__status > span,
+.client-privacy-request__hero > span,
+.client-privacy-execution__icon,
+.client-privacy-retention > span,
+.client-anonymization-gate__request > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 10%, var(--ui-bg-elevated));
+}
+
+.client-privacy-preview__status > span {
+  width: 40px;
+  height: 40px;
+}
+
+.client-privacy-preview__status > div {
+  display: grid;
+  gap: 2px;
+}
+
+.client-privacy-preview__status strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.client-privacy-preview__status small {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.client-privacy-preview__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border-muted);
+}
+
+.client-privacy-preview__facts > div {
+  display: grid;
+  gap: 3px;
+}
+
+.client-privacy-preview__facts dt {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.client-privacy-preview__facts dd {
+  margin: 0;
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .client-workspace {
   min-height: 360px;
   padding: 26px;
@@ -1527,6 +2074,341 @@ const headerMenuItems = computed(() => [[
   gap: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--ui-border-muted);
+}
+
+.client-privacy-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(310px, .65fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.client-privacy-request {
+  padding: 24px;
+}
+
+.client-privacy-request__hero {
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--ui-success) 26%, var(--ui-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ui-success) 6%, var(--ui-bg-muted));
+}
+
+.client-privacy-request__hero > span {
+  width: 42px;
+  height: 42px;
+  color: var(--ui-success);
+  background: color-mix(in srgb, var(--ui-success) 12%, var(--ui-bg-elevated));
+}
+
+.client-privacy-request__hero > div {
+  display: grid;
+  gap: 4px;
+}
+
+.client-privacy-request__hero strong {
+  color: var(--ui-text-highlighted);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.client-privacy-request__hero p,
+.client-privacy-request__note p,
+.client-privacy-retention p,
+.client-anonymization-gate__request p,
+.client-anonymization-gate__steps p {
+  margin: 0;
+  color: var(--ui-text-toned);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.client-privacy-request__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 18px 0 0;
+  border-top: 1px solid var(--ui-border-muted);
+  border-left: 1px solid var(--ui-border-muted);
+}
+
+.client-privacy-request__details > div {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border-right: 1px solid var(--ui-border-muted);
+  border-bottom: 1px solid var(--ui-border-muted);
+}
+
+.client-privacy-request__details dt {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.client-privacy-request__details dd {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.client-privacy-request__details dd small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.client-privacy-request__note {
+  gap: 10px;
+  margin-top: 16px;
+  padding: 13px;
+  border-radius: 11px;
+  background: var(--ui-bg-elevated);
+}
+
+.client-privacy-request__note > svg {
+  flex: 0 0 auto;
+  color: var(--ui-text-muted);
+}
+
+.client-privacy-request__note > div {
+  display: grid;
+  gap: 3px;
+}
+
+.client-privacy-request__note strong,
+.client-privacy-retention strong {
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.client-privacy-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-privacy-timeline__item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
+}
+
+.client-privacy-timeline__item::before {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--ui-border);
+  content: "";
+}
+
+.client-privacy-timeline__item:first-child::before {
+  left: 50%;
+  width: 50%;
+}
+
+.client-privacy-timeline__item:last-child::before {
+  width: 50%;
+}
+
+.client-privacy-timeline__item > span {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg);
+}
+
+.client-privacy-timeline__item--done > span {
+  border-color: color-mix(in srgb, var(--ui-success) 42%, var(--ui-border));
+  color: var(--ui-success);
+}
+
+.client-privacy-timeline__item > div {
+  display: grid;
+  gap: 3px;
+}
+
+.client-privacy-timeline__item strong {
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.client-privacy-timeline__item small {
+  color: var(--ui-text-muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.client-privacy-sidebar {
+  display: grid;
+  gap: 12px;
+}
+
+.client-privacy-execution {
+  display: grid;
+  gap: 15px;
+}
+
+.client-privacy-execution .client-panel__header {
+  margin-bottom: 0;
+}
+
+.client-privacy-execution__icon {
+  width: 38px;
+  height: 38px;
+}
+
+.client-execution-checks {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-execution-checks li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: var(--ui-warning);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.client-execution-checks__item--ok {
+  color: var(--ui-success) !important;
+}
+
+.client-execution-checks li span {
+  color: var(--ui-text-toned);
+}
+
+.client-execution-checks code {
+  color: var(--ui-text-highlighted);
+  font-size: 9px;
+}
+
+.client-privacy-retention {
+  gap: 11px;
+}
+
+.client-privacy-retention > span {
+  width: 38px;
+  height: 38px;
+}
+
+.client-privacy-retention > div {
+  display: grid;
+  gap: 4px;
+}
+
+.client-anonymization-gate {
+  display: grid;
+  gap: 16px;
+}
+
+.client-anonymization-gate__request {
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: 11px;
+  background: var(--ui-bg-muted);
+}
+
+.client-anonymization-gate__request > span {
+  width: 38px;
+  height: 38px;
+}
+
+.client-anonymization-gate__request > div {
+  display: grid;
+  gap: 2px;
+}
+
+.client-anonymization-gate__request small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.client-anonymization-gate__request strong {
+  color: var(--ui-text-highlighted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.client-anonymization-confirmation {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--ui-error) 34%, var(--ui-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ui-error) 5%, var(--ui-bg));
+}
+
+.client-anonymization-confirmation > div {
+  display: grid;
+  gap: 4px;
+}
+
+.client-anonymization-confirmation strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+}
+
+.client-anonymization-confirmation p {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.client-anonymization-confirmation code {
+  color: var(--ui-text-highlighted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.client-anonymization-gate__steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-anonymization-gate__steps li {
+  gap: 10px;
+}
+
+.client-anonymization-gate__steps li > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--ui-text-highlighted);
+  background: var(--ui-bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 9px;
 }
 
 .client-appointment-row {
@@ -1875,7 +2757,8 @@ const headerMenuItems = computed(() => [[
 
   .client-overview__grid,
   .client-loading__body,
-  .client-history-layout {
+  .client-history-layout,
+  .client-privacy-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1889,6 +2772,20 @@ const headerMenuItems = computed(() => [[
   .client-metrics,
   .client-consent-grid {
     grid-template-columns: 1fr;
+  }
+
+  .client-privacy-timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 0;
+  }
+
+  .client-privacy-timeline__item:nth-child(2)::before {
+    width: 50%;
+  }
+
+  .client-privacy-timeline__item:nth-child(3)::before {
+    left: 50%;
+    width: 50%;
   }
 
   .client-data-list {
@@ -1999,8 +2896,39 @@ const headerMenuItems = computed(() => [[
   }
 
   .client-history-summary,
-  .client-modal-form__grid {
+  .client-modal-form__grid,
+  .client-privacy-request__details {
     grid-template-columns: 1fr;
+  }
+
+  .client-privacy-timeline {
+    grid-template-columns: 1fr;
+  }
+
+  .client-privacy-timeline__item {
+    grid-template-columns: 30px minmax(0, 1fr);
+    justify-items: start;
+    text-align: left;
+  }
+
+  .client-privacy-timeline__item::before,
+  .client-privacy-timeline__item:first-child::before,
+  .client-privacy-timeline__item:last-child::before,
+  .client-privacy-timeline__item:nth-child(2)::before,
+  .client-privacy-timeline__item:nth-child(3)::before {
+    top: 30px;
+    bottom: -16px;
+    left: 14px;
+    width: 1px;
+    height: auto;
+  }
+
+  .client-privacy-timeline__item:last-child::before {
+    display: none;
+  }
+
+  .client-privacy-timeline__item > div {
+    padding-top: 2px;
   }
 
   .client-timeline__item article > header {

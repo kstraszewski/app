@@ -34,6 +34,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      administrative_role_permissions: {
+        Row: {
+          permission_key: string
+          role_key: string
+        }
+        Insert: {
+          permission_key: string
+          role_key: string
+        }
+        Update: {
+          permission_key?: string
+          role_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "administrative_role_permissions_role_key_fkey"
+            columns: ["role_key"]
+            isOneToOne: false
+            referencedRelation: "administrative_roles"
+            referencedColumns: ["role_key"]
+          },
+        ]
+      }
+      administrative_roles: {
+        Row: {
+          description: string
+          label: string
+          risk_level: string
+          role_key: string
+          sort_order: number
+        }
+        Insert: {
+          description: string
+          label: string
+          risk_level?: string
+          role_key: string
+          sort_order: number
+        }
+        Update: {
+          description?: string
+          label?: string
+          risk_level?: string
+          role_key?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       appointment_calendar_events: {
         Row: {
           appointment_id: string
@@ -1823,6 +1870,317 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_client_anonymization_execution_grants: {
+        Row: {
+          approved_at: string | null
+          approver_user_id: string
+          consumed_at: string | null
+          consumed_by_user_id: string | null
+          created_at: string
+          decision_reason: string | null
+          expires_at: string
+          grantee_user_id: string
+          id: string
+          justification: string
+          organization_id: string
+          permission_key: string
+          rejected_at: string | null
+          request_id: string
+          request_idempotency_key: string
+          requested_by_user_id: string
+          revision: number
+          revoked_at: string | null
+          revoked_by_user_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approver_user_id: string
+          consumed_at?: string | null
+          consumed_by_user_id?: string | null
+          created_at?: string
+          decision_reason?: string | null
+          expires_at: string
+          grantee_user_id: string
+          id?: string
+          justification: string
+          organization_id: string
+          permission_key?: string
+          rejected_at?: string | null
+          request_id: string
+          request_idempotency_key: string
+          requested_by_user_id: string
+          revision?: number
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approver_user_id?: string
+          consumed_at?: string | null
+          consumed_by_user_id?: string | null
+          created_at?: string
+          decision_reason?: string | null
+          expires_at?: string
+          grantee_user_id?: string
+          id?: string
+          justification?: string
+          organization_id?: string
+          permission_key?: string
+          rejected_at?: string | null
+          request_id?: string
+          request_idempotency_key?: string
+          requested_by_user_id?: string
+          revision?: number
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_approver_fkey"
+            columns: ["approver_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_consumer_fkey"
+            columns: ["consumed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_grantee_fkey"
+            columns: ["organization_id", "grantee_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_request_fkey"
+            columns: ["organization_id", "request_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_anonymization_requests"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_requester_fkey"
+            columns: ["requested_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_execution_grants_revoker_fkey"
+            columns: ["revoked_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_client_anonymization_request_events: {
+        Row: {
+          actor_user_id: string
+          created_at: string
+          event_type: string
+          evidence_reference: string | null
+          from_status: string | null
+          id: string
+          organization_id: string
+          reason_code: string | null
+          request_id: string
+          to_status: string | null
+        }
+        Insert: {
+          actor_user_id: string
+          created_at?: string
+          event_type: string
+          evidence_reference?: string | null
+          from_status?: string | null
+          id?: string
+          organization_id: string
+          reason_code?: string | null
+          request_id: string
+          to_status?: string | null
+        }
+        Update: {
+          actor_user_id?: string
+          created_at?: string
+          event_type?: string
+          evidence_reference?: string | null
+          from_status?: string | null
+          id?: string
+          organization_id?: string
+          reason_code?: string | null
+          request_id?: string
+          to_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_anonymization_request_events_actor_fkey"
+            columns: ["organization_id", "actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_request_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_request_events_request_fkey"
+            columns: ["organization_id", "request_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_anonymization_requests"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      crm_client_anonymization_requests: {
+        Row: {
+          approved_at: string | null
+          approved_by_user_id: string | null
+          client_id: string
+          completed_at: string | null
+          completed_by_user_id: string | null
+          created_at: string
+          created_by_user_id: string
+          due_at: string
+          id: string
+          idempotency_key: string
+          identity_verified_at: string | null
+          identity_verified_by_user_id: string | null
+          justification: string
+          legal_basis: string
+          metadata: Json
+          organization_id: string
+          request_channel: string
+          request_number: string
+          requested_at: string
+          review_note: string | null
+          status: string
+          subject_person_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_user_id?: string | null
+          client_id: string
+          completed_at?: string | null
+          completed_by_user_id?: string | null
+          created_at?: string
+          created_by_user_id: string
+          due_at: string
+          id?: string
+          idempotency_key: string
+          identity_verified_at?: string | null
+          identity_verified_by_user_id?: string | null
+          justification: string
+          legal_basis?: string
+          metadata?: Json
+          organization_id: string
+          request_channel: string
+          request_number: string
+          requested_at: string
+          review_note?: string | null
+          status?: string
+          subject_person_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_user_id?: string | null
+          client_id?: string
+          completed_at?: string | null
+          completed_by_user_id?: string | null
+          created_at?: string
+          created_by_user_id?: string
+          due_at?: string
+          id?: string
+          idempotency_key?: string
+          identity_verified_at?: string | null
+          identity_verified_by_user_id?: string | null
+          justification?: string
+          legal_basis?: string
+          metadata?: Json
+          organization_id?: string
+          request_channel?: string
+          request_number?: string
+          requested_at?: string
+          review_note?: string | null
+          status?: string
+          subject_person_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_anonymization_requests_approver_fkey"
+            columns: ["organization_id", "approved_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_completed_by_fkey"
+            columns: ["organization_id", "completed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_created_by_fkey"
+            columns: ["organization_id", "created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_identity_verifier_fkey"
+            columns: ["organization_id", "identity_verified_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_organization_client_fkey"
+            columns: ["organization_id", "client_id"]
+            isOneToOne: false
+            referencedRelation: "crm_clients"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_anonymization_requests_subject_person_fkey"
+            columns: ["organization_id", "client_id", "subject_person_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_people"
+            referencedColumns: ["organization_id", "client_id", "id"]
           },
         ]
       }
@@ -3871,6 +4229,514 @@ export type Database = {
           },
         ]
       }
+      mortgage_bank_aliases: {
+        Row: {
+          alias_type: string
+          bank_id: string
+          created_at: string
+          id: string
+          updated_at: string
+          valid_from: string | null
+          valid_to: string | null
+          value: string
+        }
+        Insert: {
+          alias_type: string
+          bank_id: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          valid_from?: string | null
+          valid_to?: string | null
+          value: string
+        }
+        Update: {
+          alias_type?: string
+          bank_id?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          valid_from?: string | null
+          valid_to?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_aliases_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_categories: {
+        Row: {
+          category_key: string
+          created_at: string
+          icon: string | null
+          id: string
+          is_archived: boolean
+          label: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          category_key: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_archived?: boolean
+          label: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          category_key?: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_archived?: boolean
+          label?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      mortgage_bank_file_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          id: number
+          locator: string | null
+          page_end: number | null
+          page_start: number | null
+          search_vector: unknown
+          token_count: number | null
+          version_id: string
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string
+          id?: never
+          locator?: string | null
+          page_end?: number | null
+          page_start?: number | null
+          search_vector?: unknown
+          token_count?: number | null
+          version_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          id?: never
+          locator?: string | null
+          page_end?: number | null
+          page_start?: number | null
+          search_vector?: unknown
+          token_count?: number | null
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_chunks_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_embeddings: {
+        Row: {
+          chunk_id: number
+          created_at: string
+          dimensions: number
+          embedding: string
+          embedding_kind: string
+          id: string
+          model: string
+          recipe_version: string
+          source_sha256: string
+        }
+        Insert: {
+          chunk_id: number
+          created_at?: string
+          dimensions: number
+          embedding: string
+          embedding_kind?: string
+          id?: string
+          model: string
+          recipe_version?: string
+          source_sha256: string
+        }
+        Update: {
+          chunk_id?: number
+          created_at?: string
+          dimensions?: number
+          embedding?: string
+          embedding_kind?: string
+          id?: string
+          model?: string
+          recipe_version?: string
+          source_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_embeddings_chunk_id_fkey"
+            columns: ["chunk_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_chunks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_events: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          file_id: string
+          id: string
+          metadata: Json
+          version_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          file_id: string
+          id?: string
+          metadata?: Json
+          version_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          file_id?: string
+          id?: string
+          metadata?: Json
+          version_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_file_events_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_file_events_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_processing_jobs: {
+        Row: {
+          attempts: number
+          available_at: string
+          created_at: string
+          finished_at: string | null
+          id: string
+          job_type: string
+          last_error: string | null
+          metadata: Json
+          started_at: string | null
+          status: string
+          updated_at: string
+          version_id: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          job_type: string
+          last_error?: string | null
+          metadata?: Json
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          version_id: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          job_type?: string
+          last_error?: string | null
+          metadata?: Json
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_processing_jobs_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_products: {
+        Row: {
+          created_at: string
+          created_by_user_id: string | null
+          file_id: string
+          product_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: string | null
+          file_id: string
+          product_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string | null
+          file_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_products_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_file_products_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_file_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_file_versions: {
+        Row: {
+          checksum_sha256: string
+          created_at: string
+          created_by_user_id: string | null
+          effective_from: string | null
+          effective_to: string | null
+          embedding_dimensions: number | null
+          embedding_model: string | null
+          embedding_status: string
+          extracted_text: string | null
+          extraction_metadata: Json
+          extraction_status: string
+          file_id: string
+          generated_description: string | null
+          id: string
+          mime_group: string
+          mime_type: string
+          original_file_name: string
+          page_count: number | null
+          published_at: string | null
+          resolved_download_url: string | null
+          retrieved_at: string
+          size_bytes: number
+          source_download_url: string | null
+          source_etag: string | null
+          source_last_modified: string | null
+          status: string
+          storage_path: string
+          updated_at: string
+          version_label: string
+          version_number: number
+        }
+        Insert: {
+          checksum_sha256: string
+          created_at?: string
+          created_by_user_id?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          embedding_dimensions?: number | null
+          embedding_model?: string | null
+          embedding_status?: string
+          extracted_text?: string | null
+          extraction_metadata?: Json
+          extraction_status?: string
+          file_id: string
+          generated_description?: string | null
+          id?: string
+          mime_group: string
+          mime_type: string
+          original_file_name: string
+          page_count?: number | null
+          published_at?: string | null
+          resolved_download_url?: string | null
+          retrieved_at?: string
+          size_bytes: number
+          source_download_url?: string | null
+          source_etag?: string | null
+          source_last_modified?: string | null
+          status?: string
+          storage_path: string
+          updated_at?: string
+          version_label: string
+          version_number: number
+        }
+        Update: {
+          checksum_sha256?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          embedding_dimensions?: number | null
+          embedding_model?: string | null
+          embedding_status?: string
+          extracted_text?: string | null
+          extraction_metadata?: Json
+          extraction_status?: string
+          file_id?: string
+          generated_description?: string | null
+          id?: string
+          mime_group?: string
+          mime_type?: string
+          original_file_name?: string
+          page_count?: number | null
+          published_at?: string | null
+          resolved_download_url?: string | null
+          retrieved_at?: string
+          size_bytes?: number
+          source_download_url?: string | null
+          source_etag?: string | null
+          source_last_modified?: string | null
+          status?: string
+          storage_path?: string
+          updated_at?: string
+          version_label?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_file_versions_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_file_versions_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mortgage_bank_files: {
+        Row: {
+          archived_at: string | null
+          bank_id: string
+          category_id: string | null
+          created_at: string
+          created_by_user_id: string | null
+          current_version_id: string | null
+          description: string | null
+          id: string
+          source_page_url: string | null
+          title: string
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          bank_id: string
+          category_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          current_version_id?: string | null
+          description?: string | null
+          id?: string
+          source_page_url?: string | null
+          title: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          bank_id?: string
+          category_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          current_version_id?: string | null
+          description?: string | null
+          id?: string
+          source_page_url?: string | null
+          title?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mortgage_bank_files_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_files_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_files_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_files_current_version_fkey"
+            columns: ["current_version_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_file_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_bank_files_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mortgage_bank_override_revisions: {
         Row: {
           action: string
@@ -5238,6 +6104,276 @@ export type Database = {
           },
         ]
       }
+      organization_user_access_states: {
+        Row: {
+          created_at: string
+          organization_id: string
+          revision: number
+          updated_at: string
+          updated_by_user_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          revision?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_access_states_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "organization_user_access_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_access_states_updated_by_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_user_admin_roles: {
+        Row: {
+          assigned_at: string
+          assigned_by_user_id: string
+          organization_id: string
+          reason: string
+          role_key: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by_user_id: string
+          organization_id: string
+          reason: string
+          role_key: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by_user_id?: string
+          organization_id?: string
+          reason?: string
+          role_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_admin_roles_assigner_fkey"
+            columns: ["assigned_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_admin_roles_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "organization_user_admin_roles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_admin_roles_role_key_fkey"
+            columns: ["role_key"]
+            isOneToOne: false
+            referencedRelation: "administrative_roles"
+            referencedColumns: ["role_key"]
+          },
+        ]
+      }
+      organization_user_audit_events: {
+        Row: {
+          actor_snapshot: Json
+          actor_user_id: string | null
+          changes: Json
+          correlation_id: string
+          created_at: string
+          event_type: string
+          id: string
+          organization_id: string
+          reason: string | null
+          resource_id: string | null
+          resource_label: string | null
+          resource_type: string
+          revision_after: number | null
+          revision_before: number | null
+          source: string
+          target_snapshot: Json
+          target_user_id: string
+        }
+        Insert: {
+          actor_snapshot?: Json
+          actor_user_id?: string | null
+          changes?: Json
+          correlation_id?: string
+          created_at?: string
+          event_type: string
+          id?: string
+          organization_id: string
+          reason?: string | null
+          resource_id?: string | null
+          resource_label?: string | null
+          resource_type: string
+          revision_after?: number | null
+          revision_before?: number | null
+          source?: string
+          target_snapshot?: Json
+          target_user_id: string
+        }
+        Update: {
+          actor_snapshot?: Json
+          actor_user_id?: string | null
+          changes?: Json
+          correlation_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          organization_id?: string
+          reason?: string | null
+          resource_id?: string | null
+          resource_label?: string | null
+          resource_type?: string
+          revision_after?: number | null
+          revision_before?: number | null
+          source?: string
+          target_snapshot?: Json
+          target_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_audit_events_actor_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_audit_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_audit_events_target_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_user_direct_grants: {
+        Row: {
+          created_at: string
+          expires_at: string
+          granted_by_user_id: string
+          id: string
+          justification: string
+          organization_id: string
+          permission_key: string
+          revision: number
+          revocation_reason: string | null
+          revoked_at: string | null
+          revoked_by_user_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          valid_from: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          granted_by_user_id: string
+          id?: string
+          justification: string
+          organization_id: string
+          permission_key: string
+          revision?: number
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          valid_from?: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          granted_by_user_id?: string
+          id?: string
+          justification?: string
+          organization_id?: string
+          permission_key?: string
+          revision?: number
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          valid_from?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_direct_grants_granter_fkey"
+            columns: ["granted_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_direct_grants_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "organization_user_direct_grants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_user_direct_grants_revoker_fkey"
+            columns: ["revoked_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_user_preferences: {
         Row: {
           created_at: string
@@ -5628,10 +6764,6 @@ export type Database = {
         }
         Returns: number
       }
-      crm_omnisearch_normalize: {
-        Args: { input: string }
-        Returns: string
-      }
       create_crm_case_bank_application: {
         Args: {
           target_case_id: string
@@ -5847,6 +6979,18 @@ export type Database = {
         }
         Returns: Json
       }
+      crm_omnisearch_normalize: { Args: { input: string }; Returns: string }
+      execute_crm_client_anonymization_request: {
+        Args: {
+          p_confirmation: string
+          p_expected_revision: number
+          p_grant_id: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
       get_booking_widget_analytics: {
         Args: {
           p_from: string
@@ -5874,6 +7018,10 @@ export type Database = {
           expert_user_id: string
           starts_at: string
         }[]
+      }
+      get_organization_user_admin_access: {
+        Args: { p_organization_id: string; p_user_id: string }
+        Returns: Json
       }
       get_personal_booking_widget_counts: {
         Args: {
@@ -5967,6 +7115,39 @@ export type Database = {
         }
         Returns: Json
       }
+      request_crm_client_anonymization_execution_grant: {
+        Args: {
+          p_approver_user_id: string
+          p_expires_at: string
+          p_grantee_user_id: string
+          p_idempotency_key: string
+          p_justification: string
+          p_organization_id: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      respond_crm_client_anonymization_execution_grant: {
+        Args: {
+          p_action: string
+          p_expected_revision: number
+          p_grant_id: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      revoke_crm_client_anonymization_execution_grant: {
+        Args: {
+          p_expected_revision: number
+          p_grant_id: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       save_mortgage_document_template_draft: {
         Args: {
           p_actor_user_id: string
@@ -6011,6 +7192,30 @@ export type Database = {
         Args: { p_limit?: number; p_organization_id: string; p_query: string }
         Returns: Json
       }
+      search_mortgage_bank_file_chunks: {
+        Args: {
+          filter_bank_id?: string
+          filter_category_key?: string
+          filter_mime_group?: string
+          filter_product_id?: string
+          filter_status?: string
+          full_text_weight?: number
+          match_count?: number
+          query_embedding?: string
+          query_text: string
+          rrf_k?: number
+          semantic_weight?: number
+        }
+        Returns: {
+          chunk_id: number
+          file_id: string
+          locator: string
+          page_number: number
+          score: number
+          snippet: string
+          version_id: string
+        }[]
+      }
       set_crm_case_clients: {
         Args: {
           p_case_id: string
@@ -6026,6 +7231,20 @@ export type Database = {
           p_organization_id: string
         }
         Returns: undefined
+      }
+      set_organization_user_admin_access: {
+        Args: {
+          p_change_reason: string
+          p_consent_expires_at: string
+          p_consent_justification: string
+          p_consent_publish: boolean
+          p_expected_revision: number
+          p_idempotency_key: string
+          p_organization_id: string
+          p_role_keys: string[]
+          p_user_id: string
+        }
+        Returns: Json
       }
       sign_crm_case_contract: {
         Args: {

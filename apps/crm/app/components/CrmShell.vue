@@ -7,6 +7,9 @@ const props = defineProps<{
   description?: string
   backTo?: string
   backLabel?: string
+  avatarSrc?: string
+  avatarAlt?: string
+  avatarText?: string
   tabs?: Array<{
     label: string
     to: RouteLocationRaw
@@ -28,6 +31,9 @@ const hasSupabaseConfig = useHasSupabaseConfig()
       :description="props.description"
       :back-to="props.backTo"
       :back-label="props.backLabel"
+      :avatar-src="props.avatarSrc"
+      :avatar-alt="props.avatarAlt"
+      :avatar-text="props.avatarText"
       :tabs="props.tabs"
     >
       <template v-if="$slots.meta" #meta>

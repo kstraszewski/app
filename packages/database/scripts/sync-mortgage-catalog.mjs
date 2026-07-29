@@ -180,6 +180,22 @@ export async function syncMortgageCatalog(
     assertResult(bankError, `Upserting bank ${item.bank.slug}`)
     banks.set(item.bank.slug, bank.id)
 
+    if (item.bank.aliases?.length) {
+      const { error: aliasesError } = await client
+        .from('mortgage_bank_aliases')
+        .upsert(
+          item.bank.aliases.map((alias) => ({
+            bank_id: bank.id,
+            value: alias.value,
+            alias_type: alias.type,
+            valid_from: alias.validFrom ?? null,
+            valid_to: alias.validTo ?? null,
+          })),
+          { onConflict: 'bank_id,alias_type,value' },
+        )
+      assertResult(aliasesError, `Upserting bank aliases ${item.bank.slug}`)
+    }
+
     const { data: product, error: productError } = await client
       .from('mortgage_products')
       .upsert({

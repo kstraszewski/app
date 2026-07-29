@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { DirectoryFacility, DirectoryPayload } from '#shared/types/directory'
-import { directoryBookingUrl, normalizeDirectoryQuery } from '~/utils/directory'
+import {
+  directoryBookingUrl,
+  directoryHydrationData,
+  normalizeDirectoryQuery,
+} from '~/utils/directory'
 
 const { canonicalUrl, siteOrigin } = useLandingSeo({
   title: 'Placówki — znajdź najbliższą lokalizację | OpenExpert',
@@ -10,6 +14,7 @@ const { canonicalUrl, siteOrigin } = useLandingSeo({
   socialImageAlt: 'Mapa i katalog placówek OpenExpert',
 })
 
+const nuxtApp = useNuxtApp()
 const runtimeConfig = useRuntimeConfig()
 const crmBaseUrl = String(
   runtimeConfig.public.openexpert.crmBaseUrl || 'http://127.0.0.1:3004',
@@ -29,6 +34,11 @@ const { data, status, error, refresh } = await useFetch<DirectoryPayload>('/api/
     experts: [],
     facilities: [],
   }),
+  getCachedData: key => directoryHydrationData<DirectoryPayload>(
+    nuxtApp.isHydrating === true,
+    nuxtApp.payload.data,
+    key,
+  ),
 })
 
 if (import.meta.server && error.value) {
@@ -149,6 +159,15 @@ function selectFacility(facilityId: string) {
 
 function selectFacilityFromMap(facilityId: string) {
   selectedFacilityId.value = facilityId
+}
+
+let directoryImageRecoveryStarted = false
+
+async function recoverDirectoryImages() {
+  if (directoryImageRecoveryStarted) return
+
+  directoryImageRecoveryStarted = true
+  await refresh()
 }
 
 async function closeDrawer() {
@@ -456,16 +475,24 @@ useHead(() => ({
                     </a>
                   </div>
 
-                  <img
+                  <DirectoryRemoteImage
                     v-if="facility.coverImage"
                     class="facility-results__image"
                     :src="facility.coverImage.thumbnailUrl"
+                    :fallback-src="facility.coverImage.fallbackUrl"
                     :alt="facility.coverImage.alt"
                     width="640"
                     height="400"
                     :loading="index === 0 ? 'eager' : 'lazy'"
                     decoding="async"
+                    @exhausted="recoverDirectoryImages"
                   >
+                    <template #fallback>
+                      <span class="facility-results__image-empty" aria-hidden="true">
+                        <Icon name="lucide:landmark" />
+                      </span>
+                    </template>
+                  </DirectoryRemoteImage>
                   <span v-else class="facility-results__image-empty" aria-hidden="true">
                     <Icon name="lucide:landmark" />
                   </span>
@@ -494,13 +521,21 @@ useHead(() => ({
               class="facility-explorer__dock"
               :class="{ 'facility-explorer__dock--mobile-visible': mobileView === 'map' }"
             >
-              <img
+              <DirectoryRemoteImage
                 v-if="selectedFacility.coverImage"
                 :src="selectedFacility.coverImage.thumbnailUrl"
+                :fallback-src="selectedFacility.coverImage.fallbackUrl"
                 :alt="selectedFacility.coverImage.alt"
                 width="88"
                 height="64"
+                @exhausted="recoverDirectoryImages"
               >
+                <template #fallback>
+                  <span class="facility-explorer__dock-image-empty" aria-hidden="true">
+                    <Icon name="lucide:landmark" />
+                  </span>
+                </template>
+              </DirectoryRemoteImage>
               <span v-else class="facility-explorer__dock-image-empty" aria-hidden="true">
                 <Icon name="lucide:landmark" />
               </span>

@@ -1,8 +1,8 @@
 import { readBody } from 'h3'
 import {
   asRecord,
+  requireAdministrativePermission,
   requireCrmSession,
-  requireOrganizationAdmin,
   requiredText,
   textValue,
   throwDbError,
@@ -19,7 +19,7 @@ function teamSlug(value: string) {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  requireOrganizationAdmin(session)
+  await requireAdministrativePermission(session, 'structure.manage')
   const body = asRecord(await readBody(event))
   const name = requiredText(body.name, 'name')
   const slug = teamSlug(textValue(body.slug) ?? name)

@@ -124,7 +124,14 @@ export default defineEventHandler(async (event) => {
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
   const serviceRole = serverSupabaseServiceRole(event) as any
 
-  const [bankResult, overrideResult, productsResult, sourcesResult, revisionsResult] = await Promise.all([
+  const [
+    bankResult,
+    overrideResult,
+    productsResult,
+    sourcesResult,
+    revisionsResult,
+    bankFilesResult,
+  ] = await Promise.all([
     serviceRole
       .from('mortgage_banks')
       .select('id, slug, name, website_url, logo_url, logo_background_color, created_at, updated_at')
@@ -152,12 +159,18 @@ export default defineEventHandler(async (event) => {
       .eq('organization_id', session.organizationId)
       .eq('bank_id', bankId)
       .order('created_at', { ascending: false }),
+    serviceRole
+      .from('mortgage_bank_files')
+      .select('id', { count: 'exact', head: true })
+      .eq('bank_id', bankId)
+      .is('archived_at', null),
   ])
   throwMortgageBackofficeDbError(bankResult.error)
   throwMortgageBackofficeDbError(overrideResult.error)
   throwMortgageBackofficeDbError(productsResult.error)
   throwMortgageBackofficeDbError(sourcesResult.error)
   throwMortgageBackofficeDbError(revisionsResult.error)
+  throwMortgageBackofficeDbError(bankFilesResult.error)
 
   if (!bankResult.data) {
     throw createError({ statusCode: 404, statusMessage: 'Financial institution not found' })
@@ -367,6 +380,7 @@ export default defineEventHandler(async (event) => {
       versions: versions.length,
       sourceDocuments: sources.length,
       reviewedSourceDocuments: sources.filter(source => source.extraction_status === 'reviewed').length,
+      bankFiles: bankFilesResult.count ?? 0,
       publishedChecklistItems: publishedChecklistCount,
       draftChecklistItems: draftChecklistCount,
       unknownFields: currentVersions.reduce((sum, version) => sum + version.unknownFields.length, 0),

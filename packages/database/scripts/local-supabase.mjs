@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -416,6 +417,228 @@ async function ensureDemoDelegateAccounts(supabase, credentials, organizationId)
   return delegateByKey
 }
 
+async function ensureAdministrativeAccessDemo({
+  supabase,
+  organizationId,
+  administrator,
+  delegateByKey,
+  anonymizationRequest,
+  seedNow,
+}) {
+  const anna = delegateByKey.get('anna-nowak')
+  const piotr = delegateByKey.get('piotr-zielinski')
+  const marta = delegateByKey.get('marta-wojcik')
+  if (!anna || !piotr || !marta) {
+    throw new Error('Administrative access demo requires all delegate accounts')
+  }
+
+  const assignmentSets = [
+    {
+      user: administrator,
+      roles: ['access_admin'],
+    },
+    {
+      user: anna,
+      roles: ['structure_admin', 'crm_config_admin'],
+    },
+    {
+      user: marta,
+      roles: ['access_admin'],
+    },
+    {
+      user: piotr,
+      roles: ['consents_admin'],
+    },
+  ]
+  const managedUserIds = assignmentSets.map(assignment => assignment.user.id)
+  const seededReason = 'Początkowy zestaw ról administracyjnych dla środowiska demonstracyjnego.'
+
+  const { error: removeAssignmentsError } = await supabase
+    .from('organization_user_admin_roles')
+    .delete()
+    .eq('organization_id', organizationId)
+    .in('user_id', managedUserIds)
+  assertNoError(
+    removeAssignmentsError,
+    'Resetting demo administrative role assignments',
+  )
+
+  const roleRows = assignmentSets.flatMap(({ user, roles }) => roles.map(roleKey => ({
+    organization_id: organizationId,
+    user_id: user.id,
+    role_key: roleKey,
+    assigned_by_user_id: administrator.id,
+    reason: seededReason,
+  })))
+  const { error: roleAssignmentsError } = await supabase
+    .from('organization_user_admin_roles')
+    .insert(roleRows)
+  assertNoError(
+    roleAssignmentsError,
+    'Seeding demo administrative role assignments',
+  )
+
+  const { error: initializeRevisionError } = await supabase
+    .from('organization_user_access_states')
+    .update({
+      revision: 1,
+      updated_by_user_id: administrator.id,
+    })
+    .eq('organization_id', organizationId)
+    .in('user_id', managedUserIds)
+    .eq('revision', 0)
+  assertNoError(
+    initializeRevisionError,
+    'Initializing demo administrative access revisions',
+  )
+
+  const { data: existingSeedEvents, error: seedEventsError } = await supabase
+    .from('organization_user_audit_events')
+    .select('target_user_id')
+    .eq('organization_id', organizationId)
+    .eq('event_type', 'administrative_access_seeded')
+    .eq('source', 'demo_seed')
+    .in('target_user_id', managedUserIds)
+  assertNoError(seedEventsError, 'Reading demo administrative access audit events')
+  const auditedUserIds = new Set(
+    (existingSeedEvents ?? []).map(event => String(event.target_user_id)),
+  )
+  const missingAuditRows = assignmentSets
+    .filter(({ user }) => !auditedUserIds.has(user.id))
+    .map(({ user, roles }) => ({
+      organization_id: organizationId,
+      target_user_id: user.id,
+      actor_user_id: administrator.id,
+      actor_snapshot: {
+        userId: administrator.id,
+        fullName: administrator.fullName,
+        email: administrator.email,
+      },
+      target_snapshot: {
+        userId: user.id,
+        fullName: user.fullName,
+        email: user.email,
+      },
+      event_type: 'administrative_access_seeded',
+      resource_type: 'organization_user_admin_access',
+      resource_id: user.id,
+      resource_label: 'Role administracyjne',
+      changes: [{
+        field: 'roles',
+        before: [],
+        after: roles,
+      }],
+      reason: seededReason,
+      source: 'demo_seed',
+      correlation_id: randomUUID(),
+      revision_before: 0,
+      revision_after: 1,
+    }))
+  if (missingAuditRows.length) {
+    const { error: insertAuditError } = await supabase
+      .from('organization_user_audit_events')
+      .insert(missingAuditRows)
+    assertNoError(insertAuditError, 'Seeding administrative access audit events')
+  }
+
+  const { data: openExecutionGrants, error: executionGrantReadError } = await supabase
+    .from('crm_client_anonymization_execution_grants')
+    .select('id, revision, expires_at')
+    .eq('organization_id', organizationId)
+    .eq('request_id', anonymizationRequest.id)
+    .in('status', ['pending_approval', 'active'])
+  assertNoError(
+    executionGrantReadError,
+    'Reading the demo anonymization execution grant',
+  )
+
+  const expiredOpenGrants = (openExecutionGrants ?? []).filter(
+    grant => new Date(grant.expires_at).valueOf() <= seedNow.valueOf(),
+  )
+  for (const grant of expiredOpenGrants) {
+    const { error: expireGrantError } = await supabase
+      .from('crm_client_anonymization_execution_grants')
+      .update({
+        status: 'revoked',
+        decision_reason: 'Grant demonstracyjny wygasł przed ponownym przygotowaniem danych.',
+        revoked_at: seedNow.toISOString(),
+        revoked_by_user_id: administrator.id,
+        revision: Number(grant.revision) + 1,
+      })
+      .eq('organization_id', organizationId)
+      .eq('id', grant.id)
+    assertNoError(expireGrantError, 'Closing an expired demo anonymization grant')
+  }
+
+  const hasCurrentOpenGrant = (openExecutionGrants ?? []).some(
+    grant => new Date(grant.expires_at).valueOf() > seedNow.valueOf(),
+  )
+  if (!hasCurrentOpenGrant) {
+    const createdAt = seedNow.toISOString()
+    const expiresAt = new Date(seedNow.valueOf() + 23 * 60 * 60 * 1_000).toISOString()
+    const { data: executionGrant, error: executionGrantError } = await supabase
+      .from('crm_client_anonymization_execution_grants')
+      .insert({
+        organization_id: organizationId,
+        request_id: anonymizationRequest.id,
+        grantee_user_id: administrator.id,
+        requested_by_user_id: administrator.id,
+        approver_user_id: piotr.id,
+        status: 'active',
+        justification: 'Realizacja potwierdzonego żądania anonimizacji klienta demonstracyjnego.',
+        expires_at: expiresAt,
+        decision_reason: 'Grant zaakceptowany przez drugą osobę w danych demonstracyjnych.',
+        approved_at: createdAt,
+        revision: 2,
+        request_idempotency_key: randomUUID(),
+        created_at: createdAt,
+        updated_at: createdAt,
+      })
+      .select('id')
+      .single()
+    assertNoError(
+      executionGrantError,
+      'Seeding the demo anonymization execution grant',
+    )
+
+    const { error: grantAuditError } = await supabase
+      .from('organization_user_audit_events')
+      .insert({
+        organization_id: organizationId,
+        target_user_id: administrator.id,
+        actor_user_id: piotr.id,
+        actor_snapshot: {
+          userId: piotr.id,
+          fullName: piotr.fullName,
+          email: piotr.email,
+        },
+        target_snapshot: {
+          userId: administrator.id,
+          fullName: administrator.fullName,
+          email: administrator.email,
+        },
+        event_type: 'anonymization_grant_approved',
+        resource_type: 'crm_client_anonymization_request',
+        resource_id: anonymizationRequest.id,
+        resource_label: anonymizationRequest.request_number,
+        changes: [{
+          field: 'grantStatus',
+          before: 'pending_approval',
+          after: 'active',
+        }],
+        reason: 'Grant demonstracyjny zatwierdzony w regule czterech oczu.',
+        source: 'demo_seed',
+        correlation_id: executionGrant.id,
+        revision_before: 1,
+        revision_after: 2,
+      })
+    assertNoError(
+      grantAuditError,
+      'Seeding the demo anonymization grant audit event',
+    )
+  }
+}
+
 async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
   const organizationId = profile.organization_id
   const userId = profile.id
@@ -627,6 +850,18 @@ async function ensureLocalDemoWorkspace(supabase, profile, credentials) {
       userClient,
       profile,
       delegateByKey,
+      seedNow,
+    })
+    await ensureAdministrativeAccessDemo({
+      supabase,
+      organizationId,
+      administrator: {
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.full_name ?? devAccount.fullName,
+      },
+      delegateByKey,
+      anonymizationRequest: crm.anonymizationRequests[0],
       seedNow,
     })
     const meetingTask = crm.tasks.find(

@@ -16,11 +16,11 @@ const points = computed(() => props.data.map(day => ({
 const categories = {
   views: {
     name: 'Wizyty',
-    color: 'var(--ui-text-highlighted)',
+    color: 'var(--oe-chart-views)',
   },
   slotSelections: {
     name: 'Wybrane terminy',
-    color: 'var(--ui-text-muted)',
+    color: 'var(--oe-chart-slot-selections)',
   },
   bookings: {
     name: 'Rezerwacje',
@@ -88,6 +88,14 @@ function tooltipTitleFormatter(point: { date: string }) {
 
 <style scoped>
 .widget-analytics-trend {
+  --oe-chart-views: #2563eb;
+  --oe-chart-slot-selections: #b45309;
+
   min-width: 0;
+}
+
+:global(.dark) .widget-analytics-trend {
+  --oe-chart-views: #60a5fa;
+  --oe-chart-slot-selections: #fbbf24;
 }
 </style>

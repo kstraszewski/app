@@ -82,7 +82,7 @@ export default defineEventHandler(async (event) => {
   return {
     data: responseFacilities,
     role: session.role,
-    canCreate: session.role === 'admin',
+    canCreate: accessibleIds === null,
     defaultFacilityId,
   }
 })

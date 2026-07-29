@@ -329,20 +329,28 @@ const navGroups = computed<NavigationGroup[]>(() => {
 
     if (isOrganizationAdmin.value) {
       adminItems.push(
+        { label: 'Użytkownicy', to: `${organizationBase.value}/users`, icon: 'i-lucide-user-round-cog' },
         { label: 'Zgody', to: `${organizationBase.value}/consents`, icon: 'i-lucide-shield-check' },
       )
     }
 
     if (isSuperAdmin.value) {
-      adminItems.push({
-        label: 'Instytucje',
-        to: `${organizationBase.value}/settings/institutions`,
-        icon: 'i-lucide-landmark',
-        activePaths: [
-          `${organizationBase.value}/settings/institutions`,
-          `${organizationBase.value}/settings/products`,
-        ],
-      })
+      adminItems.push(
+        {
+          label: 'Instytucje',
+          to: `${organizationBase.value}/settings/institutions`,
+          icon: 'i-lucide-landmark',
+          activePaths: [
+            `${organizationBase.value}/settings/institutions`,
+            `${organizationBase.value}/settings/products`,
+          ],
+        },
+        {
+          label: 'Pliki banków',
+          to: `${organizationBase.value}/settings/institution-files`,
+          icon: 'i-lucide-folder-search-2',
+        },
+      )
     }
 
     if (isOrganizationAdmin.value) {

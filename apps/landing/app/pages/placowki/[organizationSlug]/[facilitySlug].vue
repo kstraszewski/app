@@ -4,9 +4,10 @@ import type {
   DirectoryFacilityDetailExpert,
   DirectoryFacilityOpeningHour,
 } from '#shared/types/directory'
-import { directoryBookingUrl } from '~/utils/directory'
+import { directoryBookingUrl, directoryHydrationData } from '~/utils/directory'
 
 const route = useRoute()
+const nuxtApp = useNuxtApp()
 const runtimeConfig = useRuntimeConfig()
 
 function routeParam(value: string | string[] | undefined): string {
@@ -26,6 +27,11 @@ const {
   refresh,
 } = await useFetch<DirectoryFacilityDetail>(detailEndpoint, {
   key: `openexpert-facility-${organizationSlug.value}-${facilitySlug.value}`,
+  getCachedData: key => directoryHydrationData<DirectoryFacilityDetail>(
+    nuxtApp.isHydrating === true,
+    nuxtApp.payload.data,
+    key,
+  ),
 })
 
 if (import.meta.server && error.value) {

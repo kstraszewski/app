@@ -40,4 +40,8 @@ test('manifest Erste uses a direct HTTPS image asset', async () => {
 
   assert.ok(erste)
   assert.match(erste.bank.logoUrl, /^https:\/\/.+\.(png|jpe?g|webp|svg)(?:[?#].*)?$/iu)
+  assert.deepEqual(erste.bank.aliases, [
+    { value: 'Santander Bank Polska', type: 'former_name' },
+    { value: 'santander.pl', type: 'former_domain' },
+  ])
 })

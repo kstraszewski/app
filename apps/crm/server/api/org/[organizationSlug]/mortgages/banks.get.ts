@@ -14,7 +14,11 @@ export default defineEventHandler(async (event) => {
   const bankIds = (banks ?? []).map((bank: any) => bank.id)
   if (!bankIds.length) return { banks: [], role: session.role, superAdmin }
 
-  const [{ data: products, error: productsError }, { data: overrides, error: overridesError }] = await Promise.all([
+  const [
+    { data: products, error: productsError },
+    { data: overrides, error: overridesError },
+    { data: aliases, error: aliasesError },
+  ] = await Promise.all([
     session.supabase
       .from('mortgage_products')
       .select('bank_id')
@@ -25,15 +29,32 @@ export default defineEventHandler(async (event) => {
       .select('id, bank_id, is_enabled, custom_name, custom_website_url, logo_path, notes, revision, created_at, updated_at, created_by, updated_by')
       .eq('organization_id', session.organizationId)
       .in('bank_id', bankIds),
+    session.supabase
+      .from('mortgage_bank_aliases')
+      .select('bank_id, value, alias_type, valid_from, valid_to')
+      .in('bank_id', bankIds)
+      .order('value'),
   ])
   throwDbError(productsError)
   throwDbError(overridesError)
+  throwDbError(aliasesError)
 
   const productCountByBank = new Map<string, number>()
   for (const product of products ?? []) {
     productCountByBank.set(product.bank_id, (productCountByBank.get(product.bank_id) ?? 0) + 1)
   }
   const overrideByBank = new Map((overrides ?? []).map((override: any) => [override.bank_id, override]))
+  const aliasesByBank = new Map<string, any[]>()
+  for (const alias of aliases ?? []) {
+    const bankAliases = aliasesByBank.get(alias.bank_id) ?? []
+    bankAliases.push({
+      name: alias.value,
+      kind: alias.alias_type,
+      validFrom: alias.valid_from,
+      validTo: alias.valid_to,
+    })
+    aliasesByBank.set(alias.bank_id, bankAliases)
+  }
 
   return {
     role: session.role,
@@ -55,6 +76,7 @@ export default defineEventHandler(async (event) => {
         isEnabled: override?.is_enabled ?? true,
         logoUrl,
         productCount: productCountByBank.get(bank.id) ?? 0,
+        aliases: aliasesByBank.get(bank.id) ?? [],
         override: override ?? null,
       }
     }),

@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { createError, getQuery, setHeader } from 'h3'
 import {
   getRequiredParam,
+  hasAdministrativePermission,
   numberValue,
   requireCrmSession,
   throwDbError,
@@ -66,6 +67,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Client not found' })
   }
 
+  const canViewPrivacyRequests = await hasAdministrativePermission(
+    session,
+    'privacy.requests.read',
+  )
   const serviceRole = serverSupabaseServiceRole(event) as any
   const accessibleFacilityIds = await listAccessibleFacilityIds(session)
   let appointmentsRequest: any = serviceRole
@@ -92,6 +97,17 @@ export default defineEventHandler(async (event) => {
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
+  const anonymizationRequestsRequest = canViewPrivacyRequests
+    ? session.supabase
+        .from('crm_client_anonymization_requests')
+        .select(
+          'id, organization_id, client_id, subject_person_id, request_number, status, request_channel, legal_basis, requested_at, identity_verified_at, identity_verified_by_user_id, approved_at, approved_by_user_id, due_at, justification, review_note, completed_at, completed_by_user_id, created_by_user_id, created_at, updated_at',
+        )
+        .eq('organization_id', session.organizationId)
+        .eq('client_id', id)
+        .order('requested_at', { ascending: false })
+    : Promise.resolve({ data: [], error: null })
+
   const { data: caseLinks, error: caseLinksError } = await session.supabase
     .from('crm_case_clients')
     .select('case_id')
@@ -115,6 +131,7 @@ export default defineEventHandler(async (event) => {
     consentDefinitionsResult,
     ownerResult,
     appointmentsResult,
+    anonymizationRequestsResult,
   ] = await Promise.all([
     session.supabase
       .from('crm_client_people')
@@ -138,6 +155,7 @@ export default defineEventHandler(async (event) => {
       .order('created_at', { ascending: true }),
     ownerRequest,
     appointmentsRequest,
+    anonymizationRequestsRequest,
   ])
 
   throwDbError(peopleResult.error)
@@ -146,6 +164,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(consentDefinitionsResult.error)
   throwDbError(ownerResult.error)
   throwDbError(appointmentsResult.error)
+  throwDbError(anonymizationRequestsResult.error)
 
   const people = peopleResult.data ?? []
   const caseRows = casesResult.data ?? []
@@ -174,6 +193,25 @@ export default defineEventHandler(async (event) => {
   )
   const consentDefinitions = consentDefinitionsResult.data ?? []
   const appointments = appointmentsResult.data ?? []
+  const rawAnonymizationRequests = anonymizationRequestsResult.data ?? []
+  const executableRequestIds = rawAnonymizationRequests
+    .filter((request: any) => request.status === 'approved')
+    .map((request: any) => String(request.id))
+  const executionGrantResult = executableRequestIds.length
+    ? await session.supabase
+        .from('crm_client_anonymization_execution_grants')
+        .select('id, request_id, revision, status, expires_at, approved_at')
+        .eq('organization_id', session.organizationId)
+        .eq('grantee_user_id', session.userId)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString())
+        .in('request_id', executableRequestIds)
+        .order('approved_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null }
+  throwDbError(executionGrantResult.error)
+  const executionGrant = executionGrantResult.data
   const relatedCaseIds = cases
     .map((item: any) => String(item.id))
     .filter((uuid: string) => uuidPattern.test(uuid))
@@ -259,8 +297,22 @@ export default defineEventHandler(async (event) => {
   const appointmentFacilityIds = [...new Set(appointments.map((item: any) => String(item.facility_id)))]
   const appointmentServiceIds = [...new Set(appointments.map((item: any) => String(item.service_id)))]
   const appointmentExpertIds = [...new Set(appointments.map((item: any) => String(item.expert_user_id)))]
+  const anonymizationActorIds = [...new Set(rawAnonymizationRequests.flatMap((request: any) => [
+    request.identity_verified_by_user_id,
+    request.approved_by_user_id,
+    request.completed_by_user_id,
+    request.created_by_user_id,
+  ]).filter((actorId: unknown): actorId is string => (
+    typeof actorId === 'string' && uuidPattern.test(actorId)
+  )))]
 
-  const [consentVersionsResult, facilitiesResult, servicesResult, expertsResult] = await Promise.all([
+  const [
+    consentVersionsResult,
+    facilitiesResult,
+    servicesResult,
+    expertsResult,
+    anonymizationActorsResult,
+  ] = await Promise.all([
     consentVersionIds.length
       ? session.supabase
           .from('crm_consent_definition_versions')
@@ -288,12 +340,19 @@ export default defineEventHandler(async (event) => {
           .select('id, full_name, email')
           .in('id', appointmentExpertIds)
       : Promise.resolve({ data: [], error: null }),
+    anonymizationActorIds.length
+      ? session.supabase
+          .from('users')
+          .select('id, full_name, email')
+          .in('id', anonymizationActorIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
 
   throwDbError(consentVersionsResult.error)
   throwDbError(facilitiesResult.error)
   throwDbError(servicesResult.error)
   throwDbError(expertsResult.error)
+  throwDbError(anonymizationActorsResult.error)
 
   const consentVersionById = new Map(
     (consentVersionsResult.data ?? []).map((version: any) => [String(version.id), version]),
@@ -336,6 +395,24 @@ export default defineEventHandler(async (event) => {
   const expertsById = new Map(
     (expertsResult.data ?? []).map((item: any) => [String(item.id), item]),
   )
+  const anonymizationActorsById = new Map(
+    (anonymizationActorsResult.data ?? []).map((item: any) => [String(item.id), item]),
+  )
+  const anonymizationRequests = rawAnonymizationRequests.map((request: any) => ({
+    ...request,
+    identity_verified_by: request.identity_verified_by_user_id
+      ? anonymizationActorsById.get(String(request.identity_verified_by_user_id)) ?? null
+      : null,
+    approved_by: request.approved_by_user_id
+      ? anonymizationActorsById.get(String(request.approved_by_user_id)) ?? null
+      : null,
+    completed_by: request.completed_by_user_id
+      ? anonymizationActorsById.get(String(request.completed_by_user_id)) ?? null
+      : null,
+    created_by: request.created_by_user_id
+      ? anonymizationActorsById.get(String(request.created_by_user_id)) ?? null
+      : null,
+  }))
   const appointmentRows = appointments.map((appointment: any) => {
     const facility: any = facilitiesById.get(String(appointment.facility_id)) ?? null
     const service: any = servicesById.get(String(appointment.service_id)) ?? null
@@ -378,6 +455,25 @@ export default defineEventHandler(async (event) => {
       offset: consentHistoryOffset,
       limit: consentHistoryLimit,
       has_more: consentHistoryOffset + consentHistory.length < (consentEventsResult.count ?? 0),
+    },
+    anonymization_requests: anonymizationRequests,
+    current_anonymization_request: anonymizationRequests.find((request: any) => (
+      !['completed', 'rejected', 'cancelled'].includes(String(request.status))
+    )) ?? anonymizationRequests[0] ?? null,
+    privacy_access: {
+      can_view_requests: canViewPrivacyRequests,
+      can_execute_anonymization: Boolean(executionGrant),
+      execute_permission_key: 'clients.anonymization.execute',
+      execution_requires_temporary_grant: true,
+      execution_grant: executionGrant
+        ? {
+            id: String(executionGrant.id),
+            revision: Number(executionGrant.revision),
+            status: 'active',
+            expires_at: String(executionGrant.expires_at),
+            approved_at: String(executionGrant.approved_at),
+          }
+        : null,
     },
     appointments: appointmentRows,
     appointment_count: appointmentCount,

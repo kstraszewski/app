@@ -17,17 +17,24 @@ const props = withDefaults(defineProps<{
   backTo?: string
   backLabel?: string
   tabs?: PageHeaderTab[]
+  avatarSrc?: string
+  avatarAlt?: string
+  avatarText?: string
 }>(), {
   eyebrow: '',
   description: '',
   backTo: '',
   backLabel: 'Wróć',
   tabs: () => [],
+  avatarSrc: '',
+  avatarAlt: '',
+  avatarText: '',
 })
 
 const route = useRoute()
 const router = useRouter()
 const tabsElement = ref<HTMLElement | null>(null)
+const hasAvatar = computed(() => Boolean(props.avatarSrc || props.avatarText))
 let tabsResizeObserver: ResizeObserver | null = null
 let tabScrollFrame: number | null = null
 
@@ -126,10 +133,24 @@ onBeforeUnmount(() => {
       </UButton>
 
       <p v-if="props.eyebrow" class="crm-page-header__eyebrow">{{ props.eyebrow }}</p>
-      <h1>{{ props.title }}</h1>
+      <div v-if="hasAvatar" class="crm-page-header__identity">
+        <UAvatar
+          class="crm-page-header__avatar"
+          :src="props.avatarSrc || undefined"
+          :alt="props.avatarAlt || props.title"
+          :text="props.avatarText || undefined"
+          size="3xl"
+        />
+        <h1>{{ props.title }}</h1>
+      </div>
+      <h1 v-else>{{ props.title }}</h1>
       <p v-if="props.description" class="crm-page-header__description">{{ props.description }}</p>
 
-      <div v-if="$slots.meta" class="crm-page-header__meta">
+      <div
+        v-if="$slots.meta"
+        class="crm-page-header__meta"
+        :class="{ 'crm-page-header__meta--with-avatar': hasAvatar }"
+      >
         <slot name="meta" />
       </div>
     </div>
@@ -224,6 +245,25 @@ onBeforeUnmount(() => {
   line-height: 1.05;
 }
 
+.crm-page-header__identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.crm-page-header__identity h1 {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.crm-page-header__avatar {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+}
+
 .crm-page-header__description {
   max-width: 640px;
   margin: 9px 0 0;
@@ -234,6 +274,10 @@ onBeforeUnmount(() => {
 
 .crm-page-header__meta {
   margin-top: 10px;
+}
+
+.crm-page-header__meta--with-avatar {
+  margin-left: 80px;
 }
 
 .crm-page-header__tabs {
@@ -369,6 +413,25 @@ onBeforeUnmount(() => {
     gap: 22px;
   }
 
+  .crm-page-header__identity {
+    gap: 12px;
+  }
+
+  .crm-page-header__avatar {
+    width: 52px;
+    height: 52px;
+    flex-basis: 52px;
+  }
+
+  .crm-page-header__meta--with-avatar {
+    margin-left: 64px;
+  }
+}
+
+@media (max-width: 520px) {
+  .crm-page-header__meta--with-avatar {
+    margin-left: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

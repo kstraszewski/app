@@ -60,7 +60,7 @@ export default defineAppConfig({
       defaultVariants: {
         color: 'neutral',
         variant: 'outline',
-        size: 'sm',
+        size: 'xl',
       },
     },
     inputNumber: {
@@ -68,6 +68,9 @@ export default defineAppConfig({
         base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
       },
       compoundVariants: fieldFocusVariants,
+      defaultVariants: {
+        size: 'xl',
+      },
     },
     inputMenu: {
       slots: {
@@ -77,18 +80,32 @@ export default defineAppConfig({
         item: 'oe-state-motion',
       },
       compoundVariants: fieldFocusVariants,
+      defaultVariants: {
+        size: 'xl',
+      },
+    },
+    inputTags: {
+      defaultVariants: {
+        size: 'xl',
+      },
     },
     textarea: {
       slots: {
         base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
       },
       compoundVariants: fieldFocusVariants,
+      defaultVariants: {
+        size: 'xl',
+      },
     },
     select: {
       slots: {
         base: 'rounded-[var(--oe-radius-control)] oe-field-motion',
         content: 'oe-overlay-motion-fast',
         item: 'oe-state-motion',
+      },
+      defaultVariants: {
+        size: 'xl',
       },
     },
     selectMenu: {
@@ -98,6 +115,9 @@ export default defineAppConfig({
         item: 'oe-state-motion',
       },
       compoundVariants: fieldFocusVariants,
+      defaultVariants: {
+        size: 'xl',
+      },
     },
     checkbox: {
       slots: {
@@ -164,7 +184,7 @@ export default defineAppConfig({
         error: 'text-error',
       },
       defaultVariants: {
-        size: 'sm',
+        size: 'xl',
       },
     },
     modal: {

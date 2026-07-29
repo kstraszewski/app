@@ -1,5 +1,10 @@
 import { readBody } from 'h3'
-import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import {
+  asRecord,
+  requireAdministrativePermission,
+  requireCrmSession,
+  throwDbError,
+} from '~~/server/utils/crm'
 import {
   assertFacilityBookableMemberIds,
   bookingServiceValues,
@@ -32,11 +37,8 @@ export default defineEventHandler(async (event) => {
     'maxAdvanceDays', 'max_advance_days', 'isActive', 'is_active',
   ]
   const updatesGlobalService = serviceFieldNames.some(field => field in body)
-  if (updatesGlobalService && session.role !== 'admin') {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Organization admin required to edit shared service details',
-    })
+  if (updatesGlobalService) {
+    await requireAdministrativePermission(session, 'crm.configuration.manage')
   }
 
   const servicePatch = updatesGlobalService

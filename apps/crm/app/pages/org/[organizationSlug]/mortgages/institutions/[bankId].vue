@@ -159,6 +159,7 @@ type BankProfilePayload = {
     versions: number
     sourceDocuments: number
     reviewedSourceDocuments: number
+    bankFiles: number
     publishedChecklistItems: number
     draftChecklistItems: number
     unknownFields: number
@@ -197,17 +198,19 @@ const productsViewPath = computed(() => `${profilePath.value}?view=products`)
 const checklistsPath = computed(() => `${profilePath.value}?view=checklists`)
 const pdfTemplatesPath = computed(() => `${profilePath.value}?view=templates`)
 const sourcesPath = computed(() => `${profilePath.value}?view=sources`)
+const filesPath = computed(() => `${profilePath.value}?view=files`)
 const settingsPath = computed(() => `${profilePath.value}?view=settings`)
 const historyPath = computed(() => `${profilePath.value}?view=history`)
 const createOfferPath = computed(() => `${productsPath.value}?createBank=${encodeURIComponent(bankId.value)}`)
 
-type InstitutionView = 'products' | 'checklists' | 'templates' | 'sources' | 'settings' | 'history'
+type InstitutionView = 'products' | 'checklists' | 'templates' | 'sources' | 'files' | 'settings' | 'history'
 
 const legacyHashViews: Record<string, InstitutionView> = {
   '#bank-offers': 'products',
   '#bank-checklists': 'checklists',
   '#bank-templates': 'templates',
   '#bank-sources': 'sources',
+  '#bank-files': 'files',
   '#bank-settings': 'settings',
   '#bank-history': 'history',
 }
@@ -218,6 +221,7 @@ function institutionView(value: unknown): InstitutionView | null {
     || value === 'checklists'
     || value === 'templates'
     || value === 'sources'
+    || value === 'files'
     || value === 'settings'
     || value === 'history'
   ) {
@@ -265,10 +269,10 @@ const tabs = computed(() => [
     icon: 'i-lucide-file-json-2',
   },
   {
-    label: 'Źródła',
-    to: sourcesPath.value,
-    icon: 'i-lucide-files',
-    count: sources.value.length,
+    label: 'Pliki z banku',
+    to: filesPath.value,
+    icon: 'i-lucide-folder-search-2',
+    count: metrics.value?.bankFiles ?? 0,
   },
   {
     label: 'Ustawienia',
@@ -280,6 +284,12 @@ const tabs = computed(() => [
     to: historyPath.value,
     icon: 'i-lucide-history',
     count: history.value.length,
+  },
+  {
+    label: 'Źródła',
+    to: sourcesPath.value,
+    icon: 'i-lucide-files',
+    count: sources.value.length,
   },
 ])
 const expandedChecklists = ref<string[]>([])
@@ -636,6 +646,7 @@ watch(bank, loadSettingsForm, { immediate: true })
     <span id="bank-checklists" class="sr-only" aria-hidden="true" />
     <span id="bank-templates" class="sr-only" aria-hidden="true" />
     <span id="bank-sources" class="sr-only" aria-hidden="true" />
+    <span id="bank-files" class="sr-only" aria-hidden="true" />
     <span id="bank-settings" class="sr-only" aria-hidden="true" />
     <span id="bank-history" class="sr-only" aria-hidden="true" />
 
@@ -1009,6 +1020,14 @@ watch(bank, loadSettingsForm, { immediate: true })
         v-if="activeView === 'templates'"
         :organization-slug="organizationSlug"
         :bank-id="bankId"
+      />
+
+      <MortgagesBankFileRepository
+        v-if="activeView === 'files'"
+        :organization-slug="organizationSlug"
+        :bank-id="bankId"
+        :bank-name="bank.name"
+        lock-institution
       />
 
     </div>

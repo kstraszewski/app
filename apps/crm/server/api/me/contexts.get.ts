@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     identity.supabase
       .from('organization_memberships')
-      .select('role, organization:organizations!inner(id, name, slug)')
+      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
       .eq('user_id', identity.userId),
     identity.supabase
       .from('client_account_links')

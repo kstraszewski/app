@@ -1,9 +1,21 @@
 import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createClient } from '@supabase/supabase-js'
+import {
+  createAuthenticatedDataApiClient,
+  createDataApiTokenSigner,
+} from '@openexpert/data-api'
+import {
+  createMinioStorageProvider,
+  createStorageClient,
+  createStorageBucketAdapter,
+} from '@openexpert/storage'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDirectory, '../../..')
@@ -19,32 +31,112 @@ function assertResult(error, operation) {
   if (error) throw new Error(`${operation}: ${error.message ?? detail(error)}`)
 }
 
-function runSupabaseStatus() {
-  const result = spawnSync('supabase', ['status', '-o', 'json', '--workdir', repoRoot], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: 'pipe',
-  })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(result.stderr || 'Supabase status failed')
-  return JSON.parse(result.stdout)
-}
+function parseEnvFile(path) {
+  if (!existsSync(path)) return {}
+  const values = {}
+  for (const rawLine of readFileSync(path, 'utf8').split(/\r?\n/u)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const normalized = line.startsWith('export ') ? line.slice(7) : line
+    const separator = normalized.indexOf('=')
+    if (separator < 1) continue
 
-function statusValue(status, keys) {
-  for (const key of keys) {
-    if (typeof status[key] === 'string' && status[key]) return status[key]
+    const key = normalized.slice(0, separator).trim()
+    let value = normalized.slice(separator + 1).trim()
+    if (
+      value.length >= 2
+      && ((value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith('\'') && value.endsWith('\'')))
+    ) {
+      value = value.slice(1, -1)
+    }
+    values[key] = value
   }
-  return null
+  return values
 }
 
-function localCredentials() {
-  const status = runSupabaseStatus()
-  const url = statusValue(status, ['API_URL', 'api_url'])
-  const serviceRoleKey = statusValue(status, [
-    'SERVICE_ROLE_KEY', 'service_role_key', 'SECRET_KEY', 'secret_key',
-  ])
-  if (!url || !serviceRoleKey) throw new Error('Local Supabase URL or service role key is missing.')
-  return { url, serviceRoleKey }
+function requireConfiguration(values, key) {
+  const value = String(values[key] ?? '').trim()
+  if (!value) throw new Error(`Missing required local configuration: ${key}`)
+  return value
+}
+
+function assertLocalUrl(value, label) {
+  const url = new URL(value)
+  if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) {
+    throw new Error(`${label} must be local (received host: ${url.hostname})`)
+  }
+  return url.toString().replace(/\/+$/u, '')
+}
+
+function dataApiPrivateKey(value) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) {
+    throw new Error(
+      'NUXT_DATA_API_JWT_PRIVATE_KEY is missing. Run pnpm db:local:setup first.',
+    )
+  }
+  if (normalized.includes('-----BEGIN')) return normalized.replace(/\\n/gu, '\n')
+
+  const decoded = Buffer.from(normalized, 'base64').toString('utf8').trim()
+  if (!decoded.includes('-----BEGIN PRIVATE KEY-----')) {
+    throw new Error(
+      'NUXT_DATA_API_JWT_PRIVATE_KEY must be PKCS8 PEM or base64-encoded PKCS8 PEM.',
+    )
+  }
+  return decoded
+}
+
+function localPlatformClient() {
+  const values = {
+    ...parseEnvFile(resolve(repoRoot, '.env')),
+    ...parseEnvFile(resolve(repoRoot, '.env.local-stack')),
+    ...parseEnvFile(resolve(repoRoot, 'apps/crm/.env')),
+    ...process.env,
+  }
+  const dataApiUrl = values.NUXT_PUBLIC_DATA_API_URL || values.NUXT_DATA_API_URL
+  if (!dataApiUrl) {
+    throw new Error(
+      'Local Data API URL is missing. Run pnpm db:local:setup or set '
+      + 'NUXT_PUBLIC_DATA_API_URL.',
+    )
+  }
+  if ((values.NUXT_STORAGE_PROVIDER || 'minio') !== 'minio') {
+    throw new Error('Local mortgage synchronization requires NUXT_STORAGE_PROVIDER=minio.')
+  }
+
+  const signer = createDataApiTokenSigner({
+    audience: requireConfiguration(values, 'NUXT_DATA_API_JWT_AUDIENCE'),
+    issuer: requireConfiguration(values, 'NUXT_DATA_API_JWT_ISSUER'),
+    keyId: requireConfiguration(values, 'NUXT_DATA_API_JWT_KEY_ID'),
+    privateKey: dataApiPrivateKey(values.NUXT_DATA_API_JWT_PRIVATE_KEY),
+    ttlSeconds: 60,
+  })
+  const storage = createStorageBucketAdapter(
+    createStorageClient(createMinioStorageProvider({
+      endpoint: assertLocalUrl(
+        values.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
+        'Mortgage storage endpoint',
+      ),
+      region: values.NUXT_MINIO_REGION || 'us-east-1',
+      accessKeyId: requireConfiguration(values, 'NUXT_MINIO_ACCESS_KEY_ID'),
+      secretAccessKey: requireConfiguration(values, 'NUXT_MINIO_SECRET_ACCESS_KEY'),
+      publicBucket: values.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
+      privateBucket: values.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
+      publicBaseUrl: values.NUXT_MINIO_PUBLIC_BASE_URL || undefined,
+    })),
+  )
+  const client = createAuthenticatedDataApiClient(
+    assertLocalUrl(dataApiUrl, 'Mortgage Data API'),
+    () => signer.signBackend({ source: 'mortgage-catalog-sync' }),
+    {
+      headers: {
+        'X-Client-Info': 'openexpert-mortgage-catalog-sync/2.0',
+      },
+      retry: false,
+    },
+  )
+  return Object.assign(client, { storage })
 }
 
 function contentType(source, response) {
@@ -155,13 +247,10 @@ function localDeveloperSource(source, product, manifest) {
 }
 
 export async function syncMortgageCatalog(
-  credentials = localCredentials(),
+  client = localPlatformClient(),
   { offline = false } = {},
 ) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const client = createClient(credentials.url, credentials.serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
   const banks = new Map()
   const products = new Map()
 

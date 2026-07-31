@@ -8,10 +8,10 @@ import { mortgageLegacyVersionToDraft } from '~~/server/utils/mortgage-legacy-of
 import { getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
-  const { serviceRole } = await requireMortgageBackoffice(event)
+  const { backendData } = await requireMortgageBackoffice(event)
   const offerId = mortgageBackofficeUuid(getRequiredParam(event, 'offerId'), 'offerId')
 
-  const { data: product, error: productError } = await serviceRole
+  const { data: product, error: productError } = await backendData
     .from('mortgage_products')
     .select('id, bank_id, slug, name, product_kind, category, distribution_channel, is_active, current_published_version_id, archived_at, created_at, updated_at, mortgage_banks!inner(id, slug, name, logo_url)')
     .eq('id', offerId)
@@ -20,12 +20,12 @@ export default defineEventHandler(async (event) => {
   if (!product) throw createError({ statusCode: 404, statusMessage: 'Mortgage offer not found' })
 
   const [{ data: draft, error: draftError }, { data: versions, error: versionsError }] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_product_drafts')
       .select('id, revision, draft_data, validation_report, updated_at, updated_by_user_id')
       .eq('product_id', offerId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_product_versions')
       .select('id, version_number, lifecycle_status, effective_from, effective_to, published_at')
       .eq('product_id', offerId)
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   let seededFromLegacy = false
   let seedWarnings: string[] = []
   if (!resolvedDraftData && product.current_published_version_id) {
-    const { data: variant, error: variantError } = await serviceRole
+    const { data: variant, error: variantError } = await backendData
       .from('mortgage_product_version_variants')
       .select('pricing_config')
       .eq('product_version_id', product.current_published_version_id)
@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
   // Convert it only for the editor preview; the immutable publication remains
   // unchanged until a SuperAdmin explicitly saves and publishes the V2 draft.
   if (!resolvedDraftData && product.current_published_version_id) {
-    const { data: legacyVersion, error: legacyVersionError } = await serviceRole
+    const { data: legacyVersion, error: legacyVersionError } = await backendData
       .from('mortgage_product_versions')
       .select('id, version_key, source_document_id, effective_from, effective_to, retrieved_at, calculation_date, interest_type, fixed_rate_pct, fixed_period_months, margin_pct, reference_rate_code, reference_rate_pct, reference_rate_as_of, min_amount, max_amount, min_term_months, max_term_months, max_ltv_pct, cost_rules, requirements, document_requirements, assumptions, unknown_fields, calculator_schema_version, calculator_engine_version')
       .eq('id', product.current_published_version_id)
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     if (legacyVersion && Number(legacyVersion.calculator_schema_version ?? 1) < 2) {
       let sourceDocument = null
       if (legacyVersion.source_document_id) {
-        const { data: source, error: sourceError } = await serviceRole
+        const { data: source, error: sourceError } = await backendData
           .from('mortgage_source_documents')
           .select('id, title, source_url, source_kind, sha256, retrieved_at, published_at')
           .eq('id', legacyVersion.source_document_id)

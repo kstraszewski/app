@@ -27,30 +27,30 @@ export default defineEventHandler(async (event) => {
     edgesResult,
     facilityAdminResult,
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('teams')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('id', teamId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('team_id', teamId)
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('team_facilities')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('team_id', teamId)
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('team_edges')
       .select('*')
       .eq('organization_id', session.organizationId)
       .or(`parent_team_id.eq.${teamId},child_team_id.eq.${teamId}`),
-    session.supabase
+    session.dataApi
       .from('facility_memberships')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
@@ -85,14 +85,14 @@ export default defineEventHandler(async (event) => {
 
   const [organizationMembersResult, facilitiesResult, relatedTeamsResult] = await Promise.all([
     userIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('organization_memberships')
           .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name, avatar_url)')
           .eq('organization_id', session.organizationId)
           .in('user_id', userIds)
       : Promise.resolve({ data: [], error: null }),
     facilityIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('facilities')
           .select('*')
           .eq('organization_id', session.organizationId)
@@ -100,7 +100,7 @@ export default defineEventHandler(async (event) => {
           .order('name')
       : Promise.resolve({ data: [], error: null }),
     relatedTeamIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('teams')
           .select('*')
           .eq('organization_id', session.organizationId)

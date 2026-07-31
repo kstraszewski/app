@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '../../utils/supabase'
+import { serverDataBackend } from '../../utils/data-api'
 import { createError, readBody } from 'h3'
 
 interface SurveyBody {
@@ -39,8 +39,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const answers = body.answers && typeof body.answers === 'object' ? body.answers : {}
-  const supabase = serverSupabaseServiceRole(event)
-  const { data, error } = await supabase
+  const dataApi = serverDataBackend(event)
+  const { data, error } = await dataApi
     .from('waitlist')
     .update({
       survey_domain: stringArray(answers.domain),

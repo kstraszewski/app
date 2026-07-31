@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import type { SavedCaseOffer } from '~~/app/types/cases'
 import {
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     assertUuid(propertyId, 'property_id')
   }
   else {
-    const { data: selection, error: selectionError } = await session.supabase
+    const { data: selection, error: selectionError } = await session.dataApi
       .from('crm_case_property_selections')
       .select('property_id')
       .eq('organization_id', session.organizationId)
@@ -66,19 +66,19 @@ export default defineEventHandler(async (event) => {
   let replaySummary: Record<string, unknown> | null = null
   {
     const [offersResult, selectionResult, propertyResult] = await Promise.all([
-      session.supabase
+      session.dataApi
         .from('crm_case_offer_snapshots')
         .select('id, offer_type, currency, loan_amount, scenario_snapshot, catalog_snapshot, calculation_snapshot, saved_at')
         .eq('organization_id', session.organizationId)
         .eq('case_id', caseId)
         .order('saved_at', { ascending: false }),
-      session.supabase
+      session.dataApi
         .from('crm_case_offer_selections')
         .select('offer_id')
         .eq('organization_id', session.organizationId)
         .eq('case_id', caseId)
         .maybeSingle(),
-      session.supabase
+      session.dataApi
         .from('crm_properties')
         .select('id, price_amount, appraisal_value_amount, currency, updated_at')
         .eq('organization_id', session.organizationId)
@@ -146,8 +146,8 @@ export default defineEventHandler(async (event) => {
       financed_costs: comparison.financedCosts,
       ltv_pct: comparison.ltvPct,
     }
-    const serviceRole = serverSupabaseServiceRole(event) as any
-    const snapshotResult = await serviceRole.rpc('create_crm_case_bank_application_snapshot', {
+    const backendData = serverDataBackend(event) as any
+    const snapshotResult = await backendData.rpc('create_crm_case_bank_application_snapshot', {
       target_organization_id: session.organizationId,
       target_case_id: caseId,
       target_offer_id: offerId,

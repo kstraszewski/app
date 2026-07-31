@@ -20,9 +20,9 @@ export default defineEventHandler(async (event) => {
     tasksResult,
     settlementsResult,
   ] = await Promise.all([
-    session.supabase.from('crm_cases').select('status_code').eq('organization_id', session.organizationId),
-    session.supabase.from('crm_tasks').select('id').eq('organization_id', session.organizationId).neq('status_code', 'done').lte('due_at', endOfToday.toISOString()),
-    session.supabase.from('crm_case_item_settlements').select('status_code, expected_amount, due_amount, paid_amount, currency').eq('organization_id', session.organizationId),
+    session.dataApi.from('crm_cases').select('status_code').eq('organization_id', session.organizationId),
+    session.dataApi.from('crm_tasks').select('id').eq('organization_id', session.organizationId).neq('status_code', 'done').lte('due_at', endOfToday.toISOString()),
+    session.dataApi.from('crm_case_item_settlements').select('status_code, expected_amount, due_amount, paid_amount, currency').eq('organization_id', session.organizationId),
   ])
 
   throwDbError(casesResult.error)

@@ -1,13 +1,22 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { fileURLToPath } from 'node:url'
 
-const databaseTypes = fileURLToPath(
-  new URL('../../packages/database/database.types.ts', import.meta.url),
-)
-
 const multiformServiceUrl = process.env.NUXT_MULTIFORM_SERVICE_URL
   || process.env.NUXT_PUBLIC_MULTIFORM_EVE_URL?.replace(/\/multiform-eve\/?$/u, '')
   || 'http://127.0.0.1:3013'
+const storageProvider = process.env.NUXT_STORAGE_PROVIDER
+  || (process.env.VERCEL ? 'vercel-blob' : 'minio')
+const dataApiUrl = process.env.NUXT_DATA_API_URL
+  || process.env.NUXT_PUBLIC_DATA_API_URL
+  || 'http://127.0.0.1:55321'
+const authBaseUrl = process.env.BETTER_AUTH_URL
+  || process.env.NUXT_AUTH_BASE_URL
+  || (process.env.NODE_ENV === 'production'
+    ? 'https://crm.openexpert.app'
+    : 'http://127.0.0.1:3004')
+const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
+  || process.env.DATABASE_URL
+  || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -36,7 +45,7 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxt/ui', '@nuxtjs/supabase', 'eve/nuxt', 'nuxt-charts'],
+  modules: ['@nuxt/ui', 'eve/nuxt', 'nuxt-charts'],
   nuxtCharts: {
     prefix: 'Nc',
     include: ['LineChart'],
@@ -105,9 +114,76 @@ export default defineNuxtConfig({
     multiformServiceUrl,
     aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
     googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
+    dataApi: {
+      url: dataApiUrl,
+      jwt: {
+        audience: process.env.NUXT_DATA_API_JWT_AUDIENCE || 'openexpert-data',
+        issuer: process.env.NUXT_DATA_API_JWT_ISSUER || 'openexpert-local',
+        keyId: process.env.NUXT_DATA_API_JWT_KEY_ID || 'openexpert-local',
+        privateKey: process.env.NUXT_DATA_API_JWT_PRIVATE_KEY || '',
+      },
+    },
+    auth: {
+      baseUrl: authBaseUrl,
+      basePath: process.env.BETTER_AUTH_BASE_PATH || '/api/auth',
+      databaseUrl: authDatabaseUrl,
+      databaseSchema: process.env.BETTER_AUTH_DATABASE_SCHEMA || 'identity',
+      secret: process.env.BETTER_AUTH_SECRET
+        || process.env.NUXT_AUTH_SECRET
+        || (process.env.NODE_ENV === 'production'
+          ? ''
+          : 'openexpert-local-auth-secret-change-me-000000000000'),
+      cookiePrefix: process.env.BETTER_AUTH_COOKIE_PREFIX
+        || (process.env.NODE_ENV === 'production' ? 'openexpert' : 'openexpert-local'),
+      cookieDomain: process.env.NUXT_AUTH_COOKIE_DOMAIN || '',
+      trustedOrigins: process.env.NUXT_AUTH_TRUSTED_ORIGINS
+        || 'http://127.0.0.1:3003,http://127.0.0.1:3004',
+    },
+    authEmail: {
+      apiKey: process.env.NUXT_RESEND_API_KEY || '',
+      from: process.env.NUXT_AUTH_EMAIL_FROM
+        || process.env.NUXT_RESEND_FROM
+        || 'OpenExpert <no-reply@openexpert.local>',
+      replyTo: process.env.NUXT_AUTH_EMAIL_REPLY_TO
+        || process.env.NUXT_RESEND_REPLY_TO
+        || '',
+      smtp: {
+        host: process.env.NUXT_SMTP_HOST || (process.env.NODE_ENV === 'production'
+          ? ''
+          : '127.0.0.1'),
+        port: Number(process.env.NUXT_SMTP_PORT || 55325),
+        secure: process.env.NUXT_SMTP_SECURE === 'true',
+        user: process.env.NUXT_SMTP_USER || '',
+        password: process.env.NUXT_SMTP_PASSWORD || '',
+      },
+    },
+    storage: {
+      provider: storageProvider,
+      minio: {
+        endpoint: process.env.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
+        region: process.env.NUXT_MINIO_REGION || 'us-east-1',
+        accessKeyId: process.env.NUXT_MINIO_ACCESS_KEY_ID || 'openexpert',
+        secretAccessKey: process.env.NUXT_MINIO_SECRET_ACCESS_KEY || 'openexpert-minio-local-secret',
+        publicBucket: process.env.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
+        privateBucket: process.env.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
+        publicBaseUrl: process.env.NUXT_MINIO_PUBLIC_BASE_URL
+          || 'http://127.0.0.1:55326/openexpert-public',
+      },
+      vercelBlob: {
+        publicToken: process.env.NUXT_VERCEL_BLOB_PUBLIC_TOKEN || '',
+        publicStoreId: process.env.NUXT_VERCEL_BLOB_PUBLIC_STORE_ID || '',
+        publicBaseUrl: process.env.NUXT_VERCEL_BLOB_PUBLIC_BASE_URL || '',
+        privateToken: process.env.NUXT_VERCEL_BLOB_PRIVATE_TOKEN || '',
+        privateStoreId: process.env.NUXT_VERCEL_BLOB_PRIVATE_STORE_ID || '',
+        oidcToken: process.env.VERCEL_OIDC_TOKEN || '',
+      },
+    },
     bookingSecurity: {
       trustProxy: false,
-      rateLimitSecret: '',
+      rateLimitSecret: process.env.NUXT_BOOKING_RATE_LIMIT_SECRET
+        || (process.env.NODE_ENV === 'production'
+          ? ''
+          : 'openexpert-local-booking-rate-limit-secret'),
     },
     calendarOAuth: {
       encryptionKey: '',
@@ -133,38 +209,13 @@ export default defineNuxtConfig({
     },
     public: {
       openexpert: {
+        hasAuthConfig: process.env.NODE_ENV !== 'production'
+          || Boolean(process.env.BETTER_AUTH_SECRET || process.env.NUXT_AUTH_SECRET),
         landingBaseUrl: process.env.NUXT_PUBLIC_LANDING_BASE_URL
           || (process.env.NODE_ENV === 'production'
             ? 'https://www.openexpert.app'
             : 'http://127.0.0.1:3003'),
       },
-      supabase: {
-        url: process.env.NUXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:55321',
-        key: process.env.NUXT_PUBLIC_SUPABASE_KEY || 'local-development-placeholder',
-      },
-    },
-  },
-  supabase: {
-    types: databaseTypes,
-    cookiePrefix: process.env.NODE_ENV === 'production' ? undefined : 'openexpert-local-auth',
-    cookieOptions: {
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    },
-    redirectOptions: {
-      login: '/login',
-      callback: '/confirm',
-      exclude: [
-        '/login',
-        '/client/login',
-        '/register',
-        '/confirm',
-        '/forgot-password',
-        '/reset-password',
-        '/design',
-        '/book/*',
-      ],
-      saveRedirectToCookie: true,
     },
   },
   app: {

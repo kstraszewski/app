@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { setHeader } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -14,8 +14,8 @@ export default defineEventHandler(async (event) => {
   const facilityIds = await listAccessibleFacilityIds(session)
   if (facilityIds?.length === 0) return { data: [] }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  let request = serviceRole
+  const backendData = serverDataBackend(event) as any
+  let request = backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', session.organizationId)
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(result.error)
   return {
     data: await normalizeCrmMeetingRecords(
-      serviceRole,
+      backendData,
       session.organizationId,
       result.data ?? [],
     ),

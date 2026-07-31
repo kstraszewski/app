@@ -145,7 +145,7 @@ async function loadAllOrganizationRows(
   let offset = 0
 
   while (true) {
-    let query = session.supabase
+    let query = session.dataApi
       .from(table)
       .select(select)
       .eq('organization_id', session.organizationId)
@@ -204,7 +204,7 @@ async function loadSalesItems(session: CrmSession, ownerUserIds: string[]): Prom
     let offset = 0
 
     while (true) {
-      const result = await session.supabase
+      const result = await session.dataApi
         .from('crm_case_items')
         .select(`
           id,
@@ -253,7 +253,7 @@ async function loadRowsByIds(
   const rows: Row[] = []
 
   for (const batch of chunks([...new Set(ids)])) {
-    const result = await session.supabase
+    const result = await session.dataApi
       .from(table)
       .select(select)
       .eq('organization_id', session.organizationId)

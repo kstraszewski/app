@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getQuery, setHeader } from 'h3'
 import {
   getRequiredParam,
@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
 
   // This RLS-scoped query is the authorization boundary. Service role is used
   // below only to enrich these already-authorized grant rows with request data.
-  const grantResult = await session.supabase
+  const grantResult = await session.dataApi
     .from('crm_client_anonymization_execution_grants')
     .select(`
       id,
@@ -131,9 +131,9 @@ export default defineEventHandler(async (event) => {
     return { data: [], limit }
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const requestIds = uniqueStrings(grants.map(grant => grant.request_id))
-  const requestResult = await serviceRole
+  const requestResult = await backendData
     .from('crm_client_anonymization_requests')
     .select('id, client_id, request_number, status, due_at')
     .eq('organization_id', session.organizationId)
@@ -152,13 +152,13 @@ export default defineEventHandler(async (event) => {
 
   const [clientsResult, usersResult] = await Promise.all([
     clientIds.length
-      ? serviceRole
+      ? backendData
           .from('crm_clients')
           .select('id, display_name')
           .eq('organization_id', session.organizationId)
           .in('id', clientIds)
       : Promise.resolve({ data: [], error: null }),
-    serviceRole
+    backendData
       .from('users')
       .select('id, full_name, email, avatar_url')
       .in('id', userIds),

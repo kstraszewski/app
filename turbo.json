@@ -13,6 +13,9 @@
     "db:reset": {
       "cache": false
     },
+    "db:migrate": {
+      "cache": false
+    },
     "db:seed-demo": {
       "cache": false
     },
@@ -26,9 +29,6 @@
       "cache": false
     },
     "db:stop": {
-      "cache": false
-    },
-    "db:types": {
       "cache": false
     },
     "db:verify": {
@@ -51,6 +51,29 @@
     "typecheck": {
       "dependsOn": ["^typecheck"],
       "cache": false
+    },
+    "trigger:deploy": {
+      "cache": false,
+      "passThroughEnv": [
+        "TRIGGER_ACCESS_TOKEN",
+        "TRIGGER_API_URL",
+        "TRIGGER_PROJECT_REF",
+        "TRIGGER_SECRET_KEY"
+      ]
+    },
+    "trigger:dev": {
+      "cache": false,
+      "passThroughEnv": [
+        "TRIGGER_API_URL",
+        "TRIGGER_PROJECT_REF",
+        "TRIGGER_SECRET_KEY"
+      ],
+      "persistent": true
+    },
+    "trigger:login": {
+      "cache": false,
+      "interactive": true,
+      "passThroughEnv": ["TRIGGER_API_URL"]
     },
     "dev": {
       "dependsOn": ["prepare"],

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { randomUUID } from 'node:crypto'
 import {
   getRequestURL,
@@ -101,12 +101,12 @@ function idempotentMeetingMatches(
 }
 
 async function findIdempotentAppointment(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   userId: string,
   idempotencyKey: string,
 ): Promise<Record<string, any> | null> {
-  const result = await serviceRole
+  const result = await backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', organizationId)
@@ -119,18 +119,18 @@ async function findIdempotentAppointment(
 }
 
 async function loadClientContext(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   clientId: string,
 ): Promise<ClientContext> {
   const [clientResult, personResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('crm_clients')
       .select('id, display_name, primary_email, primary_phone')
       .eq('organization_id', organizationId)
       .eq('id', clientId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('crm_client_people')
       .select('id, display_name, email, email_normalized, phone, phone_normalized, role, created_at')
       .eq('organization_id', organizationId)
@@ -186,7 +186,7 @@ async function loadClientContext(
 }
 
 async function loadSchedulingContext(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   facilityId: string,
   serviceId: string,
@@ -194,14 +194,14 @@ async function loadSchedulingContext(
   facility: Record<string, any>,
 ): Promise<SchedulingContext> {
   const [serviceResult, facilityServiceResult, expertResult, membershipResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('booking_services')
       .select('id, duration_minutes, buffer_before_minutes, buffer_after_minutes')
       .eq('organization_id', organizationId)
       .eq('id', serviceId)
       .eq('is_active', true)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('facility_services')
       .select('service_id')
       .eq('organization_id', organizationId)
@@ -209,7 +209,7 @@ async function loadSchedulingContext(
       .eq('service_id', serviceId)
       .eq('is_active', true)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('facility_service_experts')
       .select('user_id')
       .eq('organization_id', organizationId)
@@ -218,7 +218,7 @@ async function loadSchedulingContext(
       .eq('user_id', expertUserId)
       .eq('is_active', true)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('facility_memberships')
       .select('user_id')
       .eq('organization_id', organizationId)
@@ -268,18 +268,18 @@ async function loadSchedulingContext(
 }
 
 async function resolveLinkedCase(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   caseId: string,
 ): Promise<{ caseId: string, clientId: string }> {
   const [caseResult, linksResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('crm_cases')
       .select('id')
       .eq('organization_id', organizationId)
       .eq('id', caseId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('crm_case_clients')
       .select('client_id, is_primary, created_at')
       .eq('organization_id', organizationId)
@@ -298,12 +298,12 @@ async function resolveLinkedCase(
 }
 
 async function rollbackCase(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   caseId: string | null,
 ): Promise<void> {
   if (!caseId) return
-  const result = await serviceRole
+  const result = await backendData
     .from('crm_cases')
     .delete()
     .eq('organization_id', organizationId)
@@ -314,12 +314,12 @@ async function rollbackCase(
 }
 
 async function rollbackAppointment(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   appointmentId: string,
   updatedAt: string,
 ): Promise<void> {
-  const result = await serviceRole
+  const result = await backendData
     .from('appointments')
     .delete()
     .eq('organization_id', organizationId)
@@ -332,7 +332,7 @@ async function rollbackAppointment(
 
 async function createInstantAppointment(
   event: Parameters<typeof getRequestURL>[0],
-  serviceRole: any,
+  backendData: any,
   input: {
     organizationId: string
     facilityId: string
@@ -357,7 +357,7 @@ async function createInstantAppointment(
   )
   const busyPeriod = `[${busyStartsAt.toISOString()},${busyEndsAt.toISOString()})`
 
-  const conflictResult = await serviceRole
+  const conflictResult = await backendData
     .from('appointment_resource_reservations')
     .select('id')
     .eq('resource_type', 'expert')
@@ -370,7 +370,7 @@ async function createInstantAppointment(
     throw createError({ statusCode: 409, statusMessage: 'This expert already has a booking now' })
   }
 
-  const insertResult = await serviceRole
+  const insertResult = await backendData
     .from('appointments')
     .insert({
       id: appointmentId,
@@ -411,7 +411,7 @@ async function createInstantAppointment(
 
 async function attachScheduledMeetingContext(
   event: Parameters<typeof getRequestURL>[0],
-  serviceRole: any,
+  backendData: any,
   input: {
     organizationId: string
     appointmentId: string
@@ -419,7 +419,7 @@ async function attachScheduledMeetingContext(
     idempotencyInput: Parameters<typeof idempotentMeetingMatches>[1]
   },
 ): Promise<{ row: Record<string, any>, wonUpdate: boolean }> {
-  const currentResult = await serviceRole
+  const currentResult = await backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', input.organizationId)
@@ -434,7 +434,7 @@ async function attachScheduledMeetingContext(
     return { row: current, wonUpdate: false }
   }
 
-  const updateResult = await serviceRole
+  const updateResult = await backendData
     .from('appointments')
     .update({
       booking_context: input.bookingContext,
@@ -447,7 +447,7 @@ async function attachScheduledMeetingContext(
     .maybeSingle()
   if (updateResult.error) {
     await rollbackAppointment(
-      serviceRole,
+      backendData,
       input.organizationId,
       input.appointmentId,
       String(current.updated_at),
@@ -456,7 +456,7 @@ async function attachScheduledMeetingContext(
   }
   if (updateResult.data) return { row: updateResult.data, wonUpdate: true }
 
-  const concurrentResult = await serviceRole
+  const concurrentResult = await backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', input.organizationId)
@@ -493,9 +493,9 @@ export default defineEventHandler(async (event) => {
 
   const facilityAccess = await requireFacilityPermission(session, facilityId, 'view')
   await assertFacilityBookableMemberIds(session, facilityId, [expertUserId])
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const scheduling = await loadSchedulingContext(
-    serviceRole,
+    backendData,
     session.organizationId,
     facilityId,
     serviceId,
@@ -512,7 +512,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const existing = await findIdempotentAppointment(
-    serviceRole,
+    backendData,
     session.organizationId,
     session.userId,
     idempotencyKey,
@@ -527,7 +527,7 @@ export default defineEventHandler(async (event) => {
     setHeader(event, 'Cache-Control', 'no-store')
     return {
       data: await normalizeCrmMeetingRecord(
-        serviceRole,
+        backendData,
         session.organizationId,
         existing,
       ),
@@ -541,25 +541,25 @@ export default defineEventHandler(async (event) => {
 
   if (caseRequest.mode === 'link') {
     const linkedCase = await resolveLinkedCase(
-      serviceRole,
+      backendData,
       session.organizationId,
       caseRequest.caseId,
     )
     caseId = linkedCase.caseId
     relationship = 'follow-up'
     client = await loadClientContext(
-      serviceRole,
+      backendData,
       session.organizationId,
       linkedCase.clientId,
     )
   } else {
     client = await loadClientContext(
-      serviceRole,
+      backendData,
       session.organizationId,
       caseRequest.clientId,
     )
     const caseTitle = caseRequest.title || `Sprawa — ${client.customerName}`
-    const caseResult = await session.supabase.rpc('create_crm_case_simple', {
+    const caseResult = await session.dataApi.rpc('create_crm_case_simple', {
       p_organization_id: session.organizationId,
       p_title: caseTitle,
       p_client_ids: [client.clientId],
@@ -579,7 +579,7 @@ export default defineEventHandler(async (event) => {
   try {
     if (timing === 'now') {
       try {
-        appointment = await createInstantAppointment(event, serviceRole, {
+        appointment = await createInstantAppointment(event, backendData, {
           organizationId: session.organizationId,
           facilityId,
           serviceId,
@@ -594,13 +594,13 @@ export default defineEventHandler(async (event) => {
       } catch (error: any) {
         if (String(error?.data?.databaseCode ?? '') === '23505') {
           const concurrent = await findIdempotentAppointment(
-            serviceRole,
+            backendData,
             session.organizationId,
             session.userId,
             idempotencyKey,
           )
           if (concurrent && idempotentMeetingMatches(concurrent, idempotencyInput)) {
-            await rollbackCase(serviceRole, session.organizationId, createdCaseId)
+            await rollbackCase(backendData, session.organizationId, createdCaseId)
             createdCaseId = null
             appointment = concurrent
           } else {
@@ -611,7 +611,7 @@ export default defineEventHandler(async (event) => {
         }
       }
     } else {
-      const bookingResult = await serviceRole.rpc('create_staff_appointment', {
+      const bookingResult = await backendData.rpc('create_staff_appointment', {
         p_organization_id: session.organizationId,
         p_facility_id: facilityId,
         p_service_id: serviceId,
@@ -628,14 +628,14 @@ export default defineEventHandler(async (event) => {
       if (bookingResult.error) throwBookingError(bookingResult.error)
       const appointmentPayload = asRecord(asRecord(bookingResult.data).appointment)
       const appointmentId = uuidValue(appointmentPayload.id, 'appointment id')
-      const attached = await attachScheduledMeetingContext(event, serviceRole, {
+      const attached = await attachScheduledMeetingContext(event, backendData, {
         organizationId: session.organizationId,
         appointmentId,
         bookingContext,
         idempotencyInput,
       })
       if (!idempotentMeetingMatches(attached.row, idempotencyInput)) {
-        await rollbackCase(serviceRole, session.organizationId, createdCaseId)
+        await rollbackCase(backendData, session.organizationId, createdCaseId)
         createdCaseId = null
         throw createError({
           statusCode: 409,
@@ -645,19 +645,19 @@ export default defineEventHandler(async (event) => {
       if (!attached.wonUpdate && createdCaseId) {
         const attachedContext = parseCrmMeetingContext(attached.row.booking_context)
         if (attachedContext?.caseId !== createdCaseId) {
-          await rollbackCase(serviceRole, session.organizationId, createdCaseId)
+          await rollbackCase(backendData, session.organizationId, createdCaseId)
           createdCaseId = null
         }
       }
       appointment = attached.row
     }
   } catch (error) {
-    await rollbackCase(serviceRole, session.organizationId, createdCaseId)
+    await rollbackCase(backendData, session.organizationId, createdCaseId)
     throw error
   }
 
   const meeting = await normalizeCrmMeetingRecord(
-    serviceRole,
+    backendData,
     session.organizationId,
     appointment,
   )

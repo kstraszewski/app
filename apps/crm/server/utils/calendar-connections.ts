@@ -71,7 +71,7 @@ export async function requireCalendarOwnerManager(
     if (ownerId !== session.userId && session.role !== 'admin') {
       throw createError({ statusCode: 403, statusMessage: 'You can connect only your own expert calendar' })
     }
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('organization_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)

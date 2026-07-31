@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const userId = uuidValue(body.userId ?? body.user_id, 'userId')
   await assertOrganizationMemberIds(session, [userId])
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_memberships')
     .upsert({
       organization_id: session.organizationId,

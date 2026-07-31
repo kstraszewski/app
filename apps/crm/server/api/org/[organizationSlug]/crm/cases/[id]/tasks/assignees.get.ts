@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   }
 
-  const caseResult = await session.supabase
+  const caseResult = await session.dataApi
     .from('crm_cases')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -34,12 +34,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const [membersResult, recentResult, openTasksResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
       .neq('user_id', session.userId),
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select('assignee_user_id, delegated_at')
       .eq('organization_id', session.organizationId)
@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
       .not('assignee_user_id', 'is', null)
       .order('delegated_at', { ascending: false })
       .limit(500),
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select('assignee_user_id')
       .eq('organization_id', session.organizationId)
@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
   const [profileById, teamMembershipsResult] = await Promise.all([
     loadOrganizationProfiles(session, memberIds),
     memberIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('team_memberships')
           .select(`
             user_id,

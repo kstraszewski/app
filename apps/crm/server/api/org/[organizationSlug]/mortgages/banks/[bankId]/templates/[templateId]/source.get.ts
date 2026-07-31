@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError } from 'h3'
 import {
   mortgageBackofficeUuid,
@@ -27,8 +27,8 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
   const templateId = mortgageTemplateKey(getRequiredParam(event, 'templateId'))
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: bank, error: bankError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: bank, error: bankError } = await backendData
     .from('mortgage_banks')
     .select('slug')
     .eq('id', bankId)

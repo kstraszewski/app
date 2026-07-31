@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   await requireOrganizationMember(session, userId)
   await requireAdministrativePermission(session, 'iam.grants.manage')
 
-  const grantResult = await session.supabase
+  const grantResult = await session.dataApi
     .from('crm_client_anonymization_execution_grants')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Anonymization grant not found' })
   }
 
-  const { data, error } = await session.supabase.rpc(
+  const { data, error } = await session.dataApi.rpc(
     'revoke_crm_client_anonymization_execution_grant',
     {
       p_organization_id: session.organizationId,

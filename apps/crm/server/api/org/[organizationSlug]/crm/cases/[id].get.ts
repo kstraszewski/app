@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   }
 
-  const { data: caseRow, error } = await session.supabase
+  const { data: caseRow, error } = await session.dataApi
     .from('crm_cases')
     .select('id, organization_id, owner_user_id, title, description, status_code, priority, progress_percent, opened_at, closed_at, created_at, updated_at')
     .eq('organization_id', session.organizationId)
@@ -39,50 +39,50 @@ export default defineEventHandler(async (event) => {
     documentsResult,
     itemsResult,
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_case_clients')
       .select('client_id, is_primary, created_at')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .order('is_primary', { ascending: false })
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('crm_case_offer_snapshots')
       .select('id, case_id, bank_id, mortgage_product_id, mortgage_product_version_id, offer_type, bank_name, product_name, version_key, calculator_version, currency, loan_amount, first_installment, first_monthly_outflow, cost_first_five_years, total_cost, representative_apr_pct, scenario_snapshot, catalog_snapshot, calculation_snapshot, saved_at')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .order('saved_at', { ascending: false }),
-    session.supabase
+    session.dataApi
       .from('crm_case_offer_selections')
       .select('offer_id')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_case_property_selections')
       .select('property_id')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_case_bank_applications')
       .select('submission_id, case_id, case_item_id, offer_id, bank_id, property_id, slot, created_by_user_id, created_at, snapshot_status, snapshot_schema_version, calculator_version, comparison_baseline_offer_id, scenario_snapshot, calculation_snapshot, purchase_price_amount, appraisal_value_amount, net_loan_amount, gross_loan_amount, financed_costs, ltv_debt_basis, collateral_value_basis, ltv_debt_amount, collateral_value_amount, ltv_pct, first_installment, first_monthly_outflow, cost_first_five_years, total_cost, calculated_at')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .order('slot'),
-    session.supabase
+    session.dataApi
       .from('crm_case_contract_selections')
       .select('application_id, signed_at')
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_documents')
       .select(caseDocumentPublicSelect)
       .eq('organization_id', session.organizationId)
       .eq('case_id', id)
       .order('created_at', { ascending: false }),
-    session.supabase
+    session.dataApi
       .from('crm_case_items')
       .select(`
         id,
@@ -136,32 +136,32 @@ export default defineEventHandler(async (event) => {
 
   const [clientsResult, banksResult, propertiesResult, submissionsResult, tasksResult, activitiesResult] = await Promise.all([
     clientIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('crm_clients')
           .select('id, display_name, primary_email, primary_phone')
           .eq('organization_id', session.organizationId)
           .in('id', clientIds)
       : Promise.resolve({ data: [], error: null }),
     bankIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('mortgage_banks')
           .select('id, logo_url, logo_background_color')
           .in('id', bankIds)
       : Promise.resolve({ data: [], error: null }),
-    session.supabase
+    session.dataApi
       .from('crm_properties')
       .select(propertyPublicSelect)
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('updated_at', { ascending: false }),
     submissionIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('crm_item_submissions')
           .select('id, status_code, external_reference, submitted_at, decision_at, notes, metadata, created_at, updated_at')
           .eq('organization_id', session.organizationId)
           .in('id', submissionIds)
       : Promise.resolve({ data: [], error: null }),
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select('id, assignee_user_id, client_id, case_id, case_item_id, title, description, status_code, priority, due_at, completed_at, metadata, created_at, updated_at')
       .eq('organization_id', session.organizationId)
@@ -170,7 +170,7 @@ export default defineEventHandler(async (event) => {
       .order('due_at', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(20),
-    session.supabase
+    session.dataApi
       .from('crm_activities')
       .select('id, actor_user_id, client_id, case_id, case_item_id, submission_id, activity_type, title, body, payload, created_at')
       .eq('organization_id', session.organizationId)
@@ -194,7 +194,7 @@ export default defineEventHandler(async (event) => {
     ...activities.map(activity => activity.actor_user_id ? String(activity.actor_user_id) : null),
   ].filter((profileId): profileId is string => Boolean(profileId)))]
   const profilesResult = profileIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('organization_memberships')
         .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
         .eq('organization_id', session.organizationId)

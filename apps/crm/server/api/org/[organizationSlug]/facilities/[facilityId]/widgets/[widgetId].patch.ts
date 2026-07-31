@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
   const widgetId = uuidValue(getRouterParam(event, 'widgetId'), 'widgetId')
   const body = asRecord(await readBody(event))
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('booking_widgets')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const isSelfServiceExpert = !access.canManage
   if (isSelfServiceExpert) {
-    const { data: membership, error: membershipError } = await session.supabase
+    const { data: membership, error: membershipError } = await session.dataApi
       .from('facility_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -102,8 +102,8 @@ export default defineEventHandler(async (event) => {
   // created the widget themselves, while this endpoint already permits them
   // to manage an admin-created widget assigned permanently to their profile.
   const updateDirectoryListing = async (isDirectoryListed: boolean) => {
-    const serviceRole = serverSupabaseServiceRole(event) as any
-    const { data, error } = await serviceRole
+    const backendData = serverDataBackend(event) as any
+    const { data, error } = await backendData
       .from('booking_widgets')
       .update({ is_directory_listed: isDirectoryListed })
       .eq('organization_id', session.organizationId)
@@ -131,7 +131,7 @@ export default defineEventHandler(async (event) => {
   if (hasServiceIds) {
     serviceIds = uuidArrayValue(body.serviceIds ?? body.service_ids, 'serviceIds')
     if (serviceIds.length) {
-      const { data, error } = await session.supabase
+      const { data, error } = await session.dataApi
         .from('facility_services')
         .select('service_id')
         .eq('organization_id', session.organizationId)
@@ -148,7 +148,7 @@ export default defineEventHandler(async (event) => {
       ? String(existing.fixed_expert_user_id)
       : null
     if (fixedExpertUserId && serviceIds.length) {
-      const { data, error } = await session.supabase
+      const { data, error } = await session.dataApi
         .from('facility_service_experts')
         .select('service_id')
         .eq('organization_id', session.organizationId)
@@ -164,7 +164,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { error: updateError } = await session.supabase.rpc('update_booking_widget_configuration', {
+  const { error: updateError } = await session.dataApi.rpc('update_booking_widget_configuration', {
     p_organization_id: session.organizationId,
     p_facility_id: access.facility.id,
     p_widget_id: widgetId,
@@ -183,14 +183,14 @@ export default defineEventHandler(async (event) => {
   }
 
   const [widgetResult, servicesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('booking_widgets')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', access.facility.id)
       .eq('id', widgetId)
       .single(),
-    session.supabase
+    session.dataApi
       .from('booking_widget_services')
       .select('service_id')
       .eq('organization_id', session.organizationId)

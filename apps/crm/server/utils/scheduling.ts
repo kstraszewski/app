@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { useRuntimeConfig } from '#imports'
 import type { MortgageCapacityPolicy } from '@openexpert/mortgage'
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
@@ -339,7 +339,7 @@ function normalizeOrigin(value: string, field = 'origin'): string {
 }
 
 export async function getPublicSchedulingClient(event: H3Event): Promise<any> {
-  return serverSupabaseServiceRole(event) as any
+  return serverDataBackend(event) as any
 }
 
 export type BookingWidgetAnalyticsEvent =
@@ -367,8 +367,8 @@ export async function recordBookingWidgetEvent(
   },
 ): Promise<void> {
   try {
-    const supabase = await getPublicSchedulingClient(event)
-    const { error } = await supabase.rpc('record_booking_widget_event', {
+    const dataApi = await getPublicSchedulingClient(event)
+    const { error } = await dataApi.rpc('record_booking_widget_event', {
       p_widget_token: input.widgetKey,
       p_visit_id: input.visitId,
       p_event_type: input.eventType,
@@ -395,8 +395,8 @@ export async function ensureGenericMeetingService(
   organizationId: string,
   facilityId: string,
 ): Promise<Record<string, any>> {
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: service, error: serviceError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: service, error: serviceError } = await backendData
     .from('booking_services')
     .upsert({
       organization_id: organizationId,
@@ -415,7 +415,7 @@ export async function ensureGenericMeetingService(
     .single()
   throwDbError(serviceError)
 
-  const { error: facilityServiceError } = await serviceRole
+  const { error: facilityServiceError } = await backendData
     .from('facility_services')
     .upsert({
       organization_id: organizationId,
@@ -425,7 +425,7 @@ export async function ensureGenericMeetingService(
     }, { onConflict: 'organization_id,facility_id,service_id' })
   throwDbError(facilityServiceError)
 
-  const { data: experts, error: expertsError } = await serviceRole
+  const { data: experts, error: expertsError } = await backendData
     .from('facility_memberships')
     .select('user_id')
     .eq('organization_id', organizationId)
@@ -434,7 +434,7 @@ export async function ensureGenericMeetingService(
   throwDbError(expertsError)
 
   if (experts?.length) {
-    const { error: assignmentsError } = await serviceRole
+    const { error: assignmentsError } = await backendData
       .from('facility_service_experts')
       .upsert(
         experts.map((expert: any) => ({
@@ -458,8 +458,8 @@ export async function findConfiguredGenericMeetingService(
   facilityId: string,
   expertUserId: string,
 ): Promise<Record<string, any> | null> {
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: service, error: serviceError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: service, error: serviceError } = await backendData
     .from('booking_services')
     .select('id, organization_id, name, slug, duration_minutes')
     .eq('organization_id', organizationId)
@@ -470,7 +470,7 @@ export async function findConfiguredGenericMeetingService(
   if (!service) return null
 
   const [facilityServiceResult, expertAssignmentResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('facility_services')
       .select('service_id')
       .eq('organization_id', organizationId)
@@ -478,7 +478,7 @@ export async function findConfiguredGenericMeetingService(
       .eq('service_id', service.id)
       .eq('is_active', true)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('facility_service_experts')
       .select('user_id')
       .eq('organization_id', organizationId)
@@ -510,16 +510,13 @@ export async function assertPublicBookingRateLimit(
   const clientAddress = getRequestIP(event, { xForwardedFor: trustProxy })
     || (trustProxy ? getHeader(event, 'x-real-ip') : null)
     || 'unknown'
-  const supabaseConfig = config.supabase as { secretKey?: string; serviceKey?: string }
   const rateLimitSecret = rateLimitConfig?.rateLimitSecret
-    || supabaseConfig.secretKey
-    || supabaseConfig.serviceKey
     || 'openexpert-booking-rate-limit'
   const clientKey = createHmac('sha256', rateLimitSecret)
     .update(clientAddress, 'utf8')
     .digest('base64url')
-  const supabase = await getPublicSchedulingClient(event)
-  const { data, error } = await supabase.rpc('consume_booking_rate_limit', {
+  const dataApi = await getPublicSchedulingClient(event)
+  const { data, error } = await dataApi.rpc('consume_booking_rate_limit', {
     p_widget_token: widgetKey,
     p_scope: scope,
     p_client_key: clientKey,
@@ -537,10 +534,7 @@ export async function assertPublicBookingRateLimit(
 function bookingPreviewSecret(event: H3Event): string {
   const config = useRuntimeConfig(event)
   const bookingSecurity = config.bookingSecurity as { rateLimitSecret?: string }
-  const supabaseConfig = config.supabase as { secretKey?: string, serviceKey?: string }
   const secret = bookingSecurity?.rateLimitSecret
-    || supabaseConfig.secretKey
-    || supabaseConfig.serviceKey
   if (!secret) {
     throw createError({
       statusCode: 503,
@@ -585,12 +579,12 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
   if (await hasAdministrativePermission(session, 'structure.manage')) return null
 
   const [facilityMemberships, teamMemberships, teamAdminScope] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('facility_memberships')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
       .eq('user_id', session.userId),
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('team_id')
       .eq('organization_id', session.organizationId)
@@ -608,7 +602,7 @@ export async function listAccessibleFacilityIds(session: CrmSession): Promise<st
     ...teamAdminScope.managedTeamIds,
   ])]
   if (teamIds.length) {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('team_facilities')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
@@ -625,7 +619,7 @@ export async function requireFacilityPermission(
   permission: FacilityPermission = 'view',
 ): Promise<FacilityAccess> {
   const facilityId = uuidValue(facilityIdInput, 'facilityId')
-  const { data: facility, error: facilityError } = await session.supabase
+  const { data: facility, error: facilityError } = await session.dataApi
     .from('facilities')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -652,7 +646,7 @@ export async function requireFacilityPermission(
     })
   }
 
-  const { data: directMembership, error: membershipError } = await session.supabase
+  const { data: directMembership, error: membershipError } = await session.dataApi
     .from('facility_memberships')
     .select('role')
     .eq('organization_id', session.organizationId)
@@ -670,7 +664,7 @@ export async function requireFacilityPermission(
     }
   }
 
-  const { data: links, error: linksError } = await session.supabase
+  const { data: links, error: linksError } = await session.dataApi
     .from('team_facilities')
     .select('team_id')
     .eq('organization_id', session.organizationId)
@@ -678,7 +672,7 @@ export async function requireFacilityPermission(
   throwDbError(linksError)
   const teamIds = (links ?? []).map((row: any) => String(row.team_id))
   if (teamIds.length) {
-    const { data: teamMembership, error: teamError } = await session.supabase
+    const { data: teamMembership, error: teamError } = await session.dataApi
       .from('team_memberships')
       .select('role')
       .eq('organization_id', session.organizationId)
@@ -715,7 +709,7 @@ export async function assertOrganizationMemberIds(
   userIds: string[],
 ): Promise<void> {
   if (!userIds.length) return
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('organization_memberships')
     .select('user_id')
     .eq('organization_id', session.organizationId)
@@ -733,7 +727,7 @@ export async function assertFacilityBookableMemberIds(
   userIds: string[],
 ): Promise<void> {
   if (!userIds.length) return
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_memberships')
     .select('user_id')
     .eq('organization_id', session.organizationId)

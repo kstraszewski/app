@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     requireFacilityAdminMembership(session, facilityId),
   ])
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('team_facilities')
     .delete()
     .eq('organization_id', session.organizationId)

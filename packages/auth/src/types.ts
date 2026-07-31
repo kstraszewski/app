@@ -1,0 +1,80 @@
+export const OPENEXPERT_AUTHENTICATED_ROLE = 'authenticated' as const
+
+export interface OpenExpertAuthUser {
+  id: string
+  name: string
+  email: string
+  emailVerified: boolean
+  image: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface OpenExpertAuthClaims {
+  sub: string
+  role: typeof OPENEXPERT_AUTHENTICATED_ROLE
+  email: string
+  emailVerified: boolean
+}
+
+export interface OpenExpertEmailUser {
+  id: string
+  name: string
+  email: string
+}
+
+export type OpenExpertAuthEmail =
+  | {
+      kind: 'email-verification'
+      to: string
+      user: OpenExpertEmailUser
+      url: string
+      token: string
+      request?: Request
+    }
+  | {
+      kind: 'password-reset'
+      to: string
+      user: OpenExpertEmailUser
+      url: string
+      token: string
+      request?: Request
+    }
+  | {
+      kind: 'magic-link'
+      to: string
+      url: string
+      token: string
+      metadata?: Record<string, unknown>
+      request?: Request
+    }
+
+export interface OpenExpertAuthEmailSender {
+  send(message: OpenExpertAuthEmail): Promise<void>
+}
+
+export interface OpenExpertAuthConfig {
+  appName?: string
+  baseURL: string
+  basePath?: string
+  secret: string
+  databaseURL: string
+  databaseSchema?: string
+  trustedOrigins?: string[]
+  cookiePrefix?: string
+  cookieDomain?: string
+  disableSignUp?: boolean
+  requireEmailVerification?: boolean
+  minPasswordLength?: number
+  maxPasswordLength?: number
+  bcryptCost?: number
+  sessionExpiresIn?: number
+  sessionUpdateAge?: number
+  verificationExpiresIn?: number
+  resetPasswordExpiresIn?: number
+  magicLinkExpiresIn?: number
+  magicLinkDisableSignUp?: boolean
+  jwtExpiresIn?: number
+  jwksRotationInterval?: number
+  jwksGracePeriod?: number
+}

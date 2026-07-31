@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody, setHeader } from 'h3'
 import {
   confirmedClientEmail,
@@ -12,35 +12,27 @@ export default defineEventHandler(async (event) => {
   const identity = await requireAuthIdentity(event)
   const body = asRecord(await readBody(event))
   const appointmentId = uuidValue(body.appointmentId, 'appointmentId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
-  const [authUserResult, appointmentResult] = await Promise.all([
-    serviceRole.auth.admin.getUserById(identity.userId),
-    serviceRole
-      .from('appointments')
-      .select(`
-        id,
-        organization_id,
-        client_id,
-        client_person_id,
-        customer_email
-      `)
-      .eq('id', appointmentId)
-      .maybeSingle(),
-  ])
-
-  if (authUserResult.error) {
-    throw createError({ statusCode: 401, statusMessage: 'Authentication required' })
-  }
+  const appointmentResult = await backendData
+    .from('appointments')
+    .select(`
+      id,
+      organization_id,
+      client_id,
+      client_person_id,
+      customer_email
+    `)
+    .eq('id', appointmentId)
+    .maybeSingle()
   throwDbError(appointmentResult.error)
 
-  const authUser = authUserResult.data?.user
   const appointment = appointmentResult.data
-  if (!authUser || !appointment?.client_id || !appointment.client_person_id) {
+  if (!identity.emailVerified || !appointment?.client_id || !appointment.client_person_id) {
     throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
   }
 
-  const personResult = await serviceRole
+  const personResult = await backendData
     .from('crm_client_people')
     .select('email_normalized')
     .eq('organization_id', appointment.organization_id)
@@ -50,8 +42,8 @@ export default defineEventHandler(async (event) => {
   throwDbError(personResult.error)
 
   if (!hasMatchingVerifiedClientEmail({
-    authEmail: authUser.email,
-    emailConfirmedAt: authUser.email_confirmed_at,
+    authEmail: identity.email,
+    emailConfirmedAt: identity.emailConfirmedAt,
     appointmentEmail: appointment.customer_email,
     personEmailNormalized: personResult.data?.email_normalized,
   })) {
@@ -61,8 +53,8 @@ export default defineEventHandler(async (event) => {
     })
   }
   const verifiedContactNormalized = confirmedClientEmail(
-    authUser.email,
-    authUser.email_confirmed_at,
+    identity.email,
+    identity.emailConfirmedAt,
   )
 
   const organizationId = String(appointment.organization_id)
@@ -70,7 +62,7 @@ export default defineEventHandler(async (event) => {
   const clientPersonId = String(appointment.client_person_id)
   const verificationMethod = 'email'
 
-  const activeLinkResult = await serviceRole
+  const activeLinkResult = await backendData
     .from('client_account_links')
     .select('auth_user_id')
     .eq('organization_id', organizationId)
@@ -89,7 +81,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const existingOwnLinkResult = await serviceRole
+  const existingOwnLinkResult = await backendData
     .from('client_account_links')
     .select('auth_user_id, revoked_at')
     .eq('auth_user_id', identity.userId)
@@ -106,13 +98,13 @@ export default defineEventHandler(async (event) => {
     revoked_at: null,
   }
   const linkResult = existingOwnLinkResult.data
-    ? await serviceRole
+    ? await backendData
         .from('client_account_links')
         .update(linkValues)
         .eq('auth_user_id', identity.userId)
         .eq('organization_id', organizationId)
         .eq('client_person_id', clientPersonId)
-    : await serviceRole
+    : await backendData
         .from('client_account_links')
         .insert({
           auth_user_id: identity.userId,
@@ -123,7 +115,7 @@ export default defineEventHandler(async (event) => {
         })
 
   if (linkResult.error?.code === '23505') {
-    const concurrentLinkResult = await serviceRole
+    const concurrentLinkResult = await backendData
       .from('client_account_links')
       .select('auth_user_id, verified_contact_normalized')
       .eq('organization_id', organizationId)

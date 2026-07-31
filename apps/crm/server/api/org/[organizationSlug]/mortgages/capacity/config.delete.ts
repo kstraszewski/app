@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   await requireAdministrativePermission(session, 'crm.configuration.manage')
   const body = asRecord(await readBody(event))
   const expectedRevision = capacityExpectedRevision(body.expectedRevision)
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('mortgage_capacity_settings')
     .select('revision')
     .eq('organization_id', session.organizationId)
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: removed, error } = await session.supabase
+  const { data: removed, error } = await session.dataApi
     .from('mortgage_capacity_settings')
     .delete()
     .eq('organization_id', session.organizationId)

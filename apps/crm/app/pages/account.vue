@@ -3,7 +3,7 @@ import type { AccountContexts } from '~/types/account'
 
 definePageMeta({ middleware: 'auth', layout: false })
 
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
 const accountCacheScope = String(authenticatedUser.value?.sub ?? 'anonymous')
 const { data: contexts, status, error, refresh } = await useFetch<AccountContexts>(
   '/api/me/contexts',

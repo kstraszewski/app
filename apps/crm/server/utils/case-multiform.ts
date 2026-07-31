@@ -86,13 +86,13 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   await requireCrmCase(session, caseId)
 
   const [applicationsResult, contractResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_case_bank_applications')
       .select('submission_id, case_item_id, offer_id, slot')
       .eq('organization_id', session.organizationId)
       .eq('case_id', caseId)
       .order('slot', { ascending: true }),
-    session.supabase
+    session.dataApi
       .from('crm_case_contract_selections')
       .select('application_id')
       .eq('organization_id', session.organizationId)
@@ -111,7 +111,7 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   }
 
   const allApplicationIds = applications.map(application => String(application.submission_id))
-  const { data: submissions, error: submissionsError } = await session.supabase
+  const { data: submissions, error: submissionsError } = await session.dataApi
     .from('crm_item_submissions')
     .select('id, status_code')
     .eq('organization_id', session.organizationId)
@@ -143,7 +143,7 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   }
 
   const offerIds = selectedApplications.map(application => String(application.offer_id))
-  const { data: offers, error: offersError } = await session.supabase
+  const { data: offers, error: offersError } = await session.dataApi
     .from('crm_case_offer_snapshots')
     .select('id, bank_name, product_name, catalog_snapshot')
     .eq('organization_id', session.organizationId)
@@ -195,9 +195,10 @@ function multiformServiceTarget(event: H3Event, path: string) {
   return new URL(path.replace(/^\/+/, ''), base)
 }
 
-function supabaseAuthCookieHeader(event: H3Event) {
+function authCookieHeader(event: H3Event) {
   const cookieHeader = getHeader(event, 'cookie') ?? ''
-  const prefix = String(useRuntimeConfig(event).public.supabase?.cookiePrefix || '').trim()
+  const authConfig = useRuntimeConfig(event).auth as { cookiePrefix?: string }
+  const prefix = String(authConfig.cookiePrefix || '').trim()
   if (!cookieHeader || !prefix) return ''
   return cookieHeader
     .split(';')
@@ -214,7 +215,7 @@ function forwardedHeaders(event: H3Event) {
     accept: 'application/json, application/zip',
     'content-type': 'application/json',
   })
-  const authCookies = supabaseAuthCookieHeader(event)
+  const authCookies = authCookieHeader(event)
   const authorization = getHeader(event, 'authorization')
   if (authCookies) headers.set('cookie', authCookies)
   if (authorization) headers.set('authorization', authorization)

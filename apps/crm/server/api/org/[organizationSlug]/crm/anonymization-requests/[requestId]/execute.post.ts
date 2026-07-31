@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
 
   setHeader(event, 'Cache-Control', 'private, no-store')
 
-  const { data, error } = await session.supabase.rpc(
+  const { data, error } = await session.dataApi.rpc(
     'execute_crm_client_anonymization_request',
     {
       p_organization_id: session.organizationId,

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody, setHeader } from 'h3'
 import {
   asRecord,
@@ -33,8 +33,8 @@ export default defineEventHandler(async (event) => {
 
   const body = asRecord(await readBody(event))
   const action = enumValue(body.action, 'action', ['start', 'end', 'publish'] as const)
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const appointmentResult = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const appointmentResult = await backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', session.organizationId)
@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
     setHeader(event, 'Cache-Control', 'no-store')
     return {
       data: await normalizeCrmMeetingRecord(
-        serviceRole,
+        backendData,
         session.organizationId,
         appointment,
       ),
@@ -149,7 +149,7 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      const offersResult = await serviceRole
+      const offersResult = await backendData
         .from('crm_case_offer_snapshots')
         .select('id')
         .eq('organization_id', session.organizationId)
@@ -177,7 +177,7 @@ export default defineEventHandler(async (event) => {
     nextContext = { ...context, shared }
   }
 
-  const updateResult = await serviceRole
+  const updateResult = await backendData
     .from('appointments')
     .update({
       booking_context: bookingContextWithCrmMeeting(
@@ -199,7 +199,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const meeting = await normalizeCrmMeetingRecord(
-    serviceRole,
+    backendData,
     session.organizationId,
     updateResult.data,
   )

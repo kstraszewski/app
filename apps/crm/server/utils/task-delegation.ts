@@ -471,7 +471,7 @@ export async function loadOrganizationProfiles(
   )]
   if (!ids.length) return new Map()
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('organization_memberships')
     .select(`
       user_id,

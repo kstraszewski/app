@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const userId = optionalUuidValue(query.userId ?? query.user_id, 'userId')
 
-  let rulesRequest = session.supabase
+  let rulesRequest = session.dataApi
     .from('expert_availability_rules')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     .order('user_id')
     .order('weekday')
     .order('starts_at')
-  let overridesRequest = session.supabase
+  let overridesRequest = session.dataApi
     .from('expert_availability_overrides')
     .select('*')
     .eq('organization_id', session.organizationId)

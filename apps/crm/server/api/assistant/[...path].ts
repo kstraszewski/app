@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { requireCrmSession } from '~~/server/utils/crm'
 
 const assistantPathPattern = /^eve\/v1\/(?:health|info|session(?:\/[^/]+(?:\/(?:stream|cancel))?)?)$/
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (sessionId) {
-    const { data: ownedSession, error: ownershipError } = await session.supabase
+    const { data: ownedSession, error: ownershipError } = await session.dataApi
       .from('crm_eve_sessions')
       .select('session_id')
       .eq('session_id', sessionId)
@@ -75,8 +75,8 @@ export default defineEventHandler(async (event) => {
     const text = await response.text()
     const payload = responsePayload(text) as { sessionId?: unknown }
     if (response.ok && typeof payload === 'object' && payload && typeof payload.sessionId === 'string') {
-      const serviceRole = serverSupabaseServiceRole(event) as any
-      const { error } = await serviceRole.from('crm_eve_sessions').upsert({
+      const backendData = serverDataBackend(event) as any
+      const { error } = await backendData.from('crm_eve_sessions').upsert({
         session_id: payload.sessionId,
         organization_id: session.organizationId,
         user_id: session.userId,

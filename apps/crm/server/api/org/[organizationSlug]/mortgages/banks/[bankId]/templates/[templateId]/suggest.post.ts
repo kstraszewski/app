@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import {
   generateTemplateDraft,
   MultiformPdfInputError,
@@ -61,14 +61,14 @@ export default defineEventHandler(async (event) => {
   }
   mortgageTemplateJsonBytes(body.template)
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const [bankResult, templateResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_document_templates')
       .select('draft_revision')
       .eq('bank_id', bankId)

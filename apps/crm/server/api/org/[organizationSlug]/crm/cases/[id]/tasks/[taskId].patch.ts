@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   const statusCode = parseDelegatedTaskStatus(await readBody(event))
 
   async function loadTask(): Promise<Row> {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('crm_tasks')
       .select(delegatedTaskSelect)
       .eq('organization_id', session.organizationId)
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_tasks')
     .update({ status_code: statusCode })
     .eq('organization_id', session.organizationId)

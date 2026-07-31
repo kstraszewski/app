@@ -5,12 +5,12 @@ import {
 } from '~~/server/utils/mortgage-bank-files'
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBankFileAdmin(event)
+  const { session, backendData } = await requireMortgageBankFileAdmin(event)
   const query = getQuery(event)
   const versionId = Array.isArray(query.versionId) ? query.versionId[0] : query.versionId
   const pageValue = Array.isArray(query.page) ? query.page[0] : query.page
   const page = Math.max(1, Math.trunc(Number(pageValue) || 1))
-  const signedUrl = await createMortgageBankFileAccessUrl(serviceRole, {
+  const signedUrl = await createMortgageBankFileAccessUrl(backendData, {
     fileId: String(getRouterParam(event, 'fileId') ?? ''),
     versionId: typeof versionId === 'string' ? versionId : null,
     actorUserId: session.userId,

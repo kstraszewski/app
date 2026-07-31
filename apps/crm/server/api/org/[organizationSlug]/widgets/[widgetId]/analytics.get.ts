@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   const requestedDays = Number(getQuery(event).days ?? 30)
   const days = allowedRanges.has(requestedDays) ? requestedDays as 7 | 30 | 90 : 30
 
-  const { data: widget, error: widgetError } = await session.supabase
+  const { data: widget, error: widgetError } = await session.dataApi
     .from('booking_widgets')
     .select('id, facility_id')
     .eq('organization_id', session.organizationId)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Booking widget not found' })
   }
 
-  const { data: facility, error: facilityError } = await session.supabase
+  const { data: facility, error: facilityError } = await session.dataApi
     .from('facilities')
     .select('timezone')
     .eq('organization_id', session.organizationId)
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
 
   const to = localDate(String(facility.timezone || 'Europe/Warsaw'))
   const from = subtractDays(to, days - 1)
-  const { data, error } = await session.supabase.rpc('get_booking_widget_analytics', {
+  const { data, error } = await session.dataApi.rpc('get_booking_widget_analytics', {
     p_organization_id: session.organizationId,
     p_widget_id: widgetId,
     p_from: from,

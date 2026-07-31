@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const kind = textValue(getQuery(event).kind)
 
-  let request = session.supabase
+  let request = session.dataApi
     .from('crm_providers')
     .select('*')
     .eq('organization_id', session.organizationId)

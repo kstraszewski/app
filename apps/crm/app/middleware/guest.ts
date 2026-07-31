@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware(async () => {
-  const user = useSupabaseUser()
+  const user = useAuthUser()
   if (user.value) {
     try {
       const { resolvePostAuthPath } = useAuthFlow()

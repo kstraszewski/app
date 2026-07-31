@@ -13,8 +13,8 @@ export default defineEventHandler(async (event) => {
   let widgetFound = false
   try {
     const widgetKey = publicWidgetKey(decodeURIComponent(match[1]))
-    const supabase = await getPublicSchedulingClient(event)
-    const { data } = await supabase.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
+    const dataApi = await getPublicSchedulingClient(event)
+    const { data } = await dataApi.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
     if (data) {
       widgetFound = true
       allowedOrigins = catalogAllowedOrigins(data)

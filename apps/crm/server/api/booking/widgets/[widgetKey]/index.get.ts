@@ -16,8 +16,8 @@ export default defineEventHandler(async (event) => {
   const widgetKey = publicWidgetKey(getRouterParam(event, 'widgetKey'))
   const query = getQuery(event)
   const visitId = optionalUuidValue(query.visitId ?? query.visit_id, 'visitId')
-  const supabase = await getPublicSchedulingClient(event)
-  const { data, error } = await supabase.rpc('get_booking_widget_catalog', {
+  const dataApi = await getPublicSchedulingClient(event)
+  const { data, error } = await dataApi.rpc('get_booking_widget_catalog', {
     p_widget_token: widgetKey,
   })
   throwBookingError(error)

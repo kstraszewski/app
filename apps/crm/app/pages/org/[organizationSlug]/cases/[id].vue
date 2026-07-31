@@ -110,7 +110,7 @@ const { organizationSlug, crmApiPath, orgPath } = useOrganizationContext()
 const caseId = computed(() => String(route.params.id))
 const toast = useToast()
 const requestFetch = useRequestFetch()
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
 
 const emptyCase = (): CaseDetailResponse => ({
   data: {
@@ -1351,7 +1351,12 @@ watch(
       </div>
     </section>
 
-    <section v-if="!pending && currentView === 'documents'" id="case-documents" class="case-documents" aria-labelledby="case-documents-title">
+    <section
+      v-if="!pending && currentView === 'documents' && !data.data.bank_applications.length"
+      id="case-documents"
+      class="case-documents"
+      aria-labelledby="case-documents-title"
+    >
       <div class="case-section-heading">
         <div>
           <p>Etap 04 · checklista</p>
@@ -1417,28 +1422,23 @@ watch(
         </ul>
       </UCard>
 
-      <CaseDocumentChecklist
-        v-if="data.data.bank_applications.length"
-        :case-data="data.data"
-        :focus-application-id="focusedApplicationId"
-        @refresh="refresh()"
-      />
-
-      <UCard v-else class="case-documents__empty">
-        <div>
-          <span><UIcon name="i-lucide-files" /></span>
-          <div>
-            <h3>Najpierw uruchom co najmniej jeden wniosek bankowy</h3>
-            <p>Zapisane oferty są shortlistą. W sekcji Kredyt i oferty dodaj od jednego do trzech banków do równoległego procesu.</p>
+      <UCard v-if="!data.data.bank_applications.length" class="case-documents__empty">
+        <div class="case-documents__empty-body">
+          <div class="case-documents__empty-copy">
+            <span><UIcon name="i-lucide-files" /></span>
+            <div>
+              <h3>Najpierw uruchom co najmniej jeden wniosek bankowy</h3>
+              <p>Zapisane oferty są shortlistą. W sekcji Kredyt i oferty dodaj od jednego do trzech banków do równoległego procesu.</p>
+            </div>
           </div>
+          <UButton
+            :to="{ path: orgPath('/mortgages'), query: { caseId } }"
+            icon="i-lucide-arrow-right"
+            trailing
+          >
+            Przejdź do ofert
+          </UButton>
         </div>
-        <UButton
-          :to="{ path: orgPath('/mortgages'), query: { caseId } }"
-          icon="i-lucide-arrow-right"
-          trailing
-        >
-          Przejdź do ofert
-        </UButton>
       </UCard>
     </section>
 
@@ -1450,15 +1450,15 @@ watch(
     >
       <div class="case-section-heading">
         <div>
-          <p>Etap 04 · wspólny formularz</p>
-          <h2 id="case-applications-title">Wnioski i paczka ZIP</h2>
-          <span>Wspólny formularz działa bezpośrednio w sprawie CRM — bez przechodzenia do aplikacji testowej.</span>
+          <p>Etap 04 · przygotowanie wniosków</p>
+          <h2 id="case-applications-title">Multiwniosek</h2>
+          <span>Jedna prowadzona ścieżka: wywiad, dokumenty, formularze bankowe i gotowa paczka ZIP.</span>
         </div>
       </div>
 
       <CaseMultiformWorkspace
         :case-data="data.data"
-        :documents-ready="requiredDocumentsReady"
+        @refresh="refresh()"
       />
     </section>
 
@@ -1789,8 +1789,8 @@ watch(
 .case-workflow ol,
 .case-workflow a,
 .case-section-heading,
-.case-documents__empty,
-.case-documents__empty > div {
+.case-documents__empty-body,
+.case-documents__empty-copy {
   display: flex;
 }
 
@@ -2140,11 +2140,15 @@ watch(
 }
 
 .case-documents,
-.case-applications,
 .case-delegations,
 .case-history {
   scroll-margin-top: 20px;
   margin-top: 0;
+}
+
+.case-applications {
+  scroll-margin-top: 20px;
+  margin-top: 24px;
 }
 
 .case-delegations {
@@ -2259,18 +2263,18 @@ watch(
   font-size: 10px;
 }
 
-.case-documents__empty {
+.case-documents__empty-body {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
 }
 
-.case-documents__empty > div {
+.case-documents__empty-copy {
   align-items: center;
   gap: 14px;
 }
 
-.case-documents__empty > div > span {
+.case-documents__empty-copy > span {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -2451,7 +2455,7 @@ watch(
 @media (max-width: 700px) {
   .case-workflow__intro,
   .case-section-heading,
-  .case-documents__empty {
+  .case-documents__empty-body {
     align-items: stretch;
     flex-direction: column;
   }

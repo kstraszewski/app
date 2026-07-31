@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   } else {
     await requireTeamAdmin(session, teamId)
   }
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('team_memberships')
     .update({ role })
     .eq('organization_id', session.organizationId)

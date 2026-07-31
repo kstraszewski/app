@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   const bankId = getRequiredParam(event, 'bankId')
   const body = asRecord(await readBody(event))
 
-  const { data: bank, error: bankError } = await session.supabase
+  const { data: bank, error: bankError } = await session.dataApi
     .from('mortgage_banks')
     .select('id')
     .eq('id', bankId)
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(bankError)
   if (!bank) throw createError({ statusCode: 404, statusMessage: 'Financial institution not found' })
 
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('mortgage_bank_overrides')
     .select('is_enabled, custom_name, custom_website_url, logo_path, notes')
     .eq('organization_id', session.organizationId)
@@ -73,14 +73,14 @@ export default defineEventHandler(async (event) => {
   }
 
   const { data, error } = existing
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_bank_overrides')
         .update(values)
         .eq('organization_id', session.organizationId)
         .eq('bank_id', bankId)
         .select('*')
         .single()
-    : await session.supabase
+    : await session.dataApi
         .from('mortgage_bank_overrides')
         .insert({ organization_id: session.organizationId, bank_id: bankId, ...values })
         .select('*')

@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const notes = capacityNotes(body.notes)
   const expectedRevision = capacityExpectedRevision(body.expectedRevision)
 
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('mortgage_capacity_settings')
     .select('organization_id, revision')
     .eq('organization_id', session.organizationId)
@@ -36,14 +36,14 @@ export default defineEventHandler(async (event) => {
 
   const values = { ...mortgageCapacityPolicyToRow(settings), notes }
   const { data, error } = existing
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_capacity_settings')
         .update(values)
         .eq('organization_id', session.organizationId)
         .eq('revision', expectedRevision)
         .select('*')
         .maybeSingle()
-    : await session.supabase
+    : await session.dataApi
         .from('mortgage_capacity_settings')
         .insert({ organization_id: session.organizationId, ...values })
         .select('*')

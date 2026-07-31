@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const teamId = getRequiredParam(event, 'teamId')
   const userId = getRequiredParam(event, 'userId')
   await requireSafeTeamAdminRemoval(session, teamId, userId)
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('team_memberships')
     .delete()
     .eq('organization_id', session.organizationId)

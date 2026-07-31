@@ -1,9 +1,9 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'guest' })
 
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-const { callbackUrl, errorMessage, passwordIssue, resolvePostAuthPath, syncAuthenticatedUser } = useAuthFlow()
+const hasAuthConfig = useHasAuthConfig()
+const authClient = hasAuthConfig ? useAuthClient() : null
+const { callbackUrl, errorMessage, passwordIssue } = useAuthFlow()
 
 const fullName = ref('')
 const organizationName = ref('')
@@ -11,6 +11,11 @@ const email = ref('')
 const password = ref('')
 const passwordConfirmation = ref('')
 const acceptedTerms = ref(false)
+const pendingOrganizationName = useCookie<string | null>('openexpert-pending-organization', {
+  maxAge: 60 * 60 * 24,
+  sameSite: 'lax',
+  secure: import.meta.env.PROD,
+})
 const loading = ref(false)
 const sent = ref(false)
 const error = ref<string | null>(null)
@@ -19,7 +24,7 @@ useHead({ title: 'Utwórz konto — OpenExpert CRM' })
 
 async function register() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
 
   const issue = passwordIssue(password.value)
   if (issue) {
@@ -36,31 +41,27 @@ async function register() {
   }
 
   loading.value = true
-  const { data, error: signUpError } = await supabase.auth.signUp({
-    email: email.value.trim().toLowerCase(),
-    password: password.value,
-    options: {
-      emailRedirectTo: callbackUrl('/confirm'),
-      data: {
-        full_name: fullName.value.trim(),
-        organization_name: organizationName.value.trim(),
-      },
-    },
-  })
-  loading.value = false
+  try {
+    const { error: signUpError } = await authClient.signUp.email({
+      name: fullName.value.trim(),
+      email: email.value.trim().toLowerCase(),
+      password: password.value,
+      callbackURL: callbackUrl('/confirm'),
+    })
+    if (signUpError) {
+      error.value = errorMessage(signUpError)
+      return
+    }
 
-  if (signUpError) {
-    error.value = errorMessage(signUpError)
-    return
+    pendingOrganizationName.value = organizationName.value.trim()
+    sent.value = true
   }
-
-  if (data.session) {
-    await syncAuthenticatedUser()
-    await navigateTo(await resolvePostAuthPath())
-    return
+  catch (signUpError) {
+    error.value = errorMessage(signUpError as { message?: string })
   }
-
-  sent.value = true
+  finally {
+    loading.value = false
+  }
 }
 </script>
 

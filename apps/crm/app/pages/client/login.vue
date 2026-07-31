@@ -2,9 +2,9 @@
 definePageMeta({ layout: false })
 
 const route = useRoute()
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-const user = useSupabaseUser()
+const hasAuthConfig = useHasAuthConfig()
+const authClient = hasAuthConfig ? useAuthClient() : null
+const user = useAuthUser()
 const {
   callbackUrl,
   errorMessage,
@@ -30,32 +30,33 @@ useHead({
 
 async function sendMagicLink() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
   if (!email.value.trim()) {
     error.value = 'Podaj adres email użyty przy rezerwacji.'
     return
   }
 
   loading.value = true
-  const { error: signInError } = await supabase.auth.signInWithOtp({
-    email: email.value.trim().toLowerCase(),
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: callbackUrl('/confirm', intendedDestination.value),
-      data: {
-        full_name: fullName.value.trim() || undefined,
-        account_intent: 'client',
-      },
-    },
-  })
-  loading.value = false
-
-  if (signInError) {
-    error.value = errorMessage(signInError)
-    return
+  try {
+    const { error: signInError } = await authClient.signIn.magicLink({
+      email: email.value.trim().toLowerCase(),
+      name: fullName.value.trim() || undefined,
+      callbackURL: callbackUrl('/confirm', intendedDestination.value),
+      newUserCallbackURL: callbackUrl('/confirm', intendedDestination.value),
+      errorCallbackURL: callbackUrl('/confirm', intendedDestination.value),
+    })
+    if (signInError) {
+      error.value = errorMessage(signInError)
+      return
+    }
+    sent.value = true
   }
-
-  sent.value = true
+  catch (signInError) {
+    error.value = errorMessage(signInError as { message?: string })
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 async function continueWithSession() {

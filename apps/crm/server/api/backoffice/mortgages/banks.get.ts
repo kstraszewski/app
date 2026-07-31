@@ -1,18 +1,18 @@
 import { mortgageOfferValidity, requireMortgageBackoffice, throwMortgageBackofficeDbError } from '~~/server/utils/mortgage-backoffice'
 
 export default defineEventHandler(async (event) => {
-  const { serviceRole } = await requireMortgageBackoffice(event)
+  const { backendData } = await requireMortgageBackoffice(event)
 
   const [banksResult, productsResult, draftsResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug, name, logo_url, logo_background_color')
       .order('name'),
-    serviceRole
+    backendData
       .from('mortgage_products')
       .select('id, bank_id, slug, name, product_kind, category, distribution_channel, is_active, current_published_version_id, revision, archived_at, updated_at')
       .order('name'),
-    serviceRole
+    backendData
       .from('mortgage_product_drafts')
       .select('id, product_id, revision, draft_data, updated_at, updated_by_user_id'),
   ])
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     .map((product: any) => product.current_published_version_id)
     .filter(Boolean)
   const { data: currentVersions, error: versionError } = currentVersionIds.length
-    ? await serviceRole
+    ? await backendData
         .from('mortgage_product_versions')
         .select('id, version_number, effective_from, effective_to, published_at')
         .in('id', currentVersionIds)

@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   assertUuid(documentId, 'documentId')
   await requireCrmCase(session, caseId)
 
-  const { data: document, error } = await session.supabase
+  const { data: document, error } = await session.dataApi
     .from('crm_documents')
     .select('id, storage_bucket, storage_path')
     .eq('organization_id', session.organizationId)
@@ -30,14 +30,14 @@ export default defineEventHandler(async (event) => {
   if (!storagePath.startsWith(`${session.organizationId}/${caseId}/`)) {
     throw createError({ statusCode: 409, statusMessage: 'Document storage path is outside this case' })
   }
-  const { error: removeError } = await session.supabase.storage
+  const { error: removeError } = await session.dataApi.storage
     .from(caseDocumentBucket)
     .remove([storagePath])
   if (removeError) {
     throw createError({ statusCode: 500, statusMessage: removeError.message || 'Document delete failed' })
   }
 
-  const { data: deleted, error: deleteError } = await session.supabase
+  const { data: deleted, error: deleteError } = await session.dataApi
     .from('crm_documents')
     .delete()
     .eq('organization_id', session.organizationId)

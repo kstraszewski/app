@@ -98,7 +98,7 @@ export async function loadCaseBankApplication(
   caseId: string,
   applicationId: string,
 ): Promise<Record<string, unknown> | null> {
-  const { data: application, error: applicationError } = await session.supabase
+  const { data: application, error: applicationError } = await session.dataApi
     .from('crm_case_bank_applications')
     .select(applicationSelect)
     .eq('organization_id', session.organizationId)
@@ -108,7 +108,7 @@ export async function loadCaseBankApplication(
   throwDbError(applicationError)
   if (!application) return null
 
-  const { data: submission, error: submissionError } = await session.supabase
+  const { data: submission, error: submissionError } = await session.dataApi
     .from('crm_item_submissions')
     .select(submissionSelect)
     .eq('organization_id', session.organizationId)
@@ -140,7 +140,7 @@ export async function loadCaseContractSelection(
   session: CrmSession,
   caseId: string,
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_case_contract_selections')
     .select('application_id, signed_by_user_id, signed_at')
     .eq('organization_id', session.organizationId)

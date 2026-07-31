@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await session.supabase.rpc('sign_crm_case_contract', {
+  const { data, error } = await session.dataApi.rpc('sign_crm_case_contract', {
     target_organization_id: session.organizationId,
     target_case_id: caseId,
     target_application_id: applicationId,

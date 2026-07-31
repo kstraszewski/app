@@ -12,7 +12,7 @@ type MembershipRow = {
 export default defineEventHandler(async (event) => {
   const session = await requireAuthenticatedSession(event)
   const [{ data, error }, superAdmin] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
       .eq('user_id', session.userId),
@@ -26,13 +26,13 @@ export default defineEventHandler(async (event) => {
   const organizationIds = memberships.map(membership => membership.organization!.id)
   const [teamAdminsResult, facilityAdminsResult] = organizationIds.length
     ? await Promise.all([
-        session.supabase
+        session.dataApi
           .from('team_memberships')
           .select('organization_id')
           .eq('user_id', session.userId)
           .eq('role', 'admin')
           .in('organization_id', organizationIds),
-        session.supabase
+        session.dataApi
           .from('facility_memberships')
           .select('organization_id')
           .eq('user_id', session.userId)

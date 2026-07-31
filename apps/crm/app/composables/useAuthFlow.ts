@@ -3,11 +3,16 @@ import type { AccountContexts } from '~/types/account'
 interface AuthErrorLike {
   message?: string
   code?: string
+  status?: number
+  statusCode?: number
+  data?: {
+    message?: string
+    code?: string
+  }
 }
 
 export function useAuthFlow() {
-  const supabase = useSupabaseClient()
-  const user = useSupabaseUser()
+  const user = useAuthUser()
   const requestFetch = useRequestFetch()
 
   function safeRedirect(value: unknown, fallback = '/dashboard') {
@@ -21,11 +26,10 @@ export function useAuthFlow() {
     return value
   }
 
-  function callbackUrl(path: string, next = '/dashboard') {
-    if (import.meta.server) return path
-    const url = new URL(path, window.location.origin)
-    url.searchParams.set('next', safeRedirect(next))
-    return url.toString()
+  function callbackUrl(path: string, next?: unknown) {
+    const url = new URL(safeRedirect(path, '/'), 'https://openexpert.invalid')
+    if (next !== undefined) url.searchParams.set('next', safeRedirect(next))
+    return `${url.pathname}${url.search}${url.hash}`
   }
 
   async function resolvePostAuthPath(value?: unknown) {
@@ -58,29 +62,73 @@ export function useAuthFlow() {
   }
 
   function errorMessage(error: AuthErrorLike | null | undefined) {
-    const message = error?.message?.toLowerCase() ?? ''
-    if (message.includes('invalid login credentials')) {
+    const code = String(error?.code || error?.data?.code || '').toUpperCase()
+    const originalMessage = error?.message || error?.data?.message || ''
+    const message = originalMessage.toLowerCase()
+    if (
+      code === 'INVALID_EMAIL_OR_PASSWORD'
+      || message.includes('invalid email or password')
+      || message.includes('invalid login credentials')
+    ) {
       return 'Nieprawidłowy email lub hasło.'
     }
-    if (message.includes('email not confirmed')) {
+    if (code === 'INVALID_EMAIL' || message === 'invalid email') {
+      return 'Podaj poprawny adres email.'
+    }
+    if (
+      code === 'EMAIL_NOT_VERIFIED'
+      || message.includes('email not verified')
+      || message.includes('email not confirmed')
+    ) {
       return 'Najpierw potwierdź adres email.'
     }
-    if (message.includes('user already registered')) {
+    if (
+      code === 'USER_ALREADY_EXISTS'
+      || code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL'
+      || message.includes('user already exists')
+      || message.includes('user already registered')
+    ) {
       return 'Konto z tym adresem już istnieje.'
     }
-    if (message.includes('password')) {
+    if (
+      code === 'PASSWORD_TOO_SHORT'
+      || code === 'PASSWORD_TOO_LONG'
+      || code === 'INVALID_PASSWORD'
+      || message.includes('password')
+    ) {
       return 'Hasło nie spełnia wymagań bezpieczeństwa.'
     }
-    if (message.includes('rate limit')) {
+    if (
+      code === 'INVALID_TOKEN'
+      || code === 'TOKEN_EXPIRED'
+      || message.includes('invalid token')
+      || message.includes('token expired')
+    ) {
+      return 'Link jest nieprawidłowy albo wygasł. Poproś o nowy link.'
+    }
+    if (
+      error?.status === 429
+      || error?.statusCode === 429
+      || message.includes('rate limit')
+      || message.includes('too many requests')
+    ) {
       return 'Za dużo prób. Odczekaj chwilę i spróbuj ponownie.'
     }
-    return error?.message ?? 'Nie udało się wykonać operacji. Spróbuj ponownie.'
+    if (
+      code.startsWith('FAILED_TO_')
+      || code === 'INVALID_ORIGIN'
+      || code === 'INVALID_CALLBACK_URL'
+      || code === 'INVALID_ERROR_CALLBACK_URL'
+      || code === 'INVALID_NEW_USER_CALLBACK_URL'
+      || code === 'NEW_USER_SIGNUP_DISABLED'
+    ) {
+      return 'Nie udało się wykonać operacji. Spróbuj ponownie.'
+    }
+    return originalMessage || 'Nie udało się wykonać operacji. Spróbuj ponownie.'
   }
 
   async function syncAuthenticatedUser() {
-    const { data, error } = await supabase.auth.getClaims()
-    if (error) throw error
-    user.value = data?.claims ?? null
+    user.value = await refreshAuthUser()
     return Boolean(user.value)
   }
 

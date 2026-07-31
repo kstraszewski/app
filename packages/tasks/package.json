@@ -1,0 +1,25 @@
+{
+  "name": "@openexpert/tasks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/trigger/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "trigger:deploy": "trigger deploy --skip-sync-env-vars",
+    "trigger:dev": "trigger dev --skip-update-check",
+    "trigger:login": "trigger login",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trigger.dev/sdk": "4.5.7"
+  },
+  "devDependencies": {
+    "@trigger.dev/build": "4.5.7",
+    "@types/node": "25.6.0",
+    "trigger.dev": "4.5.7",
+    "typescript": "5.9.3"
+  }
+}

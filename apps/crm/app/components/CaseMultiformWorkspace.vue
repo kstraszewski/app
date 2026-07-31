@@ -6,6 +6,8 @@ import type {
   SavedCaseOffer,
 } from '~/types/cases'
 import type {
+  CaseMultiformDraftResponse,
+  CaseMultiformDraftSaveResponse,
   MultiformCollectionDefinition,
   MultiformCrmContext,
   MultiformFieldValue,
@@ -14,19 +16,32 @@ import type {
   MultiformRenderGroup,
   MultiformRepeatableGroup,
 } from '~/types/multiform'
+import {
+  createEmptyMultiformIntake,
+  getMultiformIntakeProgress,
+  normalizeMultiformIntake,
+  resolveMultiformIntakeRequirement,
+  validateMultiformIntake,
+  type MultiformIntakeAnswers,
+} from '#shared/multiform-intake'
 
 const props = defineProps<{
   caseData: CaseDetail
-  documentsReady: boolean
+}>()
+
+const emit = defineEmits<{
+  refresh: []
 }>()
 
 const { crmApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
-const started = ref(false)
+
 const contextPending = ref(false)
+const draftPending = ref(false)
 const preparePending = ref(false)
 const fillPending = ref(false)
 const contextError = ref('')
+const draftError = ref('')
 const prepareError = ref('')
 const fillError = ref('')
 const context = ref<MultiformCrmContext | null>(null)
@@ -35,9 +50,25 @@ const selectedDocumentIds = ref<string[]>([])
 const values = ref<Record<string, MultiformFieldValue>>({})
 const collectionCounts = ref<Record<string, number>>({})
 const activeCollectionTabs = ref<Record<string, string>>({})
+const activeStep = ref(1)
+const intakeAnswers = ref<MultiformIntakeAnswers>(
+  createEmptyMultiformIntake(props.caseData.clients.map(client => client.id)),
+)
+const intakeValidationVisible = ref(false)
+const autoFilledCount = ref(0)
 const validationVisible = ref(false)
 const exportComplete = ref(false)
 const formHeading = ref<HTMLElement | null>(null)
+const intakePanel = ref<{ focusIssue?: (issue: unknown) => Promise<void> | void } | null>(null)
+
+const selectionFingerprint = ref('')
+const draftRevision = ref(0)
+const draftReady = ref(false)
+const draftSaving = ref(false)
+const draftSavedAt = ref('')
+const draftDirty = ref(false)
+const restoringDraft = ref(false)
+let draftSaveTimer: ReturnType<typeof setTimeout> | undefined
 
 const activeApplicationStatuses = new Set<MortgageApplicationStatus>([
   'draft',
@@ -69,7 +100,8 @@ function applicationIsFinal(application: CaseBankApplication) {
 }
 
 const activeApplications = computed(() => {
-  const applications = [...props.caseData.bank_applications].sort((left, right) => left.slot - right.slot)
+  const applications = [...props.caseData.bank_applications]
+    .sort((left, right) => left.slot - right.slot)
   if (props.caseData.contract_application_id) {
     return applications.filter(applicationIsFinal)
   }
@@ -79,8 +111,9 @@ const activeApplications = computed(() => {
 function offerTemplateIds(offer: SavedCaseOffer | null | undefined) {
   const configured = offer?.catalog_snapshot?.version?.multiform_template_ids
   return Array.isArray(configured)
-    ? configured.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
-      .map(id => id.trim())
+    ? configured
+        .filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
+        .map(id => id.trim())
     : []
 }
 
@@ -127,15 +160,6 @@ function bankCountLabel(count: number) {
   return `${count} banków`
 }
 
-function requirementContextLabel(
-  requirement: MultiformCrmContext['checklist']['requirements'][number],
-) {
-  if (requirement.bankName) return requirement.bankName
-  if (requirement.bankNames.length === 1) return requirement.bankNames[0]
-  if (requirement.bankNames.length > 1) return `Wspólne dla: ${requirement.bankNames.join(', ')}`
-  return 'Wspólne dla wszystkich banków'
-}
-
 const prerequisite = computed(() => {
   if (!props.caseData.clients.length) return 'Najpierw dodaj wnioskodawców do sprawy.'
   if (!props.caseData.bank_applications.length) {
@@ -151,88 +175,108 @@ const prerequisite = computed(() => {
     return 'Wybierz nieruchomość, której dane mają trafić do wniosków.'
   }
   if (!templateIds.value.length) return 'Aktywne wnioski nie mają przypisanych formularzy bankowych.'
-  if (!props.documentsReady) return 'Uzupełnij obowiązkowe pozycje na checkliście dokumentów.'
   return ''
 })
 
-const contextCanPrepare = computed(() => Boolean(
-  context.value?.selectedApplicationsValidation.valid
-  && context.value.applicationIds.length > 0
-  && context.value.templateIds.length > 0,
+const workflowSteps = computed(() => [
+  {
+    title: 'Zakres sprawy',
+    description: activeStep.value > 0 ? 'Ukończono' : 'W trakcie',
+    icon: activeStep.value > 0 ? 'i-lucide-check' : undefined,
+  },
+  {
+    title: 'Pytania wstępne',
+    description: activeStep.value === 1
+      ? 'W trakcie'
+      : activeStep.value > 1 ? 'Ukończono' : 'Oczekuje',
+  },
+  {
+    title: 'Dokumenty',
+    description: activeStep.value === 2
+      ? 'W trakcie'
+      : activeStep.value > 2 ? 'Ukończono' : 'Oczekuje',
+  },
+  {
+    title: 'Formularze bankowe',
+    description: activeStep.value === 3
+      ? 'W trakcie'
+      : activeStep.value > 3 ? 'Ukończono' : 'Oczekuje',
+  },
+  {
+    title: 'Paczka ZIP',
+    description: activeStep.value === 4 ? 'W trakcie' : 'Oczekuje',
+  },
+])
+
+const mappingsReady = computed(() => Boolean(
+  context.value?.selectedApplicationsValidation.valid,
 ))
 
-function requirementAcceptsAttachment(requirement: MultiformCrmContext['checklist']['requirements'][number]) {
+const contextCanPrepare = computed(() => Boolean(
+  context.value
+  && context.value.applicationIds.length > 0
+  && context.value.templateIds.length > 0
+  && context.value.selectedApplicationsValidation.templates.every(template => template.found),
+))
+
+function requirementAcceptsAttachment(
+  requirement: MultiformCrmContext['checklist']['requirements'][number],
+) {
   return requirement.itemKind === 'client_document'
     || (requirement.itemKind === 'bank_document' && !requirement.templateId)
 }
 
+const intakeValidation = computed(() => validateMultiformIntake(
+  intakeAnswers.value,
+  props.caseData.clients.map(client => client.id),
+))
+
+const resolvedDocumentRequirements = computed(() => (
+  (context.value?.checklist.requirements ?? []).flatMap((requirement) => {
+    if (!requirementAcceptsAttachment(requirement)) return []
+    const resolution = resolveMultiformIntakeRequirement(requirement, intakeAnswers.value)
+    if (resolution.phase !== 'analysis' || resolution.status !== 'required') return []
+    return [{
+      ...requirement,
+      required: true,
+      applicability: 'always',
+    }]
+  })
+))
+
 const missingSelectedRequirements = computed(() => {
   const selected = new Set(selectedDocumentIds.value)
-  return (context.value?.checklist.requirements ?? []).filter(requirement => (
-    requirement.required
-    && requirement.applicability === 'always'
-    && requirementAcceptsAttachment(requirement)
-    && !requirement.documentIds.some(documentId => selected.has(documentId))
+  return resolvedDocumentRequirements.value.filter(requirement => (
+    !requirement.documentIds.some(documentId => selected.has(documentId))
   ))
 })
 
+const documentStepComplete = computed(() => missingSelectedRequirements.value.length === 0)
 const contextCanExport = computed(() => Boolean(
-  contextCanPrepare.value && missingSelectedRequirements.value.length === 0,
+  mappingsReady.value && documentStepComplete.value,
 ))
-
 const selectedDocumentCount = computed(() => selectedDocumentIds.value.length)
 
 function readableError(error: unknown, fallback: string) {
   return apiErrorMessage(error) || fallback
 }
 
-function formatFileSize(bytes: number | null) {
-  if (!bytes || bytes < 1) return 'brak rozmiaru'
-  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} MB`
-}
-
-function emptyRequirementState(requirement: MultiformCrmContext['checklist']['requirements'][number]) {
-  if (requirement.fulfillment === 'missing') return { label: 'Brakuje pliku', color: 'error' as const }
-  if (requirement.fulfillment === 'conditional') return { label: 'Do potwierdzenia', color: 'warning' as const }
-  if (requirement.fulfillment === 'optional') return { label: 'Opcjonalny', color: 'neutral' as const }
-  return { label: 'Bez załącznika', color: 'neutral' as const }
-}
-
-function requirementDocuments(requirement: MultiformCrmContext['checklist']['requirements'][number]) {
-  const documentIds = new Set(requirement.documentIds)
-  return (context.value?.documents ?? []).filter(document => documentIds.has(document.id))
-}
-
-function toggleDocument(
-  requirement: MultiformCrmContext['checklist']['requirements'][number],
-  documentId: string,
-  checked: boolean,
+function initializeDocumentSelection(
+  nextContext: MultiformCrmContext,
+  preferredDocumentIds: readonly string[] = selectedDocumentIds.value,
 ) {
-  const selected = new Set(selectedDocumentIds.value)
-  if (checked) {
-    if (!requirement.multiple) {
-      for (const id of requirement.documentIds) selected.delete(id)
-    }
-    selected.add(documentId)
-  }
-  else {
-    selected.delete(documentId)
-  }
-  selectedDocumentIds.value = [...selected]
-}
-
-function initializeDocumentSelection(nextContext: MultiformCrmContext) {
-  const selected = new Set<string>()
+  const existingIds = new Set(nextContext.documents.map(document => document.id))
+  const selected = new Set(
+    preferredDocumentIds.filter(documentId => existingIds.has(documentId)),
+  )
   for (const requirement of nextContext.checklist.requirements) {
-    if (
-      !requirementAcceptsAttachment(requirement)
-      || !requirement.required
-      || requirement.applicability !== 'always'
-    ) continue
+    if (!requirementAcceptsAttachment(requirement)) continue
+    const resolution = resolveMultiformIntakeRequirement(requirement, intakeAnswers.value)
+    if (resolution.phase !== 'analysis' || resolution.status !== 'required') continue
     const eligible = requirement.documentIds.filter(documentId => (
       nextContext.documents.some(document => document.id === documentId && document.eligible)
     ))
+    if (eligible.some(documentId => selected.has(documentId))) continue
     for (const documentId of requirement.multiple ? eligible : eligible.slice(0, 1)) {
       selected.add(documentId)
     }
@@ -240,27 +284,209 @@ function initializeDocumentSelection(nextContext: MultiformCrmContext) {
   selectedDocumentIds.value = [...selected]
 }
 
-async function loadContext() {
+async function loadContext(options: { preservePrepared?: boolean } = {}) {
   if (prerequisite.value || contextPending.value) return
-  started.value = true
   contextPending.value = true
   contextError.value = ''
   prepareError.value = ''
   fillError.value = ''
-  context.value = null
-  preparedBundle.value = null
+  const preferredDocumentIds = [...selectedDocumentIds.value]
+  if (!options.preservePrepared) preparedBundle.value = null
   try {
     const response = await $fetch<MultiformCrmContext>(
       crmApiPath(`/cases/${props.caseData.id}/multiform/context`),
     )
     context.value = response
-    initializeDocumentSelection(response)
+    initializeDocumentSelection(response, preferredDocumentIds)
   }
   catch (error) {
     contextError.value = readableError(error, 'Nie udało się pobrać kontekstu Multiwniosku.')
   }
   finally {
     contextPending.value = false
+  }
+}
+
+function normalizeDraftValues(input: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(input).filter(
+    (entry): entry is [string, MultiformFieldValue] => (
+      typeof entry[1] === 'string'
+      || typeof entry[1] === 'number'
+      || typeof entry[1] === 'boolean'
+    ),
+  ))
+}
+
+function defaultIntakeAnswers() {
+  const answers = createEmptyMultiformIntake(props.caseData.clients.map(client => client.id))
+  let count = 0
+  const property = activeProperty.value
+  if (property?.market_type === 'primary') {
+    answers.case.loanPurpose = 'purchase_primary'
+    count += 1
+  }
+  else if (property?.market_type === 'secondary') {
+    answers.case.loanPurpose = 'purchase_secondary'
+    count += 1
+  }
+  if (property?.appraisal_value_amount != null) {
+    answers.case.appraisalAvailable = true
+    count += 1
+  }
+  if (answers.case.loanPurpose?.startsWith('purchase_')) {
+    answers.case.trancheDisbursement = false
+    count += 1
+  }
+  return { answers, count }
+}
+
+async function loadDraft() {
+  draftPending.value = true
+  draftError.value = ''
+  try {
+    const response = await $fetch<CaseMultiformDraftResponse>(
+      crmApiPath(`/cases/${props.caseData.id}/multiform/draft`),
+    )
+    const defaults = defaultIntakeAnswers()
+    selectionFingerprint.value = response.selectionFingerprint
+    autoFilledCount.value = defaults.count
+    draftRevision.value = response.draft?.revision ?? 0
+
+    if (
+      response.draft
+      && response.draft.selectionFingerprint === response.selectionFingerprint
+    ) {
+      intakeAnswers.value = normalizeMultiformIntake(
+        response.draft.intakeAnswers,
+        props.caseData.clients.map(client => client.id),
+      )
+      autoFilledCount.value = Math.max(
+        defaults.count,
+        getMultiformIntakeProgress(
+          intakeAnswers.value,
+          props.caseData.clients.map(client => client.id),
+        ).completed,
+      )
+      values.value = normalizeDraftValues(response.draft.formValues)
+      collectionCounts.value = { ...response.draft.collectionCounts }
+      selectedDocumentIds.value = [...response.draft.selectedDocumentIds]
+      activeStep.value = Math.max(0, Math.min(4, response.draft.activeStep - 1))
+      draftSavedAt.value = response.draft.updatedAt
+    }
+    else {
+      intakeAnswers.value = defaults.answers
+      values.value = {}
+      collectionCounts.value = {}
+      selectedDocumentIds.value = []
+      activeStep.value = 1
+      draftSavedAt.value = ''
+    }
+    draftReady.value = true
+  }
+  catch (error) {
+    const defaults = defaultIntakeAnswers()
+    intakeAnswers.value = defaults.answers
+    autoFilledCount.value = defaults.count
+    activeStep.value = 1
+    draftError.value = readableError(error, 'Nie udało się wczytać automatycznego zapisu.')
+  }
+  finally {
+    draftPending.value = false
+  }
+}
+
+function resetWorkspace() {
+  context.value = null
+  preparedBundle.value = null
+  selectedDocumentIds.value = []
+  values.value = {}
+  collectionCounts.value = {}
+  activeCollectionTabs.value = {}
+  activeStep.value = 1
+  contextError.value = ''
+  draftError.value = ''
+  prepareError.value = ''
+  fillError.value = ''
+  selectionFingerprint.value = ''
+  draftRevision.value = 0
+  draftReady.value = false
+  draftSavedAt.value = ''
+  draftDirty.value = false
+  intakeValidationVisible.value = false
+  validationVisible.value = false
+  exportComplete.value = false
+}
+
+async function bootstrapWorkspace() {
+  if (prerequisite.value) return
+  restoringDraft.value = true
+  resetWorkspace()
+  restoringDraft.value = true
+  await loadContext()
+  if (context.value) {
+    await loadDraft()
+    initializeDocumentSelection(context.value, selectedDocumentIds.value)
+    const restoredStep = activeStep.value
+    if (
+      restoredStep >= 3
+      && intakeValidation.value.valid
+      && documentStepComplete.value
+    ) {
+      activeStep.value = 2
+      await prepareForm(false)
+      if (preparedBundle.value) activeStep.value = restoredStep
+    }
+  }
+  restoringDraft.value = false
+}
+
+function scheduleDraftSave() {
+  if (!draftReady.value || restoringDraft.value || !selectionFingerprint.value) return
+  draftDirty.value = true
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = undefined
+    void saveDraftNow()
+  }, 700)
+}
+
+async function saveDraftNow() {
+  if (
+    !draftReady.value
+    || restoringDraft.value
+    || !selectionFingerprint.value
+    || draftSaving.value
+  ) return
+  draftSaving.value = true
+  draftError.value = ''
+  try {
+    while (draftDirty.value) {
+      draftDirty.value = false
+      const response = await $fetch<CaseMultiformDraftSaveResponse>(
+        crmApiPath(`/cases/${props.caseData.id}/multiform/draft`),
+        {
+          method: 'PUT',
+          body: {
+            selectionFingerprint: selectionFingerprint.value,
+            revision: draftRevision.value,
+            activeStep: activeStep.value + 1,
+            intakeAnswers: intakeAnswers.value,
+            formValues: values.value,
+            collectionCounts: collectionCounts.value,
+            selectedDocumentIds: selectedDocumentIds.value,
+          },
+        },
+      )
+      draftRevision.value = response.draft.revision
+      draftSavedAt.value = response.draft.updatedAt
+    }
+  }
+  catch (error) {
+    draftError.value = readableError(error, 'Nie udało się zapisać zmian.')
+    draftReady.value = false
+  }
+  finally {
+    draftSaving.value = false
   }
 }
 
@@ -274,7 +500,9 @@ function conditionMatches(condition?: MultiformFormField['visibleWhen']) {
 
 function fieldCollection(field: MultiformFormField) {
   if (!field.collection) return undefined
-  return preparedBundle.value?.collections.find(collection => collection.key === field.collection?.key)
+  return preparedBundle.value?.collections.find(
+    collection => collection.key === field.collection?.key,
+  )
 }
 
 function collectionItemCount(collection: MultiformCollectionDefinition) {
@@ -294,7 +522,9 @@ function fieldIsVisible(field: MultiformFormField) {
 
 function fieldIsRequired(field: MultiformFormField) {
   if (!fieldIsVisible(field)) return false
-  if (field.required || Boolean(field.requiredWhen && conditionMatches(field.requiredWhen))) return true
+  if (field.required || Boolean(field.requiredWhen && conditionMatches(field.requiredWhen))) {
+    return true
+  }
   const collection = fieldCollection(field)
   return Boolean(
     collection
@@ -377,8 +607,10 @@ function buildFormGroups(
           field,
         ])
       }
-      const items = Array.from(itemFields, ([index, fields]) => ({ index, fields }))
-        .sort((left, right) => left.index - right.index)
+      const items = Array.from(itemFields, ([index, itemFields]) => ({
+        index,
+        fields: itemFields,
+      })).sort((left, right) => left.index - right.index)
       groups.push({
         kind: 'repeatable',
         id: `collection:${collectionKey}:${section}`,
@@ -398,7 +630,10 @@ const formGroups = computed(() => buildFormGroups(
   preparedBundle.value?.collections ?? [],
 ))
 
-function supportedCollectionCount(collection: MultiformCollectionDefinition, fields: MultiformFormField[]) {
+function supportedCollectionCount(
+  collection: MultiformCollectionDefinition,
+  fields: MultiformFormField[],
+) {
   const indexes = new Set(fields.flatMap(field => (
     field.collection?.key === collection.key ? [field.collection.index] : []
   )))
@@ -458,7 +693,9 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
     if (primaryApplication.value?.application.appraisal_value_amount != null) {
       return primaryApplication.value.application.appraisal_value_amount
     }
-    if (activeProperty.value?.appraisal_value_amount != null) return activeProperty.value.appraisal_value_amount
+    if (activeProperty.value?.appraisal_value_amount != null) {
+      return activeProperty.value.appraisal_value_amount
+    }
     if (activeProperty.value?.price_amount != null) return activeProperty.value.price_amount
     const propertyValue = Number(primaryOffer.value?.scenario_snapshot?.propertyValue)
     if (Number.isFinite(propertyValue) && propertyValue > 0) return propertyValue
@@ -471,9 +708,13 @@ function initializeForm(bundle: MultiformPrepareResponse) {
   const nextTabs: Record<string, string> = {}
   for (const collection of bundle.collections) {
     const supported = supportedCollectionCount(collection, bundle.fields)
-    const requested = collection.key === 'applicants'
+    const minimumRequested = collection.key === 'applicants'
       ? Math.max(collection.minItems, context.value?.applicants.length ?? 0)
       : collection.minItems
+    const requested = Math.max(
+      minimumRequested,
+      Math.min(supported, collectionCounts.value[collection.key] ?? minimumRequested),
+    )
     if (requested > supported) {
       throw new Error(
         `${collection.label}: zestaw dokumentów obsługuje ${supported}, a sprawa wymaga ${requested} pozycji.`,
@@ -494,8 +735,8 @@ function initializeForm(bundle: MultiformPrepareResponse) {
   values.value = nextValues
 }
 
-async function prepareForm() {
-  if (!contextCanPrepare.value || preparePending.value) return
+async function prepareForm(focus = true) {
+  if (!contextCanPrepare.value || preparePending.value || preparedBundle.value) return
   preparePending.value = true
   prepareError.value = ''
   fillError.value = ''
@@ -508,8 +749,10 @@ async function prepareForm() {
     )
     preparedBundle.value = bundle
     initializeForm(bundle)
-    await nextTick()
-    formHeading.value?.focus()
+    if (focus) {
+      await nextTick()
+      formHeading.value?.focus()
+    }
   }
   catch (error) {
     preparedBundle.value = null
@@ -533,7 +776,9 @@ function activeCollectionIndex(group: MultiformRepeatableGroup) {
 }
 
 function activeCollectionFields(group: MultiformRepeatableGroup) {
-  return collectionItems(group).find(item => item.index === activeCollectionIndex(group))?.fields ?? []
+  return collectionItems(group).find(
+    item => item.index === activeCollectionIndex(group),
+  )?.fields ?? []
 }
 
 function collectionItemLabel(group: MultiformRepeatableGroup, index: number) {
@@ -576,7 +821,9 @@ async function focusFirstInvalidField() {
     }
   }
   await nextTick()
-  document.getElementById(`case-multiform-${field.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`)?.focus()
+  document.getElementById(
+    `case-multiform-${field.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+  )?.focus()
 }
 
 function downloadBlob(blob: Blob, fileName: string) {
@@ -596,11 +843,14 @@ async function fillAndDownload() {
   fillError.value = ''
   exportComplete.value = false
   if (!contextCanExport.value) {
-    fillError.value = `Wybierz pliki dla wszystkich wymaganych pozycji (${missingSelectedRequirements.value.length}).`
+    fillError.value = mappingsReady.value
+      ? `Wybierz pliki dla wszystkich wymaganych pozycji (${missingSelectedRequirements.value.length}).`
+      : 'Eksport czeka na kompletne mapowanie pól formularzy bankowych.'
     return
   }
   if (invalidFields.value.length) {
     fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
+    activeStep.value = 3
     await focusFirstInvalidField()
     return
   }
@@ -619,7 +869,13 @@ async function fillAndDownload() {
         responseType: 'blob',
       },
     )
-    downloadBlob(blob, `wnioski-${props.caseData.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'sprawa'}.zip`)
+    downloadBlob(
+      blob,
+      `wnioski-${props.caseData.title
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase() || 'sprawa'}.zip`,
+    )
     exportComplete.value = true
     toast.add({
       title: 'Paczka dokumentów jest gotowa',
@@ -635,26 +891,137 @@ async function fillAndDownload() {
   }
 }
 
-function documentTitle(document: MultiformPrepareResponse['documents'][number], index: number) {
-  return document.name || document.bank || document.fileName || `Formularz ${index + 1}`
+function documentTitle(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+  index: number,
+) {
+  return preparedDocument.name
+    || preparedDocument.bank
+    || preparedDocument.fileName
+    || `Formularz ${index + 1}`
 }
 
-function resetWorkspace() {
-  started.value = false
-  context.value = null
-  preparedBundle.value = null
-  selectedDocumentIds.value = []
-  values.value = {}
-  collectionCounts.value = {}
-  activeCollectionTabs.value = {}
-  contextError.value = ''
-  prepareError.value = ''
-  fillError.value = ''
-  validationVisible.value = false
-  exportComplete.value = false
+async function focusCurrentStep() {
+  await nextTick()
+  document.getElementById(`case-multiform-step-${activeStep.value}`)?.focus()
 }
 
-watch(() => [
+async function persistCurrentDraft() {
+  draftDirty.value = true
+  await saveDraftNow()
+}
+
+async function handlePrimaryAction() {
+  if (activeStep.value === 0) {
+    activeStep.value = 1
+    await focusCurrentStep()
+    return
+  }
+  if (activeStep.value === 1) {
+    intakeValidationVisible.value = true
+    if (!intakeValidation.value.valid) {
+      const firstIssue = intakeValidation.value.issues[0]
+      if (firstIssue) await intakePanel.value?.focusIssue?.(firstIssue)
+      toast.add({
+        title: 'Uzupełnij pytania wstępne',
+        description: `Pozostało ${intakeValidation.value.issues.length} odpowiedzi.`,
+        color: 'warning',
+      })
+      return
+    }
+    if (context.value) {
+      initializeDocumentSelection(context.value, selectedDocumentIds.value)
+    }
+    activeStep.value = 2
+    await persistCurrentDraft()
+    await focusCurrentStep()
+    return
+  }
+  if (activeStep.value === 2) {
+    if (!documentStepComplete.value) {
+      toast.add({
+        title: 'Dołącz wymagane dokumenty',
+        description: `Brakuje ${missingSelectedRequirements.value.length} pozycji z checklisty.`,
+        color: 'warning',
+      })
+      return
+    }
+    await prepareForm(false)
+    if (!preparedBundle.value) return
+    activeStep.value = 3
+    await persistCurrentDraft()
+    await focusCurrentStep()
+    return
+  }
+  if (activeStep.value === 3) {
+    validationVisible.value = true
+    if (invalidFields.value.length) {
+      fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
+      await focusFirstInvalidField()
+      return
+    }
+    activeStep.value = 4
+    await persistCurrentDraft()
+    await focusCurrentStep()
+    return
+  }
+  await fillAndDownload()
+}
+
+async function requestStep(requestedStep: number) {
+  if (!Number.isInteger(requestedStep) || requestedStep < 0 || requestedStep > 4) return
+  if (requestedStep <= activeStep.value) {
+    activeStep.value = requestedStep
+    await focusCurrentStep()
+    return
+  }
+  if (requestedStep === activeStep.value + 1) await handlePrimaryAction()
+}
+
+const stepModel = computed({
+  get: () => activeStep.value,
+  set: (value: string | number | undefined) => {
+    void requestStep(Number(value))
+  },
+})
+
+const primaryActionLabel = computed(() => {
+  if (activeStep.value === 0) return 'Przejdź do pytań'
+  if (activeStep.value === 1) return 'Wygeneruj checklistę'
+  if (activeStep.value === 2) return 'Przejdź do formularzy'
+  if (activeStep.value === 3) return 'Przejdź do paczki ZIP'
+  return fillPending.value ? 'Generuję dokumenty…' : 'Uzupełnij i pobierz ZIP'
+})
+
+const primaryActionIcon = computed(() => (
+  activeStep.value === 4 ? 'i-lucide-download' : 'i-lucide-arrow-right'
+))
+
+const primaryActionDisabled = computed(() => (
+  contextPending.value
+  || draftPending.value
+  || preparePending.value
+  || fillPending.value
+  || (activeStep.value === 4 && !contextCanExport.value)
+))
+
+function formatSavedAt(value: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : new Intl.DateTimeFormat('pl-PL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date)
+}
+
+async function handleDocumentsRefresh() {
+  emit('refresh')
+  await loadContext({ preservePrepared: true })
+}
+
+const selectionKey = computed(() => [
   props.caseData.contract_application_id,
   props.caseData.bank_applications
     .map(application => [
@@ -673,471 +1040,644 @@ watch(() => [
     .sort()
     .join('|'),
   props.caseData.clients.map(client => client.id).join(','),
-  props.caseData.documents
-    .map(document => `${document.id}:${document.submission_id ?? 'shared'}:${document.sha256 ?? ''}`)
-    .sort()
-    .join(','),
-].join('|'), (next, previous) => {
-  if (previous && next !== previous) resetWorkspace()
+].join('|'))
+
+watch(selectionKey, (next, previous) => {
+  if (previous && next !== previous) void bootstrapWorkspace()
+})
+
+watch(
+  [activeStep, intakeAnswers, values, collectionCounts, selectedDocumentIds],
+  scheduleDraftSave,
+  { deep: true },
+)
+
+onMounted(() => {
+  void bootstrapWorkspace()
+})
+
+onBeforeUnmount(() => {
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
+  if (draftReady.value && draftDirty.value) void saveDraftNow()
 })
 </script>
 
 <template>
-  <UCard class="case-multiform" data-testid="case-multiform-workspace">
+  <UCard
+    class="case-multiform"
+    :ui="{
+      header: 'p-0 sm:p-0',
+      body: 'p-0 sm:p-0',
+      footer: 'p-0 sm:p-0',
+    }"
+  >
     <template #header>
-      <div class="case-multiform__header">
-        <div>
-          <p>Multiwniosek w CRM</p>
-          <h2>{{ bankCountLabel(applicationCount) }} · jeden wspólny formularz</h2>
-          <span>Dane wpisujesz raz. Silnik uzupełnia formularze wszystkich banków i tworzy jedną paczkę ZIP.</span>
-        </div>
-        <div class="case-multiform__facts" aria-label="Zakres paczki">
-          <span><strong>{{ caseData.clients.length }}</strong> wnioskodawców</span>
-          <span><strong>{{ applicationCount }}</strong> banków</span>
-          <span><strong>{{ templateIds.length }}</strong> formularzy</span>
-        </div>
+      <div class="case-multiform__stepper-shell">
+        <p class="sr-only" aria-live="polite">
+          Krok {{ activeStep + 1 }} z 5: {{ workflowSteps[activeStep]?.title }}
+        </p>
+        <UStepper
+          v-model="stepModel"
+          :items="workflowSteps"
+          size="sm"
+          color="primary"
+          class="case-multiform__stepper"
+          :ui="{ content: 'hidden' }"
+        />
       </div>
     </template>
 
-    <div v-if="applicationCards.length" class="case-multiform__applications" aria-label="Banki w paczce Multiwniosku">
-      <article
-        v-for="application in applicationCards"
-        :key="application.id"
-        class="case-multiform__application"
-        :class="{ 'case-multiform__application--final': application.isFinal }"
-      >
-        <div class="case-multiform__application-heading">
-          <span>Wniosek {{ application.slot }}</span>
-          <UBadge
-            :color="application.isFinal ? 'success' : application.status.color"
-            variant="subtle"
-            size="xs"
-          >
-            {{ application.isFinal ? 'Podpisana umowa' : application.status.label }}
-          </UBadge>
-        </div>
-        <strong>{{ application.bankName }}</strong>
-        <p>{{ application.productName }}</p>
-        <small>{{ application.propertyLabel }}</small>
-        <div class="case-multiform__application-footer">
-          <span><UIcon name="i-lucide-files" /> {{ application.templateCount }} formularzy</span>
-          <span v-if="application.slot === primaryApplication?.application.slot">
-            <UIcon name="i-lucide-database" /> dane startowe
-          </span>
-        </div>
-      </article>
-    </div>
-
-    <UAlert
-      v-if="prerequisite"
-      color="neutral"
-      variant="subtle"
-      icon="i-lucide-lock-keyhole"
-      title="Etap oczekuje na wcześniejsze kroki"
-      :description="prerequisite"
-    >
-      <template #actions>
-        <UButton
-          v-if="!caseData.clients.length"
-          :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-clients' }"
-          color="neutral"
-          variant="soft"
-          size="sm"
-        >
-          Przejdź do klientów
-        </UButton>
-        <UButton
-          v-else-if="!caseData.bank_applications.length || !activeApplications.length"
-          :to="caseData.offers.length
-            ? { path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-bank-applications' }
-            : { path: orgPath('/mortgages'), query: { caseId: caseData.id } }"
-          color="neutral"
-          variant="soft"
-          size="sm"
-        >
-          Wybierz banki do procesu
-        </UButton>
-        <UButton
-          v-else-if="!documentsReady"
-          :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'documents' }, hash: '#case-documents' }"
-          color="neutral"
-          variant="soft"
-          size="sm"
-        >
-          Uzupełnij dokumenty
-        </UButton>
-      </template>
-    </UAlert>
-
-    <div v-else-if="!started" class="case-multiform__start">
-      <span class="case-multiform__start-icon"><UIcon name="i-lucide-wand-sparkles" /></span>
-      <div>
-        <h3>{{ bankCountLabel(applicationCount) }} i dokumenty są gotowe</h3>
-        <p>{{ bankNames.join(', ') }}: sprawdzimy mapowania, połączymy pola bez powtórzeń i przygotujemy jedną paczkę ZIP.</p>
-      </div>
-      <UButton icon="i-lucide-play" @click="loadContext">
-        Rozpocznij uzupełnianie
-      </UButton>
-    </div>
-
-    <div v-else-if="contextPending" class="case-multiform__loading" aria-busy="true">
-      <USkeleton class="h-24 w-full" />
-      <USkeleton class="h-40 w-full" />
-    </div>
-
-    <UAlert
-      v-else-if="contextError"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
-      title="Nie udało się uruchomić Multiwniosku"
-      :description="contextError"
-    >
-      <template #actions>
-        <UButton color="error" variant="soft" size="sm" @click="loadContext">Spróbuj ponownie</UButton>
-      </template>
-    </UAlert>
-
-    <div v-else-if="context" class="case-multiform__workspace">
-      <div class="case-multiform__offer-summary">
-        <div>
-          <span>Zakres wspólnej paczki</span>
-          <strong>{{ context.applications.map(application => application.bankName).join(' · ') }}</strong>
-        </div>
-        <UBadge :color="contextCanPrepare ? 'success' : 'error'" variant="subtle">
-          {{ contextCanPrepare ? 'Mapowania gotowe' : 'Mapowania wymagają pracy' }}
-        </UBadge>
-        <UButton color="neutral" variant="ghost" size="xs" icon="i-lucide-refresh-cw" @click="loadContext">
-          Odśwież
-        </UButton>
-      </div>
-
+    <div v-if="prerequisite" class="case-multiform__blocking">
       <UAlert
-        v-if="context.selectedApplicationsValidation.blockers.length"
-        color="warning"
+        color="neutral"
         variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Eksport PDF jest bezpiecznie zablokowany"
+        icon="i-lucide-lock-keyhole"
+        title="Etap oczekuje na wcześniejsze kroki"
+        :description="prerequisite"
       >
-        <template #description>
-          <p>Formularz pozostaje w CRM, ale przed wydrukiem trzeba zatwierdzić pełne mapowanie:</p>
-          <ul>
-            <li v-for="blocker in context.selectedApplicationsValidation.blockers" :key="blocker">{{ blocker }}</li>
-          </ul>
+        <template #actions>
+          <UButton
+            v-if="!caseData.clients.length"
+            :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-clients' }"
+            color="neutral"
+            variant="soft"
+            size="sm"
+          >
+            Przejdź do klientów
+          </UButton>
+          <UButton
+            v-else
+            :to="caseData.offers.length
+              ? { path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-bank-applications' }
+              : { path: orgPath('/mortgages'), query: { caseId: caseData.id } }"
+            color="neutral"
+            variant="soft"
+            size="sm"
+          >
+            Wybierz banki do procesu
+          </UButton>
         </template>
       </UAlert>
+    </div>
 
-      <section class="case-multiform__attachments" aria-labelledby="case-multiform-attachments-title">
-        <div class="case-multiform__section-heading">
-          <div>
-            <span>Krok 1</span>
-            <h3 id="case-multiform-attachments-title">Załączniki do paczki</h3>
-            <p>Wymagane poprawne pliki zaznaczyliśmy automatycznie.</p>
-          </div>
-          <UBadge color="neutral" variant="subtle">{{ selectedDocumentCount }} wybranych</UBadge>
-        </div>
+    <div
+      v-else-if="(contextPending || draftPending) && !context"
+      class="case-multiform__loading"
+      aria-busy="true"
+    >
+      <USkeleton class="h-16 w-full" />
+      <USkeleton class="h-64 w-full" />
+    </div>
 
-        <div class="case-multiform__attachment-list">
-          <article
-            v-for="requirement in context.checklist.requirements.filter(requirementAcceptsAttachment)"
-            :key="requirement.key"
-            class="case-multiform__attachment"
-          >
-            <div>
-              <strong>{{ requirement.label }}</strong>
-              <span>{{ requirementContextLabel(requirement) }}</span>
-              <small v-if="requirement.ownerLabel">{{ requirement.ownerLabel }}</small>
-            </div>
-            <div v-if="requirementDocuments(requirement).length" class="case-multiform__attachment-options">
-              <UCheckbox
-                v-for="document in requirementDocuments(requirement)"
-                :key="document.id"
-                :model-value="selectedDocumentIds.includes(document.id)"
-                :disabled="!document.eligible"
-                :label="document.name"
-                :description="`${document.applicant_label ? `${document.applicant_label} · ` : ''}${formatFileSize(document.size_bytes)}`"
-                @update:model-value="toggleDocument(requirement, document.id, Boolean($event))"
-              />
-            </div>
-            <UBadge
-              v-else
-              :color="emptyRequirementState(requirement).color"
-              variant="subtle"
-              size="xs"
-            >
-              {{ emptyRequirementState(requirement).label }}
-            </UBadge>
-          </article>
-        </div>
-
-        <UAlert
-          v-if="missingSelectedRequirements.length"
-          color="warning"
-          variant="subtle"
-          :title="`Brakuje wyboru dla ${missingSelectedRequirements.length} wymaganych pozycji`"
-        />
-      </section>
-
-      <div v-if="!preparedBundle" class="case-multiform__prepare">
-        <div>
-          <strong>Wspólny formularz</strong>
-          <span>{{ bankCountLabel(context.applications.length) }} · {{ context.templateIds.length }} PDF · jedna paczka ZIP</span>
-        </div>
-        <UButton
-          icon="i-lucide-wand-sparkles"
-          :loading="preparePending"
-          :disabled="!contextCanPrepare"
-          @click="prepareForm"
-        >
-          {{ preparePending ? 'Przygotowuję formularz…' : 'Przygotuj wspólny formularz' }}
-        </UButton>
-      </div>
-
+    <div v-else-if="contextError" class="case-multiform__blocking">
       <UAlert
-        v-if="prepareError"
         color="error"
         variant="subtle"
-        title="Nie udało się przygotować formularza"
-        :description="prepareError"
+        icon="i-lucide-circle-alert"
+        title="Nie udało się uruchomić Multiwniosku"
+        :description="contextError"
+      >
+        <template #actions>
+          <UButton color="error" variant="soft" size="sm" @click="bootstrapWorkspace">
+            Spróbuj ponownie
+          </UButton>
+        </template>
+      </UAlert>
+    </div>
+
+    <div v-else-if="context" class="case-multiform__workspace">
+      <UAlert
+        v-if="draftError"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-cloud-off"
+        title="Automatyczny zapis jest chwilowo niedostępny"
+        :description="draftError"
+        class="case-multiform__draft-alert"
       />
 
-      <form v-if="preparedBundle" class="case-multiform__form" novalidate @submit.prevent="fillAndDownload">
-        <div ref="formHeading" class="case-multiform__form-heading" tabindex="-1">
-          <div>
-            <span>Krok 2</span>
-            <h3>Uzupełnij dane tylko raz</h3>
-            <p>Wartości trafią do {{ context.applications.length }} wniosków bankowych i {{ preparedBundle.documents.length }} formularzy PDF.</p>
-          </div>
-          <div class="case-multiform__progress">
-            <span>Wymagane pola</span>
-            <strong>{{ completedRequiredCount }}/{{ requiredFields.length }}</strong>
-            <UProgress :model-value="formProgress" color="neutral" />
-          </div>
-        </div>
+      <Transition name="case-multiform-step" mode="out-in">
+        <section
+          v-if="activeStep === 0"
+          id="case-multiform-step-0"
+          key="scope"
+          class="case-multiform__step case-multiform__scope"
+          tabindex="-1"
+          aria-labelledby="case-multiform-scope-title"
+        >
+          <header class="case-multiform__step-heading">
+            <p>Zakres sprawy</p>
+            <h3 id="case-multiform-scope-title">Sprawdź banki i osoby w procesie</h3>
+            <span>
+              Zakres pochodzi z wybranych ofert oraz aktywnych wniosków. Te dane będą wspólne
+              dla checklisty, formularzy bankowych i paczki ZIP.
+            </span>
+          </header>
 
-        <div class="case-multiform__document-strip" aria-label="Formularze w paczce">
-          <span v-for="(document, index) in preparedBundle.documents" :key="document.id || document.templateId || index">
-            <UIcon name="i-lucide-file-text" />
-            {{ documentTitle(document, index) }}
-          </span>
-        </div>
-
-        <template v-for="group in formGroups" :key="group.id">
-          <fieldset v-if="group.kind === 'fields'" class="case-multiform__field-section">
-            <legend>{{ group.section }}</legend>
-            <div class="case-multiform__field-grid">
-              <CaseMultiformField
-                v-for="field in group.fields"
-                :key="field.key"
-                :field="field"
-                :model-value="values[field.key]"
-                :required="fieldIsRequired(field)"
-                :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
-                @update:model-value="values[field.key] = $event"
-              />
+          <div class="case-multiform__scope-facts">
+            <div>
+              <span>Wnioskodawcy</span>
+              <strong>{{ caseData.clients.length }}</strong>
+              <small>{{ caseData.clients.map(client => client.display_name).join(' · ') }}</small>
             </div>
-          </fieldset>
-
-          <fieldset v-else class="case-multiform__field-section case-multiform__repeatable">
-            <legend>{{ group.section }}</legend>
-            <div class="case-multiform__repeatable-heading">
-              <div>
-                <strong>{{ group.collection.label }}</strong>
-                <span>Lista wynika z klientów przypisanych do sprawy.</span>
-              </div>
-              <UButton
-                :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-clients' }"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                icon="i-lucide-users-round"
-              >
-                Zarządzaj wnioskodawcami
-              </UButton>
+            <div>
+              <span>Banki</span>
+              <strong>{{ applicationCount }}</strong>
+              <small>{{ bankNames.join(' · ') }}</small>
             </div>
-            <UTabs
-              :model-value="activeCollectionTabs[group.collection.key] ?? '0'"
-              :items="collectionTabItems(group)"
-              :content="false"
-              class="case-multiform__person-tabs"
-              @update:model-value="updateCollectionTab(group, $event)"
-            />
-            <div class="case-multiform__person-panel">
-              <div class="case-multiform__person-title">
-                <span>Wnioskodawca {{ activeCollectionIndex(group) + 1 }}</span>
-                <strong>{{ collectionItemLabel(group, activeCollectionIndex(group)) }}</strong>
-              </div>
-              <div class="case-multiform__field-grid">
-                <CaseMultiformField
-                  v-for="field in activeCollectionFields(group)"
-                  :key="field.key"
-                  :field="field"
-                  :model-value="values[field.key]"
-                  :required="fieldIsRequired(field)"
-                  :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
-                  @update:model-value="values[field.key] = $event"
-                />
-              </div>
+            <div>
+              <span>Nieruchomość</span>
+              <strong>{{ activeProperty ? 'Wybrana' : 'Brak' }}</strong>
+              <small>
+                {{ activeProperty
+                  ? [activeProperty.address, activeProperty.city].filter(Boolean).join(', ')
+                  : 'Uzupełnij dane nieruchomości' }}
+              </small>
             </div>
-          </fieldset>
-        </template>
-
-        <UAlert
-          v-if="fillError"
-          color="error"
-          variant="subtle"
-          title="Nie można przygotować paczki"
-          :description="fillError"
-        />
-        <UAlert
-          v-if="exportComplete"
-          color="success"
-          variant="subtle"
-          icon="i-lucide-circle-check"
-          title="Paczka ZIP została pobrana"
-        />
-
-        <div class="case-multiform__download-bar">
-          <div>
-            <span>Wynik · jedna paczka ZIP</span>
-            <strong>{{ preparedBundle.documents.length }} uzupełnione PDF-y + {{ selectedDocumentCount }} załączników</strong>
           </div>
-          <UButton
-            type="submit"
-            icon="i-lucide-download"
-            :loading="fillPending"
-            :disabled="!contextCanExport || !preparedBundle.fields.length"
+
+          <div class="case-multiform__application-grid">
+            <article
+              v-for="application in applicationCards"
+              :key="application.id"
+              class="case-multiform__application"
+              :class="{ 'case-multiform__application--final': application.isFinal }"
+            >
+              <div class="case-multiform__application-heading">
+                <span>Wniosek {{ application.slot }}</span>
+                <UBadge :color="application.status.color" variant="subtle" size="xs">
+                  {{ application.status.label }}
+                </UBadge>
+              </div>
+              <strong>{{ application.bankName }}</strong>
+              <p>{{ application.productName }}</p>
+              <small>{{ application.propertyLabel }}</small>
+              <div class="case-multiform__application-footer">
+                <span><UIcon name="i-lucide-file-text" /> {{ application.templateCount }} formularze</span>
+                <span v-if="application.isFinal"><UIcon name="i-lucide-trophy" /> Wybrany bank</span>
+              </div>
+            </article>
+          </div>
+
+          <UAlert
+            color="success"
+            variant="subtle"
+            icon="i-lucide-circle-check"
+            title="Zakres jest gotowy"
+            :description="`${bankCountLabel(applicationCount)} · ${caseData.clients.length} wnioskodawców · ${templateIds.length} formularze PDF`"
+          />
+        </section>
+
+        <section
+          v-else-if="activeStep === 1"
+          id="case-multiform-step-1"
+          key="intake"
+          class="case-multiform__step"
+          tabindex="-1"
+          aria-label="Pytania wstępne"
+        >
+          <CaseMultiformIntake
+            ref="intakePanel"
+            v-model="intakeAnswers"
+            :case-data="caseData"
+            :context="context"
+            :validation-visible="intakeValidationVisible"
+            :auto-filled-count="autoFilledCount"
+            :saving="draftSaving"
+            :saved-at="draftSavedAt"
+          />
+        </section>
+
+        <section
+          v-else-if="activeStep === 2"
+          id="case-multiform-step-2"
+          key="documents"
+          class="case-multiform__step"
+          tabindex="-1"
+          aria-label="Dokumenty"
+        >
+          <CaseMultiformDocuments
+            v-model:selected-document-ids="selectedDocumentIds"
+            :case-data="caseData"
+            :context="context"
+            :requirements="resolvedDocumentRequirements"
+            @refresh="handleDocumentsRefresh"
+          />
+        </section>
+
+        <section
+          v-else-if="activeStep === 3"
+          id="case-multiform-step-3"
+          key="forms"
+          class="case-multiform__step case-multiform__forms"
+          tabindex="-1"
+          aria-labelledby="case-multiform-form-title"
+        >
+          <div
+            ref="formHeading"
+            class="case-multiform__form-heading"
+            tabindex="-1"
           >
-            {{ fillPending ? 'Generuję dokumenty…' : 'Uzupełnij i pobierz ZIP' }}
-          </UButton>
-        </div>
-      </form>
+            <div>
+              <p>Formularze bankowe</p>
+              <h3 id="case-multiform-form-title">Uzupełnij dane tylko raz</h3>
+              <span v-if="preparedBundle">
+                Wartości trafią do {{ context.applications.length }} wniosków bankowych
+                i {{ preparedBundle.documents.length }} formularzy PDF.
+              </span>
+            </div>
+            <div class="case-multiform__progress">
+              <span>Wymagane pola</span>
+              <strong>{{ completedRequiredCount }}/{{ requiredFields.length }}</strong>
+              <UProgress :model-value="formProgress" color="neutral" />
+            </div>
+          </div>
+
+          <div v-if="preparePending" class="case-multiform__form-loading">
+            <USkeleton class="h-24 w-full" />
+            <USkeleton class="h-40 w-full" />
+          </div>
+
+          <UAlert
+            v-else-if="prepareError"
+            color="error"
+            variant="subtle"
+            title="Nie udało się przygotować formularza"
+            :description="prepareError"
+          >
+            <template #actions>
+              <UButton color="error" variant="soft" size="sm" @click="prepareForm()">
+                Spróbuj ponownie
+              </UButton>
+            </template>
+          </UAlert>
+
+          <template v-else-if="preparedBundle">
+            <div class="case-multiform__document-strip" aria-label="Formularze w paczce">
+              <span
+                v-for="(preparedDocument, index) in preparedBundle.documents"
+                :key="preparedDocument.id || preparedDocument.templateId || index"
+              >
+                <UIcon name="i-lucide-file-text" />
+                {{ documentTitle(preparedDocument, index) }}
+              </span>
+            </div>
+
+            <template v-for="group in formGroups" :key="group.id">
+              <fieldset v-if="group.kind === 'fields'" class="case-multiform__field-section">
+                <legend>{{ group.section }}</legend>
+                <div class="case-multiform__field-grid">
+                  <CaseMultiformField
+                    v-for="field in group.fields"
+                    :key="field.key"
+                    :field="field"
+                    :model-value="values[field.key]"
+                    :required="fieldIsRequired(field)"
+                    :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
+                    @update:model-value="values[field.key] = $event"
+                  />
+                </div>
+              </fieldset>
+
+              <fieldset v-else class="case-multiform__field-section case-multiform__repeatable">
+                <legend>{{ group.section }}</legend>
+                <div class="case-multiform__repeatable-heading">
+                  <div>
+                    <strong>{{ group.collection.label }}</strong>
+                    <span>Lista wynika z klientów przypisanych do sprawy.</span>
+                  </div>
+                  <UButton
+                    :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-clients' }"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-users-round"
+                  >
+                    Zarządzaj wnioskodawcami
+                  </UButton>
+                </div>
+                <UTabs
+                  :model-value="activeCollectionTabs[group.collection.key] ?? '0'"
+                  :items="collectionTabItems(group)"
+                  :content="false"
+                  class="case-multiform__person-tabs"
+                  @update:model-value="updateCollectionTab(group, $event)"
+                />
+                <div class="case-multiform__person-panel">
+                  <div class="case-multiform__person-title">
+                    <span>Wnioskodawca {{ activeCollectionIndex(group) + 1 }}</span>
+                    <strong>{{ collectionItemLabel(group, activeCollectionIndex(group)) }}</strong>
+                  </div>
+                  <div class="case-multiform__field-grid">
+                    <CaseMultiformField
+                      v-for="field in activeCollectionFields(group)"
+                      :key="field.key"
+                      :field="field"
+                      :model-value="values[field.key]"
+                      :required="fieldIsRequired(field)"
+                      :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
+                      @update:model-value="values[field.key] = $event"
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            </template>
+          </template>
+
+          <UAlert
+            v-if="fillError"
+            color="error"
+            variant="subtle"
+            title="Formularz wymaga uzupełnienia"
+            :description="fillError"
+          />
+        </section>
+
+        <section
+          v-else
+          id="case-multiform-step-4"
+          key="zip"
+          class="case-multiform__step case-multiform__zip"
+          tabindex="-1"
+          aria-labelledby="case-multiform-zip-title"
+        >
+          <header class="case-multiform__step-heading">
+            <p>Paczka ZIP</p>
+            <h3 id="case-multiform-zip-title">Sprawdź i pobierz komplet wniosków</h3>
+            <span>
+              Paczka połączy uzupełnione formularze bankowe z dokumentami wybranymi
+              na wspólnej checkliście.
+            </span>
+          </header>
+
+          <div class="case-multiform__zip-summary">
+            <div>
+              <span><UIcon name="i-lucide-landmark" /></span>
+              <strong>{{ context.applications.length }}</strong>
+              <small>{{ bankCountLabel(context.applications.length) }}</small>
+            </div>
+            <div>
+              <span><UIcon name="i-lucide-file-pen-line" /></span>
+              <strong>{{ preparedBundle?.documents.length ?? 0 }}</strong>
+              <small>formularzy PDF</small>
+            </div>
+            <div>
+              <span><UIcon name="i-lucide-paperclip" /></span>
+              <strong>{{ selectedDocumentCount }}</strong>
+              <small>załączników</small>
+            </div>
+          </div>
+
+          <UAlert
+            v-if="context.selectedApplicationsValidation.blockers.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Eksport PDF czeka na kompletne mapowanie"
+          >
+            <template #description>
+              <p>Formularze i odpowiedzi są zapisane. Przed pobraniem paczki trzeba uzupełnić mapowania:</p>
+              <ul>
+                <li
+                  v-for="blocker in context.selectedApplicationsValidation.blockers"
+                  :key="blocker"
+                >
+                  {{ blocker }}
+                </li>
+              </ul>
+            </template>
+          </UAlert>
+
+          <UAlert
+            v-else
+            color="success"
+            variant="subtle"
+            icon="i-lucide-shield-check"
+            title="Paczka jest gotowa do wygenerowania"
+            description="Mapowania, formularze i wymagane załączniki są kompletne."
+          />
+
+          <UAlert
+            v-if="fillError"
+            color="error"
+            variant="subtle"
+            title="Nie można przygotować paczki"
+            :description="fillError"
+          />
+          <UAlert
+            v-if="exportComplete"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-circle-check"
+            title="Paczka ZIP została pobrana"
+          />
+        </section>
+      </Transition>
     </div>
+
+    <template v-if="!prerequisite && context" #footer>
+      <div class="case-multiform__footer">
+        <UButton
+          v-if="activeStep > 0"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-arrow-left"
+          @click="requestStep(activeStep - 1)"
+        >
+          {{ activeStep === 1 ? 'Wróć do zakresu' : 'Wstecz' }}
+        </UButton>
+        <span v-else />
+
+        <div class="case-multiform__save-state" aria-live="polite">
+          <UIcon
+            :name="draftSaving ? 'i-lucide-loader-circle' : 'i-lucide-circle-check'"
+            :class="{ 'is-spinning': draftSaving }"
+          />
+          <div>
+            <strong>{{ draftSaving ? 'Zapisuję automatycznie' : 'Zapisano automatycznie' }}</strong>
+            <small v-if="draftSavedAt">Ostatni zapis: {{ formatSavedAt(draftSavedAt) }}</small>
+            <small v-else>Zmiany zapisują się w tej sprawie</small>
+          </div>
+        </div>
+
+        <div class="case-multiform__footer-action">
+          <UButton
+            :icon="primaryActionIcon"
+            trailing
+            size="lg"
+            :loading="preparePending || fillPending"
+            :disabled="primaryActionDisabled"
+            @click="handlePrimaryAction"
+          >
+            {{ primaryActionLabel }}
+          </UButton>
+          <small v-if="activeStep < 4">Przejdź do kroku {{ activeStep + 2 }}: {{ workflowSteps[activeStep + 1]?.title }}</small>
+          <small v-else>Pobierz jedną paczkę dla wszystkich banków</small>
+        </div>
+      </div>
+    </template>
   </UCard>
 </template>
 
 <style scoped>
 .case-multiform {
-  margin: 20px 0 0;
-}
-
-.case-multiform__header,
-.case-multiform__facts,
-.case-multiform__start,
-.case-multiform__offer-summary,
-.case-multiform__application-heading,
-.case-multiform__application-footer,
-.case-multiform__section-heading,
-.case-multiform__prepare,
-.case-multiform__form-heading,
-.case-multiform__download-bar,
-.case-multiform__repeatable-heading,
-.case-multiform__person-title {
-  display: flex;
-  align-items: center;
-}
-
-.case-multiform__header,
-.case-multiform__section-heading,
-.case-multiform__prepare,
-.case-multiform__form-heading,
-.case-multiform__download-bar,
-.case-multiform__repeatable-heading {
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.case-multiform__header > div:first-child,
-.case-multiform__start > div,
-.case-multiform__prepare > div,
-.case-multiform__form-heading > div:first-child,
-.case-multiform__section-heading > div,
-.case-multiform__download-bar > div,
-.case-multiform__repeatable-heading > div,
-.case-multiform__person-title {
-  display: grid;
-  gap: 3px;
-}
-
-.case-multiform__header p,
-.case-multiform__header h2,
-.case-multiform__header span,
-.case-multiform__start h3,
-.case-multiform__start p,
-.case-multiform__section-heading h3,
-.case-multiform__section-heading p,
-.case-multiform__form-heading h3,
-.case-multiform__form-heading p,
-.case-multiform__attachment strong,
-.case-multiform__attachment span {
+  overflow: hidden;
   margin: 0;
 }
 
-.case-multiform__header p,
-.case-multiform__section-heading > div > span,
-.case-multiform__form-heading > div:first-child > span,
-.case-multiform__offer-summary span,
-.case-multiform__person-title span,
-.case-multiform__download-bar span {
+.case-multiform__stepper-shell {
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+}
+
+.case-multiform__stepper {
+  width: 100%;
+}
+
+.case-multiform :deep([data-slot="body"]) {
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.case-multiform__stepper :deep([data-slot="title"]) {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.case-multiform__stepper :deep([data-slot="description"]) {
+  font-size: 10px;
+}
+
+.case-multiform__loading,
+.case-multiform__blocking {
+  padding: 28px;
+}
+
+.case-multiform__loading {
+  display: grid;
+  gap: 14px;
+}
+
+.case-multiform__workspace {
+  position: relative;
+  min-height: 620px;
+}
+
+.case-multiform__draft-alert {
+  margin: 18px 28px 0;
+}
+
+.case-multiform__step {
+  min-height: 620px;
+  outline: none;
+}
+
+.case-multiform__step :deep(.multiform-documents) {
+  padding: 30px;
+}
+
+.case-multiform__scope,
+.case-multiform__forms,
+.case-multiform__zip {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 30px;
+}
+
+.case-multiform__step-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.case-multiform__step-heading p,
+.case-multiform__step-heading h3,
+.case-multiform__step-heading span,
+.case-multiform__application p,
+.case-multiform__application small,
+.case-multiform__form-heading p,
+.case-multiform__form-heading h3,
+.case-multiform__form-heading span {
+  margin: 0;
+}
+
+.case-multiform__step-heading p,
+.case-multiform__form-heading p {
   color: var(--ui-primary);
   font-size: 10px;
   font-weight: 750;
-  letter-spacing: .07em;
+  letter-spacing: .075em;
   text-transform: uppercase;
 }
 
-.case-multiform__header h2 {
+.case-multiform__step-heading h3,
+.case-multiform__form-heading h3 {
   color: var(--ui-text-highlighted);
-  font-size: 18px;
+  font-size: 23px;
+  line-height: 1.2;
 }
 
-.case-multiform__header > div:first-child > span,
-.case-multiform__section-heading p,
-.case-multiform__form-heading p,
-.case-multiform__start p,
-.case-multiform__prepare span,
-.case-multiform__repeatable-heading span {
+.case-multiform__step-heading span,
+.case-multiform__form-heading span {
+  max-width: 760px;
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.case-multiform__facts {
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.case-multiform__facts span {
-  display: grid;
-  gap: 1px;
-  min-width: 82px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: var(--ui-bg-muted);
-  color: var(--ui-text-muted);
-  font-size: 9px;
-  text-align: center;
-}
-
-.case-multiform__facts strong {
-  color: var(--ui-text-highlighted);
-  font-size: 16px;
-}
-
-.case-multiform__applications {
+.case-multiform__scope-facts,
+.case-multiform__zip-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.case-multiform__scope-facts > div {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__scope-facts span {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.case-multiform__scope-facts strong {
+  color: var(--ui-text-highlighted);
+  font-size: 19px;
+}
+
+.case-multiform__scope-facts small {
+  overflow: hidden;
+  color: var(--ui-text-toned);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-multiform__application-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .case-multiform__application {
   display: grid;
   min-width: 0;
-  gap: 4px;
-  padding: 12px;
+  gap: 5px;
+  padding: 16px;
   border: 1px solid var(--ui-border);
   border-radius: 11px;
-  background: var(--ui-bg-muted);
+  background: var(--ui-bg);
 }
 
 .case-multiform__application--final {
@@ -1146,9 +1686,22 @@ watch(() => [
 }
 
 .case-multiform__application-heading,
-.case-multiform__application-footer {
+.case-multiform__application-footer,
+.case-multiform__form-heading,
+.case-multiform__repeatable-heading,
+.case-multiform__person-title,
+.case-multiform__footer {
+  display: flex;
+  align-items: center;
+}
+
+.case-multiform__application-heading,
+.case-multiform__application-footer,
+.case-multiform__form-heading,
+.case-multiform__repeatable-heading,
+.case-multiform__footer {
   justify-content: space-between;
-  gap: 8px;
+  gap: 18px;
 }
 
 .case-multiform__application-heading > span {
@@ -1162,22 +1715,17 @@ watch(() => [
 .case-multiform__application > strong {
   overflow: hidden;
   color: var(--ui-text-highlighted);
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.case-multiform__application > p,
-.case-multiform__application > small {
-  overflow: hidden;
-  margin: 0;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .case-multiform__application > p {
+  overflow: hidden;
   color: var(--ui-text-toned);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .case-multiform__application > small,
@@ -1187,8 +1735,8 @@ watch(() => [
 }
 
 .case-multiform__application-footer {
-  margin-top: 6px;
-  padding-top: 7px;
+  margin-top: 7px;
+  padding-top: 8px;
   border-top: 1px solid var(--ui-border-muted);
 }
 
@@ -1198,140 +1746,21 @@ watch(() => [
   gap: 4px;
 }
 
-.case-multiform__start {
-  gap: 14px;
-  padding: 6px 0;
-}
-
-.case-multiform__start > div {
-  flex: 1;
-}
-
-.case-multiform__start-icon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
-  background: var(--ui-bg-inverted);
-  color: var(--ui-text-inverted);
-}
-
-.case-multiform__start h3,
-.case-multiform__section-heading h3,
-.case-multiform__form-heading h3 {
-  color: var(--ui-text-highlighted);
-  font-size: 16px;
-}
-
-.case-multiform__loading,
-.case-multiform__workspace,
-.case-multiform__attachment-list,
-.case-multiform__form {
-  display: grid;
-  gap: 14px;
-}
-
-.case-multiform__offer-summary {
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--ui-border);
-  border-radius: 11px;
-  background: var(--ui-bg-muted);
-}
-
-.case-multiform__offer-summary > div {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-}
-
-.case-multiform__offer-summary strong {
-  color: var(--ui-text-highlighted);
-  font-size: 13px;
-}
-
-.case-multiform__workspace :deep([data-slot="description"] ul) {
-  margin: 7px 0 0;
-  padding-left: 18px;
-}
-
-.case-multiform__attachments,
-.case-multiform__field-section {
-  padding: 16px;
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-}
-
-.case-multiform__attachment {
-  display: grid;
-  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.5fr);
-  align-items: center;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--ui-border-muted);
-}
-
-.case-multiform__attachment:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.case-multiform__attachment > div:first-child {
-  display: grid;
-  gap: 2px;
-}
-
-.case-multiform__attachment > div:first-child strong {
-  color: var(--ui-text-highlighted);
-  font-size: 12px;
-}
-
-.case-multiform__attachment > div:first-child span {
-  color: var(--ui-text-muted);
-  font-size: 10px;
-}
-
-.case-multiform__attachment > div:first-child small {
-  color: var(--ui-text-dimmed);
-  font-size: 9px;
-}
-
-.case-multiform__attachment-options {
-  display: grid;
-  gap: 7px;
-}
-
-.case-multiform__prepare {
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--ui-bg-muted);
-}
-
-.case-multiform__prepare strong,
-.case-multiform__download-bar strong,
-.case-multiform__person-title strong,
-.case-multiform__repeatable-heading strong {
-  color: var(--ui-text-highlighted);
-  font-size: 12px;
-}
-
-.case-multiform__form {
-  gap: 18px;
-  margin-top: 4px;
-}
-
 .case-multiform__form-heading {
-  padding-top: 6px;
+  padding-bottom: 2px;
   outline: none;
+}
+
+.case-multiform__form-heading > div:first-child {
+  display: grid;
+  gap: 6px;
 }
 
 .case-multiform__progress {
   display: grid;
   grid-template-columns: auto auto;
   gap: 4px 12px;
-  min-width: 180px;
+  min-width: 190px;
 }
 
 .case-multiform__progress span {
@@ -1347,6 +1776,11 @@ watch(() => [
 
 .case-multiform__progress :deep([data-slot="root"]) {
   grid-column: 1 / -1;
+}
+
+.case-multiform__form-loading {
+  display: grid;
+  gap: 14px;
 }
 
 .case-multiform__document-strip {
@@ -1369,6 +1803,9 @@ watch(() => [
 .case-multiform__field-section {
   min-width: 0;
   margin: 0;
+  padding: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
 }
 
 .case-multiform__field-section > legend {
@@ -1388,6 +1825,22 @@ watch(() => [
   margin-bottom: 12px;
 }
 
+.case-multiform__repeatable-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.case-multiform__repeatable-heading strong,
+.case-multiform__person-title strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+}
+
+.case-multiform__repeatable-heading span {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
 .case-multiform__person-tabs {
   margin-bottom: 12px;
 }
@@ -1401,60 +1854,196 @@ watch(() => [
 }
 
 .case-multiform__person-title {
+  display: grid;
+  gap: 3px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--ui-border);
 }
 
-.case-multiform__download-bar {
-  position: sticky;
-  bottom: 10px;
-  z-index: 2;
-  padding: 14px;
-  border: 1px solid var(--ui-border-accented);
+.case-multiform__person-title span {
+  color: var(--ui-primary);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.case-multiform__zip {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.case-multiform__zip-summary > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  padding: 18px;
+  border: 1px solid var(--ui-border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ui-bg) 94%, transparent);
-  box-shadow: 0 14px 30px color-mix(in srgb, var(--ui-text-highlighted) 8%, transparent);
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__zip-summary > div > span {
+  display: grid;
+  grid-row: 1 / 3;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--ui-bg);
+  color: var(--ui-primary);
+}
+
+.case-multiform__zip-summary strong {
+  color: var(--ui-text-highlighted);
+  font-size: 20px;
+}
+
+.case-multiform__zip-summary small {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.case-multiform__zip :deep([data-slot="description"] p) {
+  margin: 0;
+}
+
+.case-multiform__zip :deep([data-slot="description"] ul) {
+  margin: 7px 0 0;
+  padding-left: 18px;
+}
+
+.case-multiform__footer {
+  z-index: 3;
+  min-height: 76px;
+  padding: 13px 154px 13px 28px;
+  border-top: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 96%, transparent);
+  box-shadow: 0 -10px 28px color-mix(in srgb, var(--ui-text-highlighted) 5%, transparent);
   backdrop-filter: blur(12px);
 }
 
-.case-multiform__download-bar > div {
-  flex: 1;
+.case-multiform__save-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ui-text-toned);
+}
+
+.case-multiform__save-state > div {
+  display: grid;
+  gap: 1px;
+}
+
+.case-multiform__save-state strong {
+  font-size: 11px;
+}
+
+.case-multiform__save-state small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.case-multiform__footer-action {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.case-multiform__footer-action small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.is-spinning {
+  animation: case-multiform-spin .8s linear infinite;
+}
+
+.case-multiform-step-enter-active,
+.case-multiform-step-leave-active {
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.case-multiform-step-enter-from {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.case-multiform-step-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+@keyframes case-multiform-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 920px) {
+  .case-multiform__stepper-shell {
+    overflow-x: auto;
+  }
+
+  .case-multiform__stepper {
+    min-width: 780px;
+  }
+
+  .case-multiform__application-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
-  .case-multiform__header,
-  .case-multiform__start,
-  .case-multiform__section-heading,
-  .case-multiform__prepare,
-  .case-multiform__form-heading,
-  .case-multiform__download-bar,
-  .case-multiform__repeatable-heading {
-    align-items: stretch;
-    flex-direction: column;
+  .case-multiform :deep([data-slot="body"]) {
+    max-height: none;
+    overflow: visible;
   }
 
-  .case-multiform__facts {
-    align-self: stretch;
+  .case-multiform__stepper-shell,
+  .case-multiform__loading,
+  .case-multiform__blocking,
+  .case-multiform__scope,
+  .case-multiform__forms,
+  .case-multiform__zip {
+    padding: 18px;
   }
 
-  .case-multiform__facts span {
-    flex: 1;
-  }
-
-  .case-multiform__applications {
-    grid-template-columns: 1fr;
-  }
-
-  .case-multiform__attachment {
-    grid-template-columns: 1fr;
-  }
-
+  .case-multiform__scope-facts,
+  .case-multiform__application-grid,
+  .case-multiform__zip-summary,
   .case-multiform__field-grid {
     grid-template-columns: 1fr;
   }
 
-  .case-multiform__download-bar {
-    position: static;
+  .case-multiform__form-heading,
+  .case-multiform__repeatable-heading,
+  .case-multiform__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .case-multiform__progress {
+    min-width: 0;
+  }
+
+  .case-multiform__footer {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .case-multiform__footer-action {
+    justify-items: stretch;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .case-multiform-step-enter-active,
+  .case-multiform-step-leave-active,
+  .is-spinning {
+    animation: none;
+    transition: none;
   }
 }
 </style>

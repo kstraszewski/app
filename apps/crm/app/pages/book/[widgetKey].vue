@@ -24,7 +24,7 @@ import {
 definePageMeta({ layout: false })
 
 const route = useRoute()
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
 const anyExpertSelectValue = '__openexpert_any_available_expert__'
 const widgetKey = computed(() => String(route.params.widgetKey ?? ''))
 const isEmbedded = computed(() => route.query.embed === '1')

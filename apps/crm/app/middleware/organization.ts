@@ -3,14 +3,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const organizationSlug = Array.isArray(rawSlug) ? String(rawSlug[0] ?? '') : String(rawSlug ?? '')
   if (!organizationSlug) return navigateTo('/org')
 
-  const supabase = useSupabaseClient()
-  const { data, error } = await supabase
-    .from('organizations')
-    .select('slug')
-    .eq('slug', organizationSlug)
-    .maybeSingle()
+  const { data, error } = await useOrganizations()
+  const organization = data.value.data.find(item => item.slug === organizationSlug)
 
-  if (error || !data) {
+  if (error.value || !organization) {
     return navigateTo({ path: '/org', query: { missing: organizationSlug } })
   }
 })

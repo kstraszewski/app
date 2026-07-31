@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const productId = getRequiredParam(event, 'productId')
   const body = asRecord(await readBody(event))
 
-  const { data: product, error: productError } = await session.supabase
+  const { data: product, error: productError } = await session.dataApi
     .from('mortgage_products')
     .select('id, current_published_version_id')
     .eq('id', productId)
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Mortgage product not found' })
   }
   if ('parameters' in body && product.current_published_version_id) {
-    const { data: currentVersion, error: versionError } = await session.supabase
+    const { data: currentVersion, error: versionError } = await session.dataApi
       .from('mortgage_product_versions')
       .select('calculator_schema_version')
       .eq('id', product.current_published_version_id)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('mortgage_product_overrides')
     .select('is_enabled, custom_name, parameters, notes')
     .eq('organization_id', session.organizationId)
@@ -75,14 +75,14 @@ export default defineEventHandler(async (event) => {
     notes,
   }
   const { data, error } = existing
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_product_overrides')
         .update(values)
         .eq('organization_id', session.organizationId)
         .eq('product_id', productId)
         .select('*')
         .single()
-    : await session.supabase
+    : await session.dataApi
         .from('mortgage_product_overrides')
         .insert({
           organization_id: session.organizationId,

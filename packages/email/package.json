@@ -6,6 +6,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "nodemailer": "^7.0.10",
     "resend": "^6.17.2"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^7.0.9"
   }
 }

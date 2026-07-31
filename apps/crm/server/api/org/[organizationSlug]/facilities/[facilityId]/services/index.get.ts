@@ -6,18 +6,18 @@ export default defineEventHandler(async (event) => {
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
   await ensureGenericMeetingService(event, session.organizationId, String(access.facility.id))
   const [linksResult, catalogResult, expertsResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('facility_services')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', access.facility.id),
-    session.supabase
+    session.dataApi
       .from('booking_services')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('slug', 'spotkanie')
       .order('name'),
-    session.supabase
+    session.dataApi
       .from('facility_service_experts')
       .select('service_id, user_id, is_active')
       .eq('organization_id', session.organizationId)

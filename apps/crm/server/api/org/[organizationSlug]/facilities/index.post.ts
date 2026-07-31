@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'countryCode must be a two-letter country code' })
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facilities')
     .insert({
       organization_id: session.organizationId,

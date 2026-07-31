@@ -20,7 +20,7 @@ const props = defineProps<{
   }>
 }>()
 
-const hasSupabaseConfig = useHasSupabaseConfig()
+const hasAuthConfig = useHasAuthConfig()
 </script>
 
 <template>
@@ -45,12 +45,12 @@ const hasSupabaseConfig = useHasSupabaseConfig()
     </CrmPageHeader>
 
     <UAlert
-      v-if="!hasSupabaseConfig"
+      v-if="!hasAuthConfig"
       class="crm-alert"
       color="warning"
       variant="subtle"
       icon="i-lucide-alert-triangle"
-      title="Brakuje konfiguracji Supabase"
+      title="Brakuje konfiguracji platformy"
       description="Uzupełnij .env, żeby API CRM mogło czytać i zapisywać dane."
     />
 

@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const productType = await resolveProductType(session, body)
   const title = textValue(body.title) ?? productType.name
 
-  const { data: caseRow, error: caseError } = await session.supabase
+  const { data: caseRow, error: caseError } = await session.dataApi
     .from('crm_cases')
     .select('id, client_id')
     .eq('organization_id', session.organizationId)
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     .single()
   throwDbError(caseError, 404)
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_case_items')
     .insert({
       organization_id: session.organizationId,
@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
 
   const expectedAmount = numberValue(body.settlement_expected_amount)
   if (expectedAmount !== undefined) {
-    const { error: settlementError } = await session.supabase
+    const { error: settlementError } = await session.dataApi
       .from('crm_case_item_settlements')
       .insert({
         organization_id: session.organizationId,

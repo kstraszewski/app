@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const productId = getRequiredParam(event, 'productId')
 
-  const { data: product, error: productError } = await session.supabase
+  const { data: product, error: productError } = await session.dataApi
     .from('mortgage_products')
     .select('id, bank_id, name, is_active, current_published_version_id')
     .eq('id', productId)
@@ -26,20 +26,20 @@ export default defineEventHandler(async (event) => {
     { data: bankOverride, error: bankOverrideError },
     { data: currentVersion, error: currentVersionError },
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('mortgage_product_overrides')
       .select('id, is_enabled, custom_name, notes, revision, created_at, updated_at')
       .eq('organization_id', session.organizationId)
       .eq('product_id', productId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('mortgage_bank_overrides')
       .select('is_enabled')
       .eq('organization_id', session.organizationId)
       .eq('bank_id', product.bank_id)
       .maybeSingle(),
     product.current_published_version_id
-      ? session.supabase
+      ? session.dataApi
           .from('mortgage_product_versions')
           .select('lifecycle_status, effective_from, effective_to')
           .eq('id', product.current_published_version_id)

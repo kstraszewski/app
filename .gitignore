@@ -4,6 +4,8 @@
 .nuxt
 .nitro
 .eve
+.trigger
+.vercel
 .cache
 .turbo
 dist
@@ -28,5 +30,5 @@ apps/*/.env
 apps/*/.env.*
 !apps/*/.env.example
 
-# Local MCP config (contributor connects their own Supabase dev project)
+# Local MCP configuration (each contributor supplies private integrations)
 .mcp.json

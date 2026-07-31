@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody, setHeader, setResponseStatus } from 'h3'
 import { asRecord, requireCrmSession } from '~~/server/utils/crm'
 import {
@@ -66,8 +66,8 @@ export default defineEventHandler(async (event) => {
   }
   const notes = limitedText(body.notes, 'notes', 2_000, { nullable: true }) ?? null
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data, error } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data, error } = await backendData
     .from('expert_time_off')
     .insert({
       organization_id: session.organizationId,

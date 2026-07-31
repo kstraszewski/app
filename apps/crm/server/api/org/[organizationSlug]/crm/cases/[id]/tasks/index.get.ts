@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   }
 
-  const caseResult = await session.supabase
+  const caseResult = await session.dataApi
     .from('crm_cases')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   }
 
-  const tasksResult = await session.supabase
+  const tasksResult = await session.dataApi
     .from('crm_tasks')
     .select(delegatedTaskSelect)
     .eq('organization_id', session.organizationId)
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
 
   const taskIds = tasks.map(task => String(task.id))
   const [activitiesResult, meetingsResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_activities')
       .select(`
         id,
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
       .in('task_id', taskIds)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }),
-    session.supabase
+    session.dataApi
       .from('appointments')
       .select(`
         id,

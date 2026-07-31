@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   assertUuid(documentId, 'documentId')
   await requireCrmCase(session, caseId)
 
-  const { data: document, error } = await session.supabase
+  const { data: document, error } = await session.dataApi
     .from('crm_documents')
     .select(caseDocumentStorageSelect)
     .eq('organization_id', session.organizationId)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Document file is not available in CRM storage' })
   }
 
-  const { data: file, error: downloadError } = await session.supabase.storage
+  const { data: file, error: downloadError } = await session.dataApi.storage
     .from(caseDocumentBucket)
     .download(String(document.storage_path))
   if (downloadError || !file) {

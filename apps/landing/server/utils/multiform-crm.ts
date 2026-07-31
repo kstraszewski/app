@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { serverSupabaseClient, serverSupabaseUser } from './supabase'
+import { serverDataClient, serverDataUser } from './data-api'
 import {
   getTemplate,
   prepareBundle,
@@ -26,7 +26,7 @@ const allowedAttachmentMimeTypes = new Set([
 ])
 
 type JsonRecord = Record<string, unknown>
-type CrmSupabaseClient = any
+type CrmDataClient = any
 type DocumentSelectionCondition =
   | { op: 'selection_is', featureId: string, optionId: string }
   | { op: 'all' | 'any', conditions: DocumentSelectionCondition[] }
@@ -97,7 +97,7 @@ export interface CrmMultiformPublicDocument {
 
 export interface CrmMultiformContext {
   session: {
-    supabase: CrmSupabaseClient
+    dataApi: CrmDataClient
     userId: string
     organizationId: string
     organizationName: string
@@ -798,17 +798,20 @@ export async function loadCrmMultiformContext(
   input: CrmMultiformSelection,
 ): Promise<CrmMultiformContext> {
   setHeader(event, 'Cache-Control', 'private, no-store')
-  const supabaseConfig = useRuntimeConfig(event).public.supabase as { url?: string, key?: string }
-  if (!supabaseConfig.url || !supabaseConfig.key || supabaseConfig.key === 'local-development-placeholder') {
-    throw createError({ statusCode: 503, statusMessage: 'Supabase nie jest skonfigurowany.' })
+  const dataApiConfig = useRuntimeConfig(event).dataApi as {
+    url?: string
+    jwt?: { privateKey?: string }
+  }
+  if (!dataApiConfig.url || !dataApiConfig.jwt?.privateKey) {
+    throw createError({ statusCode: 503, statusMessage: 'Data API nie jest skonfigurowane.' })
   }
 
-  const claims = await serverSupabaseUser(event)
+  const claims = await serverDataUser(event)
   const userId = typeof claims?.sub === 'string' ? claims.sub : null
   if (!userId) throw createError({ statusCode: 401, statusMessage: 'Zaloguj się w CRM, aby otworzyć sprawę.' })
 
-  const supabase = await serverSupabaseClient(event) as CrmSupabaseClient
-  const { data: organization, error: organizationError } = await supabase
+  const dataApi = await serverDataClient(event) as CrmDataClient
+  const { data: organization, error: organizationError } = await dataApi
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', input.organizationSlug)
@@ -817,7 +820,7 @@ export async function loadCrmMultiformContext(
     throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono organizacji CRM.' })
   }
 
-  const { data: membership, error: membershipError } = await supabase
+  const { data: membership, error: membershipError } = await dataApi
     .from('organization_memberships')
     .select('role')
     .eq('organization_id', organization.id)
@@ -828,25 +831,25 @@ export async function loadCrmMultiformContext(
   }
 
   const [caseResult, applicationsResult, contractResult, caseClientsResult] = await Promise.all([
-    supabase
+    dataApi
       .from('crm_cases')
       .select('id, title')
       .eq('organization_id', organization.id)
       .eq('id', input.caseId)
       .maybeSingle(),
-    supabase
+    dataApi
       .from('crm_case_bank_applications')
       .select('submission_id, case_item_id, offer_id, bank_id, property_id, slot, snapshot_status, scenario_snapshot')
       .eq('organization_id', organization.id)
       .eq('case_id', input.caseId)
       .order('slot', { ascending: true }),
-    supabase
+    dataApi
       .from('crm_case_contract_selections')
       .select('application_id')
       .eq('organization_id', organization.id)
       .eq('case_id', input.caseId)
       .maybeSingle(),
-    supabase
+    dataApi
       .from('crm_case_clients')
       .select('client_id, is_primary, created_at')
       .eq('organization_id', organization.id)
@@ -871,7 +874,7 @@ export async function loadCrmMultiformContext(
   }
 
   const allApplicationIds = allApplications.map(application => String(application.submission_id))
-  const { data: submissions, error: submissionsError } = await supabase
+  const { data: submissions, error: submissionsError } = await dataApi
     .from('crm_item_submissions')
     .select('id, status_code')
     .eq('organization_id', organization.id)
@@ -916,7 +919,7 @@ export async function loadCrmMultiformContext(
     })
   }
 
-  const { data: offers, error: offersError } = await supabase
+  const { data: offers, error: offersError } = await dataApi
     .from('crm_case_offer_snapshots')
     .select('id, case_id, bank_id, bank_name, mortgage_product_id, mortgage_product_version_id, product_name, version_key, catalog_snapshot, scenario_snapshot')
     .eq('organization_id', organization.id)
@@ -977,7 +980,7 @@ export async function loadCrmMultiformContext(
   const documentSelect = 'id, client_id, submission_id, name, document_type, storage_bucket, storage_path, mime_type, size_bytes, sha256, status_code'
   const [clientDocumentsResult, bankDocumentsResult, clientsResult] = await Promise.all([
     clientAttachmentRequirementCodes.length
-      ? supabase
+      ? dataApi
         .from('crm_documents')
         .select(documentSelect)
         .eq('organization_id', organization.id)
@@ -989,7 +992,7 @@ export async function loadCrmMultiformContext(
         .limit(MAX_CRM_ATTACHMENT_COUNT + 1)
       : Promise.resolve({ data: [], error: null }),
     bankAttachmentRequirementCodes.length
-      ? supabase
+      ? dataApi
         .from('crm_documents')
         .select(documentSelect)
         .eq('organization_id', organization.id)
@@ -1001,7 +1004,7 @@ export async function loadCrmMultiformContext(
         .limit(MAX_CRM_ATTACHMENT_COUNT + 1)
       : Promise.resolve({ data: [], error: null }),
     clientIds.length
-      ? supabase
+      ? dataApi
           .from('crm_clients')
           .select('id, display_name')
           .eq('organization_id', organization.id)
@@ -1117,7 +1120,7 @@ export async function loadCrmMultiformContext(
 
   return {
     session: {
-      supabase,
+      dataApi,
       userId,
       organizationId: String(organization.id),
       organizationName: String(organization.name),
@@ -1257,7 +1260,7 @@ export async function downloadSelectedCrmAttachments(
   const attachments: DownloadedCrmAttachment[] = []
   for (const document of selectedDocuments) {
     const mimeType = document.mime_type!
-    const { data, error } = await context.session.supabase.storage
+    const { data, error } = await context.session.dataApi.storage
       .from(CRM_DOCUMENT_BUCKET)
       .download(document.storage_path!)
     if (error || !data) {

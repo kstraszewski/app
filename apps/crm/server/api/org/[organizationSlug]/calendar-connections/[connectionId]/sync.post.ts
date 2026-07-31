@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createHash } from 'node:crypto'
 import { requireCrmSession, getRequiredParam, throwDbError } from '~~/server/utils/crm'
 import {
@@ -66,8 +66,8 @@ type EventLink = {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const connectionId = uuidValue(getRequiredParam(event, 'connectionId'), 'connectionId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: connectionData, error: connectionError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: connectionData, error: connectionError } = await backendData
     .from('calendar_connections')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
   await requireCalendarOwnerManager(session, connection.owner_kind, ownerId)
 
   try {
-    const accessToken = await activeAccessToken(event, serviceRole, connection)
+    const accessToken = await activeAccessToken(event, backendData, connection)
     const horizonStart = new Date()
     horizonStart.setMinutes(horizonStart.getMinutes() - 5)
     const horizonEnd = new Date(horizonStart)
@@ -95,7 +95,7 @@ export default defineEventHandler(async (event) => {
     const selectedCalendarId = connection.selected_calendar_id
 
     const appointments = await loadConnectionAppointments(
-      serviceRole,
+      backendData,
       session.organizationId,
       connection.owner_kind,
       ownerId,
@@ -106,10 +106,10 @@ export default defineEventHandler(async (event) => {
     const facilityIds = [...new Set(appointments.map(appointment => appointment.facility_id))]
     const [facilitiesResult, eventLinks] = await Promise.all([
       facilityIds.length
-        ? serviceRole.from('facilities').select('id, name, address_line1, address_line2, postal_code, city').eq('organization_id', session.organizationId).in('id', facilityIds)
+        ? backendData.from('facilities').select('id, name, address_line1, address_line2, postal_code, city').eq('organization_id', session.organizationId).in('id', facilityIds)
         : Promise.resolve({ data: [], error: null }),
       loadConnectionEventLinks(
-        serviceRole,
+        backendData,
         session.organizationId,
         connection.id,
         appointments.map(appointment => appointment.id),
@@ -141,7 +141,7 @@ export default defineEventHandler(async (event) => {
                 String(link.calendar_id),
                 String(link.external_event_id),
               )
-              const deleted = await serviceRole
+              const deleted = await backendData
                 .from('appointment_calendar_events')
                 .update({
                   sync_status: 'deleted',
@@ -193,8 +193,8 @@ export default defineEventHandler(async (event) => {
             last_error: null,
           }
           const saveLink = link?.id
-            ? await serviceRole.from('appointment_calendar_events').update(linkValues).eq('id', link.id)
-            : await serviceRole.from('appointment_calendar_events').insert(linkValues)
+            ? await backendData.from('appointment_calendar_events').update(linkValues).eq('id', link.id)
+            : await backendData.from('appointment_calendar_events').insert(linkValues)
           throwDbError(saveLink.error)
           eventsWritten += 1
         }
@@ -211,7 +211,7 @@ export default defineEventHandler(async (event) => {
       horizonStart.toISOString(),
       horizonEnd.toISOString(),
     )
-    const finalizeBusy = await serviceRole.rpc('replace_calendar_busy_blocks', {
+    const finalizeBusy = await backendData.rpc('replace_calendar_busy_blocks', {
       p_organization_id: session.organizationId,
       p_connection_id: connection.id,
       p_blocks: busyBlocks,
@@ -219,7 +219,7 @@ export default defineEventHandler(async (event) => {
     throwDbError(finalizeBusy.error)
 
     const syncedAt = new Date().toISOString()
-    const connectionUpdate = await serviceRole
+    const connectionUpdate = await backendData
       .from('calendar_connections')
       .update({ status: 'active', last_synced_at: syncedAt, last_error: null })
       .eq('id', connection.id)
@@ -227,7 +227,7 @@ export default defineEventHandler(async (event) => {
     return { busyBlocks: busyBlocks.length, eventsWritten, eventsDeleted, eventsUnchanged, syncedAt }
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : 'Calendar synchronization failed'
-    await serviceRole
+    await backendData
       .from('calendar_connections')
       .update({ status: 'error', last_error: message })
       .eq('id', connection.id)
@@ -236,7 +236,7 @@ export default defineEventHandler(async (event) => {
 })
 
 async function loadConnectionAppointments(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   ownerKind: CalendarConnectionOwnerKind,
   ownerId: string,
@@ -246,7 +246,7 @@ async function loadConnectionAppointments(
   const pageSize = 500
   const appointments: AppointmentRow[] = []
   for (let offset = 0; ; offset += pageSize) {
-    let query = serviceRole
+    let query = backendData
       .from('appointments')
       .select('id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status, meeting_mode, meeting_url')
       .eq('organization_id', organizationId)
@@ -268,7 +268,7 @@ async function loadConnectionAppointments(
 }
 
 async function loadConnectionEventLinks(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   connectionId: string,
   appointmentIds: string[],
@@ -277,7 +277,7 @@ async function loadConnectionEventLinks(
   const pageSize = 200
   const links: EventLink[] = []
   for (let offset = 0; offset < appointmentIds.length; offset += pageSize) {
-    const { data, error } = await serviceRole
+    const { data, error } = await backendData
       .from('appointment_calendar_events')
       .select('id, appointment_id, calendar_id, external_event_id, provider_etag, source_fingerprint, sync_status')
       .eq('organization_id', organizationId)
@@ -301,7 +301,7 @@ function appointmentFingerprint(appointment: AppointmentRow, location: string | 
 
 async function activeAccessToken(
   event: Parameters<typeof decryptCalendarToken>[0],
-  serviceRole: any,
+  backendData: any,
   connection: ConnectionRow,
 ): Promise<string> {
   const accessToken = decryptCalendarToken(event, connection.encrypted_access_token)
@@ -311,7 +311,7 @@ async function activeAccessToken(
   const refreshToken = decryptCalendarToken(event, connection.encrypted_refresh_token)
   if (!refreshToken) throw createError({ statusCode: 409, statusMessage: 'Calendar connection must be reconnected' })
   const refreshed = await refreshCalendarOAuthToken(event, connection.provider, refreshToken)
-  const update = await serviceRole
+  const update = await backendData
     .from('calendar_connections')
     .update({
       encrypted_access_token: encryptCalendarToken(event, refreshed.accessToken),

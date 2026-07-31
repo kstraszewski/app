@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
   const patch = mortgageSubmissionStatusPatch(current, statusCode)
   if ('notes' in body) patch.notes = notesValue(body.notes)
 
-  const { data: updated, error } = await session.supabase
+  const { data: updated, error } = await session.dataApi
     .from('crm_item_submissions')
     .update(patch)
     .eq('organization_id', session.organizationId)

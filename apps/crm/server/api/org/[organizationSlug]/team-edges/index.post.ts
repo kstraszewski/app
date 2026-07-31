@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireAdministrativePermission(session, 'structure.manage')
   const body = asRecord(await readBody(event))
-  const { data, error } = await session.supabase.rpc('add_team_edge', {
+  const { data, error } = await session.dataApi.rpc('add_team_edge', {
     organization_id: session.organizationId,
     parent_team_id: requiredText(body.parent_team_id, 'parent_team_id'),
     child_team_id: requiredText(body.child_team_id, 'child_team_id'),

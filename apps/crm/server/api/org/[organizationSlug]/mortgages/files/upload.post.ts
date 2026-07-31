@@ -15,7 +15,7 @@ function fieldValue(parts: Awaited<ReturnType<typeof readMultipartFormData>>, na
 }
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBankFileAdmin(event)
+  const { session, backendData } = await requireMortgageBankFileAdmin(event)
   const parts = await readMultipartFormData(event)
   if (!parts?.length) {
     throw createError({ statusCode: 400, statusMessage: 'Multipart form data is required' })
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
       ? titleOverride
       : mortgageBankFileTitleFromName(fileName)
 
-    results.push(await ingestMortgageBankFile(serviceRole, {
+    results.push(await ingestMortgageBankFile(backendData, {
       bankId,
       title,
       categoryId,

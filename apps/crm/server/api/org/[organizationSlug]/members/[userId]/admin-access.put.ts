@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   await requireAdministrativePermission(session, 'iam.roles.manage')
 
   const consentGrant = input.consentPublishingGrant
-  const { data, error } = await session.supabase.rpc(
+  const { data, error } = await session.dataApi.rpc(
     'set_organization_user_admin_access',
     {
       p_organization_id: session.organizationId,

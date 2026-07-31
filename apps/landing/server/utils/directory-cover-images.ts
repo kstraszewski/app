@@ -1,5 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../../../packages/database/database.types'
+import type { OpenExpertDataClient } from './platform-data'
 import type {
   DirectoryCoverImage,
   DirectoryFacility,
@@ -22,7 +21,7 @@ const GALLERY_IMAGE_TRANSFORM = {
   quality: 82,
 } as const
 
-type ServiceRoleClient = SupabaseClient<Database, 'public'>
+type BackendDataClient = OpenExpertDataClient
 type PublishedFacility = Pick<DirectoryFacility, 'facilityId' | 'name'>
 
 interface FacilityImageRow {
@@ -113,14 +112,14 @@ async function mapWithConcurrency<Input, Output>(
 }
 
 async function firstFacilityImages(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   facilityIds: string[],
 ): Promise<FacilityImageRow[]> {
   const images: FacilityImageRow[] = []
 
   for (const batch of directoryFacilityIdBatches(facilityIds)) {
     try {
-      const { data, error } = await serviceRole
+      const { data, error } = await backendData
         .from('facilities')
         .select(`
           id,
@@ -181,12 +180,12 @@ async function firstFacilityImages(
 }
 
 async function signDirectoryCoverImage(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   image: FacilityImageRow,
   facilityName: string,
 ): Promise<DirectoryCoverImage | null> {
   try {
-    const storage = serviceRole.storage.from(FACILITY_IMAGES_BUCKET)
+    const storage = backendData.storage.from(FACILITY_IMAGES_BUCKET)
     const [thumbnailResult, fallbackResult] = await Promise.all([
       storage.createSignedUrl(
         image.storage_path,
@@ -234,12 +233,12 @@ async function signDirectoryCoverImage(
 }
 
 async function signDirectoryGalleryImage(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   image: FacilityImageRow,
   facilityName: string,
 ): Promise<DirectoryFacilityGalleryImage | null> {
   try {
-    const storage = serviceRole.storage.from(FACILITY_IMAGES_BUCKET)
+    const storage = backendData.storage.from(FACILITY_IMAGES_BUCKET)
     const [thumbnailResult, fallbackResult] = await Promise.all([
       storage.createSignedUrl(
         image.storage_path,
@@ -288,14 +287,14 @@ async function signDirectoryGalleryImage(
 }
 
 export async function loadDirectoryCoverImages(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   facilities: PublishedFacility[],
 ): Promise<Map<string, DirectoryCoverImage>> {
   const facilityNames = new Map(
     facilities.map(facility => [facility.facilityId, facility.name]),
   )
   const images = await firstFacilityImages(
-    serviceRole,
+    backendData,
     [...facilityNames.keys()],
   )
   const signedImages = await mapWithConcurrency(
@@ -304,7 +303,7 @@ export async function loadDirectoryCoverImages(
     async image => ({
       facilityId: image.facility_id,
       coverImage: await signDirectoryCoverImage(
-        serviceRole,
+        backendData,
         image,
         facilityNames.get(image.facility_id) ?? 'Placówka OpenExpert',
       ),
@@ -317,12 +316,12 @@ export async function loadDirectoryCoverImages(
 }
 
 export async function loadDirectoryFacilityGallery(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   organizationId: string,
   facilityId: string,
   facilityName: string,
 ): Promise<DirectoryFacilityGalleryImage[]> {
-  const { data, error } = await serviceRole
+  const { data, error } = await backendData
     .from('facility_images')
     .select(`
       id,
@@ -353,7 +352,7 @@ export async function loadDirectoryFacilityGallery(
   const signedImages = await mapWithConcurrency(
     images,
     COVER_IMAGE_SIGNING_CONCURRENCY,
-    image => signDirectoryGalleryImage(serviceRole, image, facilityName),
+    image => signDirectoryGalleryImage(backendData, image, facilityName),
   )
 
   return signedImages.filter(

@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await session.supabase.rpc('search_crm_omnisearch', {
+  const { data, error } = await session.dataApi.rpc('search_crm_omnisearch', {
     p_organization_id: session.organizationId,
     p_query: input.query,
     p_limit: input.limit,

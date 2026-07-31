@@ -6,34 +6,30 @@ wyglądu poczekalni, siatki uczestników ani paska sterowania.
 
 ## Uruchomienie lokalne
 
-1. Utwórz projekt w [LiveKit Cloud](https://cloud.livekit.io/).
-2. Skopiuj konfigurację:
+LiveKit można uruchomić razem z pozostałymi usługami OpenExpert:
 
-   ```bash
-   cp apps/meetings/.env.example apps/meetings/.env
-   ```
+```bash
+pnpm db:setup -- --livekit
+pnpm --filter @openexpert/meetings dev
+```
 
-3. Uzupełnij w `apps/meetings/.env`:
+Setup zapisuje lokalny URL i developerskie klucze LiveKit w zarządzanym bloku
+`apps/meetings/.env`. Uzupełnij poza tym blokiem ustawienia pokoju:
 
-   ```dotenv
-   NUXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
-   NUXT_LIVEKIT_API_KEY=...
-   NUXT_LIVEKIT_API_SECRET=...
-   NUXT_MEETINGS_ROOM_NAME=demo-room
-   NUXT_MEETINGS_ACCESS_CODE=very-long-random-demo-passphrase
-   NUXT_MEETINGS_EMBED_ORIGIN=https://crm.example.com
-   ```
+```dotenv
+NUXT_MEETINGS_ROOM_NAME=demo-room
+NUXT_MEETINGS_ACCESS_CODE=very-long-random-demo-passphrase
+NUXT_MEETINGS_EMBED_ORIGIN=http://127.0.0.1:3004
+```
 
-4. Uruchom aplikację:
+Następnie otwórz `http://127.0.0.1:3005/room/demo-room` w dwóch różnych
+przeglądarkach albo w zwykłym i prywatnym oknie.
 
-   ```bash
-   pnpm --filter @openexpert/meetings dev
-   ```
+Alternatywnie możesz od razu użyć LiveKit Cloud: skopiuj
+`apps/meetings/.env.example`, wpisz URL i klucze projektu, a następnie uruchom
+tę samą komendę aplikacji.
 
-5. Otwórz `http://127.0.0.1:3005/room/demo-room` w dwóch różnych
-   przeglądarkach lub w zwykłym i prywatnym oknie.
-
-Kod dostępu jest wymagany także lokalnie i musi mieć co najmniej 20 znaków.
+Kod dostępu jest wymagany również lokalnie i musi mieć co najmniej 20 znaków.
 Możesz wygenerować go np. poleceniem `openssl rand -base64 24`.
 
 ## Najprostsza publikacja

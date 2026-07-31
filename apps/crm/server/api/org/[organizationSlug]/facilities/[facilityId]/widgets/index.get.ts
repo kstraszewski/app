@@ -8,13 +8,13 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
   const [widgetsResult, servicesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('booking_widgets')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', access.facility.id)
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('booking_widget_services')
       .select('widget_id, service_id')
       .eq('organization_id', session.organizationId)

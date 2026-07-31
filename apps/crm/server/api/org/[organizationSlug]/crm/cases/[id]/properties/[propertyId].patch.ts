@@ -151,13 +151,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const [{ data: caseRow, error: caseError }, { data: property, error: propertyError }] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_cases')
       .select('id, client_id')
       .eq('organization_id', session.organizationId)
       .eq('id', caseId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_properties')
       .select('id, case_id, case_item_id')
       .eq('organization_id', session.organizationId)
@@ -177,7 +177,7 @@ export default defineEventHandler(async (event) => {
 
   let belongsThroughItem = false
   if (caseItemId) {
-    const { data: caseItem, error: caseItemError } = await session.supabase
+    const { data: caseItem, error: caseItemError } = await session.dataApi
       .from('crm_case_items')
       .select('id')
       .eq('organization_id', session.organizationId)
@@ -190,7 +190,7 @@ export default defineEventHandler(async (event) => {
   }
   if (directCaseId !== caseId && !belongsThroughItem) propertyNotFound()
 
-  let updateQuery = session.supabase
+  let updateQuery = session.dataApi
     .from('crm_properties')
     .update(patch)
     .eq('organization_id', session.organizationId)

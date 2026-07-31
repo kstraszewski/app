@@ -11,7 +11,7 @@ import {
 import { asRecord, getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBackoffice(event)
+  const { session, backendData } = await requireMortgageBackoffice(event)
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
   const body = asRecord(await readBody(event))
   const name = mortgageBackofficeText(body.name, 'name', { min: 3, max: 160 })
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     : 'backoffice'
   const draftData = mortgageOfferDraftData(body.draftData)
 
-  const { data: bank, error: bankError } = await serviceRole
+  const { data: bank, error: bankError } = await backendData
     .from('mortgage_banks')
     .select('id')
     .eq('id', bankId)
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   throwMortgageBackofficeDbError(bankError)
   if (!bank) throw createError({ statusCode: 404, statusMessage: 'Institution not found' })
 
-  const { data: createdData, error: createRpcError } = await serviceRole.rpc(
+  const { data: createdData, error: createRpcError } = await backendData.rpc(
     'create_mortgage_product_draft_v2',
     {
       p_bank_id: bankId,

@@ -114,21 +114,21 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const limit = Math.min(numberValue(body.limit) ?? 10, 25)
 
         const [clientsResult, casesResult, itemsResult] = await Promise.all([
-          session.supabase
+          session.dataApi
             .from('crm_clients')
             .select('id, display_name, status_code, primary_email, primary_phone, updated_at')
             .eq('organization_id', session.organizationId)
             .or(`display_name.ilike.%${query}%,primary_email.ilike.%${query}%,primary_phone.ilike.%${query}%`)
             .order('updated_at', { ascending: false })
             .limit(limit),
-          session.supabase
+          session.dataApi
             .from('crm_cases')
             .select('id, client_id, title, status_code, priority, updated_at')
             .eq('organization_id', session.organizationId)
             .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
             .order('updated_at', { ascending: false })
             .limit(limit),
-          session.supabase
+          session.dataApi
             .from('crm_case_items')
             .select('id, case_id, title, status_code, amount_value, currency, updated_at')
             .eq('organization_id', session.organizationId)
@@ -208,7 +208,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const primaryEmail = textValue(body.primary_email) ?? null
         const primaryPhone = textValue(body.primary_phone) ?? null
         const consentDecisions = parseConsentDecisions(body.consent_decisions)
-        const { data, error } = await session.supabase.rpc('create_crm_client_with_consents', {
+        const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
           p_organization_id: session.organizationId,
           p_owner_user_id: ownerUserId,
           p_display_name: displayName,
@@ -247,7 +247,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const clientId = requiredText(body.client_id, 'client_id')
         const title = requiredText(body.title, 'title')
 
-        const { data: client, error: clientError } = await session.supabase
+        const { data: client, error: clientError } = await session.dataApi
           .from('crm_clients')
           .select('id')
           .eq('organization_id', session.organizationId)
@@ -255,7 +255,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           .maybeSingle()
         if (clientError || !client) throwDbError(clientError ?? { message: 'Client not found' }, 404)
 
-        const { data, error } = await session.supabase
+        const { data, error } = await session.dataApi
           .from('crm_cases')
           .insert({
             organization_id: session.organizationId,
@@ -297,7 +297,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const caseId = requiredText(body.case_id, 'case_id')
         const productType = await resolveProductType(session, body)
 
-        const { data: caseRow, error: caseError } = await session.supabase
+        const { data: caseRow, error: caseError } = await session.dataApi
           .from('crm_cases')
           .select('id')
           .eq('organization_id', session.organizationId)
@@ -305,7 +305,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           .maybeSingle()
         if (caseError || !caseRow) throwDbError(caseError ?? { message: 'Case not found' }, 404)
 
-        const { data, error } = await session.supabase
+        const { data, error } = await session.dataApi
           .from('crm_case_items')
           .insert({
             organization_id: session.organizationId,
@@ -362,7 +362,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           ? 'case_item_id, created_at, currency, decision_at, external_reference, id, metadata, notes, offered_amount, organization_id, premium_amount, provider_id, status_code, submitted_at, updated_at'
           : '*'
 
-        const { data, error } = await session.supabase
+        const { data, error } = await session.dataApi
           .from(table)
           .update({ status_code: statusCode })
           .eq('organization_id', session.organizationId)
@@ -411,7 +411,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           })
         }
 
-        const { error } = await session.supabase.from('crm_activities').insert({
+        const { error } = await session.dataApi.from('crm_activities').insert({
           organization_id: session.organizationId,
           actor_user_id: session.userId,
           client_id: clientId ?? null,
@@ -444,7 +444,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
         const body = asRecord(input)
         const caseItemId = requiredText(body.case_item_id, 'case_item_id')
 
-        const { data: caseItem, error: caseItemError } = await session.supabase
+        const { data: caseItem, error: caseItemError } = await session.dataApi
           .from('crm_case_items')
           .select('id')
           .eq('organization_id', session.organizationId)
@@ -463,7 +463,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
           notes: textValue(body.notes) ?? null,
         }
 
-        const { data, error } = await session.supabase
+        const { data, error } = await session.dataApi
           .from('crm_case_item_settlements')
           .upsert(payload, { onConflict: 'case_item_id' })
           .select('*')

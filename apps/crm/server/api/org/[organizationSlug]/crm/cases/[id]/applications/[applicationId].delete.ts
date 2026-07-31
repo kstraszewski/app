@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError } from 'h3'
 import {
   loadCaseBankApplication,
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: focused, error: focusError } = await session.supabase
+  const { data: focused, error: focusError } = await session.dataApi
     .from('crm_case_offer_selections')
     .select('offer_id')
     .eq('organization_id', session.organizationId)
@@ -47,8 +47,8 @@ export default defineEventHandler(async (event) => {
   // Mortgage-application history cannot be deleted through the browser's
   // Data API. The database permits this server-only path for draft rows after
   // the lifecycle and signed-contract checks above.
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: deleted, error } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: deleted, error } = await backendData
     .from('crm_item_submissions')
     .delete()
     .eq('organization_id', session.organizationId)
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (wasFocused) {
-    const { data: nextApplication, error: nextError } = await session.supabase
+    const { data: nextApplication, error: nextError } = await session.dataApi
       .from('crm_case_bank_applications')
       .select('offer_id')
       .eq('organization_id', session.organizationId)
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
     throwDbError(nextError)
 
     if (nextApplication) {
-      const { error: selectionError } = await session.supabase
+      const { error: selectionError } = await session.dataApi
         .from('crm_case_offer_selections')
         .upsert({
           organization_id: session.organizationId,
@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
       throwDbError(selectionError)
     }
     else {
-      const { error: selectionError } = await session.supabase
+      const { error: selectionError } = await session.dataApi
         .from('crm_case_offer_selections')
         .delete()
         .eq('organization_id', session.organizationId)

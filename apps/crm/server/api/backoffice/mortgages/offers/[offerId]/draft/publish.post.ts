@@ -18,18 +18,18 @@ import { buildMortgagePublicationScenarioMatrix } from '~~/server/utils/mortgage
 import { asRecord, getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBackoffice(event)
+  const { session, backendData } = await requireMortgageBackoffice(event)
   const offerId = mortgageBackofficeUuid(getRequiredParam(event, 'offerId'), 'offerId')
   const body = asRecord(await readBody(event))
   const expectedRevision = mortgageBackofficeRevision(body.expectedRevision)
 
   const [{ data: draft, error: draftError }, { data: product, error: productError }] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_product_drafts')
       .select('id, revision, draft_data')
       .eq('product_id', offerId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_products')
       .select('id, bank_id')
       .eq('id', offerId)
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
       valid: false,
       issues: [...validation.issues, ...documentationIssues, ...validityIssues, ...uniqueScenarioIssues],
     }
-    await serviceRole
+    await backendData
       .from('mortgage_product_drafts')
       .update({ validation_report: validationReport })
       .eq('id', draft.id)
@@ -107,13 +107,13 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const materializedDraftData = await materializeMortgageOfferSources(serviceRole, {
+  const materializedDraftData = await materializeMortgageOfferSources(backendData, {
     bankId: product.bank_id,
     productId: offerId,
     draftData: draft.draft_data,
   })
 
-  const validationUpdate = await serviceRole
+  const validationUpdate = await backendData
     .from('mortgage_product_drafts')
     .update({
       draft_data: materializedDraftData,
@@ -127,7 +127,7 @@ export default defineEventHandler(async (event) => {
   throwMortgageBackofficeDbError(validationUpdate.error)
   if (!validationUpdate.data) throw createError({ statusCode: 409, statusMessage: 'The draft changed in another session' })
 
-  const { data: published, error: publishError } = await serviceRole.rpc(
+  const { data: published, error: publishError } = await backendData.rpc(
     'publish_mortgage_product_draft',
     {
       p_product_id: offerId,

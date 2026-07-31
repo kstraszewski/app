@@ -18,16 +18,16 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
   const identity = await requireAuthIdentity(event)
   const [staffProfileResult, membershipsResult, clientLinksResult] = await Promise.all([
-    identity.supabase
+    identity.dataApi
       .from('users')
       .select('organization_id')
       .eq('id', identity.userId)
       .maybeSingle(),
-    identity.supabase
+    identity.dataApi
       .from('organization_memberships')
       .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
       .eq('user_id', identity.userId),
-    identity.supabase
+    identity.dataApi
       .from('client_account_links')
       .select('*', { count: 'exact', head: true })
       .eq('auth_user_id', identity.userId)

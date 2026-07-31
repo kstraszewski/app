@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'manage')
   const serviceId = uuidValue(getRouterParam(event, 'serviceId'), 'serviceId')
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_services')
     .delete()
     .eq('organization_id', session.organizationId)

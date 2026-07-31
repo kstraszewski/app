@@ -43,7 +43,7 @@ export const expertBrandProfileSelect = [
 
 function publicAssetUrl(session: CrmSession, path: string | null): string | null {
   if (!path) return null
-  return session.supabase.storage.from(brandAssetBucket).getPublicUrl(path).data.publicUrl
+  return session.dataApi.storage.from(brandAssetBucket).getPublicUrl(path).data.publicUrl
 }
 
 export function defaultExpertBrandProfile(session: CrmSession): ExpertBrandProfile {

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { getQuery, setHeader } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  let request = session.supabase
+  let request = session.dataApi
     .from('facilities')
     .select('id, organization_id, name, slug, description, timezone, address_line1, address_line2, postal_code, city, country_code, phone, email, is_active, created_at, updated_at')
     .eq('organization_id', session.organizationId)
@@ -29,10 +29,10 @@ export default defineEventHandler(async (event) => {
     .order('name')
   if (accessibleIds) request = request.in('id', accessibleIds)
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const [facilitiesResult, preferencesResult] = await Promise.all([
     request,
-    serviceRole
+    backendData
       .from('organization_user_preferences')
       .select('default_facility_id')
       .eq('organization_id', session.organizationId)

@@ -1,5 +1,5 @@
 import { createEmailService, type EmailDeliveryResult } from '@openexpert/email'
-import { serverSupabaseServiceRole } from '../../utils/supabase'
+import { serverDataBackend } from '../../utils/data-api'
 import { createError, getRequestURL, readBody } from 'h3'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -15,8 +15,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const surveyToken = crypto.randomUUID()
-  const supabase = serverSupabaseServiceRole(event)
-  const { data, error } = await supabase
+  const dataApi = serverDataBackend(event)
+  const { data, error } = await dataApi
     .from('waitlist')
     .upsert(
       {

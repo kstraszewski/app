@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const body = asRecord(await readBody(event))
   const isSelfServiceExpert = !access.canManage
   if (isSelfServiceExpert) {
-    const { data: membership, error: membershipError } = await session.supabase
+    const { data: membership, error: membershipError } = await session.dataApi
       .from('facility_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'At least one service is required for a booking widget' })
   }
   if (serviceIds.length) {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('facility_services')
       .select('service_id')
       .eq('organization_id', session.organizationId)
@@ -71,7 +71,7 @@ export default defineEventHandler(async (event) => {
     }
   }
   if (fixedExpertUserId && serviceIds.length) {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('facility_service_experts')
       .select('service_id')
       .eq('organization_id', session.organizationId)
@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: widget, error } = await session.supabase
+  const { data: widget, error } = await session.dataApi
     .from('booking_widgets')
     .insert({
       organization_id: session.organizationId,
@@ -99,7 +99,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(error)
 
   if (serviceIds.length) {
-    const { error: linksError } = await session.supabase.from('booking_widget_services').insert(
+    const { error: linksError } = await session.dataApi.from('booking_widget_services').insert(
       serviceIds.map(serviceId => ({
         organization_id: session.organizationId,
         facility_id: access.facility.id,
@@ -108,7 +108,7 @@ export default defineEventHandler(async (event) => {
       })),
     )
     if (linksError) {
-      await session.supabase
+      await session.dataApi
         .from('booking_widgets')
         .delete()
         .eq('organization_id', session.organizationId)

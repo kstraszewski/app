@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { validateTemplateJson, type DocumentTemplate } from '@openexpert/multiform'
 import { createError } from 'h3'
 import {
@@ -24,15 +24,15 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
   const templateId = mortgageTemplateKey(getRequiredParam(event, 'templateId'))
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
   const [bankResult, templateResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug, name')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_document_templates')
       .select('id, template_key, label, registry_version, draft_json, draft_validation_report, draft_revision, draft_updated_at, draft_updated_by_user_id, active_json, active_validation_report, active_revision, active_published_at, active_published_by_user_id, current_published_revision_id, created_at, updated_at')
       .eq('bank_id', bankId)
@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
   const row = templateResult.data as DatabaseRecord | null
   const catalogId = mortgageTemplateText(row?.id)
   const revisionsResult = catalogId
-    ? await serviceRole
+    ? await backendData
         .from('mortgage_document_template_revisions')
         .select('id, action, revision, actor_user_id, created_at')
         .eq('template_id', catalogId)
@@ -71,7 +71,7 @@ export default defineEventHandler(async (event) => {
     .map(revision => mortgageTemplateText(revision.actor_user_id))
     .filter((value): value is string => Boolean(value)))]
   const actorsResult = actorIds.length
-    ? await serviceRole.from('users').select('id, full_name, email').in('id', actorIds)
+    ? await backendData.from('users').select('id, full_name, email').in('id', actorIds)
     : { data: [], error: null }
   throwMortgageBackofficeDbError(actorsResult.error)
   const actorById = new Map(((actorsResult.data ?? []) as DatabaseRecord[])

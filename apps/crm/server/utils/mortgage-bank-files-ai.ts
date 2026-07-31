@@ -6,7 +6,7 @@ import {
   mortgageBankFileEmbeddingModel,
 } from './mortgage-bank-files'
 
-type ServiceRoleClient = any
+type BackendDataClient = any
 type DatabaseRecord = Record<string, any>
 
 const descriptionModel = 'gemini-3.5-flash-lite'
@@ -14,7 +14,7 @@ const embeddingRecipe = 'search-result-v1'
 const maximumAttempts = 5
 
 interface ProcessMortgageBankFileAiJobsInput {
-  serviceRole: ServiceRoleClient
+  backendData: BackendDataClient
   googleApiKey: string
   actorUserId: string
   organizationId: string
@@ -60,11 +60,11 @@ function sourceExcerpt(value: string) {
 }
 
 async function completeJob(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   job: ClaimedJob,
   metadata: DatabaseRecord,
 ) {
-  const result = await serviceRole
+  const result = await backendData
     .from('mortgage_bank_file_processing_jobs')
     .update({
       status: 'completed',
@@ -81,11 +81,11 @@ async function completeJob(
 }
 
 async function cancelJob(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   job: ClaimedJob,
   reason: string,
 ) {
-  const result = await serviceRole
+  const result = await backendData
     .from('mortgage_bank_file_processing_jobs')
     .update({
       status: 'cancelled',
@@ -102,14 +102,14 @@ async function cancelJob(
 }
 
 async function failJob(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   job: ClaimedJob,
   error: unknown,
 ) {
   const retryMinutes = Math.min(60, 5 * 2 ** Math.max(0, job.attempts - 1))
   const availableAt = new Date(Date.now() + retryMinutes * 60_000).toISOString()
   const lastError = error instanceof Error ? error.message : 'AI processing failed'
-  const result = await serviceRole
+  const result = await backendData
     .from('mortgage_bank_file_processing_jobs')
     .update({
       status: 'failed',
@@ -123,7 +123,7 @@ async function failJob(
 }
 
 async function ensureAuditEvent(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   input: {
     job: ClaimedJob
     fileId: string
@@ -132,7 +132,7 @@ async function ensureAuditEvent(
     metadata: DatabaseRecord
   },
 ) {
-  const existingResult = await serviceRole
+  const existingResult = await backendData
     .from('mortgage_bank_file_events')
     .select('id')
     .eq('file_id', input.fileId)
@@ -144,7 +144,7 @@ async function ensureAuditEvent(
   if (existingResult.error) throw existingResult.error
   if (existingResult.data) return
 
-  const insertResult = await serviceRole
+  const insertResult = await backendData
     .from('mortgage_bank_file_events')
     .insert({
       file_id: input.fileId,
@@ -159,8 +159,8 @@ async function ensureAuditEvent(
   if (insertResult.error) throw insertResult.error
 }
 
-async function versionWithFile(serviceRole: ServiceRoleClient, versionId: string) {
-  const versionResult = await serviceRole
+async function versionWithFile(backendData: BackendDataClient, versionId: string) {
+  const versionResult = await backendData
     .from('mortgage_bank_file_versions')
     .select('id, file_id, extraction_status, embedding_status, extracted_text, generated_description')
     .eq('id', versionId)
@@ -168,7 +168,7 @@ async function versionWithFile(serviceRole: ServiceRoleClient, versionId: string
   if (versionResult.error) throw versionResult.error
   if (!versionResult.data) throw new Error('Bank file version no longer exists')
 
-  const fileResult = await serviceRole
+  const fileResult = await backendData
     .from('mortgage_bank_files')
     .select('id, title')
     .eq('id', versionResult.data.file_id)
@@ -183,16 +183,16 @@ async function versionWithFile(serviceRole: ServiceRoleClient, versionId: string
 }
 
 async function processDescribeJob(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   job: ClaimedJob,
   apiKey: string,
   actorUserId: string,
   organizationId: string,
 ) {
-  const { version, file } = await versionWithFile(serviceRole, job.version_id)
+  const { version, file } = await versionWithFile(backendData, job.version_id)
   const extractedText = String(version.extracted_text ?? '').trim()
   if (version.extraction_status !== 'completed' || !extractedText) {
-    await cancelJob(serviceRole, job, 'missing_extracted_text')
+    await cancelJob(backendData, job, 'missing_extracted_text')
     return { status: 'cancelled' as const, reason: 'missing_extracted_text' }
   }
 
@@ -220,7 +220,7 @@ async function processDescribeJob(
     description = result.text.replace(/\s+/gu, ' ').trim().slice(0, 2_000)
     if (!description) throw new Error('Gemini returned an empty document description')
 
-    const updateResult = await serviceRole
+    const updateResult = await backendData
       .from('mortgage_bank_file_versions')
       .update({ generated_description: description })
       .eq('id', job.version_id)
@@ -228,7 +228,7 @@ async function processDescribeJob(
     generated = true
   }
 
-  await ensureAuditEvent(serviceRole, {
+  await ensureAuditEvent(backendData, {
     job,
     fileId: String(file.id),
     actorUserId,
@@ -240,7 +240,7 @@ async function processDescribeJob(
       reusedExistingResult: !generated,
     },
   })
-  await completeJob(serviceRole, job, {
+  await completeJob(backendData, job, {
     model: descriptionModel,
     source: 'extracted_text',
     descriptionCharacters: description.length,
@@ -249,19 +249,19 @@ async function processDescribeJob(
 }
 
 async function processEmbedJob(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   job: ClaimedJob,
   apiKey: string,
   actorUserId: string,
   organizationId: string,
 ) {
-  const { version, file } = await versionWithFile(serviceRole, job.version_id)
+  const { version, file } = await versionWithFile(backendData, job.version_id)
   if (version.extraction_status !== 'completed') {
-    await cancelJob(serviceRole, job, 'extraction_not_completed')
+    await cancelJob(backendData, job, 'extraction_not_completed')
     return { status: 'cancelled' as const, reason: 'extraction_not_completed' }
   }
 
-  const chunksResult = await serviceRole
+  const chunksResult = await backendData
     .from('mortgage_bank_file_chunks')
     .select('id, chunk_index, content')
     .eq('version_id', job.version_id)
@@ -269,17 +269,17 @@ async function processEmbedJob(
   if (chunksResult.error) throw chunksResult.error
   const chunks = (chunksResult.data ?? []) as DatabaseRecord[]
   if (!chunks.length) {
-    const versionResult = await serviceRole
+    const versionResult = await backendData
       .from('mortgage_bank_file_versions')
       .update({ embedding_status: 'disabled' })
       .eq('id', job.version_id)
     if (versionResult.error) throw versionResult.error
-    await cancelJob(serviceRole, job, 'no_text_chunks')
+    await cancelJob(backendData, job, 'no_text_chunks')
     return { status: 'cancelled' as const, reason: 'no_text_chunks' }
   }
 
   const chunkIds = chunks.map(chunk => chunk.id)
-  const existingResult = await serviceRole
+  const existingResult = await backendData
     .from('mortgage_bank_file_embeddings')
     .select('chunk_id, source_sha256')
     .in('chunk_id', chunkIds)
@@ -300,7 +300,7 @@ async function processEmbedJob(
       : [{ chunk, value, checksum }]
   })
 
-  const versionProcessingResult = await serviceRole
+  const versionProcessingResult = await backendData
     .from('mortgage_bank_file_versions')
     .update({ embedding_status: 'processing' })
     .eq('id', job.version_id)
@@ -327,7 +327,7 @@ async function processEmbedJob(
         throw new Error('Gemini returned an unexpected embedding dimensionality')
       }
 
-      const upsertResult = await serviceRole
+      const upsertResult = await backendData
         .from('mortgage_bank_file_embeddings')
         .upsert(batch.map((item, index) => ({
           chunk_id: item.chunk.id,
@@ -344,7 +344,7 @@ async function processEmbedJob(
     }
   }
 
-  const versionCompletedResult = await serviceRole
+  const versionCompletedResult = await backendData
     .from('mortgage_bank_file_versions')
     .update({
       embedding_status: 'completed',
@@ -354,7 +354,7 @@ async function processEmbedJob(
     .eq('id', job.version_id)
   if (versionCompletedResult.error) throw versionCompletedResult.error
 
-  await ensureAuditEvent(serviceRole, {
+  await ensureAuditEvent(backendData, {
     job,
     fileId: String(file.id),
     actorUserId,
@@ -367,7 +367,7 @@ async function processEmbedJob(
       generatedCount: pending.length,
     },
   })
-  await completeJob(serviceRole, job, {
+  await completeJob(backendData, job, {
     model: mortgageBankFileEmbeddingModel,
     dimensions: mortgageBankFileEmbeddingDimensions,
     recipeVersion: embeddingRecipe,
@@ -388,7 +388,7 @@ export async function processMortgageBankFileAiJobs(
   if (!apiKey) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured')
   const limit = Math.min(10, Math.max(1, Math.trunc(input.limit ?? 5)))
   const now = new Date().toISOString()
-  const jobsResult = await input.serviceRole
+  const jobsResult = await input.backendData
     .from('mortgage_bank_file_processing_jobs')
     .select('id, version_id, job_type, status, attempts, available_at, metadata')
     .in('job_type', ['describe', 'embed'])
@@ -402,7 +402,7 @@ export async function processMortgageBankFileAiJobs(
 
   const outcomes: DatabaseRecord[] = []
   for (const candidate of (jobsResult.data ?? []) as DatabaseRecord[]) {
-    const claimResult = await input.serviceRole
+    const claimResult = await input.backendData
       .from('mortgage_bank_file_processing_jobs')
       .update({
         status: 'processing',
@@ -426,14 +426,14 @@ export async function processMortgageBankFileAiJobs(
     try {
       const result = job.job_type === 'describe'
         ? await processDescribeJob(
-            input.serviceRole,
+            input.backendData,
             job,
             apiKey,
             input.actorUserId,
             input.organizationId,
           )
         : await processEmbedJob(
-            input.serviceRole,
+            input.backendData,
             job,
             apiKey,
             input.actorUserId,
@@ -442,12 +442,12 @@ export async function processMortgageBankFileAiJobs(
       outcomes.push({ jobId: job.id, jobType: job.job_type, ...result })
     } catch (error) {
       if (job.job_type === 'embed') {
-        await input.serviceRole
+        await input.backendData
           .from('mortgage_bank_file_versions')
           .update({ embedding_status: 'failed' })
           .eq('id', job.version_id)
       }
-      await failJob(input.serviceRole, job, error)
+      await failJob(input.backendData, job, error)
       outcomes.push({
         jobId: job.id,
         jobType: job.job_type,

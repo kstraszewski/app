@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
   assertUuid(caseId, 'case id')
 
   const [caseResult, offersResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_cases')
       .select('title')
       .eq('organization_id', session.organizationId)
       .eq('id', caseId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_case_offer_snapshots')
       .select('mortgage_product_id, version_key, scenario_snapshot')
       .eq('organization_id', session.organizationId)

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { setHeader } from 'h3'
 import { appointmentMatchesVerifiedContact } from '~~/server/utils/client-identity'
 import { requireAuthIdentity, throwDbError } from '~~/server/utils/crm'
@@ -23,9 +23,9 @@ function indexById(rows: Array<Record<string, any>>): Map<string, Record<string,
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
   const identity = await requireAuthIdentity(event)
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
-  const linksResult = await serviceRole
+  const linksResult = await backendData
     .from('client_account_links')
     .select(`
       organization_id,
@@ -65,7 +65,7 @@ export default defineEventHandler(async (event) => {
   const appointmentResults = await Promise.all(
     [...linkGroups.values()].map(async group => ({
       verifiedContactNormalized: group.verifiedContactNormalized,
-      result: await serviceRole
+      result: await backendData
         .from('appointments')
         .select(`
           id,
@@ -112,19 +112,19 @@ export default defineEventHandler(async (event) => {
   const expertIds = [...new Set(appointments.map(row => String(row.expert_user_id)))]
 
   const [organizationsResult, facilitiesResult, servicesResult, expertsResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('organizations')
       .select('id, name, slug')
       .in('id', organizationIds),
-    serviceRole
+    backendData
       .from('facilities')
       .select('id, name, city, address_line1, address_line2, postal_code')
       .in('id', facilityIds),
-    serviceRole
+    backendData
       .from('booking_services')
       .select('id, name, duration_minutes')
       .in('id', serviceIds),
-    serviceRole
+    backendData
       .from('users')
       .select('id, full_name, avatar_url')
       .in('id', expertIds),

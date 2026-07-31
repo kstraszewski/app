@@ -35,11 +35,17 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Zestaw template’ów nie odpowiada aktywnym wnioskom CRM. Odśwież kontekst sprawy.',
     })
   }
-  if (crmContext && !crmContext.validation.valid) {
+  const mappingBlockers = new Set(crmContext?.validation.templates.flatMap(template => (
+    template.warnings.map(warning => `${template.templateId}: ${warning}`)
+  )) ?? [])
+  const nonMappingBlockers = crmContext?.validation.blockers.filter(blocker => (
+    !mappingBlockers.has(blocker)
+  )) ?? []
+  if (nonMappingBlockers.length) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Template’y aktywnych wniosków nie są gotowe do przygotowania.',
-      data: { blockers: crmContext.validation.blockers },
+      statusMessage: 'Aktywne wnioski nie są gotowe do przygotowania formularza.',
+      data: { blockers: nonMappingBlockers },
     })
   }
 
@@ -48,7 +54,7 @@ export default defineEventHandler(async (event) => {
       ? await resolvePinnedMultiformTemplates(event, crmContext.applications)
       : []
     const bundle = prepareBundle(templateIds, templateOverrides)
-    if (bundle.warnings.length > 0) {
+    if (!crmContext && bundle.warnings.length > 0) {
       throw createError({
         statusCode: 409,
         statusMessage: 'Wspólny formularz można utworzyć dopiero po zatwierdzeniu wszystkich mapowań.',

@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const teamId = getRequiredParam(event, 'teamId')
   const query = getQuery(event)
 
-  const teamResult = await session.supabase
+  const teamResult = await session.dataApi
     .from('teams')
     .select('id, name')
     .eq('organization_id', session.organizationId)

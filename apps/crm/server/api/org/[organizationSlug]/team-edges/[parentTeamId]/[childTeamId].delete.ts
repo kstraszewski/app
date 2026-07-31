@@ -8,7 +8,7 @@ import {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireAdministrativePermission(session, 'structure.manage')
-  const { error } = await session.supabase
+  const { error } = await session.dataApi
     .from('team_edges')
     .delete()
     .eq('organization_id', session.organizationId)

@@ -7,31 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       administrative_role_permissions: {
@@ -6875,6 +6850,18 @@ export type Database = {
         }
         Returns: Json
       }
+      create_crm_client_anonymization_request: {
+        Args: {
+          p_client_id: string
+          p_idempotency_key: string
+          p_justification: string
+          p_organization_id: string
+          p_request_channel: string
+          p_requested_at: string
+          p_subject_person_id: string
+        }
+        Returns: Json
+      }
       create_crm_client_with_consents: {
         Args: {
           p_consent_decisions: Json
@@ -7320,7 +7307,7 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Database
 
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
@@ -7438,9 +7425,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

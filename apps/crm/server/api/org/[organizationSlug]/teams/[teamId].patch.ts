@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     if (field in body) patch[field] = textValue(body[field]) ?? null
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('teams')
     .update(patch)
     .eq('organization_id', session.organizationId)

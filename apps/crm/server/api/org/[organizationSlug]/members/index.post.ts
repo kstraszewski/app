@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireAdministrativePermission(session, 'iam.members.manage')
   const body = asRecord(await readBody(event))
-  const { data, error } = await session.supabase.rpc('add_organization_member_by_email', {
+  const { data, error } = await session.dataApi.rpc('add_organization_member_by_email', {
     organization_id: session.organizationId,
     email: requiredText(body.email, 'email').toLowerCase(),
     role: textValue(body.role) ?? 'expert',

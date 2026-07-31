@@ -3,8 +3,8 @@ import type { AccountContexts } from '~/types/account'
 
 definePageMeta({ middleware: 'auth', layout: false })
 
-const supabase = useSupabaseClient() as any
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
+const pendingOrganizationName = useCookie<string | null>('openexpert-pending-organization')
 const accountCacheScope = String(authenticatedUser.value?.sub ?? 'anonymous')
 const { data: contexts, refresh: refreshContexts } = await useFetch<AccountContexts>(
   '/api/me/contexts',
@@ -22,14 +22,13 @@ useHead({
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
-onMounted(async () => {
-  const { data } = await supabase.auth.getUser()
-  const metadata = data?.user?.user_metadata
+onMounted(() => {
+  const metadata = authenticatedUser.value?.user_metadata
   if (!fullName.value && typeof metadata?.full_name === 'string') {
     fullName.value = metadata.full_name
   }
-  if (typeof metadata?.organization_name === 'string') {
-    organizationName.value = metadata.organization_name
+  if (pendingOrganizationName.value) {
+    organizationName.value = pendingOrganizationName.value
   }
 })
 
@@ -41,22 +40,29 @@ async function createOrganization() {
   }
 
   loading.value = true
-  const { data, error: rpcError } = await supabase.rpc('create_organization_with_admin', {
-    organization_name: organizationName.value.trim(),
-    full_name: fullName.value.trim() || null,
-  })
-  loading.value = false
-
-  if (rpcError) {
-    const message = String(rpcError.message ?? '')
+  let organization: { slug?: string } | null = null
+  try {
+    organization = await $fetch('/api/onboarding', {
+      method: 'POST',
+      body: {
+        organizationName: organizationName.value.trim(),
+        fullName: fullName.value.trim() || null,
+      },
+    })
+  }
+  catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught)
     error.value = /already has a staff profile/i.test(message)
       ? 'To konto ma już utworzony profil pracownika.'
       : message || 'Nie udało się utworzyć organizacji.'
     return
   }
+  finally {
+    loading.value = false
+  }
 
+  pendingOrganizationName.value = null
   await refreshContexts()
-  const organization = data as { slug?: string } | null
   if (organization?.slug) {
     await navigateTo(`/org/${encodeURIComponent(organization.slug)}/dashboard`)
     return

@@ -7,7 +7,7 @@ import {
 } from '../../utils/directory-catalog'
 import { loadDirectoryCoverImages } from '../../utils/directory-cover-images'
 import { loadDirectoryFacilityMetadata } from '../../utils/directory-facilities'
-import { serverSupabaseServiceRole } from '../../utils/supabase'
+import { serverDataBackend } from '../../utils/data-api'
 
 const WIDGET_PAGE_SIZE = 200
 const RPC_BATCH_SIZE = 20
@@ -20,11 +20,11 @@ function textValue(value: unknown, maxLength = 300): string {
 }
 
 export default defineCachedEventHandler(async (event): Promise<DirectoryPayload> => {
-  const serviceRole = serverSupabaseServiceRole(event)
+  const backendData = serverDataBackend(event)
   const widgetKeys: string[] = []
 
   for (let from = 0; ; from += WIDGET_PAGE_SIZE) {
-    const { data, error } = await serviceRole
+    const { data, error } = await backendData
       .from('booking_widgets')
       .select('public_token')
       .eq('is_active', true)
@@ -59,7 +59,7 @@ export default defineCachedEventHandler(async (event): Promise<DirectoryPayload>
   for (let start = 0; start < widgetKeys.length; start += RPC_BATCH_SIZE) {
     const batch = widgetKeys.slice(start, start + RPC_BATCH_SIZE)
     const results = await Promise.all(batch.map(async (widgetKey) => {
-      const { data, error } = await serviceRole.rpc('get_booking_widget_catalog', {
+      const { data, error } = await backendData.rpc('get_booking_widget_catalog', {
         p_widget_token: widgetKey,
       })
 
@@ -90,8 +90,8 @@ export default defineCachedEventHandler(async (event): Promise<DirectoryPayload>
 
   const directory = buildDirectory(catalogs)
   const [coverImages, metadata] = await Promise.all([
-    loadDirectoryCoverImages(serviceRole, directory.facilities),
-    loadDirectoryFacilityMetadata(serviceRole, directory.facilities),
+    loadDirectoryCoverImages(backendData, directory.facilities),
+    loadDirectoryFacilityMetadata(backendData, directory.facilities),
   ])
 
   return {

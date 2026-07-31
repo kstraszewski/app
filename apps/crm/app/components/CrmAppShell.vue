@@ -26,8 +26,7 @@ const {
   minimizeMeeting,
   endMeeting,
 } = useCrmMeetingPrototype()
-const user = useSupabaseUser()
-const supabase = useHasSupabaseConfig() ? useSupabaseClient() : null
+const user = useAuthUser()
 const route = useRoute()
 const organizationSlug = computed(() => {
   const raw = route.params.organizationSlug
@@ -436,9 +435,8 @@ const omnisearchPages = computed(() => {
 
 async function signOut() {
   try {
-    if (supabase) await supabase.auth.signOut({ scope: 'local' })
+    await signOutAuthenticatedUser()
   } finally {
-    user.value = null
     clearNuxtData('openexpert-organizations')
     await navigateTo('/login')
   }

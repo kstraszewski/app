@@ -16,8 +16,7 @@ withDefaults(defineProps<{
   showLogout: true,
 })
 
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
+const hasAuthConfig = useHasAuthConfig()
 const runtimeConfig = useRuntimeConfig()
 const landingBaseUrl = String(
   runtimeConfig.public.openexpert.landingBaseUrl || 'http://127.0.0.1:3003',
@@ -25,9 +24,9 @@ const landingBaseUrl = String(
 const signingOut = ref(false)
 
 async function signOut() {
-  if (!supabase) return
+  if (!hasAuthConfig) return
   signingOut.value = true
-  await supabase.auth.signOut({ scope: 'local' })
+  await signOutAuthenticatedUser()
   clearNuxtData(key => (
     key.startsWith('client-appointments:')
     || key.startsWith('account-contexts:')

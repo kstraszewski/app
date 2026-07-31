@@ -125,7 +125,7 @@ Importer:
 1. pobiera wyłącznie wskazane oficjalne URL-e;
 2. zachowuje surowy plik w ignorowanym `.data/mortgage-sources/<data>`;
 3. liczy SHA-256;
-4. kopiuje plik do prywatnego bucketu Supabase Storage;
+4. kopiuje plik do prywatnego magazynu obiektowego;
 5. zapisuje status pobrania, źródło, daty i zrecenzowane fakty;
 6. wersjonuje produkt, zamiast nadpisywać jego historię.
 

@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
 
-  const { data: bank, error: bankError } = await session.supabase
+  const { data: bank, error: bankError } = await session.dataApi
     .from('mortgage_banks')
     .select('id')
     .eq('id', bankId)
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 415, statusMessage: 'File contents do not match the selected image format' })
   }
 
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('mortgage_bank_overrides')
     .select('logo_path')
     .eq('organization_id', session.organizationId)
@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
 
   const extension = imageTypes[contentType]
   const logoPath = `${session.organizationId}/${bankId}/${randomUUID()}.${extension}`
-  const { error: uploadError } = await session.supabase.storage
+  const { error: uploadError } = await session.dataApi.storage
     .from(logoBucket)
     .upload(logoPath, logo.data, {
       cacheControl: '31536000',
@@ -73,31 +73,31 @@ export default defineEventHandler(async (event) => {
   }
 
   const result = existing
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_bank_overrides')
         .update({ logo_path: logoPath })
         .eq('organization_id', session.organizationId)
         .eq('bank_id', bankId)
         .select('*')
         .single()
-    : await session.supabase
+    : await session.dataApi
         .from('mortgage_bank_overrides')
         .insert({ organization_id: session.organizationId, bank_id: bankId, logo_path: logoPath })
         .select('*')
         .single()
 
   if (result.error) {
-    await session.supabase.storage.from(logoBucket).remove([logoPath])
+    await session.dataApi.storage.from(logoBucket).remove([logoPath])
     throwDbError(result.error)
   }
 
   if (existing?.logo_path && existing.logo_path !== logoPath) {
-    const { error: removeError } = await session.supabase.storage.from(logoBucket).remove([existing.logo_path])
+    const { error: removeError } = await session.dataApi.storage.from(logoBucket).remove([existing.logo_path])
     if (removeError) console.warn('[mortgages] failed to remove replaced bank logo', removeError.message)
   }
 
   return {
     data: result.data,
-    logoUrl: session.supabase.storage.from(logoBucket).getPublicUrl(logoPath).data.publicUrl,
+    logoUrl: session.dataApi.storage.from(logoBucket).getPublicUrl(logoPath).data.publicUrl,
   }
 })

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import {
   mortgageBackofficeRevision,
@@ -27,8 +27,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Brak Template JSON do zapisania.' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: bank, error: bankError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: bank, error: bankError } = await backendData
     .from('mortgage_banks')
     .select('id, slug')
     .eq('id', bankId)
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     templateId,
   )
   const contentSha256 = mortgageTemplateContentSha256(template)
-  const { data, error } = await serviceRole.rpc('save_mortgage_document_template_draft', {
+  const { data, error } = await backendData.rpc('save_mortgage_document_template_draft', {
     p_bank_id: bankId,
     p_template_key: templateId,
     p_label: template.label,

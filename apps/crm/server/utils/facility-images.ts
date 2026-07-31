@@ -54,7 +54,7 @@ export async function listSignedFacilityCoverImages(
 
   for (let offset = 0; offset < facilityIds.length; offset += facilityCoverBatchSize) {
     const batch = facilityIds.slice(offset, offset + facilityCoverBatchSize)
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('facility_images')
       .select('id, facility_id, storage_bucket, storage_path, alt_text, sort_order, created_at')
       .eq('organization_id', session.organizationId)
@@ -73,7 +73,7 @@ export async function listSignedFacilityCoverImages(
     }
 
     await Promise.all([...firstImageByFacilityId.values()].map(async (image) => {
-      const storage = session.supabase.storage.from(image.storage_bucket)
+      const storage = session.dataApi.storage.from(image.storage_bucket)
       const [thumbnailResult, fallbackResult] = await Promise.all([
         storage.createSignedUrl(image.storage_path, facilityImageSignedUrlTtlSeconds, {
           transform: {
@@ -120,7 +120,7 @@ export async function listSignedFacilityImages(
   session: CrmSession,
   facilityId: string,
 ): Promise<Array<Record<string, unknown>>> {
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_images')
     .select(facilityImageStorageSelect)
     .eq('organization_id', session.organizationId)
@@ -131,7 +131,7 @@ export async function listSignedFacilityImages(
   throwDbError(error)
 
   return await Promise.all(((data ?? []) as FacilityImageRow[]).map(async (image) => {
-    const { data: signed, error: signedError } = await session.supabase.storage
+    const { data: signed, error: signedError } = await session.dataApi.storage
       .from(String(image.storage_bucket))
       .createSignedUrl(String(image.storage_path), facilityImageSignedUrlTtlSeconds)
     if (signedError) {

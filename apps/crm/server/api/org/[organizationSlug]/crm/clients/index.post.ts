@@ -171,7 +171,7 @@ export default defineEventHandler(async (event) => {
       })
     : []
 
-  const { data, error } = await session.supabase.rpc('create_crm_client_with_consents', {
+  const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
     p_organization_id: session.organizationId,
     p_owner_user_id: ownerUserId,
     p_display_name: displayName,

@@ -422,7 +422,7 @@ export async function loadMortgageCatalog(
   options: { includeDisabled?: boolean } = {},
 ): Promise<{ products: JsonRecord[], retrievedAt: string | null }> {
   const today = new Date().toISOString().slice(0, 10)
-  const { data: products, error: productError } = await session.supabase
+  const { data: products, error: productError } = await session.dataApi
     .from('mortgage_products')
     .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color)')
     .eq('is_active', true)
@@ -433,7 +433,7 @@ export async function loadMortgageCatalog(
   if (!productIds.length) return { products: [], retrievedAt: null }
 
   const bankIds = [...new Set((products ?? []).map((product: any) => product.bank_id))]
-  const { data: versions, error: versionError } = await session.supabase
+  const { data: versions, error: versionError } = await session.dataApi
     .from('mortgage_product_versions')
     .select('*')
     .in('product_id', productIds)
@@ -445,7 +445,7 @@ export async function loadMortgageCatalog(
     .map((version: any) => version.source_document_id)
     .filter(Boolean))]
   const { data: sources, error: sourceError } = sourceIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_source_documents')
         .select('id, title, source_url, source_kind, sha256, storage_path, retrieved_at, published_at, retrieval_status, extraction_status')
         .in('id', sourceIds)
@@ -453,12 +453,12 @@ export async function loadMortgageCatalog(
   throwDbError(sourceError)
 
   const [{ data: overrides, error: overrideError }, { data: bankOverrides, error: bankOverrideError }] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('mortgage_product_overrides')
       .select('id, product_id, is_enabled, custom_name, parameters, notes, revision, created_at, updated_at, created_by, updated_by')
       .eq('organization_id', session.organizationId)
       .in('product_id', productIds),
-    session.supabase
+    session.dataApi
       .from('mortgage_bank_overrides')
       .select('id, bank_id, is_enabled, custom_name, custom_website_url, logo_path, revision, created_at, updated_at')
       .eq('organization_id', session.organizationId)
@@ -482,7 +482,7 @@ export async function loadMortgageCatalog(
 
   const selectedVersionIds = [...new Set([...latestByProduct.values()].map(version => version.id))]
   const { data: variants, error: variantError } = selectedVersionIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('mortgage_product_version_variants')
         .select('id, product_version_id, code, name, is_default, calculation_readiness, pricing_config, eligibility_config')
         .in('product_version_id', selectedVersionIds)
@@ -520,7 +520,7 @@ export async function loadMortgageCatalog(
         calculation_readiness: variant?.calculation_readiness ?? 'partial',
       }
       const logoUrl = bankOverride?.logo_path
-        ? session.supabase.storage.from(logoBucket).getPublicUrl(bankOverride.logo_path).data.publicUrl
+        ? session.dataApi.storage.from(logoBucket).getPublicUrl(bankOverride.logo_path).data.publicUrl
         : rawBank.logo_url
       return [{
         id: product.id,

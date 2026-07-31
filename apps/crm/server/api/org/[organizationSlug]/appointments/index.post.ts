@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody, setHeader, setResponseStatus } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -61,15 +61,15 @@ export default defineEventHandler(async (event) => {
   await requireFacilityPermission(session, facilityId, 'view')
   await assertFacilityBookableMemberIds(session, facilityId, [expertUserId])
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const clientRequest = serviceRole
+  const backendData = serverDataBackend(event) as any
+  const clientRequest = backendData
     .from('crm_clients')
     .select('id')
     .eq('organization_id', session.organizationId)
     .eq('id', clientId)
     .maybeSingle()
   const personRequest = clientPersonId
-    ? serviceRole
+    ? backendData
         .from('crm_client_people')
         .select('id')
         .eq('organization_id', session.organizationId)
@@ -87,7 +87,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Client person does not belong to the selected client' })
   }
 
-  const { data, error } = await serviceRole.rpc('create_staff_appointment', {
+  const { data, error } = await backendData.rpc('create_staff_appointment', {
     p_organization_id: session.organizationId,
     p_facility_id: facilityId,
     p_service_id: serviceId,

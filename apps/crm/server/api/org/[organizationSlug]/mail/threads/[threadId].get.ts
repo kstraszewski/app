@@ -19,8 +19,8 @@ export default defineEventHandler(async (event): Promise<MailThreadDetailPayload
     throw createError({ statusCode: 400, statusMessage: 'Invalid Gmail thread ID' })
   }
 
-  const { serviceRole, connection } = await requireUserMailConnection(event, session)
-  const accessToken = await activeMailAccessToken(event, serviceRole, connection)
+  const { backendData, connection } = await requireUserMailConnection(event, session)
+  const accessToken = await activeMailAccessToken(event, backendData, connection)
   try {
     const data = await fetchGmailThread(
       accessToken,
@@ -28,14 +28,14 @@ export default defineEventHandler(async (event): Promise<MailThreadDetailPayload
       threadId,
     )
     if (connection.status !== 'active') {
-      await markMailConnectionStatus(serviceRole, connection, 'active', null)
+      await markMailConnectionStatus(backendData, connection, 'active', null)
     }
     return { data }
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number })?.statusCode)
     if (statusCode === 401 || statusCode === 403) {
       await markMailConnectionStatus(
-        serviceRole,
+        backendData,
         connection,
         'revoked',
         'Google no longer authorizes access to this Gmail account',

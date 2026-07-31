@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import {
   deleteCookie,
   getCookie,
@@ -76,8 +76,8 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Reconnect the same Gmail account to extend its permissions',
       })
     }
-    const serviceRole = serverSupabaseServiceRole(event) as any
-    const { data: existing, error: existingError } = await serviceRole
+    const backendData = serverDataBackend(event) as any
+    const { data: existing, error: existingError } = await backendData
       .from('mail_connections')
       .select('id, account_id, encrypted_refresh_token')
       .eq('organization_id', session.organizationId)
@@ -112,13 +112,13 @@ export default defineEventHandler(async (event) => {
       last_error: null,
     }
     const result = existing?.id
-      ? await serviceRole
+      ? await backendData
           .from('mail_connections')
           .update(values)
           .eq('organization_id', session.organizationId)
           .eq('owner_user_id', session.userId)
           .eq('id', existing.id)
-      : await serviceRole.from('mail_connections').insert(values)
+      : await backendData.from('mail_connections').insert(values)
     throwDbError(result.error)
 
     return redirectWithStatus(event, flow.returnTo, 'connected')

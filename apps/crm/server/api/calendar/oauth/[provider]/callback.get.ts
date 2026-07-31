@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { deleteCookie, getCookie, getQuery, sendRedirect } from 'h3'
 import { requireCrmSession, getRequiredParam, textValue, throwDbError } from '~~/server/utils/crm'
 import {
@@ -44,8 +44,8 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 409, statusMessage: 'Connected account has no writable calendar' })
     }
 
-    const serviceRole = serverSupabaseServiceRole(event) as any
-    let existingQuery = serviceRole
+    const backendData = serverDataBackend(event) as any
+    let existingQuery = backendData
       .from('calendar_connections')
       .select('id, account_id, encrypted_refresh_token')
       .eq('organization_id', session.organizationId)
@@ -81,8 +81,8 @@ export default defineEventHandler(async (event) => {
     }
 
     const result = existing?.id
-      ? await serviceRole.from('calendar_connections').update(values).eq('id', existing.id)
-      : await serviceRole.from('calendar_connections').insert(values)
+      ? await backendData.from('calendar_connections').update(values).eq('id', existing.id)
+      : await backendData.from('calendar_connections').insert(values)
     throwDbError(result.error)
     return redirectWithStatus(event, flow.returnTo, provider, 'connected')
   } catch {

@@ -172,7 +172,7 @@ export async function searchCrmCases(
   filters: CaseSearchFilters,
 ): Promise<CaseSearchPayload> {
   const rpcName = filters.q ? 'search_crm_cases_with_context' : 'search_crm_cases'
-  const { data, error } = await session.supabase.rpc(rpcName, {
+  const { data, error } = await session.dataApi.rpc(rpcName, {
     p_organization_id: session.organizationId,
     p_filters: filters,
   })

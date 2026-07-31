@@ -3,7 +3,7 @@ import { decorateBookingWidget, ensureGenericMeetingService } from '~~/server/ut
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  const { data: memberships, error: membershipsError } = await session.supabase
+  const { data: memberships, error: membershipsError } = await session.dataApi
     .from('facility_memberships')
     .select('facility_id')
     .eq('organization_id', session.organizationId)
@@ -33,45 +33,45 @@ export default defineEventHandler(async (event) => {
     bookingCountsResult,
   ]
     = await Promise.all([
-      session.supabase
+      session.dataApi
         .from('facilities')
         .select('id, organization_id, name, slug, description, timezone, address_line1, address_line2, postal_code, city, country_code, phone, email, is_active, created_at, updated_at')
         .eq('organization_id', session.organizationId)
         .eq('is_active', true)
         .in('id', facilityIds)
         .order('name'),
-      session.supabase
+      session.dataApi
         .from('facility_services')
         .select('facility_id, service_id, is_active')
         .eq('organization_id', session.organizationId)
         .eq('is_active', true)
         .in('facility_id', facilityIds),
-      session.supabase
+      session.dataApi
         .from('facility_service_experts')
         .select('facility_id, service_id, user_id, is_active')
         .eq('organization_id', session.organizationId)
         .eq('user_id', session.userId)
         .eq('is_active', true)
         .in('facility_id', facilityIds),
-      session.supabase
+      session.dataApi
         .from('booking_services')
         .select('*')
         .eq('organization_id', session.organizationId)
         .eq('is_active', true)
         .order('name'),
-      session.supabase
+      session.dataApi
         .from('booking_widgets')
         .select('*')
         .eq('organization_id', session.organizationId)
         .eq('fixed_expert_user_id', session.userId)
         .in('facility_id', facilityIds)
         .order('created_at', { ascending: false }),
-      session.supabase
+      session.dataApi
         .from('booking_widget_services')
         .select('facility_id, widget_id, service_id')
         .eq('organization_id', session.organizationId)
         .in('facility_id', facilityIds),
-      session.supabase.rpc('get_personal_booking_widget_counts', {
+      session.dataApi.rpc('get_personal_booking_widget_counts', {
         p_organization_id: session.organizationId,
         p_expert_user_id: session.userId,
         p_since: thirtyDaysAgo,

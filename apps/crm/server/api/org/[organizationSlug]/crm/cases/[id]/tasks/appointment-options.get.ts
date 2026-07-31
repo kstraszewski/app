@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getQuery, setHeader } from 'h3'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
@@ -51,13 +51,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const [caseResult, assigneeResult, accessibleFacilityIds] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_cases')
       .select('id, client_id')
       .eq('organization_id', session.organizationId)
       .eq('id', caseId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -83,8 +83,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const clientPersonResult = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const clientPersonResult = await backendData
     .from('crm_client_people')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -99,7 +99,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const bookableMembershipsResult = await serviceRole
+  const bookableMembershipsResult = await backendData
     .from('facility_memberships')
     .select('facility_id')
     .eq('organization_id', session.organizationId)
@@ -138,14 +138,14 @@ export default defineEventHandler(async (event) => {
     openingHoursResult,
     openingOverridesResult,
   ] = await Promise.all([
-    serviceRole
+    backendData
       .from('expert_availability_rules')
       .select('facility_id, valid_until')
       .eq('organization_id', session.organizationId)
       .eq('user_id', assigneeUserId)
       .eq('is_active', true)
       .in('facility_id', bookableFacilityIds),
-    serviceRole
+    backendData
       .from('expert_availability_overrides')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
@@ -153,13 +153,13 @@ export default defineEventHandler(async (event) => {
       .eq('is_unavailable', false)
       .gte('local_date', firstDate)
       .in('facility_id', bookableFacilityIds),
-    serviceRole
+    backendData
       .from('facility_opening_hours')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
       .eq('is_active', true)
       .in('facility_id', bookableFacilityIds),
-    serviceRole
+    backendData
       .from('facility_opening_overrides')
       .select('facility_id')
       .eq('organization_id', session.organizationId)
@@ -202,7 +202,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const facilitiesResult = await serviceRole
+  const facilitiesResult = await backendData
     .from('facilities')
     .select('id, name, timezone')
     .eq('organization_id', session.organizationId)
@@ -221,7 +221,7 @@ export default defineEventHandler(async (event) => {
     )
     if (!service) continue
     const slotResults = await Promise.all(dates.map(localDate => (
-      serviceRole.rpc('get_staff_booking_slots', {
+      backendData.rpc('get_staff_booking_slots', {
         p_organization_id: session.organizationId,
         p_facility_id: facility.id,
         p_service_id: service.id,

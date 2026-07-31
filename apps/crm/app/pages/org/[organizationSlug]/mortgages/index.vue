@@ -568,7 +568,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
       color="error"
       variant="subtle"
       title="Nie udało się pobrać katalogu"
-      description="Uruchom lokalne Supabase i synchronizację produktów: pnpm db:setup."
+      description="Uruchom lokalny stack i synchronizację produktów: pnpm db:setup."
     />
 
     <UAlert

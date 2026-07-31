@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   await requireOrganizationMember(session, userId)
   await requireAdministrativePermission(session, 'privacy.grants.request')
 
-  const { data, error } = await session.supabase.rpc(
+  const { data, error } = await session.dataApi.rpc(
     'request_crm_client_anonymization_execution_grant',
     {
       p_organization_id: session.organizationId,

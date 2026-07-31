@@ -1,8 +1,8 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'guest' })
 
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
+const hasAuthConfig = useHasAuthConfig()
+const authClient = hasAuthConfig ? useAuthClient() : null
 const { errorMessage } = useAuthFlow()
 
 const email = ref('')
@@ -14,22 +14,25 @@ useHead({ title: 'Odzyskaj hasło — OpenExpert CRM' })
 
 async function requestReset() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
   loading.value = true
-  const redirectTo = import.meta.client
-    ? new URL('/reset-password', window.location.origin).toString()
-    : '/reset-password'
-  const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-    email.value.trim().toLowerCase(),
-    { redirectTo },
-  )
-  loading.value = false
-
-  if (resetError) {
-    error.value = errorMessage(resetError)
-    return
+  try {
+    const { error: resetError } = await authClient.requestPasswordReset({
+      email: email.value.trim().toLowerCase(),
+      redirectTo: '/reset-password',
+    })
+    if (resetError) {
+      error.value = errorMessage(resetError)
+      return
+    }
+    sent.value = true
   }
-  sent.value = true
+  catch (resetError) {
+    error.value = errorMessage(resetError as { message?: string })
+  }
+  finally {
+    loading.value = false
+  }
 }
 </script>
 

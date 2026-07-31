@@ -7,7 +7,7 @@ import {
   type PdfPageGeometry,
   type TemplateBinding,
 } from '@openexpert/multiform'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getHeader, readBody, setHeader } from 'h3'
 import sharp from 'sharp'
 import { targetBoxToVisualCropBox } from '~~/app/utils/multiform-visual-geometry'
@@ -244,14 +244,14 @@ export default defineEventHandler(async (event) => {
   }
   mortgageTemplateJsonBytes(body.template)
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const [bankResult, templateResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_document_templates')
       .select('draft_revision')
       .eq('bank_id', bankId)
@@ -369,7 +369,7 @@ export default defineEventHandler(async (event) => {
     clearTimeout(timeout)
   }
 
-  const currentRevisionResult = await serviceRole
+  const currentRevisionResult = await backendData
     .from('mortgage_document_templates')
     .select('draft_revision')
     .eq('bank_id', bankId)

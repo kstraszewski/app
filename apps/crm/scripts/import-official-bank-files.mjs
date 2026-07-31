@@ -4,7 +4,16 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createClient } from '@supabase/supabase-js'
+import {
+  createAuthenticatedDataApiClient,
+  createDataApiTokenSigner,
+} from '@openexpert/data-api'
+import {
+  createMinioStorageProvider,
+  createStorageClient,
+  createStorageBucketAdapter,
+  getStorageNamespaceDefinition,
+} from '@openexpert/storage'
 
 const BUCKET = 'mortgage-bank-files'
 const MAXIMUM_BYTES = 50 * 1024 * 1024
@@ -60,30 +69,95 @@ async function readOptionalText(path) {
   }
 }
 
-async function loadLocalSupabaseConfiguration() {
+function requireConfiguration(values, key) {
+  const value = String(values[key] ?? '').trim()
+  if (!value) throw new Error(`Brak wymaganej konfiguracji ${key}.`)
+  return value
+}
+
+function privateKey(value) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) {
+    throw new Error(
+      'Brak NUXT_DATA_API_JWT_PRIVATE_KEY. Uruchom najpierw pnpm db:local:setup.',
+    )
+  }
+  if (normalized.includes('-----BEGIN')) return normalized.replace(/\\n/gu, '\n')
+
+  const decoded = Buffer.from(normalized, 'base64').toString('utf8').trim()
+  if (!decoded.includes('-----BEGIN PRIVATE KEY-----')) {
+    throw new Error(
+      'NUXT_DATA_API_JWT_PRIVATE_KEY musi być kluczem PKCS8 PEM '
+      + 'albo jego reprezentacją base64.',
+    )
+  }
+  return decoded
+}
+
+function assertLocalUrl(value, label) {
+  const parsed = new URL(value)
+  if (!['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname)) {
+    throw new Error(
+      `${label} działa wyłącznie lokalnie (otrzymano host: ${parsed.hostname}).`,
+    )
+  }
+  return parsed.toString().replace(/\/+$/u, '')
+}
+
+async function loadLocalPlatformClient() {
   const rootValues = parseEnvFile(await readOptionalText(join(repositoryRoot, '.env')))
+  const stackValues = parseEnvFile(
+    await readOptionalText(join(repositoryRoot, '.env.local-stack')),
+  )
   const crmValues = parseEnvFile(await readOptionalText(join(repositoryRoot, 'apps/crm/.env')))
-  const values = { ...rootValues, ...crmValues, ...process.env }
-  const url = values.NUXT_PUBLIC_SUPABASE_URL || values.SUPABASE_URL
-  const secretKey = values.NUXT_SUPABASE_SECRET_KEY
-    || values.SUPABASE_SERVICE_ROLE_KEY
-    || values.SUPABASE_SECRET_KEY
-
-  if (!url || !secretKey) {
+  const values = { ...rootValues, ...stackValues, ...crmValues, ...process.env }
+  const dataApiUrl = values.NUXT_PUBLIC_DATA_API_URL || values.NUXT_DATA_API_URL
+  if (!dataApiUrl) {
     throw new Error(
-      'Brak lokalnej konfiguracji Supabase. Ustaw NUXT_PUBLIC_SUPABASE_URL '
-      + 'oraz NUXT_SUPABASE_SECRET_KEY w apps/crm/.env.',
+      'Brak lokalnego Data API. Uruchom pnpm db:local:setup albo ustaw '
+      + 'NUXT_PUBLIC_DATA_API_URL.',
     )
   }
 
-  const parsedUrl = new URL(url)
-  if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
+  if ((values.NUXT_STORAGE_PROVIDER || 'minio') !== 'minio') {
     throw new Error(
-      `Importer działa wyłącznie z lokalnym Supabase (otrzymano host: ${parsedUrl.hostname}).`,
+      'Importer lokalny wymaga NUXT_STORAGE_PROVIDER=minio.',
     )
   }
 
-  return { url, secretKey }
+  const signer = createDataApiTokenSigner({
+    audience: requireConfiguration(values, 'NUXT_DATA_API_JWT_AUDIENCE'),
+    issuer: requireConfiguration(values, 'NUXT_DATA_API_JWT_ISSUER'),
+    keyId: requireConfiguration(values, 'NUXT_DATA_API_JWT_KEY_ID'),
+    privateKey: privateKey(values.NUXT_DATA_API_JWT_PRIVATE_KEY),
+    ttlSeconds: 60,
+  })
+  const minioEndpoint = assertLocalUrl(
+    values.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
+    'Importer plików bankowych',
+  )
+  const storage = createStorageBucketAdapter(
+    createStorageClient(createMinioStorageProvider({
+      endpoint: minioEndpoint,
+      region: values.NUXT_MINIO_REGION || 'us-east-1',
+      accessKeyId: requireConfiguration(values, 'NUXT_MINIO_ACCESS_KEY_ID'),
+      secretAccessKey: requireConfiguration(values, 'NUXT_MINIO_SECRET_ACCESS_KEY'),
+      publicBucket: values.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
+      privateBucket: values.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
+      publicBaseUrl: values.NUXT_MINIO_PUBLIC_BASE_URL || undefined,
+    })),
+  )
+  const client = createAuthenticatedDataApiClient(
+    assertLocalUrl(dataApiUrl, 'Importer plików bankowych'),
+    () => signer.signBackend({ source: 'official-bank-file-importer' }),
+    {
+      headers: {
+        'X-Client-Info': 'openexpert-official-bank-file-importer/2.0',
+      },
+      retry: false,
+    },
+  )
+  return Object.assign(client, { storage })
 }
 
 function assertPlainObject(value, label) {
@@ -377,27 +451,26 @@ function resultData(result, label) {
   return result.data
 }
 
-async function loadCatalog(supabase) {
-  const [banksResult, categoriesResult, productsResult, bucketResult] = await Promise.all([
-    supabase.from('mortgage_banks').select('id, slug, name'),
-    supabase
+async function loadCatalog(client) {
+  const [banksResult, categoriesResult, productsResult] = await Promise.all([
+    client.from('mortgage_banks').select('id, slug, name'),
+    client
       .from('mortgage_bank_file_categories')
       .select('id, category_key')
       .eq('is_archived', false),
-    supabase
+    client
       .from('mortgage_products')
       .select('id, bank_id, created_at')
       .eq('is_active', true)
       .order('created_at', { ascending: true }),
-    supabase.storage.getBucket(BUCKET),
   ])
 
   const banks = resultData(banksResult, 'Nie udało się pobrać banków')
   const categories = resultData(categoriesResult, 'Nie udało się pobrać kategorii plików')
   const products = resultData(productsResult, 'Nie udało się pobrać produktów hipotecznych')
-  const bucket = resultData(bucketResult, 'Nie udało się odczytać bucketa plików bankowych')
-
-  if (bucket.public) throw new Error(`Bucket ${BUCKET} musi być prywatny.`)
+  if (getStorageNamespaceDefinition(BUCKET).access !== 'private') {
+    throw new Error(`Przestrzeń plików ${BUCKET} musi być prywatna.`)
+  }
 
   const banksBySlug = new Map(banks.map(bank => [bank.slug, bank]))
   const categoriesByKey = new Map(
@@ -413,8 +486,8 @@ async function loadCatalog(supabase) {
   return { banksBySlug, categoriesByKey, firstProductByBank }
 }
 
-async function findLogicalFile(supabase, bankId, title) {
-  const result = await supabase
+async function findLogicalFile(client, bankId, title) {
+  const result = await client
     .from('mortgage_bank_files')
     .select('id, title, current_version_id')
     .eq('bank_id', bankId)
@@ -427,9 +500,9 @@ async function findLogicalFile(supabase, bankId, title) {
   ) ?? null
 }
 
-async function ensureProductLink(supabase, fileId, productId) {
+async function ensureProductLink(client, fileId, productId) {
   if (!productId) return
-  const result = await supabase
+  const result = await client
     .from('mortgage_bank_file_products')
     .upsert(
       {
@@ -443,28 +516,28 @@ async function ensureProductLink(supabase, fileId, productId) {
 }
 
 async function rollbackImportedVersion(
-  supabase,
+  client,
   { fileId, versionId, storagePath, previousVersionId, createdLogicalFile },
 ) {
   if (createdLogicalFile) {
-    await supabase.from('mortgage_bank_files').delete().eq('id', fileId)
+    await client.from('mortgage_bank_files').delete().eq('id', fileId)
   } else {
-    await supabase
+    await client
       .from('mortgage_bank_files')
       .update({ current_version_id: previousVersionId })
       .eq('id', fileId)
     if (previousVersionId) {
-      await supabase
+      await client
         .from('mortgage_bank_file_versions')
         .update({ status: 'current' })
         .eq('id', previousVersionId)
     }
-    await supabase.from('mortgage_bank_file_versions').delete().eq('id', versionId)
+    await client.from('mortgage_bank_file_versions').delete().eq('id', versionId)
   }
-  if (storagePath) await supabase.storage.from(BUCKET).remove([storagePath])
+  if (storagePath) await client.storage.from(BUCKET).remove([storagePath])
 }
 
-async function importDocument(supabase, catalog, entry, downloaded) {
+async function importDocument(client, catalog, entry, downloaded) {
   const bank = catalog.banksBySlug.get(entry.bankSlug)
   if (!bank) throw new Error(`Brak banku o slug ${entry.bankSlug} w lokalnej bazie.`)
 
@@ -474,11 +547,11 @@ async function importDocument(supabase, catalog, entry, downloaded) {
   const productId = catalog.firstProductByBank.get(bank.id) ?? null
   const checksum = sha256(downloaded.bytes)
   const title = entry.title.trim()
-  let logicalFile = await findLogicalFile(supabase, bank.id, title)
+  let logicalFile = await findLogicalFile(client, bank.id, title)
   let createdLogicalFile = false
 
   if (!logicalFile) {
-    const createResult = await supabase
+    const createResult = await client
       .from('mortgage_bank_files')
       .insert({
         bank_id: bank.id,
@@ -496,7 +569,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
   }
 
   const fileId = logicalFile.id
-  const duplicateResult = await supabase
+  const duplicateResult = await client
     .from('mortgage_bank_file_versions')
     .select('id, version_number, status')
     .eq('file_id', fileId)
@@ -514,15 +587,15 @@ async function importDocument(supabase, catalog, entry, downloaded) {
     }
     if (entry.notes) update.description = entry.notes
     resultData(
-      await supabase.from('mortgage_bank_files').update(update).eq('id', fileId),
+      await client.from('mortgage_bank_files').update(update).eq('id', fileId),
       `Nie udało się odświeżyć metadanych „${title}”`,
     )
-    await ensureProductLink(supabase, fileId, productId)
+    await ensureProductLink(client, fileId, productId)
     return { status: 'unchanged', versionNumber: duplicate.version_number, pageCount: null }
   }
 
   if (duplicate) {
-    const incompleteVersionResult = await supabase
+    const incompleteVersionResult = await client
       .from('mortgage_bank_file_versions')
       .select('storage_path')
       .eq('id', duplicate.id)
@@ -532,16 +605,16 @@ async function importDocument(supabase, catalog, entry, downloaded) {
       `Nie udało się odczytać niedokończonej wersji „${title}”`,
     )
     resultData(
-      await supabase.storage.from(BUCKET).remove([incompleteVersion.storage_path]),
+      await client.storage.from(BUCKET).remove([incompleteVersion.storage_path]),
       `Nie udało się usunąć niedokończonego obiektu „${title}”`,
     )
     resultData(
-      await supabase.from('mortgage_bank_file_versions').delete().eq('id', duplicate.id),
+      await client.from('mortgage_bank_file_versions').delete().eq('id', duplicate.id),
       `Nie udało się usunąć niedokończonej wersji „${title}”`,
     )
   }
 
-  const latestResult = await supabase
+  const latestResult = await client
     .from('mortgage_bank_file_versions')
     .select('version_number')
     .eq('file_id', fileId)
@@ -556,7 +629,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
   let uploaded = false
 
   try {
-    const uploadResult = await supabase.storage
+    const uploadResult = await client.storage
       .from(BUCKET)
       .upload(storagePath, downloaded.bytes, {
         contentType: 'application/pdf',
@@ -566,7 +639,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
     resultData(uploadResult, `Nie udało się zapisać PDF „${title}” w Storage`)
     uploaded = true
 
-    const createVersionResult = await supabase
+    const createVersionResult = await client
       .from('mortgage_bank_file_versions')
       .insert({
         id: versionId,
@@ -595,7 +668,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
 
     const extracted = await extractPdf(downloaded.bytes)
     if (extracted.chunks.length) {
-      const chunksResult = await supabase
+      const chunksResult = await client
         .from('mortgage_bank_file_chunks')
         .insert(
           extracted.chunks.map(chunk => ({
@@ -607,7 +680,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
     }
 
     const finishedAt = new Date().toISOString()
-    const jobsResult = await supabase
+    const jobsResult = await client
       .from('mortgage_bank_file_processing_jobs')
       .insert([
         {
@@ -652,7 +725,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
       ])
     resultData(jobsResult, `Nie udało się zapisać zadań przetwarzania „${title}”`)
 
-    const finalizeVersionResult = await supabase
+    const finalizeVersionResult = await client
       .from('mortgage_bank_file_versions')
       .update({
         status: 'current',
@@ -684,13 +757,13 @@ async function importDocument(supabase, catalog, entry, downloaded) {
     }
     if (entry.notes) fileUpdate.description = entry.notes
     resultData(
-      await supabase.from('mortgage_bank_files').update(fileUpdate).eq('id', fileId),
+      await client.from('mortgage_bank_files').update(fileUpdate).eq('id', fileId),
       `Nie udało się ustawić bieżącej wersji „${title}”`,
     )
 
     if (previousVersionId) {
       resultData(
-        await supabase
+        await client
           .from('mortgage_bank_file_versions')
           .update({ status: 'archived' })
           .eq('id', previousVersionId),
@@ -698,9 +771,9 @@ async function importDocument(supabase, catalog, entry, downloaded) {
       )
     }
 
-    await ensureProductLink(supabase, fileId, productId)
+    await ensureProductLink(client, fileId, productId)
     resultData(
-      await supabase.from('mortgage_bank_file_events').insert({
+      await client.from('mortgage_bank_file_events').insert({
         file_id: fileId,
         version_id: versionId,
         actor_user_id: null,
@@ -726,7 +799,7 @@ async function importDocument(supabase, catalog, entry, downloaded) {
       pageCount: extracted.pageCount,
     }
   } catch (error) {
-    await rollbackImportedVersion(supabase, {
+    await rollbackImportedVersion(client, {
       fileId,
       versionId,
       storagePath: uploaded ? storagePath : null,
@@ -739,17 +812,8 @@ async function importDocument(supabase, catalog, entry, downloaded) {
 
 async function main() {
   const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
-  const { url, secretKey } = await loadLocalSupabaseConfiguration()
-  const supabase = createClient(url, secretKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-    global: {
-      headers: { 'X-Client-Info': 'openexpert-official-bank-file-importer/1.0' },
-    },
-  })
-  const catalog = await loadCatalog(supabase)
+  const client = await loadLocalPlatformClient()
+  const catalog = await loadCatalog(client)
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'openexpert-bank-files-'))
   const summary = { imported: 0, unchanged: 0, failed: 0 }
 
@@ -758,7 +822,7 @@ async function main() {
       try {
         process.stdout.write(`Pobieranie: ${entry.bankSlug} — ${entry.title}\n`)
         const downloaded = await downloadPdf(entry, temporaryDirectory)
-        const result = await importDocument(supabase, catalog, entry, downloaded)
+        const result = await importDocument(client, catalog, entry, downloaded)
         summary[result.status] += 1
         const details = result.status === 'imported'
           ? `v${result.versionNumber}, ${result.pageCount} str.`

@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError } from 'h3'
 import {
   mortgageBackofficeUuid,
@@ -47,20 +47,20 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireSuperAdmin(session)
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
   const [bankResult, productsResult, catalogResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug, name')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_products')
       .select('id, name, current_published_version_id')
       .eq('bank_id', bankId)
       .order('name'),
-    serviceRole
+    backendData
       .from('mortgage_document_templates')
       .select('id, template_key, label, source_file_name, source_sha256, registry_version, draft_json, draft_validation_report, draft_revision, draft_updated_at, active_json, active_validation_report, active_revision, active_published_at, current_published_revision_id, updated_at')
       .eq('bank_id', bankId),
@@ -82,12 +82,12 @@ export default defineEventHandler(async (event) => {
   const [versionsResult, draftsResult] = productIds.length
     ? await Promise.all([
         currentVersionIds.length
-          ? serviceRole
+          ? backendData
               .from('mortgage_product_versions')
               .select('id, product_id, multiform_template_ids, document_requirements')
               .in('id', currentVersionIds)
           : Promise.resolve({ data: [], error: null }),
-        serviceRole
+        backendData
           .from('mortgage_product_drafts')
           .select('product_id, draft_data')
           .in('product_id', productIds),

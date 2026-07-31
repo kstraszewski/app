@@ -25,7 +25,7 @@ export async function selectCasePropertyIfNone(
   propertyId: string,
   selectedAt = new Date().toISOString(),
 ): Promise<void> {
-  const { error } = await session.supabase
+  const { error } = await session.dataApi
     .from('crm_case_property_selections')
     .upsert({
       organization_id: session.organizationId,
@@ -47,7 +47,7 @@ export async function attachSignedPropertyImages<T extends PropertyRow>(
   const propertyIds = properties.map(property => String(property.id))
   if (!propertyIds.length) return []
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_property_images')
     .select(propertyImageStorageSelect)
     .eq('organization_id', session.organizationId)
@@ -58,7 +58,7 @@ export async function attachSignedPropertyImages<T extends PropertyRow>(
 
   const imageRows = (data ?? []) as ImageRow[]
   const signedImages = await Promise.all(imageRows.map(async (image) => {
-    const { data: signed, error: signedError } = await session.supabase.storage
+    const { data: signed, error: signedError } = await session.dataApi.storage
       .from(String(image.storage_bucket))
       .createSignedUrl(String(image.storage_path), 60 * 60)
     if (signedError) {

@@ -34,7 +34,7 @@ export const mailSendMessageId = (idempotencyKey: string): string => (
 )
 
 export async function claimMailSendRequest(
-  serviceRole: any,
+  backendData: any,
   session: CrmSession,
   connection: MailConnectionRow,
   idempotencyKey: string,
@@ -50,7 +50,7 @@ export async function claimMailSendRequest(
     status: 'pending',
     attempts: 1,
   }
-  const inserted = await serviceRole
+  const inserted = await backendData
     .from('mail_send_requests')
     .insert(values)
     .select('*')
@@ -63,7 +63,7 @@ export async function claimMailSendRequest(
   }
 
   const existing = await loadMailSendRequest(
-    serviceRole,
+    backendData,
     session,
     connection.id,
     idempotencyKey,
@@ -78,7 +78,7 @@ export async function claimMailSendRequest(
     return { row: existing, claimed: false }
   }
 
-  const retried = await serviceRole
+  const retried = await backendData
     .from('mail_send_requests')
     .update({
       status: 'pending',
@@ -98,7 +98,7 @@ export async function claimMailSendRequest(
   }
   return {
     row: await loadMailSendRequest(
-      serviceRole,
+      backendData,
       session,
       connection.id,
       idempotencyKey,
@@ -108,18 +108,18 @@ export async function claimMailSendRequest(
 }
 
 export async function enforceMailSendRateLimit(
-  serviceRole: any,
+  backendData: any,
   session: CrmSession,
 ): Promise<void> {
   const now = Date.now()
   const [minute, hour] = await Promise.all([
-    serviceRole
+    backendData
       .from('mail_send_requests')
       .select('attempts')
       .eq('organization_id', session.organizationId)
       .eq('owner_user_id', session.userId)
       .gte('updated_at', new Date(now - 60_000).toISOString()),
-    serviceRole
+    backendData
       .from('mail_send_requests')
       .select('attempts')
       .eq('organization_id', session.organizationId)
@@ -145,12 +145,12 @@ export async function enforceMailSendRateLimit(
 }
 
 export async function markMailSendRequestSent(
-  serviceRole: any,
+  backendData: any,
   row: MailSendRequestRow,
   providerMessageId: string,
   providerThreadId: string,
 ): Promise<void> {
-  await updateMailSendRequest(serviceRole, row, {
+  await updateMailSendRequest(backendData, row, {
     status: 'sent',
     provider_message_id: providerMessageId,
     provider_thread_id: providerThreadId,
@@ -159,24 +159,24 @@ export async function markMailSendRequestSent(
 }
 
 export async function markMailSendRequestOutcome(
-  serviceRole: any,
+  backendData: any,
   row: MailSendRequestRow,
   status: 'unknown' | 'failed',
   errorCode: string,
 ): Promise<void> {
-  await updateMailSendRequest(serviceRole, row, {
+  await updateMailSendRequest(backendData, row, {
     status,
     error_code: errorCode.slice(0, 100),
   })
 }
 
 async function loadMailSendRequest(
-  serviceRole: any,
+  backendData: any,
   session: CrmSession,
   connectionId: string,
   idempotencyKey: string,
 ): Promise<MailSendRequestRow> {
-  const result = await serviceRole
+  const result = await backendData
     .from('mail_send_requests')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -189,11 +189,11 @@ async function loadMailSendRequest(
 }
 
 async function updateMailSendRequest(
-  serviceRole: any,
+  backendData: any,
   row: MailSendRequestRow,
   values: Record<string, unknown>,
 ): Promise<void> {
-  const result = await serviceRole
+  const result = await backendData
     .from('mail_send_requests')
     .update(values)
     .eq('organization_id', row.organization_id)

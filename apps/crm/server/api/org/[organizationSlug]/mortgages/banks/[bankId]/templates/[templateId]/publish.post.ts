@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import {
   mortgageBackofficeRevision,
@@ -22,15 +22,15 @@ export default defineEventHandler(async (event) => {
   const templateId = mortgageTemplateKey(getRequiredParam(event, 'templateId'))
   const body = await readBody<{ expectedRevision?: unknown }>(event)
   const expectedRevision = mortgageBackofficeRevision(body?.expectedRevision)
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
   const [bankResult, templateResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_document_templates')
       .select('draft_json, draft_revision')
       .eq('bank_id', bankId)
@@ -65,7 +65,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await serviceRole.rpc('publish_mortgage_document_template_draft', {
+  const { data, error } = await backendData.rpc('publish_mortgage_document_template_draft', {
     p_bank_id: bankId,
     p_template_key: templateId,
     p_expected_revision: expectedRevision,

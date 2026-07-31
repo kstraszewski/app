@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   assertUuid(offerId, 'offer_id')
   await requireCrmCase(session, caseId)
 
-  const { data: application, error: applicationError } = await session.supabase
+  const { data: application, error: applicationError } = await session.dataApi
     .from('crm_case_bank_applications')
     .select('offer_id')
     .eq('organization_id', session.organizationId)
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_case_offer_selections')
     .upsert({
       organization_id: session.organizationId,

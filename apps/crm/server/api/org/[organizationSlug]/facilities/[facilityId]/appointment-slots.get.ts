@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { getQuery, setHeader } from 'h3'
 import {
   dateValue,
@@ -21,8 +21,8 @@ export default defineEventHandler(async (event) => {
     'expertUserId',
   )
   const localDate = dateValue(query.date ?? query.localDate ?? query.local_date)
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data, error } = await serviceRole.rpc('get_staff_booking_slots', {
+  const backendData = serverDataBackend(event) as any
+  const { data, error } = await backendData.rpc('get_staff_booking_slots', {
     p_organization_id: session.organizationId,
     p_facility_id: facilityId,
     p_service_id: serviceId,

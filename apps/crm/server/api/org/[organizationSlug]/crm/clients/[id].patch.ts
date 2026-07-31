@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const { data: ownerMembership, error: ownerMembershipError } = await session.supabase
+    const { data: ownerMembership, error: ownerMembershipError } = await session.dataApi
       .from('organization_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
   if ('tags' in body) patch.tags = stringArrayValue(body.tags)
   if ('metadata' in body) patch.metadata = asRecord(body.metadata)
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_clients')
     .update(patch)
     .eq('organization_id', session.organizationId)

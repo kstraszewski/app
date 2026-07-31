@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     patch.lost_at = new Date().toISOString()
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_case_items')
     .update(patch)
     .eq('organization_id', session.organizationId)

@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const serviceId = uuidValue(getRouterParam(event, 'serviceId'), 'serviceId')
   const body = asRecord(await readBody(event))
 
-  const { data: link, error: linkError } = await session.supabase
+  const { data: link, error: linkError } = await session.dataApi
     .from('facility_services')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
     await assertFacilityBookableMemberIds(session, access.facility.id, expertUserIds)
   }
 
-  const { error: updateError } = await session.supabase.rpc('update_facility_service_configuration', {
+  const { error: updateError } = await session.dataApi.rpc('update_facility_service_configuration', {
     p_organization_id: session.organizationId,
     p_facility_id: access.facility.id,
     p_service_id: serviceId,
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
   })
   throwDbError(updateError)
 
-  const { data: service, error: serviceError } = await session.supabase
+  const { data: service, error: serviceError } = await session.dataApi
     .from('booking_services')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
     .single()
   throwDbError(serviceError, 404)
   if (!expertUserIds) {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('facility_service_experts')
       .select('user_id')
       .eq('organization_id', session.organizationId)

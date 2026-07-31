@@ -1,7 +1,7 @@
 import { defineTool } from 'eve/tools'
 import { z } from 'zod'
 import { requireCrmAgentCaller } from '../lib/caller'
-import { createAgentServiceClient } from '../lib/supabase'
+import { createAgentServiceClient } from '../lib/data-api'
 
 const caseScopeSchema = z.enum(['mine', 'organization'])
 
@@ -16,8 +16,8 @@ export default defineTool({
   }),
   async execute({ query: searchText, scope, limit }, ctx) {
     const caller = requireCrmAgentCaller(ctx)
-    const supabase = createAgentServiceClient()
-    let casesQuery = supabase
+    const dataApi = createAgentServiceClient()
+    let casesQuery = dataApi
       .from('crm_cases')
       .select('id, title, status_code, priority, progress_percent, owner_user_id, updated_at', { count: 'exact' })
       .eq('organization_id', caller.organizationId)
@@ -41,7 +41,7 @@ export default defineTool({
 
     const [linksResult, ownersResult] = await Promise.all([
       caseIds.length
-        ? supabase
+        ? dataApi
             .from('crm_case_clients')
             .select('case_id, client_id, is_primary')
             .eq('organization_id', caller.organizationId)
@@ -49,7 +49,7 @@ export default defineTool({
             .order('is_primary', { ascending: false })
         : Promise.resolve({ data: [], error: null }),
       ownerIds.length
-        ? supabase
+        ? dataApi
             .from('users')
             .select('id, full_name, email')
             .in('id', ownerIds)
@@ -61,7 +61,7 @@ export default defineTool({
     const links = linksResult.data ?? []
     const clientIds = [...new Set(links.map(link => String(link.client_id)))]
     const clientsResult = clientIds.length
-      ? await supabase
+      ? await dataApi
           .from('crm_clients')
           .select('id, display_name')
           .eq('organization_id', caller.organizationId)

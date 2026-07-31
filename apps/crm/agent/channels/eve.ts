@@ -5,7 +5,11 @@ import {
   type AuthFn,
   UnauthenticatedError,
 } from 'eve/channels/auth'
-import { createAgentUserClient } from '../lib/supabase'
+import { verifyDataApiToken } from '@openexpert/data-api/token'
+import {
+  createAgentUserDataApiClient,
+  getAgentDataApiVerificationOptions,
+} from '../lib/data-api'
 
 const organizationSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -21,13 +25,13 @@ function requestSessionId(request: Request): string | null {
 }
 
 async function requireOwnedSession(
-  supabase: ReturnType<typeof createAgentUserClient>,
+  dataApi: ReturnType<typeof createAgentUserDataApiClient>,
   sessionId: string,
   userId: string,
   organizationId: string,
 ): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const { data, error } = await supabase
+    const { data, error } = await dataApi
       .from('crm_eve_sessions')
       .select('session_id')
       .eq('session_id', sessionId)
@@ -43,7 +47,7 @@ async function requireOwnedSession(
   throw new ForbiddenError({ message: 'Ta sesja asystenta nie należy do bieżącego użytkownika.' })
 }
 
-function supabaseCrmSession(): AuthFn<Request> {
+function dataApiCrmSession(): AuthFn<Request> {
   return async (request) => {
     const accessToken = extractBearerToken(request.headers.get('authorization'))
     if (!accessToken) {
@@ -58,17 +62,25 @@ function supabaseCrmSession(): AuthFn<Request> {
       throw new ForbiddenError({ message: 'Nie wybrano prawidłowej organizacji CRM.' })
     }
 
-    const supabase = createAgentUserClient(accessToken)
-    const { data: userResult, error: userError } = await supabase.auth.getUser(accessToken)
-    const user = userResult.user
-    if (userError || !user) {
+    const verificationOptions = getAgentDataApiVerificationOptions()
+    let userId: string
+    try {
+      const claims = verifyDataApiToken(accessToken, {
+        ...verificationOptions,
+        expectedRole: 'authenticated',
+      })
+      userId = claims.sub?.trim() ?? ''
+      if (!userId) throw new TypeError('Authenticated Data API JWT is missing sub')
+    }
+    catch {
       throw new UnauthenticatedError({
         code: 'invalid_session',
         message: 'Sesja CRM wygasła. Zaloguj się ponownie.',
       })
     }
 
-    const { data: organization, error: organizationError } = await supabase
+    const dataApi = createAgentUserDataApiClient(accessToken)
+    const { data: organization, error: organizationError } = await dataApi
       .from('organizations')
       .select('id, slug')
       .eq('slug', organizationSlug)
@@ -77,11 +89,11 @@ function supabaseCrmSession(): AuthFn<Request> {
       throw new ForbiddenError({ message: 'Organizacja jest niedostępna.' })
     }
 
-    const { data: membership, error: membershipError } = await supabase
+    const { data: membership, error: membershipError } = await dataApi
       .from('organization_memberships')
       .select('role')
       .eq('organization_id', organization.id)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle()
     if (membershipError || !membership) {
       throw new ForbiddenError({ message: 'Nie masz dostępu do tej organizacji.' })
@@ -89,15 +101,15 @@ function supabaseCrmSession(): AuthFn<Request> {
 
     const sessionId = requestSessionId(request)
     if (sessionId) {
-      await requireOwnedSession(supabase, sessionId, user.id, String(organization.id))
+      await requireOwnedSession(dataApi, sessionId, userId, String(organization.id))
     }
 
     return {
-      authenticator: 'supabase',
+      authenticator: 'data-api',
       issuer: 'openexpert-crm',
-      principalId: user.id,
+      principalId: userId,
       principalType: 'user',
-      subject: user.id,
+      subject: userId,
       attributes: {
         organizationId: String(organization.id),
         organizationSlug: String(organization.slug),
@@ -108,6 +120,6 @@ function supabaseCrmSession(): AuthFn<Request> {
 }
 
 export default eveChannel({
-  auth: [supabaseCrmSession()],
+  auth: [dataApiCrmSession()],
   uploadPolicy: 'disabled',
 })

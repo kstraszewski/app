@@ -3,7 +3,7 @@ import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('organization_design_settings')
     .select('settings, updated_at')
     .eq('organization_id', session.organizationId)

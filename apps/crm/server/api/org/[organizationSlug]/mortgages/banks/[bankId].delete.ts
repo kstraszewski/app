@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('mortgage_bank_overrides')
     .delete()
     .eq('organization_id', session.organizationId)
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(error)
 
   if (data?.logo_path) {
-    const { error: removeError } = await session.supabase.storage.from(logoBucket).remove([data.logo_path])
+    const { error: removeError } = await session.dataApi.storage.from(logoBucket).remove([data.logo_path])
     if (removeError) console.warn('[mortgages] failed to remove reset bank logo', removeError.message)
   }
 

@@ -6,7 +6,7 @@ export async function selectCaseOfferIfNone(
   offerId: string,
   selectedAt = new Date().toISOString(),
 ): Promise<void> {
-  const { error } = await session.supabase
+  const { error } = await session.dataApi
     .from('crm_case_offer_selections')
     .upsert({
       organization_id: session.organizationId,

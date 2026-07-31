@@ -1,33 +1,53 @@
 # OpenExpert
 
-Modułowa platforma open source dla ekspertów — projektowana pod agentic economy.
+Modułowa platforma open source dla ekspertów, projektowana pod agentic economy.
+Każdy moduł eksponuje UI dla ludzi, REST API dla integracji i narzędzia dla
+agentów AI.
 
-Każdy moduł eksponuje trzy interfejsy: **UI** (dla ludzi), **REST API** (dla developerów), **MCP tools** (dla agentów AI).
-
-## Stack
+## Architektura
 
 - Nuxt 4 + TypeScript
 - Turborepo + pnpm workspaces
-- Rive (`.riv`) animations
-- Supabase (PostgreSQL + Auth + RLS)
-- Resend (maile transakcyjne i produkcyjny SMTP Auth)
+- PostgreSQL 17, RLS i pgvector
+- Better Auth
+- PostgREST-compatible Data API
+- Vercel Blob / lokalne MinIO
+- Resend / lokalny Mailpit
+- Trigger.dev dla trwałych zadań w tle
 - Vercel
-- AGPL-3.0
+- opcjonalnie LiveKit
 
-## Apps
+Środowisko produkcyjne jest Vercel-first, ale nie Vercel-only:
 
-- `apps/landing` — publiczny landing, waitlista i publiczne API MCP.
-- `apps/crm` — aplikacja CRM z logowaniem i dashboardem.
+- aplikacje Nuxt działają na Vercelu;
+- PostgreSQL zapewnia Neon podłączony przez Vercel Marketplace;
+- Neon Data API zachowuje dotychczasowy model zapytań, RPC i RLS;
+- pliki trafiają do osobnych publicznych i prywatnych magazynów Vercel Blob;
+- Better Auth działa wewnątrz serwera Nuxt i zapisuje sesje w PostgreSQL;
+- Resend wysyła wiadomości transakcyjne;
+- integracja Trigger.dev z Vercel i GitHub wdraża taski razem z aplikacją;
+- LiveKit Cloud obsługuje spotkania WebRTC.
+
+Lokalnie te granice mają zamienniki: PostgreSQL + PostgREST, Better Auth,
+MinIO, Mailpit, proces `trigger dev` oraz opcjonalny self-hosted LiveKit. Kod
+domenowy nie zależy od konkretnego dostawcy storage ani od hostowanego API
+bazy.
+
+## Aplikacje
+
+- `apps/landing` — publiczny landing, katalog, waitlista i publiczne API.
+- `apps/crm` — CRM, portal klienta, agent Eve i zaplecze eksperta.
+- `apps/meetings` — samodzielna aplikacja spotkań LiveKit.
 
 ## Development
 
 ### Wymagania
 
-- Node.js 24.11+ (wymagany przez Nuxt 4.5 i agenta Eve)
+- Node.js 24.11+
 - pnpm 10
-- runtime zgodny z Docker API: Docker Desktop, Colima, OrbStack lub Rancher Desktop
+- Docker API i Docker Compose v2, np. Docker Desktop, Colima lub OrbStack
 
-Na macOS można uruchomić lekki runtime bez GUI:
+Na macOS można użyć lekkiego runtime:
 
 ```bash
 brew install colima docker
@@ -42,36 +62,38 @@ pnpm db:setup
 pnpm dev
 ```
 
-`pnpm db:setup` uruchamia lokalny Supabase, odtwarza bazę z migracji, generuje
-ignorowane pliki `apps/*/.env`, tworzy konto i bogaty, powtarzalny workspace
-developerski oraz sprawdza prawdziwe logowanie hasłem, relacje danych i izolację
-RLS. Seed zawiera między innymi klientów z różnymi zgodami, sprawy, zadania,
-dokumenty, historię aktywności, placówkę, usługi, widgety, spotkania i wolne
-terminy.
+`pnpm db:setup`:
 
-Konto lokalne:
+1. tworzy ignorowany `.env.local-stack` i synchronizuje zarządzane bloki
+   `apps/*/.env`;
+2. uruchamia PostgreSQL 17 + pgvector, PostgREST, MinIO i Mailpit;
+3. generuje lokalny klucz Ed25519 dla krótkich tokenów Data API;
+4. stosuje migracje z kontrolą checksum;
+5. tworzy konto Better Auth oraz organizację przez ten sam RPC i RLS, których
+   używa aplikacja;
+6. uruchamia test izolacji RLS i autoryzowanego zapytania HTTP.
+
+Lokalne konto:
 
 ```text
-email:    admin@openexpert.local
-hasło:    OpenExpert123!
-role:     SuperAdmin + administrator organizacji
-organizacja: openexpert-local
+email:        admin@openexpert.local
+hasło:        OpenExpert123!
+rola:         SuperAdmin + administrator organizacji
+organizacja:  openexpert-local
 ```
 
-Po uruchomieniu CRM możesz wejść bezpośrednio pod
-`http://127.0.0.1:3004/org/openexpert-local`. Slug jest stabilny również po
-`pnpm db:reset`.
-
-Usługi:
+Adresy:
 
 - landing: http://127.0.0.1:3003
 - CRM: http://127.0.0.1:3004/login
-- Supabase API: http://127.0.0.1:55321
-- Supabase Studio: http://127.0.0.1:55323
+- Data API: http://127.0.0.1:55321
+- PostgreSQL: `127.0.0.1:55322`
 - Mailpit: http://127.0.0.1:55324
+- MinIO API: http://127.0.0.1:55326
+- MinIO console: http://127.0.0.1:55327
 
-Pierwsze uruchomienie pobiera obrazy kontenerów. Kolejne starty korzystają już z
-lokalnego cache.
+Pierwsze uruchomienie pobiera obrazy kontenerów. Kolejne korzystają z
+lokalnego cache i zachowanych wolumenów.
 
 ### Codzienna praca
 
@@ -80,173 +102,129 @@ pnpm db:start
 pnpm dev
 ```
 
-Możesz też uruchomić tylko jedną aplikację:
+Przydatne komendy:
 
 ```bash
 pnpm dev:landing
 pnpm dev:crm
+pnpm db:status
+pnpm db:verify
+pnpm db:seed-demo
+pnpm db:reset
+pnpm db:stop
+pnpm mortgage:sync
+pnpm trigger:dev
 ```
 
-Przydatne komendy bazodanowe:
+`db:reset` usuwa wyłącznie nazwany wolumen lokalnego PostgreSQL i wymaga
+potwierdzenia; zachowuje obiekty MinIO. Dokładny opis ról, portów, kluczy i
+mechanizmu migracji znajduje się w
+[`docs/local-postgres-stack.md`](docs/local-postgres-stack.md).
+
+### LiveKit i Trigger.dev lokalnie
+
+LiveKit jest opcjonalnym profilem lokalnego Compose:
 
 ```bash
-pnpm db:status   # stan i lokalne adresy
-pnpm db:verify   # test hasła, profilu, organizacji i RLS
-pnpm db:types    # regeneruje packages/database/database.types.ts
-pnpm db:reset    # kasuje dane lokalne, migruje i odtwarza konto developerskie
-pnpm db:seed-demo # uzupełnia lub naprawia demo dane bez ich dublowania
-pnpm db:stop     # zatrzymuje kontenery, zachowując lokalny wolumen
-pnpm mortgage:sync # ponownie pobiera i wersjonuje katalog 5 banków
+pnpm db:setup -- --livekit
 ```
 
-### Porównywarka hipotek
+Taski w tle znajdują się w `packages/tasks`. Po jednorazowym połączeniu CLI z
+projektem Trigger.dev i uzupełnieniu `packages/tasks/.env.local` uruchom je w
+osobnym terminalu:
 
-Po `pnpm db:setup` katalog pięciu banków jest automatycznie importowany do
-PostgreSQL, a deterministyczne pliki developerskie trafiają do prywatnego
-bucketu Supabase Storage. Dzięki temu reset bazy nie zależy od internetu.
-Lokalna kopia źródeł znajduje się w ignorowanym katalogu
-`.data/mortgage-sources`. `pnpm mortgage:sync` służy do jawnego pobrania
-bieżących, oficjalnych stron i PDF-ów. Ekran jest dostępny pod
-`/org/<organizationSlug>/mortgages`.
+```bash
+cp packages/tasks/.env.example packages/tasks/.env.local
+pnpm trigger:login
+pnpm trigger:dev
+```
 
-Administrator organizacji może otworzyć
-`/org/<organizationSlug>/mortgages/admin`, aby nadpisać parametry wyłącznie dla
-swojej organizacji, ukryć produkt z rankingu albo przywrócić dane źródłowe.
-Zmiany nie modyfikują wspólnego katalogu bankowego i są zapisywane w historii
-audytowej.
+`trigger dev` wykonuje taski na lokalnej maszynie. Domyślnie korzysta z
+control plane Trigger.dev Cloud; pełny control plane można również uruchomić
+lokalnie przez oficjalny stack Docker. Szczegóły, integracja z Vercel i różnice
+między tymi trybami są opisane w [`docs/trigger-dev.md`](docs/trigger-dev.md).
 
-Porównywarka używa osobnego, testowanego silnika `@openexpert/mortgage` do rat
-równych i malejących, przejścia ze stopy stałej na referencyjną, nadpłat,
-kosztów i harmonogramu. Wyniki są orientacyjne: nie są ofertą banku, ESIS,
-oceną zdolności ani decyzją kredytową. Opublikowane RRSO jest opisane jako RRSO
-przykładu bankowego, a nie wynik bieżącego scenariusza.
+### Logowanie i RLS
 
-Pełna analiza funkcji FinCRM, pokrycia MVP i braków znajduje się w
-`docs/research/2026-07-12-fincrm-mortgage-mvp-analysis.md`.
+Better Auth obsługuje hasło, weryfikację email, magic link i reset hasła.
+Wiadomości lokalne trafiają do Mailpit. Główny magic link nie tworzy
+nieistniejących kont, natomiast portal klienta może utworzyć konto w swoim
+dedykowanym flow.
 
-### Asystent kredytowy Eve
+Po zweryfikowaniu sesji serwer wystawia 60-sekundowy JWT Ed25519 z `sub`
+użytkownika i rolą `authenticated`. Neon Data API oraz lokalny PostgREST
+sprawdzają ten sam publiczny JWK, dlatego istniejące polityki RLS i funkcje
+`auth.user_id()` zachowują izolację organizacji. Prywatny klucz nie trafia do
+przeglądarki ani do bazy.
 
-CRM zawiera agenta Vercel Eve korzystającego z Gemini 3.5 Flash-Lite. Agent
-odpowiada na pytania kredytowe i ma jedno ograniczone narzędzie do odczytu spraw
-zalogowanego użytkownika. Tożsamość użytkownika i organizacja są ustalane po
-stronie serwera na podstawie sesji Supabase — model nie może ich podać ani
-zmienić.
+### Email
 
-Do lokalnego uruchomienia odpowiedzi modelu dodaj do `apps/crm/.env` serwerowy
-klucz AI Gateway:
+Lokalnie nie jest potrzebny klucz Resend: Better Auth i aplikacja wysyłają
+przez SMTP do Mailpit. Produkcyjnie ustaw:
+
+```text
+NUXT_RESEND_API_KEY=re_...
+NUXT_AUTH_EMAIL_FROM=OpenExpert <no-reply@auth.openexpert.app>
+NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
+NUXT_RESEND_REPLY_TO=hello@openexpert.app
+```
+
+Zweryfikuj w Resend osobne subdomeny nadawcze dla auth i komunikacji
+produktowej. `NUXT_RESEND_API_KEY` jest wyłącznie serwerowy.
+
+### Pozostałe moduły
+
+Porównywarka hipotek używa testowanego pakietu `@openexpert/mortgage`; źródła
+i pliki bankowe przechodzą przez wspólny adapter storage. `pnpm mortgage:sync`
+pobiera i wersjonuje oficjalny katalog. Wyniki mają charakter orientacyjny i
+nie są ofertą banku, ESIS, oceną zdolności ani decyzją kredytową.
+
+Agent Eve korzysta z Vercel AI Gateway. Lokalnie dodaj do `apps/crm/.env`:
 
 ```text
 AI_GATEWAY_API_KEY=vck_...
 ```
 
-Bez klucza interfejs czatu i autoryzacja działają, ale Eve nie może wywołać
-modelu. Alternatywnie połącz środowisko z Vercel poleceniem `pnpm exec eve link`
-uruchomionym w `apps/crm`.
+Bez klucza UI i autoryzacja działają, ale agent nie wywoła modelu.
 
-Build wszystkich aplikacji:
+Pliki Rive umieszczaj w `apps/landing/public/rive/` i renderuj przez globalny
+komponent `RiveAnimation`.
+
+### Kontrola jakości
 
 ```bash
+pnpm typecheck
 pnpm build
 ```
 
-### Project skills
+Repo zawiera projektowe skille w `.agents/skills`; ich źródła i wersje
+utrzymuje `skills-lock.json`.
 
-Repo zawiera aktualne, projektowe skille dla Supabase, PostgreSQL, Turborepo,
-Nuxt, Nuxt UI, Resend i dobrych praktyk email. Są zapisane w `.agents/skills`,
-a ich źródła i wersje utrzymuje `skills-lock.json`.
+## Deployment na Vercel
 
-Aktualizacja wszystkich skillsów:
+Utwórz osobne projekty Vercel dla `apps/landing`, `apps/crm` i opcjonalnie
+`apps/meetings`.
 
-```bash
-npx skills update -p -y
-```
+1. Dodaj Neon z Vercel Marketplace, włącz Data API z zewnętrznym JWKS i
+   zastosuj w kolejności migracje `packages/database/postgres/migrations`
+   (w tym przenośny bootstrap `0000`).
+2. Utwórz logowalną rolę `openexpert_auth` z osobnym hasłem. Data API używa
+   ról `anonymous`, `authenticated` i serwerowej `openexpert_service`; jej dostęp
+   uprzywilejowany jest zapisany w jawnych politykach RLS, bez wymagania
+   `BYPASSRLS`.
+3. Utwórz osobny publiczny i prywatny magazyn Vercel Blob.
+4. Ustaw Better Auth, Data API, Blob, Resend i integracje według
+   [`.env.example`](.env.example).
+5. Ustaw `BETTER_AUTH_URL` osobno dla każdego środowiska. Preview nie powinien
+   wysyłać linków wskazujących przypadkiem na produkcję.
+6. Dla współdzielenia sesji między subdomenami ustaw wspólny
+   `BETTER_AUTH_SECRET`, `BETTER_AUTH_COOKIE_PREFIX` i
+   `NUXT_AUTH_COOKIE_DOMAIN`.
+7. Wdróż canary i sprawdź logowanie, RLS, upload/download oraz wiadomości.
 
-### Flow konta
-
-- `/register` tworzy użytkownika i osobną organizację; trigger bazy zawsze nadaje
-  pierwszemu użytkownikowi rolę `admin`.
-- Potwierdzenia konta, magic linki i reset hasła trafiają lokalnie do Mailpit.
-- Linki email używają `token_hash`, więc działają także po otwarciu w innym
-  urządzeniu lub profilu przeglądarki.
-- Chronione strony zapamiętują cel i wracają do niego po zalogowaniu.
-- `/forgot-password` i `/reset-password` obsługują pełny reset hasła.
-
-Lokalnych kluczy i hasła developerskiego nie wolno używać w produkcji. Supabase
-CLI może wystawiać porty na interfejsie sieciowym, dlatego po pracy warto wykonać
-`pnpm db:stop`.
-
-### Email i Resend
-
-Lokalnie klucz Resend nie jest potrzebny:
-
-- wiadomości Supabase Auth trafiają do Mailpit,
-- zapis na waitlistę działa normalnie,
-- potwierdzenie waitlisty ma status `skipped`, dopóki Resend nie jest skonfigurowany.
-
-W środowisku wdrożeniowym aplikacji landing ustaw:
-
-```text
-NUXT_RESEND_API_KEY=re_...
-NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
-NUXT_RESEND_REPLY_TO=hello@openexpert.app
-```
-
-`NUXT_RESEND_API_KEY` jest konfiguracją serwerową i nie może mieć prefiksu
-`NUXT_PUBLIC_`. Endpoint waitlisty wysyła przez `@openexpert/email` wiadomość
-tekstową i HTML, używa idempotency key oraz nie cofa zapisu do bazy, gdy dostawca
-email ma chwilową awarię.
-
-Przed produkcją dodaj i zweryfikuj w Resend subdomenę nadawczą, np.
-`updates.openexpert.app`. Dla wiadomości Supabase Auth skonfiguruj w dashboardzie
-Supabase osobną subdomenę, np. `auth.openexpert.app`, i Custom SMTP:
-
-```text
-host:        smtp.resend.com
-port:        587
-username:    resend
-password:    <RESEND_API_KEY>
-sender:      no-reply@auth.openexpert.app
-sender name: OpenExpert
-```
-
-Konfiguracja SMTP w `supabase/config.toml` pozostaje wyłączona lokalnie, dzięki
-czemu testy rejestracji i resetu hasła nadal są bezpiecznie przechwytywane przez
-Mailpit.
-
-## Animacje Rive
-
-Pliki `.riv` umieszczaj w `apps/landing/public/rive/` i renderuj przez
-globalnie dostępny w aplikacji landing komponent:
-
-```vue
-<RiveAnimation
-  src="/rive/hero.riv"
-  state-machines="Main State Machine"
-  label="Animowane logo OpenExpert"
-/>
-```
-
-Kontener komponentu musi mieć określoną wysokość. Komponent obsługuje też właściwości
-`artboard`, `animations`, `autoplay`, `auto-bind`, `fit` i `alignment` oraz zdarzenia
-`load`, `error` i `state-change`. Metody `play`, `pause`, `stop`, `reset` i
-`stateMachineInputs` są dostępne przez template ref.
-
-Globalny loader aplikacji używa `openexpert-loader-lightmode.riv` lub
-`openexpert-loader-darkmode.riv`, automatycznie dopasowując wariant do ustawień systemu.
-
-## Deployment (Vercel)
-
-1. Push repo do `OpenExpertApp/app`.
-2. Import w Vercelu — utwórz osobne projekty dla `apps/landing` i `apps/crm`.
-3. Ustaw zmienne środowiskowe w Vercel project settings:
-   - `NUXT_PUBLIC_SUPABASE_URL`
-   - `NUXT_PUBLIC_SUPABASE_KEY`
-   - `NUXT_SUPABASE_SECRET_KEY` — w projektach landing i CRM, nigdy jako zmienna publiczna
-   - `AI_GATEWAY_API_KEY` — tylko w projekcie CRM, nigdy jako zmienna publiczna
-   - `NUXT_RESEND_API_KEY` — tylko w projekcie landing, nigdy jako zmienna publiczna
-   - `NUXT_RESEND_FROM`
-   - `NUXT_RESEND_REPLY_TO`
-4. Deploy.
+Sekretów nie wolno oznaczać prefiksem `NUXT_PUBLIC_`. Aplikacja meetings może
+działać na Vercelu, ale produkcyjny serwer LiveKit/TURN musi działać w LiveKit
+Cloud albo na osobnej maszynie — nie w funkcji Vercel.
 
 ## License
 

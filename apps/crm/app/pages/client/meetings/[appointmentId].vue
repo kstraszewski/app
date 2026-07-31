@@ -13,7 +13,7 @@ definePageMeta({
 })
 
 const route = useRoute()
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
 const appointmentId = computed(() => String(route.params.appointmentId))
 const previewOrganizationSlug = computed(() => {
   const rawSlug = route.query.organizationSlug

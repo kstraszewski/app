@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const [searchResult, clientsResult] = await Promise.all([
     searchCrmCases(session, parseCaseSearchFilters({ limit: 1 }, { forceFacets: true })),
-    session.supabase
+    session.dataApi
       .from('crm_clients')
       .select('id, display_name, primary_email, primary_phone')
       .eq('organization_id', session.organizationId)

@@ -1,13 +1,12 @@
 import { createError } from 'h3'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../../../packages/database/database.types'
 import type {
   DirectoryCoordinates,
 } from '../../shared/types/directory'
+import type { OpenExpertDataClient } from './platform-data'
 
 const FACILITY_BATCH_SIZE = 80
 
-type ServiceRoleClient = SupabaseClient<Database, 'public'>
+type BackendDataClient = OpenExpertDataClient
 
 interface FacilityMetadataRow {
   id: string
@@ -83,7 +82,7 @@ function directoryUnavailable(): never {
 }
 
 export async function loadDirectoryFacilityMetadata(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   facilities: Array<{ facilityId: string }>,
 ): Promise<Map<string, DirectoryFacilityMetadata>> {
   const facilityIds = [...new Set(
@@ -94,7 +93,7 @@ export async function loadDirectoryFacilityMetadata(
   const rows: FacilityMetadataRow[] = []
   for (let start = 0; start < facilityIds.length; start += FACILITY_BATCH_SIZE) {
     const batch = facilityIds.slice(start, start + FACILITY_BATCH_SIZE)
-    const { data, error } = await serviceRole
+    const { data, error } = await backendData
       .from('facilities')
       .select('id, organization_id, slug, city, latitude, longitude')
       .in('id', batch)
@@ -120,7 +119,7 @@ export async function loadDirectoryFacilityMetadata(
   }
 
   const organizationIds = [...new Set(rows.map(row => row.organization_id))]
-  const { data: organizations, error: organizationsError } = await serviceRole
+  const { data: organizations, error: organizationsError } = await backendData
     .from('organizations')
     .select('id, slug')
     .in('id', organizationIds)

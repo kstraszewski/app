@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody, setResponseStatus } from 'h3'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
@@ -44,8 +44,8 @@ export default defineEventHandler(async (event) => {
     delegatorUserId: session.userId,
     task: input,
   })
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const existingResult = await session.supabase
+  const backendData = serverDataBackend(event) as any
+  const existingResult = await session.dataApi
     .from('crm_tasks')
     .select('id, idempotency_fingerprint')
     .eq('organization_id', session.organizationId)
@@ -70,13 +70,13 @@ export default defineEventHandler(async (event) => {
   // availability rule was disabled after the successful transaction.
   if (!existingResult.data) {
     const [caseResult, assigneeResult] = await Promise.all([
-      session.supabase
+      session.dataApi
         .from('crm_cases')
         .select('id, client_id')
         .eq('organization_id', session.organizationId)
         .eq('id', caseId)
         .maybeSingle(),
-      session.supabase
+      session.dataApi
         .from('organization_memberships')
         .select('user_id')
         .eq('organization_id', session.organizationId)
@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
     }
 
     if (input.caseItemId) {
-      const { data: caseItem, error } = await session.supabase
+      const { data: caseItem, error } = await session.dataApi
         .from('crm_case_items')
         .select('id')
         .eq('organization_id', session.organizationId)
@@ -146,7 +146,7 @@ export default defineEventHandler(async (event) => {
       }
 
       if (input.appointment.clientPersonId) {
-        const { data: person, error } = await serviceRole
+        const { data: person, error } = await backendData
           .from('crm_client_people')
           .select('id')
           .eq('organization_id', session.organizationId)
@@ -164,7 +164,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data: creationResult, error: creationError } = await serviceRole.rpc(
+  const { data: creationResult, error: creationError } = await backendData.rpc(
     'create_delegated_crm_task',
     {
       p_request: {
@@ -248,14 +248,14 @@ export default defineEventHandler(async (event) => {
   }
 
   const [taskResult, appointmentResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select(delegatedTaskSelect)
       .eq('organization_id', session.organizationId)
       .eq('id', result.taskId)
       .single(),
     result.appointmentId
-      ? session.supabase
+      ? session.dataApi
           .from('appointments')
           .select(`
             id,

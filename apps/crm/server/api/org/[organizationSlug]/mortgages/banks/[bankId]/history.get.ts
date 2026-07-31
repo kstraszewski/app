@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const bankId = getRequiredParam(event, 'bankId')
 
-  const { data: revisions, error } = await session.supabase
+  const { data: revisions, error } = await session.dataApi
     .from('mortgage_bank_override_revisions')
     .select('id, revision, action, is_enabled, custom_name, custom_website_url, logo_path, notes, changed_by, created_at')
     .eq('organization_id', session.organizationId)
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const actorIds = [...new Set((revisions ?? []).map((revision: any) => revision.changed_by))]
   const { data: actors, error: actorsError } = actorIds.length
-    ? await session.supabase.from('users').select('id, full_name, email').in('id', actorIds)
+    ? await session.dataApi.from('users').select('id, full_name, email').in('id', actorIds)
     : { data: [], error: null }
   throwDbError(actorsError)
   const actorById = new Map((actors ?? []).map((actor: any) => [actor.id, actor]))

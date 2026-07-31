@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { requireFacilityPermission, uuidValue } from '~~/server/utils/scheduling'
 
@@ -6,9 +6,9 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'manage')
   const imageId = uuidValue(getRouterParam(event, 'imageId'), 'imageId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
-  const imageResult = await session.supabase
+  const imageResult = await session.dataApi
     .from('facility_images')
     .select('id, storage_bucket, storage_path')
     .eq('organization_id', session.organizationId)
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Facility image not found' })
   }
 
-  const deleteResult = await serviceRole
+  const deleteResult = await backendData
     .from('facility_images')
     .delete()
     .eq('organization_id', session.organizationId)
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
     .eq('id', imageId)
   throwDbError(deleteResult.error)
 
-  const { error: removeError } = await serviceRole.storage
+  const { error: removeError } = await backendData.storage
     .from(String(imageResult.data.storage_bucket))
     .remove([String(imageResult.data.storage_path)])
   if (removeError) {

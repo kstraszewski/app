@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     await requireAdministrativePermission(session, 'iam.members.read')
   }
 
-  const { data, error } = await session.supabase.rpc(
+  const { data, error } = await session.dataApi.rpc(
     'get_organization_user_admin_access',
     {
       p_organization_id: session.organizationId,

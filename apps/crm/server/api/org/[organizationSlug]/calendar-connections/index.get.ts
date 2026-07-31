@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { getQuery } from 'h3'
 import { requireCrmSession, textValue, throwDbError } from '~~/server/utils/crm'
 import { requireFacilityPermission, uuidValue } from '~~/server/utils/scheduling'
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     const access = await requireFacilityPermission(session, ownerId, 'view')
     canManage = access.canManage
   } else {
-    const { data: member, error } = await session.supabase
+    const { data: member, error } = await session.dataApi
       .from('organization_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -31,8 +31,8 @@ export default defineEventHandler(async (event) => {
     if (!canManage) throw createError({ statusCode: 403, statusMessage: 'Expert calendar access denied' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  let connectionQuery = serviceRole
+  const backendData = serverDataBackend(event) as any
+  let connectionQuery = backendData
     .from('calendar_connections')
     .select('id, provider, account_email, selected_calendar_id, selected_calendar_name, status, last_synced_at, last_error, updated_at')
     .eq('organization_id', session.organizationId)

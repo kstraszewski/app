@@ -186,7 +186,7 @@ export async function loadConsentDefinitions(
   options: { activeOnly?: boolean, definitionId?: string } = {},
 ): Promise<ConsentDefinitionPayload[]> {
   const activeOnly = options.activeOnly === true
-  let definitionRequest = session.supabase
+  let definitionRequest = session.dataApi
     .from('crm_consent_definitions')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -202,7 +202,7 @@ export async function loadConsentDefinitions(
 
   const definitionIds = definitions.map(definition => definition.id)
   const currentVersionIds = definitions.map(definition => definition.current_version_id)
-  let versionRequest = session.supabase
+  let versionRequest = session.dataApi
     .from('crm_consent_definition_versions')
     .select('*')
     .eq('organization_id', session.organizationId)

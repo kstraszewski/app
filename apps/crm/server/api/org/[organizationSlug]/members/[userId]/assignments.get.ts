@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
   const userId = uuidValue(getRequiredParam(event, 'userId'), 'userId')
   setHeader(event, 'Cache-Control', 'private, no-store')
 
-  const targetMembershipResult = await session.supabase
+  const targetMembershipResult = await session.dataApi
     .from('organization_memberships')
     .select('user_id')
     .eq('organization_id', session.organizationId)
@@ -76,23 +76,23 @@ export default defineEventHandler(async (event) => {
   }
 
   const [teamsResult, teamMembershipsResult, facilitiesResult, facilityMembershipsResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('teams')
       .select('id, organization_id, name, slug, kind, description, created_at, updated_at')
       .eq('organization_id', session.organizationId)
       .order('name'),
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('organization_id, team_id, user_id, role, created_at, updated_at')
       .eq('organization_id', session.organizationId)
       .eq('user_id', userId),
-    session.supabase
+    session.dataApi
       .from('facilities')
       .select('id, organization_id, name, slug, description, timezone, address_line1, address_line2, postal_code, city, country_code, phone, email, is_active, created_at, updated_at')
       .eq('organization_id', session.organizationId)
       .order('is_active', { ascending: false })
       .order('name'),
-    session.supabase
+    session.dataApi
       .from('facility_memberships')
       .select('organization_id, facility_id, user_id, role, is_bookable, booking_priority, last_assigned_at, created_at, updated_at')
       .eq('organization_id', session.organizationId)

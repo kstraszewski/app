@@ -4,7 +4,7 @@ import { requireFacilityPermission } from '~~/server/utils/scheduling'
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
-  const { data: memberships, error } = await session.supabase
+  const { data: memberships, error } = await session.dataApi
     .from('facility_memberships')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const userIds = (memberships ?? []).map((row: any) => String(row.user_id))
   const { data: users, error: usersError } = userIds.length
-    ? await session.supabase.from('users').select('id, email, full_name, avatar_url').in('id', userIds)
+    ? await session.dataApi.from('users').select('id, email, full_name, avatar_url').in('id', userIds)
     : { data: [], error: null }
   throwDbError(usersError)
   const usersById = new Map((users ?? []).map((user: any) => [String(user.id), user]))

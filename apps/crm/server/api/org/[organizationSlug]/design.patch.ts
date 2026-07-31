@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const settings = normalizeOrganizationDesign(body)
   const updatedAt = new Date().toISOString()
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('organization_design_settings')
     .upsert({
       organization_id: session.organizationId,

@@ -5,7 +5,7 @@ definePageMeta({ middleware: 'client-auth', layout: false })
 
 const route = useRoute()
 const requestUrl = useRequestURL()
-const authenticatedUser = useSupabaseUser()
+const authenticatedUser = useAuthUser()
 const accountCacheScope = String(authenticatedUser.value?.sub ?? 'anonymous')
 const runtimeConfig = useRuntimeConfig()
 const landingBaseUrl = String(

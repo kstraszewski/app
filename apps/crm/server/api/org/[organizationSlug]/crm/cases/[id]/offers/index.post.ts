@@ -3,7 +3,7 @@ import {
   type InstallmentType,
   type OverpaymentStrategy,
 } from '@openexpert/mortgage'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import {
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'source_product_id must be a UUID' })
   }
 
-  const { data: caseRow, error: caseError } = await session.supabase
+  const { data: caseRow, error: caseError } = await session.dataApi
     .from('crm_cases')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -152,8 +152,8 @@ export default defineEventHandler(async (event) => {
   // route. Direct Data API inserts are revoked at the database level so a
   // browser cannot replace the catalogue payload that will later be replayed
   // for a bank application.
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data, error } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data, error } = await backendData
     .from('crm_case_offer_snapshots')
     .insert({
       organization_id: session.organizationId,

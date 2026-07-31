@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { setHeader } from 'h3'
 import {
   getRequiredParam,
@@ -19,8 +19,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const result = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const result = await backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('organization_id', session.organizationId)
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'no-store')
   return {
     data: await normalizeCrmMeetingRecord(
-      serviceRole,
+      backendData,
       session.organizationId,
       result.data,
     ),

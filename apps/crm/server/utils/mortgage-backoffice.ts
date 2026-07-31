@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, type H3Event } from 'h3'
 import {
   type DocumentSelectionCondition,
@@ -20,13 +20,13 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
 export async function requireMortgageBackoffice(event: H3Event): Promise<{
   session: AuthenticatedSession
-  serviceRole: MortgageBackofficeClient
+  backendData: MortgageBackofficeClient
 }> {
   const session = await requireAuthenticatedSession(event)
   await requireSuperAdmin(session)
   return {
     session,
-    serviceRole: serverSupabaseServiceRole(event) as MortgageBackofficeClient,
+    backendData: serverDataBackend(event) as MortgageBackofficeClient,
   }
 }
 
@@ -325,7 +325,7 @@ export function mortgageOfferDocumentationIssues(
 }
 
 export async function materializeMortgageOfferSources(
-  serviceRole: MortgageBackofficeClient,
+  backendData: MortgageBackofficeClient,
   input: {
     bankId: string
     productId: string
@@ -367,7 +367,7 @@ export async function materializeMortgageOfferSources(
       .update(JSON.stringify(sourceDocument))
       .digest('hex')
     const sourceKey = `backoffice:${input.productId}:${sourceFingerprint}`
-    const { data: existingSource, error: existingSourceError } = await serviceRole
+    const { data: existingSource, error: existingSourceError } = await backendData
       .from('mortgage_source_documents')
       .select('id')
       .eq('source_key', sourceKey)
@@ -391,13 +391,13 @@ export async function materializeMortgageOfferSources(
         },
         error_message: null,
       }
-      const { data: insertedSource, error: insertSourceError } = await serviceRole
+      const { data: insertedSource, error: insertSourceError } = await backendData
         .from('mortgage_source_documents')
         .insert(sourceRow)
         .select('id')
         .single()
       if (insertSourceError?.code === '23505') {
-        const { data: racedSource, error: racedSourceError } = await serviceRole
+        const { data: racedSource, error: racedSourceError } = await backendData
           .from('mortgage_source_documents')
           .select('id')
           .eq('source_key', sourceKey)

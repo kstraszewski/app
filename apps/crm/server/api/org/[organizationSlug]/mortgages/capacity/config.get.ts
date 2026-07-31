@@ -6,7 +6,7 @@ import {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('mortgage_capacity_settings')
     .select('*')
     .eq('organization_id', session.organizationId)

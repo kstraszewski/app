@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const openingHours = openingHoursPayload(body.openingHours ?? body.opening_hours)
   const overrides = openingOverridesPayload(body.overrides)
 
-  const { error } = await session.supabase.rpc('replace_facility_opening_hours', {
+  const { error } = await session.dataApi.rpc('replace_facility_opening_hours', {
     p_organization_id: session.organizationId,
     p_facility_id: access.facility.id,
     p_hours: openingHours,
@@ -22,14 +22,14 @@ export default defineEventHandler(async (event) => {
   throwDbError(error)
 
   const [hoursResult, overridesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('facility_opening_hours')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', access.facility.id)
       .order('weekday')
       .order('opens_at'),
-    session.supabase
+    session.dataApi
       .from('facility_opening_overrides')
       .select('*')
       .eq('organization_id', session.organizationId)

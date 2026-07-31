@@ -9,13 +9,13 @@ import {
 import { asRecord, getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBackoffice(event)
+  const { session, backendData } = await requireMortgageBackoffice(event)
   const offerId = mortgageBackofficeUuid(getRequiredParam(event, 'offerId'), 'offerId')
   const body = asRecord(await readBody(event))
   const expectedRevision = mortgageBackofficeRevision(body.expectedRevision)
   const draftData = mortgageOfferDraftData(body.draftData)
 
-  const { data: savedData, error: saveError } = await serviceRole.rpc(
+  const { data: savedData, error: saveError } = await backendData.rpc(
     'save_mortgage_product_draft_v2',
     {
       p_product_id: offerId,

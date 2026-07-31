@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'No supported membership fields provided' })
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_memberships')
     .update(patch)
     .eq('organization_id', session.organizationId)

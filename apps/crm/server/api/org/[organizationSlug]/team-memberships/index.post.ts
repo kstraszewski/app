@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   if (role !== 'member' && role !== 'admin') {
     throw createError({ statusCode: 400, statusMessage: 'Team membership role must be admin or member' })
   }
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('team_memberships')
     .insert({
       organization_id: session.organizationId,

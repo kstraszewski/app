@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getRequestURL, type H3Event } from 'h3'
 import type { CrmSession } from './crm.ts'
 import { throwDbError } from './crm.ts'
@@ -105,9 +105,9 @@ export function decodeMailOAuthFlow(
 export async function loadUserMailConnection(
   event: H3Event,
   session: CrmSession,
-): Promise<{ serviceRole: any; connection: MailConnectionRow | null }> {
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data, error } = await serviceRole
+): Promise<{ backendData: any; connection: MailConnectionRow | null }> {
+  const backendData = serverDataBackend(event) as any
+  const { data, error } = await backendData
     .from('mail_connections')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -116,7 +116,7 @@ export async function loadUserMailConnection(
     .maybeSingle()
   throwDbError(error)
   return {
-    serviceRole,
+    backendData,
     connection: data ? data as MailConnectionRow : null,
   }
 }
@@ -124,20 +124,20 @@ export async function loadUserMailConnection(
 export async function requireUserMailConnection(
   event: H3Event,
   session: CrmSession,
-): Promise<{ serviceRole: any; connection: MailConnectionRow }> {
+): Promise<{ backendData: any; connection: MailConnectionRow }> {
   const loaded = await loadUserMailConnection(event, session)
   if (!loaded.connection) {
     throw createError({ statusCode: 409, statusMessage: 'Connect Gmail to continue' })
   }
   return {
-    serviceRole: loaded.serviceRole,
+    backendData: loaded.backendData,
     connection: loaded.connection,
   }
 }
 
 export async function activeMailAccessToken(
   event: H3Event,
-  serviceRole: any,
+  backendData: any,
   connection: MailConnectionRow,
 ): Promise<string> {
   const accessToken = decryptMailSecret(event, connection.encrypted_access_token)
@@ -149,7 +149,7 @@ export async function activeMailAccessToken(
   const refreshToken = decryptMailSecret(event, connection.encrypted_refresh_token)
   if (!refreshToken) {
     await markMailConnectionStatus(
-      serviceRole,
+      backendData,
       connection,
       'revoked',
       'Gmail connection must be reconnected',
@@ -159,7 +159,7 @@ export async function activeMailAccessToken(
 
   try {
     const refreshed = await refreshMailOAuthToken(event, refreshToken)
-    const update = await serviceRole
+    const update = await backendData
       .from('mail_connections')
       .update({
         encrypted_access_token: encryptMailSecret(event, refreshed.accessToken),
@@ -177,7 +177,7 @@ export async function activeMailAccessToken(
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number })?.statusCode)
     await markMailConnectionStatus(
-      serviceRole,
+      backendData,
       connection,
       statusCode === 409 ? 'revoked' : 'error',
       error instanceof Error ? error.message.slice(0, 500) : 'Gmail token refresh failed',
@@ -187,12 +187,12 @@ export async function activeMailAccessToken(
 }
 
 export async function markMailConnectionStatus(
-  serviceRole: any,
+  backendData: any,
   connection: MailConnectionRow,
   status: MailConnectionRow['status'],
   errorMessage: string | null,
 ): Promise<void> {
-  const result = await serviceRole
+  const result = await backendData
     .from('mail_connections')
     .update({
       status,

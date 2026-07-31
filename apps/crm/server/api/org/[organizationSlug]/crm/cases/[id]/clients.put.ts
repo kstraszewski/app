@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'client_ids must contain UUIDs' })
   }
 
-  const { data, error } = await session.supabase.rpc('set_crm_case_clients', {
+  const { data, error } = await session.dataApi.rpc('set_crm_case_clients', {
     p_organization_id: session.organizationId,
     p_case_id: id,
     p_client_ids: clientIds,

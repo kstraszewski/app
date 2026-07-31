@@ -63,8 +63,8 @@ export default defineEventHandler(async (event) => {
     ? false
     : booleanValue(rawIsEmbedded, 'isEmbedded')
 
-  const supabase = await getPublicSchedulingClient(event)
-  const catalogResult = await supabase.rpc('get_booking_widget_catalog', {
+  const dataApi = await getPublicSchedulingClient(event)
+  const catalogResult = await dataApi.rpc('get_booking_widget_catalog', {
     p_widget_token: widgetKey,
   })
   throwBookingError(catalogResult.error)

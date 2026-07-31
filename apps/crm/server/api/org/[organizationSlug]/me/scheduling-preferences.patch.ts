@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody, setHeader } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { optionalUuidValue, requireFacilityPermission } from '~~/server/utils/scheduling'
@@ -27,8 +27,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: preferences, error } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: preferences, error } = await backendData
     .from('organization_user_preferences')
     .upsert({
       organization_id: session.organizationId,

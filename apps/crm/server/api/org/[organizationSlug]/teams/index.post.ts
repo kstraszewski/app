@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const slug = teamSlug(textValue(body.slug) ?? name)
   if (!slug) requiredText(slug, 'slug')
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('teams')
     .insert({
       organization_id: session.organizationId,

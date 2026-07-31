@@ -1,56 +1,40 @@
 <script setup lang="ts">
 const route = useRoute()
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-const user = useSupabaseUser()
-const { errorMessage, passwordIssue, syncAuthenticatedUser } = useAuthFlow()
+const hasAuthConfig = useHasAuthConfig()
+const authClient = hasAuthConfig ? useAuthClient() : null
+const { errorMessage, passwordIssue } = useAuthFlow()
 
 const password = ref('')
 const passwordConfirmation = ref('')
 const loading = ref(false)
-const authReady = ref(Boolean(user.value))
+const authReady = ref(false)
 const error = ref<string | null>(null)
 
 useHead({ title: 'Nowe hasło — OpenExpert CRM' })
 
-onMounted(async () => {
-  if (!supabase || user.value) {
-    authReady.value = Boolean(user.value)
+onMounted(() => {
+  const providerError = typeof route.query.error === 'string'
+    ? route.query.error
+    : null
+  if (providerError) {
+    error.value = errorMessage({
+      code: providerError,
+      message: providerError,
+    })
     return
   }
 
-  const tokenHash = typeof route.query.token_hash === 'string'
-    ? route.query.token_hash
-    : null
-  if (tokenHash) {
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'recovery',
-    })
-    if (verifyError) {
-      error.value = errorMessage(verifyError)
-      return
-    }
-  } else {
-    const code = typeof route.query.code === 'string' ? route.query.code : null
-    if (!code) {
-      error.value = 'Link do zmiany hasła jest nieprawidłowy albo wygasł.'
-      return
-    }
-
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-    if (exchangeError) {
-      error.value = errorMessage(exchangeError)
-      return
-    }
+  const token = typeof route.query.token === 'string' ? route.query.token : ''
+  if (!authClient || !token) {
+    error.value = 'Link do zmiany hasła jest nieprawidłowy albo wygasł.'
+    return
   }
-  await syncAuthenticatedUser()
   authReady.value = true
 })
 
 async function updatePassword() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
 
   const issue = passwordIssue(password.value)
   if (issue) {
@@ -63,17 +47,30 @@ async function updatePassword() {
   }
 
   loading.value = true
-  const { error: updateError } = await supabase.auth.updateUser({ password: password.value })
-  loading.value = false
+  try {
+    const { error: updateError } = await authClient.resetPassword({
+      newPassword: password.value,
+      token: String(route.query.token),
+    })
+    if (updateError) {
+      error.value = errorMessage(updateError)
+      return
+    }
 
-  if (updateError) {
-    error.value = errorMessage(updateError)
-    return
+    try {
+      await signOutAuthenticatedUser()
+    }
+    catch {
+      // Password reset already revokes existing sessions server-side.
+    }
+    await navigateTo('/login?passwordChanged=1')
   }
-
-  await supabase.auth.signOut({ scope: 'local' })
-  user.value = null
-  await navigateTo('/login?passwordChanged=1')
+  catch (updateError) {
+    error.value = errorMessage(updateError as { message?: string })
+  }
+  finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -82,7 +79,7 @@ async function updatePassword() {
     badge="Nowe hasło"
     icon="i-lucide-key-round"
     title="Zabezpiecz konto"
-    description="Ustaw nowe hasło. Wszystkie wymagania są sprawdzane także przez Supabase Auth."
+    description="Ustaw nowe hasło. Wymagania są sprawdzane także po stronie serwera."
   >
     <form v-if="authReady" class="grid gap-4" @submit.prevent="updatePassword">
       <UFormField label="Nowe hasło" hint="Min. 10 znaków, mała i wielka litera oraz cyfra" required>

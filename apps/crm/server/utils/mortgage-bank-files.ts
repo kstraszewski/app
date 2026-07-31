@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { embed, embedMany } from 'ai'
 import { createError, type H3Event } from 'h3'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import {
   requireCrmSession,
   requireSuperAdmin,
@@ -25,7 +25,7 @@ const supportedMimeTypes = new Set([
   'image/png',
 ])
 
-type ServiceRoleClient = any
+type BackendDataClient = any
 type DatabaseRecord = Record<string, any>
 
 export interface MortgageBankFileChunkInput {
@@ -60,7 +60,7 @@ export interface MortgageBankFileIngestInput {
 
 export interface MortgageBankFileAdminContext {
   session: CrmSession
-  serviceRole: ServiceRoleClient
+  backendData: BackendDataClient
 }
 
 export function mortgageBankFileUuid(value: unknown, field: string): string {
@@ -116,7 +116,7 @@ export async function requireMortgageBankFileAdmin(event: H3Event): Promise<Mort
   await requireSuperAdmin(session)
   return {
     session,
-    serviceRole: serverSupabaseServiceRole(event) as ServiceRoleClient,
+    backendData: serverDataBackend(event) as BackendDataClient,
   }
 }
 
@@ -283,10 +283,10 @@ function assertIngestInput(input: MortgageBankFileIngestInput) {
   }
 }
 
-async function resolveCategoryId(serviceRole: ServiceRoleClient, input: MortgageBankFileIngestInput) {
+async function resolveCategoryId(backendData: BackendDataClient, input: MortgageBankFileIngestInput) {
   if (input.categoryId) return input.categoryId
   const categoryKey = input.categoryKey?.trim() || 'other'
-  const result = await serviceRole
+  const result = await backendData
     .from('mortgage_bank_file_categories')
     .select('id')
     .eq('category_key', categoryKey)
@@ -299,14 +299,14 @@ async function resolveCategoryId(serviceRole: ServiceRoleClient, input: Mortgage
 }
 
 export async function ingestMortgageBankFile(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   input: MortgageBankFileIngestInput,
 ) {
   assertIngestInput(input)
   const title = input.title.trim()
   const checksum = mortgageBankFileSha256(input.bytes)
-  const categoryId = await resolveCategoryId(serviceRole, input)
-  const bankResult = await serviceRole
+  const categoryId = await resolveCategoryId(backendData, input)
+  const bankResult = await backendData
     .from('mortgage_banks')
     .select('id')
     .eq('id', input.bankId)
@@ -315,7 +315,7 @@ export async function ingestMortgageBankFile(
   if (!bankResult.data) throw createError({ statusCode: 404, statusMessage: 'Financial institution not found' })
 
   if (input.productId) {
-    const productResult = await serviceRole
+    const productResult = await backendData
       .from('mortgage_products')
       .select('id')
       .eq('id', input.productId)
@@ -327,7 +327,7 @@ export async function ingestMortgageBankFile(
     }
   }
 
-  let fileResult = await serviceRole
+  let fileResult = await backendData
     .from('mortgage_bank_files')
     .select('id, current_version_id')
     .eq('bank_id', input.bankId)
@@ -338,7 +338,7 @@ export async function ingestMortgageBankFile(
 
   let createdLogicalFile = false
   if (!fileResult.data) {
-    fileResult = await serviceRole
+    fileResult = await backendData
       .from('mortgage_bank_files')
       .insert({
         bank_id: input.bankId,
@@ -353,7 +353,7 @@ export async function ingestMortgageBankFile(
     if (fileResult.error) throw fileResult.error
     createdLogicalFile = true
   } else {
-    const updateFileResult = await serviceRole
+    const updateFileResult = await backendData
       .from('mortgage_bank_files')
       .update({
         category_id: categoryId,
@@ -365,21 +365,21 @@ export async function ingestMortgageBankFile(
   }
 
   const fileId = String(fileResult.data.id)
-  const duplicateResult = await serviceRole
+  const duplicateResult = await backendData
     .from('mortgage_bank_file_versions')
     .select('id, version_number, version_label, status')
     .eq('file_id', fileId)
     .eq('checksum_sha256', checksum)
     .maybeSingle()
   if (duplicateResult.error) {
-    if (createdLogicalFile) await serviceRole.from('mortgage_bank_files').delete().eq('id', fileId)
+    if (createdLogicalFile) await backendData.from('mortgage_bank_files').delete().eq('id', fileId)
     throw duplicateResult.error
   }
   if (duplicateResult.data) {
     return { fileId, version: duplicateResult.data, duplicate: true }
   }
 
-  const latestResult = await serviceRole
+  const latestResult = await backendData
     .from('mortgage_bank_file_versions')
     .select('version_number')
     .eq('file_id', fileId)
@@ -387,7 +387,7 @@ export async function ingestMortgageBankFile(
     .limit(1)
     .maybeSingle()
   if (latestResult.error) {
-    if (createdLogicalFile) await serviceRole.from('mortgage_bank_files').delete().eq('id', fileId)
+    if (createdLogicalFile) await backendData.from('mortgage_bank_files').delete().eq('id', fileId)
     throw latestResult.error
   }
 
@@ -401,7 +401,7 @@ export async function ingestMortgageBankFile(
   let uploaded = false
 
   try {
-    const uploadResult = await serviceRole.storage
+    const uploadResult = await backendData.storage
       .from(mortgageBankFileBucket)
       .upload(storagePath, input.bytes, {
         contentType: input.mimeType,
@@ -410,7 +410,7 @@ export async function ingestMortgageBankFile(
     if (uploadResult.error) throw uploadResult.error
     uploaded = true
 
-    const insertVersionResult = await serviceRole
+    const insertVersionResult = await backendData
       .from('mortgage_bank_file_versions')
       .insert({
         id: versionId,
@@ -437,7 +437,7 @@ export async function ingestMortgageBankFile(
       })
     if (insertVersionResult.error) throw insertVersionResult.error
 
-    const jobsResult = await serviceRole
+    const jobsResult = await backendData
       .from('mortgage_bank_file_processing_jobs')
       .insert([
         {
@@ -465,7 +465,7 @@ export async function ingestMortgageBankFile(
       embeddingStatus = chunks.length ? 'pending' : 'disabled'
 
       if (chunks.length) {
-        const chunksResult = await serviceRole
+        const chunksResult = await backendData
           .from('mortgage_bank_file_chunks')
           .insert(chunks.map(chunk => ({
             version_id: versionId,
@@ -503,19 +503,19 @@ export async function ingestMortgageBankFile(
               }]
             })
             if (embeddingRows.length) {
-              const embeddingsResult = await serviceRole
+              const embeddingsResult = await backendData
                 .from('mortgage_bank_file_embeddings')
                 .insert(embeddingRows)
               if (embeddingsResult.error) throw embeddingsResult.error
             }
-            await serviceRole
+            await backendData
               .from('mortgage_bank_file_processing_jobs')
               .update({ status: 'completed', finished_at: new Date().toISOString() })
               .eq('version_id', versionId)
               .eq('job_type', 'embed')
             embeddingStatus = 'completed'
           } catch (embeddingError) {
-            await serviceRole
+            await backendData
               .from('mortgage_bank_file_processing_jobs')
               .update({
                 status: 'failed',
@@ -532,14 +532,14 @@ export async function ingestMortgageBankFile(
     }
 
     if (previousVersionId) {
-      const archiveResult = await serviceRole
+      const archiveResult = await backendData
         .from('mortgage_bank_file_versions')
         .update({ status: 'archived' })
         .eq('id', previousVersionId)
       if (archiveResult.error) throw archiveResult.error
     }
 
-    const finalizeVersionResult = await serviceRole
+    const finalizeVersionResult = await backendData
       .from('mortgage_bank_file_versions')
       .update({
         status: 'current',
@@ -557,14 +557,14 @@ export async function ingestMortgageBankFile(
       .eq('id', versionId)
     if (finalizeVersionResult.error) throw finalizeVersionResult.error
 
-    const finalizeJobResult = await serviceRole
+    const finalizeJobResult = await backendData
       .from('mortgage_bank_file_processing_jobs')
       .update({ status: 'completed', finished_at: new Date().toISOString() })
       .eq('version_id', versionId)
       .eq('job_type', 'extract')
     if (finalizeJobResult.error) throw finalizeJobResult.error
 
-    const updateCurrentResult = await serviceRole
+    const updateCurrentResult = await backendData
       .from('mortgage_bank_files')
       .update({
         current_version_id: versionId,
@@ -575,7 +575,7 @@ export async function ingestMortgageBankFile(
     if (updateCurrentResult.error) throw updateCurrentResult.error
 
     if (input.productId) {
-      const linkResult = await serviceRole
+      const linkResult = await backendData
         .from('mortgage_bank_file_products')
         .upsert({
           file_id: fileId,
@@ -585,7 +585,7 @@ export async function ingestMortgageBankFile(
       if (linkResult.error) throw linkResult.error
     }
 
-    const eventResult = await serviceRole
+    const eventResult = await backendData
       .from('mortgage_bank_file_events')
       .insert({
         file_id: fileId,
@@ -616,18 +616,18 @@ export async function ingestMortgageBankFile(
     }
   } catch (error) {
     if (uploaded) {
-      await serviceRole.storage.from(mortgageBankFileBucket).remove([storagePath])
+      await backendData.storage.from(mortgageBankFileBucket).remove([storagePath])
     }
-    await serviceRole.from('mortgage_bank_file_versions').delete().eq('id', versionId)
+    await backendData.from('mortgage_bank_file_versions').delete().eq('id', versionId)
     if (createdLogicalFile) {
-      await serviceRole.from('mortgage_bank_files').delete().eq('id', fileId)
+      await backendData.from('mortgage_bank_files').delete().eq('id', fileId)
     }
     throw error
   }
 }
 
 export async function createMortgageBankFileAccessUrl(
-  serviceRole: ServiceRoleClient,
+  backendData: BackendDataClient,
   input: {
     fileId: string
     versionId?: string | null
@@ -638,7 +638,7 @@ export async function createMortgageBankFileAccessUrl(
 ) {
   const fileId = mortgageBankFileUuid(input.fileId, 'fileId')
   const requestedVersionId = mortgageBankFileOptionalUuid(input.versionId, 'versionId')
-  const fileResult = await serviceRole
+  const fileResult = await backendData
     .from('mortgage_bank_files')
     .select('id, current_version_id')
     .eq('id', fileId)
@@ -649,7 +649,7 @@ export async function createMortgageBankFileAccessUrl(
 
   const versionId = requestedVersionId ?? String(fileResult.data.current_version_id ?? '')
   if (!versionId) throw createError({ statusCode: 409, statusMessage: 'Bank file has no available version' })
-  const versionResult = await serviceRole
+  const versionResult = await backendData
     .from('mortgage_bank_file_versions')
     .select('id, file_id, storage_path, original_file_name')
     .eq('id', versionId)
@@ -658,12 +658,12 @@ export async function createMortgageBankFileAccessUrl(
   if (versionResult.error) throw versionResult.error
   if (!versionResult.data) throw createError({ statusCode: 404, statusMessage: 'Bank file version not found' })
 
-  const signedResult = await serviceRole.storage
+  const signedResult = await backendData.storage
     .from(mortgageBankFileBucket)
     .createSignedUrl(String(versionResult.data.storage_path), 60)
   if (signedResult.error) throw signedResult.error
 
-  const auditResult = await serviceRole
+  const auditResult = await backendData
     .from('mortgage_bank_file_events')
     .insert({
       file_id: fileId,

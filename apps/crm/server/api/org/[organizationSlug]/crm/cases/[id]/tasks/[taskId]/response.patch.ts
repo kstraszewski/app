@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const input = parseTaskDelegationResponse(await readBody(event))
 
   async function loadTask(): Promise<Row> {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('crm_tasks')
       .select(delegatedTaskSelect)
       .eq('organization_id', session.organizationId)
@@ -92,7 +92,7 @@ export default defineEventHandler(async (event) => {
       }
     : { delegation_status: targetStatus }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_tasks')
     .update(patch)
     .eq('organization_id', session.organizationId)

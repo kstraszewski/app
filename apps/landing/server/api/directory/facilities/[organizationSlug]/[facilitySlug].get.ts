@@ -13,7 +13,7 @@ import {
   type DirectoryServiceDetailRow,
 } from '../../../../utils/directory-facility-detail'
 import { loadDirectoryFacilityGallery } from '../../../../utils/directory-cover-images'
-import { serverSupabaseServiceRole } from '../../../../utils/supabase'
+import { serverDataBackend } from '../../../../utils/data-api'
 
 function directoryNotFound(): never {
   throw createError({
@@ -47,8 +47,8 @@ export default defineCachedEventHandler(async (
   )
   if (!organizationSlug || !facilitySlug) directoryNotFound()
 
-  const serviceRole = serverSupabaseServiceRole(event)
-  const organizationResult = await serviceRole
+  const backendData = serverDataBackend(event)
+  const organizationResult = await backendData
     .from('organizations')
     .select('id')
     .eq('slug', organizationSlug)
@@ -59,7 +59,7 @@ export default defineCachedEventHandler(async (
   if (!organizationResult.data) directoryNotFound()
 
   const organizationId = organizationResult.data.id
-  const facilityIdentityResult = await serviceRole
+  const facilityIdentityResult = await backendData
     .from('facilities')
     .select('id')
     .eq('organization_id', organizationId)
@@ -75,7 +75,7 @@ export default defineCachedEventHandler(async (
   // This is the public exposure gate. No description, contact, opening hours,
   // gallery or staff data is read until an explicitly listed calendar widget
   // has also produced a valid, bookable public catalog.
-  const widgetResult = await serviceRole
+  const widgetResult = await backendData
     .from('booking_widgets')
     .select('public_token')
     .eq('organization_id', organizationId)
@@ -92,7 +92,7 @@ export default defineCachedEventHandler(async (
   let rpcFailureCount = 0
   const catalogResults = await Promise.all(
     widgetResult.data.map(async ({ public_token: widgetKey }) => {
-      const { data, error } = await serviceRole.rpc(
+      const { data, error } = await backendData.rpc(
         'get_booking_widget_catalog',
         { p_widget_token: widgetKey },
       )
@@ -123,7 +123,7 @@ export default defineCachedEventHandler(async (
 
   const serviceIds = catalog.services.map(service => service.key)
   const [facilityResult, openingHoursResult, servicesResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('facilities')
       .select(`
         id,
@@ -146,7 +146,7 @@ export default defineCachedEventHandler(async (
       .eq('id', facilityId)
       .eq('is_active', true)
       .single(),
-    serviceRole
+    backendData
       .from('facility_opening_hours')
       .select('weekday, opens_at, closes_at')
       .eq('organization_id', organizationId)
@@ -154,7 +154,7 @@ export default defineCachedEventHandler(async (
       .eq('is_active', true)
       .order('weekday')
       .order('opens_at'),
-    serviceRole
+    backendData
       .from('booking_services')
       .select('id, slug, name, description, duration_minutes')
       .eq('organization_id', organizationId)
@@ -176,7 +176,7 @@ export default defineCachedEventHandler(async (
   let gallery
   try {
     gallery = await loadDirectoryFacilityGallery(
-      serviceRole,
+      backendData,
       organizationId,
       facilityId,
       facilityResult.data.name,

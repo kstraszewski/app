@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
       'compliance.consents.definitions.publish',
     )
   }
-  const { error } = await session.supabase.rpc('update_crm_consent_definition', {
+  const { error } = await session.dataApi.rpc('update_crm_consent_definition', {
     p_definition_id: definitionId,
     p_organization_id: session.organizationId,
     p_internal_name: input.internal_name,

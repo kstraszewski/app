@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getRouterParam } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -15,8 +15,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Expert profile asset type not found' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const existing = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const existing = await backendData
     .from('expert_brand_profiles')
     .select('portrait_path')
     .eq('organization_id', session.organizationId)
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
     return { data: profileFromRow(session, null), updatedAt: null }
   }
 
-  const result = await serviceRole
+  const result = await backendData
     .from('expert_brand_profiles')
     .update({ portrait_path: null })
     .eq('organization_id', session.organizationId)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
 
   const oldPath = existing.data.portrait_path
   if (oldPath) {
-    const cleanup = await serviceRole.storage.from(brandAssetBucket).remove([oldPath])
+    const cleanup = await backendData.storage.from(brandAssetBucket).remove([oldPath])
     if (cleanup.error) console.warn('[brand] failed to remove asset', cleanup.error.message)
   }
 

@@ -5,7 +5,7 @@ const logoBucket = 'mortgage-bank-logos'
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const superAdmin = await hasSuperAdminRole(session)
-  const { data: banks, error: banksError } = await session.supabase
+  const { data: banks, error: banksError } = await session.dataApi
     .from('mortgage_banks')
     .select('id, slug, name, website_url, logo_url, logo_background_color, updated_at')
     .order('name')
@@ -19,17 +19,17 @@ export default defineEventHandler(async (event) => {
     { data: overrides, error: overridesError },
     { data: aliases, error: aliasesError },
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('mortgage_products')
       .select('bank_id')
       .in('bank_id', bankIds)
       .eq('is_active', true),
-    session.supabase
+    session.dataApi
       .from('mortgage_bank_overrides')
       .select('id, bank_id, is_enabled, custom_name, custom_website_url, logo_path, notes, revision, created_at, updated_at, created_by, updated_by')
       .eq('organization_id', session.organizationId)
       .in('bank_id', bankIds),
-    session.supabase
+    session.dataApi
       .from('mortgage_bank_aliases')
       .select('bank_id, value, alias_type, valid_from, valid_to')
       .in('bank_id', bankIds)
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
     banks: (banks ?? []).map((bank: any) => {
       const override = overrideByBank.get(bank.id) as any
       const logoUrl = override?.logo_path
-        ? session.supabase.storage.from(logoBucket).getPublicUrl(override.logo_path).data.publicUrl
+        ? session.dataApi.storage.from(logoBucket).getPublicUrl(override.logo_path).data.publicUrl
         : bank.logo_url
       return {
         id: bank.id,

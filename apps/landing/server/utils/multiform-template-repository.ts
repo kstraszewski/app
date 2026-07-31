@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from './supabase'
+import { serverDataBackend } from './data-api'
 import {
   getTemplate,
   validateTemplateJson,
@@ -35,8 +35,8 @@ export async function resolvePinnedMultiformTemplates(
     .filter((value): value is string => Boolean(value)))]
   if (!productVersionIds.length) return [] as DocumentTemplate[]
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const linksResult = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const linksResult = await backendData
     .from('mortgage_product_version_document_templates')
     .select('product_version_id, template_revision_id, requirement_code, sort_order')
     .in('product_version_id', productVersionIds)
@@ -45,14 +45,14 @@ export async function resolvePinnedMultiformTemplates(
   if (!links.length) return [] as DocumentTemplate[]
 
   const revisionIds = [...new Set(links.map(link => String(link.template_revision_id)))]
-  const revisionsResult = await serviceRole
+  const revisionsResult = await backendData
     .from('mortgage_document_template_revisions')
     .select('id, template_id, action, template_json, validation_report')
     .in('id', revisionIds)
   databaseError(revisionsResult.error)
   const revisions = (revisionsResult.data ?? []) as DatabaseRecord[]
   const templateDefinitionIds = [...new Set(revisions.map(revision => String(revision.template_id)))]
-  const definitionsResult = await serviceRole
+  const definitionsResult = await backendData
     .from('mortgage_document_templates')
     .select('id, template_key, bank_id')
     .in('id', templateDefinitionIds)

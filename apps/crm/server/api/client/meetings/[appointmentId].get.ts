@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { getQuery, setHeader } from 'h3'
 import { appointmentMatchesVerifiedContact } from '~~/server/utils/client-identity'
 import {
@@ -31,8 +31,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  let appointmentQuery = serviceRole
+  const backendData = serverDataBackend(event) as any
+  let appointmentQuery = backendData
     .from('appointments')
     .select(crmMeetingAppointmentSelect)
     .eq('id', appointmentId)
@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
       'view',
     )
   } else {
-    const linkResult = await serviceRole
+    const linkResult = await backendData
       .from('client_account_links')
       .select('verification_method, verified_contact_normalized')
       .eq('auth_user_id', identity!.userId)
@@ -87,24 +87,24 @@ export default defineEventHandler(async (event) => {
   }
 
   const [organizationResult, serviceResult, expertResult, offersResult] = await Promise.all([
-    serviceRole
+    backendData
       .from('organizations')
       .select('id, name, slug')
       .eq('id', appointment.organization_id)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('booking_services')
       .select('id, name')
       .eq('organization_id', appointment.organization_id)
       .eq('id', appointment.service_id)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('users')
       .select('id, full_name, avatar_url')
       .eq('id', appointment.expert_user_id)
       .maybeSingle(),
     context.shared.kind === 'mortgage-offers' && context.shared.offerIds.length
-      ? serviceRole
+      ? backendData
           .from('crm_case_offer_snapshots')
           .select(crmMeetingOfferSelect)
           .eq('organization_id', appointment.organization_id)

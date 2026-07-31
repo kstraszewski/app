@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   if ('closed_at' in body) patch.closed_at = textValue(body.closed_at) ?? null
   if ('metadata' in body) patch.metadata = asRecord(body.metadata)
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_cases')
     .update(patch)
     .eq('organization_id', session.organizationId)

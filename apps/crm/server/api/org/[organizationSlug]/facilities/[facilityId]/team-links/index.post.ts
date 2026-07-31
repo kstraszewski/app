@@ -19,13 +19,13 @@ export default defineEventHandler(async (event) => {
   ])
 
   const [teamResult, facilityResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('teams')
       .select('id')
       .eq('organization_id', session.organizationId)
       .eq('id', teamId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('facilities')
       .select('id')
       .eq('organization_id', session.organizationId)
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(facilityResult.error)
   if (!facilityResult.data) throw createError({ statusCode: 404, statusMessage: 'Facility not found' })
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('team_facilities')
     .insert({
       organization_id: session.organizationId,

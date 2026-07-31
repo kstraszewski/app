@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { readBody } from 'h3'
 import { asRecord, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { requireFacilityPermission, uuidValue } from '~~/server/utils/scheduling'
@@ -22,8 +22,8 @@ export default defineEventHandler(async (event) => {
   // The service-role client is created only after the scoped manage check.
   // The RPC itself is transactional, so concurrent cover changes cannot leave
   // duplicate or partial sort ordering behind.
-  const serviceRole = serverSupabaseServiceRole(event)
-  const { error } = await serviceRole.rpc('set_facility_cover_image', {
+  const backendData = serverDataBackend(event)
+  const { error } = await backendData.rpc('set_facility_cover_image', {
     p_organization_id: session.organizationId,
     p_facility_id: String(access.facility.id),
     p_image_id: imageId,

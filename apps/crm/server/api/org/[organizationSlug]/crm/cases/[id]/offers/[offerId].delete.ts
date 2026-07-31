@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError } from 'h3'
 import { getRequiredParam, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 
@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const caseId = getRequiredParam(event, 'id')
   const offerId = getRequiredParam(event, 'offerId')
 
-  const { data: application, error: applicationError } = await session.supabase
+  const { data: application, error: applicationError } = await session.dataApi
     .from('crm_case_bank_applications')
     .select('submission_id')
     .eq('organization_id', session.organizationId)
@@ -25,8 +25,8 @@ export default defineEventHandler(async (event) => {
   // The database only allows the trusted server to mutate frozen offer
   // snapshots. Membership, case ownership and application usage were checked
   // above before elevating this narrowly-scoped delete.
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data, error } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data, error } = await backendData
     .from('crm_case_offer_snapshots')
     .delete()
     .eq('organization_id', session.organizationId)

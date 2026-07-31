@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  const { data: definitionId, error } = await session.supabase.rpc(
+  const { data: definitionId, error } = await session.dataApi.rpc(
     'create_crm_consent_definition',
     {
       p_organization_id: session.organizationId,

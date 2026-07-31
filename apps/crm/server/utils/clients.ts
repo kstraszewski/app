@@ -311,7 +311,7 @@ export async function searchCrmClients(
   const rpcName = filters.q && filters.sort === 'relevance'
     ? 'search_crm_clients_ranked'
     : 'search_crm_clients'
-  const { data, error } = await session.supabase.rpc(rpcName, {
+  const { data, error } = await session.dataApi.rpc(rpcName, {
     p_organization_id: session.organizationId,
     p_filters: filters,
   })

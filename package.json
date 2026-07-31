@@ -8,13 +8,13 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "db:migrate": "turbo run db:migrate --filter=@openexpert/database",
     "db:reset": "turbo run db:reset --filter=@openexpert/database",
     "db:seed-demo": "turbo run db:seed-demo --filter=@openexpert/database",
     "db:setup": "turbo run db:setup --filter=@openexpert/database",
     "db:start": "turbo run db:start --filter=@openexpert/database",
     "db:status": "turbo run db:status --filter=@openexpert/database",
     "db:stop": "turbo run db:stop --filter=@openexpert/database",
-    "db:types": "turbo run db:types --filter=@openexpert/database",
     "db:verify": "turbo run db:verify --filter=@openexpert/database",
     "dev": "turbo run dev",
     "dev:landing": "turbo run dev --filter=@openexpert/landing",
@@ -22,19 +22,12 @@
     "generate": "turbo run generate",
     "mortgage:sync": "turbo run mortgage:sync --filter=@openexpert/database",
     "preview": "turbo run preview",
+    "trigger:deploy": "turbo run trigger:deploy --filter=@openexpert/tasks",
+    "trigger:dev": "turbo run trigger:dev --filter=@openexpert/tasks",
+    "trigger:login": "turbo run trigger:login --filter=@openexpert/tasks --ui=tui",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
-    "supabase": "^2.109.1",
     "turbo": "^2.9.6"
-  },
-  "pnpm": {
-    "packageExtensions": {
-      "@nuxtjs/supabase@2.0.9": {
-        "dependencies": {
-          "h3": "1.15.11"
-        }
-      }
-    }
   }
 }

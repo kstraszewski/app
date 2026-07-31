@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
   await requireOrganizationMember(session, userId)
   await requireAdministrativePermission(session, 'iam.audit.read')
 
-  let request = session.supabase
+  let request = session.dataApi
     .from('organization_user_audit_events')
     .select(`
       id,

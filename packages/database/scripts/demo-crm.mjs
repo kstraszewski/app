@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { calculateMortgageCatalogVersion } from '../../mortgage/src/index.ts'
 
 const dayMs = 24 * 60 * 60 * 1000
 const demoNamespace = 'openexpert-local-demo'
@@ -340,6 +341,24 @@ const caseSeeds = [
         title: 'Alternatywne mieszkanie na Pogodnie',
       },
     ],
+    offers: [
+      {
+        key: 'pko-wlasny-kat',
+        bankSlug: 'pko-bp',
+        productSlug: 'wlasny-kat-fixed-5y',
+        savedDaysAgo: 3,
+        startApplication: true,
+      },
+      {
+        // Keep the fixture key stable so an existing local seed is updated
+        // instead of leaving the former ING shortlist row behind.
+        key: 'ing-latwy-start',
+        bankSlug: 'pekao',
+        productSlug: 'housing-fixed-5y',
+        savedDaysAgo: 2,
+        startApplication: true,
+      },
+    ],
     tasks: [
       { key: 'income-documents', itemKey: 'mortgage', title: 'Uzupełnij dokumenty dochodowe', description: 'Brakuje zaświadczenia Anny i wyciągów z ostatnich 3 miesięcy.', statusCode: 'open', priority: 'urgent', dueDays: -2 },
       {
@@ -376,8 +395,8 @@ const caseSeeds = [
       },
     ],
     documents: [
-      { key: 'jan-id', itemKey: 'mortgage', type: 'identity_document', name: 'Dowód osobisty — Jan Kowalski', statusCode: 'verified', receivedDays: -18, verifiedDays: -17 },
-      { key: 'anna-id', itemKey: 'mortgage', type: 'identity_document', name: 'Dowód osobisty — Anna Kowalska', statusCode: 'received', receivedDays: -16 },
+      { key: 'jan-id', clientKey: 'client-jan-kowalski', itemKey: 'mortgage', type: 'identity_document', name: 'Dowód osobisty — Jan Kowalski', statusCode: 'verified', receivedDays: -18, verifiedDays: -17 },
+      { key: 'anna-id', clientKey: 'client-anna-kowalska', itemKey: 'mortgage', type: 'identity_document', name: 'Dowód osobisty — Anna Kowalska', statusCode: 'received', receivedDays: -16 },
       { key: 'income-evidence', itemKey: 'mortgage', type: 'income_evidence', name: 'Dokumenty dochodowe wnioskodawców', statusCode: 'missing' },
       { key: 'property-legal', itemKey: 'mortgage', type: 'property_legal_documents', name: 'Dokumenty prawne nieruchomości', statusCode: 'received', receivedDays: -5 },
     ],
@@ -1678,6 +1697,581 @@ async function ensureProperties({
   return propertyByKey
 }
 
+function singleRelation(value) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
+function calculationSnapshot(calculation) {
+  return {
+    ...objectValue(calculation.raw),
+    status: calculation.status,
+    issues: calculation.issues,
+  }
+}
+
+function defaultMortgageSelections(version) {
+  const definition = objectValue(version.offer_definition)
+  if (definition.schemaVersion !== 'openexpert.mortgage-offer/2.0') {
+    return { selections: {} }
+  }
+
+  const presets = Array.isArray(definition.presets) ? definition.presets : []
+  const features = Array.isArray(definition.features) ? definition.features : []
+  const preset = presets.find(item => item?.isDefault === true)
+  const selections = { ...objectValue(preset?.selections) }
+  for (const feature of features) {
+    if (typeof feature?.id !== 'string' || feature.id in selections) continue
+    if (typeof feature.defaultOptionId === 'string') {
+      selections[feature.id] = feature.defaultOptionId
+    }
+  }
+  return {
+    ...(typeof preset?.id === 'string' ? { presetId: preset.id } : {}),
+    selections,
+  }
+}
+
+function mortgageProductSeedKey(bankSlug, productSlug) {
+  return `${bankSlug}:${productSlug}`
+}
+
+async function loadDemoMortgageProducts({
+  adminClient,
+  organizationId,
+  productReferences,
+}) {
+  const references = [...new Map(productReferences.map(reference => [
+    mortgageProductSeedKey(reference.bankSlug, reference.productSlug),
+    reference,
+  ])).values()]
+  const productSlugs = [...new Set(references.map(reference => reference.productSlug))]
+  const products = assertResult(
+    await adminClient
+      .from('mortgage_products')
+      .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color)')
+      .in('slug', productSlugs)
+      .eq('is_active', true)
+      .is('archived_at', null),
+    'Reading mortgage products for demo CRM offers',
+  ) ?? []
+  const productBySeedKey = new Map(products.map((product) => {
+    const bank = singleRelation(product.mortgage_banks)
+    return [mortgageProductSeedKey(String(bank.slug), String(product.slug)), product]
+  }))
+  for (const reference of references) {
+    const seedKey = mortgageProductSeedKey(reference.bankSlug, reference.productSlug)
+    if (!productBySeedKey.has(seedKey)) {
+      throw new Error(`Demo CRM offer references missing mortgage product ${seedKey}`)
+    }
+  }
+
+  const versionIds = products.map(product => product.current_published_version_id).filter(Boolean)
+  const versions = assertResult(
+    await adminClient
+      .from('mortgage_product_versions')
+      .select('*')
+      .in('id', versionIds)
+      .eq('lifecycle_status', 'published'),
+    'Reading mortgage product versions for demo CRM offers',
+  ) ?? []
+  const versionById = new Map(versions.map(version => [String(version.id), version]))
+  for (const product of products) {
+    if (!versionById.has(String(product.current_published_version_id))) {
+      throw new Error(`Mortgage product ${product.slug} has no current published version`)
+    }
+  }
+
+  const sourceIds = [...new Set(versions.map(version => version.source_document_id).filter(Boolean))]
+  const sources = sourceIds.length
+    ? assertResult(
+        await adminClient
+          .from('mortgage_source_documents')
+          .select('id, title, source_url, source_kind, sha256, storage_path, retrieved_at, published_at, retrieval_status, extraction_status')
+          .in('id', sourceIds),
+        'Reading mortgage sources for demo CRM offers',
+      ) ?? []
+    : []
+  const variants = assertResult(
+    await adminClient
+      .from('mortgage_product_version_variants')
+      .select('id, product_version_id, code, name, is_default, calculation_readiness, pricing_config, eligibility_config, sort_order')
+      .in('product_version_id', versionIds)
+      .order('sort_order'),
+    'Reading mortgage variants for demo CRM offers',
+  ) ?? []
+  const overrides = assertResult(
+    await adminClient
+      .from('mortgage_product_overrides')
+      .select('id, product_id, is_enabled, custom_name, parameters, notes, revision, created_at, updated_at, created_by, updated_by')
+      .eq('organization_id', organizationId)
+      .in('product_id', products.map(product => product.id)),
+    'Reading mortgage product overrides for demo CRM offers',
+  ) ?? []
+  const bankOverrides = assertResult(
+    await adminClient
+      .from('mortgage_bank_overrides')
+      .select('id, bank_id, is_enabled, custom_name, custom_website_url, logo_path, revision, created_at, updated_at')
+      .eq('organization_id', organizationId)
+      .in('bank_id', products.map(product => product.bank_id)),
+    'Reading mortgage bank overrides for demo CRM offers',
+  ) ?? []
+
+  const sourceById = new Map(sources.map(source => [String(source.id), source]))
+  const overrideByProductId = new Map(overrides.map(override => [String(override.product_id), override]))
+  const overrideByBankId = new Map(bankOverrides.map(override => [String(override.bank_id), override]))
+  const defaultVariantByVersionId = new Map()
+  for (const variant of variants) {
+    const versionId = String(variant.product_version_id)
+    if (variant.is_default || !defaultVariantByVersionId.has(versionId)) {
+      defaultVariantByVersionId.set(versionId, variant)
+    }
+  }
+
+  return new Map(products.map((product) => {
+    const version = versionById.get(String(product.current_published_version_id))
+    const source = sourceById.get(String(version.source_document_id)) ?? null
+    const variant = defaultVariantByVersionId.get(String(version.id)) ?? null
+    const override = overrideByProductId.get(String(product.id)) ?? null
+    const bank = singleRelation(product.mortgage_banks)
+    const bankOverride = overrideByBankId.get(String(product.bank_id)) ?? null
+    const baseVersion = {
+      ...version,
+      source,
+      variant,
+      offer_definition: variant?.pricing_config ?? null,
+      calculation_readiness: variant?.calculation_readiness ?? 'partial',
+    }
+    const resolvedVersion = Number(version.calculator_schema_version ?? 1) >= 2
+      ? baseVersion
+      : { ...baseVersion, ...objectValue(override?.parameters) }
+
+    return [mortgageProductSeedKey(String(bank.slug), String(product.slug)), {
+      id: product.id,
+      slug: product.slug,
+      name: override?.custom_name ?? product.name,
+      baseName: product.name,
+      category: product.category,
+      bank: {
+        ...bank,
+        name: bankOverride?.custom_name ?? bank.name,
+        website_url: bankOverride?.custom_website_url ?? bank.website_url,
+        baseName: bank.name,
+        baseWebsiteUrl: bank.website_url,
+        isEnabled: bankOverride?.is_enabled ?? true,
+        logoUrl: bank.logo_url,
+        logoBackground: bank.logo_background_color,
+        override: bankOverride,
+      },
+      isEnabled: override?.is_enabled ?? true,
+      version: resolvedVersion,
+      baseVersion,
+      override,
+    }]
+  }))
+}
+
+async function ensureCaseOffers({
+  adminClient,
+  organizationId,
+  ownerUserId,
+  seedNow,
+  caseByKey,
+}) {
+  const offerSeeds = caseSeeds.flatMap(caseSeed => (caseSeed.offers ?? []).map(offer => ({
+    ...offer,
+    caseSeed,
+    id: stableUuid(`${caseSeed.key}:offer:${offer.key}`),
+  })))
+  if (!offerSeeds.length) return []
+
+  const productBySeedKey = await loadDemoMortgageProducts({
+    adminClient,
+    organizationId,
+    productReferences: offerSeeds.map(seed => ({
+      bankSlug: seed.bankSlug,
+      productSlug: seed.productSlug,
+    })),
+  })
+  const offerById = new Map()
+
+  for (const seed of offerSeeds) {
+    const crmCase = caseByKey.get(seed.caseSeed.key)
+    const product = productBySeedKey.get(mortgageProductSeedKey(seed.bankSlug, seed.productSlug))
+    const propertySeed = seed.caseSeed.properties.find(property => property.selected)
+    const mortgageItem = seed.caseSeed.items.find(item => item.productCode === 'credit_mortgage')
+    if (!crmCase || !product || !propertySeed || !mortgageItem?.amount) {
+      throw new Error(`Demo CRM offer ${seed.key} requires a mortgage case, amount and selected property`)
+    }
+
+    const scenario = {
+      propertyValue: Number(propertySeed.price),
+      appraisalValue: propertySeed.appraisal == null ? null : Number(propertySeed.appraisal),
+      loanAmount: Number(mortgageItem.amount),
+      years: 25,
+      installmentType: 'equal',
+      referenceDelta: 0,
+      monthlyOverpayment: 0,
+      overpaymentStrategy: 'shorten_term',
+      mortgageRegistrationMonth: 6,
+      financeCommission: true,
+      ...defaultMortgageSelections(product.version),
+      selectionEvents: [],
+    }
+    const calculation = calculateMortgageCatalogVersion(product.version, scenario)
+    const stress = calculateMortgageCatalogVersion(product.version, scenario, 2)
+    if (!['complete', 'partial'].includes(calculation.status)) {
+      throw new Error(`Demo CRM offer ${seed.productSlug} is not shortlistable (${calculation.status})`)
+    }
+
+    const created = assertResult(
+      await adminClient
+        .from('crm_case_offer_snapshots')
+        .upsert({
+          id: seed.id,
+          organization_id: organizationId,
+          case_id: crmCase.id,
+          bank_id: product.bank.id,
+          mortgage_product_id: product.id,
+          mortgage_product_version_id: product.baseVersion.id,
+          saved_by_user_id: ownerUserId,
+          offer_type: 'mortgage',
+          bank_name: product.bank.name,
+          product_name: product.name,
+          version_key: product.version.version_key,
+          calculator_version: calculation.engineVersion,
+          currency: 'PLN',
+          loan_amount: scenario.loanAmount,
+          first_installment: calculation.firstInstallment,
+          first_monthly_outflow: calculation.firstTotalOutflow,
+          cost_first_five_years: calculation.costFirstFiveYears,
+          total_cost: calculation.totalCost,
+          representative_apr_pct: product.version.representative_apr_pct,
+          scenario_snapshot: scenario,
+          catalog_snapshot: product,
+          calculation_snapshot: calculationSnapshot(calculation),
+          stress_snapshot: calculationSnapshot(stress),
+          saved_at: isoOffset(seedNow, -seed.savedDaysAgo),
+        }, { onConflict: 'id' })
+        .select('id, case_id, bank_id, mortgage_product_id, mortgage_product_version_id, bank_name, product_name, currency, scenario_snapshot, catalog_snapshot, calculation_snapshot')
+        .single(),
+      `Seeding demo CRM offer ${product.bank.name} · ${product.name}`,
+    )
+    offerById.set(seed.id, created)
+  }
+
+  const seededOffers = offerSeeds.map(seed => offerById.get(seed.id)).filter(Boolean)
+  if (seededOffers.length !== offerSeeds.length) {
+    throw new Error(`Expected ${offerSeeds.length} demo CRM offers, received ${seededOffers.length}`)
+  }
+  return seededOffers
+}
+
+function requiredDemoNumber(value, label) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    throw new Error(`Demo mortgage application is missing ${label}`)
+  }
+  return Math.round((number + Number.EPSILON) * 100) / 100
+}
+
+function demoMortgageApplicationSnapshots({
+  offer,
+  property,
+  baselineOfferId,
+}) {
+  const offerScenario = objectValue(offer.scenario_snapshot)
+  const version = objectValue(objectValue(offer.catalog_snapshot).version)
+  const calculation = calculateMortgageCatalogVersion(version, offerScenario)
+  if (!['complete', 'partial'].includes(calculation.status)) {
+    throw new Error(`Demo mortgage application cannot freeze a ${calculation.status} calculation`)
+  }
+
+  const purchasePrice = requiredDemoNumber(property.price_amount, 'purchase price')
+  const appraisalValue = property.appraisal_value_amount == null
+    ? null
+    : requiredDemoNumber(property.appraisal_value_amount, 'appraisal value')
+  const netLoanAmount = requiredDemoNumber(calculation.netLoanAmount, 'net loan amount')
+  const grossLoanAmount = requiredDemoNumber(calculation.grossLoanAmount, 'gross loan amount')
+  const financedCosts = requiredDemoNumber(calculation.financedCosts, 'financed costs')
+  const contributionAmount = requiredDemoNumber(
+    purchasePrice - netLoanAmount,
+    'contribution amount',
+  )
+  const ltvDebtAmount = netLoanAmount
+  const collateralValueAmount = purchasePrice
+  const ltvPct = requiredDemoNumber(
+    ltvDebtAmount / collateralValueAmount * 100,
+    'LTV',
+  )
+  const years = requiredDemoNumber(offerScenario.years, 'term')
+  const termMonths = years * 12
+  const installmentType = offerScenario.installmentType === 'decreasing'
+    ? 'decreasing'
+    : 'equal'
+  const selections = objectValue(offerScenario.selections)
+  const selectionEvents = Array.isArray(offerScenario.selectionEvents)
+    ? offerScenario.selectionEvents
+    : []
+
+  const scenarioSnapshot = {
+    schemaVersion: 'openexpert.mortgage-application-scenario/1.0',
+    sourceOfferId: offer.id,
+    comparisonBaselineOfferId: baselineOfferId,
+    property: {
+      propertyId: property.id,
+      purchasePrice,
+      appraisalValue,
+      propertyUpdatedAt: property.updated_at,
+    },
+    financing: {
+      amountMode: 'target_net_proceeds',
+      targetNetProceeds: netLoanAmount,
+      grossLoanAmount,
+      financedCosts,
+      contributionAmount,
+      termMonths,
+      installmentType,
+    },
+    pricing: {
+      referenceDelta: Number(offerScenario.referenceDelta ?? 0),
+      monthlyOverpayment: Number(offerScenario.monthlyOverpayment ?? 0),
+      overpaymentStrategy: offerScenario.overpaymentStrategy ?? 'shorten_term',
+      mortgageRegistrationMonth: offerScenario.mortgageRegistrationMonth ?? null,
+      financeCommission: offerScenario.financeCommission !== false,
+      presetId: offerScenario.presetId ?? null,
+      selections,
+      selectionEvents,
+    },
+    propertyValue: purchasePrice,
+    appraisalValue,
+    loanAmount: netLoanAmount,
+    grossLoanAmount,
+    years,
+    installmentType,
+    referenceDelta: Number(offerScenario.referenceDelta ?? 0),
+    monthlyOverpayment: Number(offerScenario.monthlyOverpayment ?? 0),
+    overpaymentStrategy: offerScenario.overpaymentStrategy ?? 'shorten_term',
+    mortgageRegistrationMonth: offerScenario.mortgageRegistrationMonth ?? null,
+    financeCommission: offerScenario.financeCommission !== false,
+    presetId: offerScenario.presetId ?? null,
+    selections,
+    selectionEvents,
+  }
+
+  return {
+    scenarioSnapshot,
+    calculationSnapshot: {
+      schemaVersion: 'openexpert.mortgage-application-calculation/1.0',
+      engineVersion: calculation.engineVersion,
+      // The catalogue intentionally remains marked partial when source fields
+      // need expert confirmation. This demo fixture freezes the fully numeric
+      // scenario so the document-completion workflow can be exercised.
+      status: 'complete',
+      summary: {
+        netLoanAmount,
+        grossLoanAmount,
+        financedCosts,
+        ltvDebtBasis: 'net_loan',
+        collateralValueBasis: 'purchase_price',
+        ltvDebtAmount,
+        collateralValueAmount,
+        ltvPct,
+        firstInstallment: requiredDemoNumber(calculation.firstInstallment, 'first installment'),
+        firstMonthlyOutflow: requiredDemoNumber(calculation.firstTotalOutflow, 'first monthly outflow'),
+        costFirstFiveYears: requiredDemoNumber(calculation.costFirstFiveYears, 'five-year cost'),
+        totalCost: requiredDemoNumber(calculation.totalCost, 'total cost'),
+      },
+      raw: calculation.raw,
+    },
+  }
+}
+
+async function ensureCaseBankApplications({
+  adminClient,
+  organizationId,
+  ownerUserId,
+  caseByKey,
+  propertyByKey,
+  offers,
+}) {
+  const applicationSeeds = caseSeeds.flatMap(caseSeed => (caseSeed.offers ?? [])
+    .filter(offer => offer.startApplication)
+    .map(offer => ({
+      ...offer,
+      caseSeed,
+      offerId: stableUuid(`${caseSeed.key}:offer:${offer.key}`),
+    })))
+  if (!applicationSeeds.length) return []
+
+  const offerById = new Map(offers.map(offer => [String(offer.id), offer]))
+  const selectedPropertyByCaseKey = new Map(caseSeeds.flatMap((caseSeed) => {
+    const selectedProperty = caseSeed.properties.find(property => property.selected)
+    if (!selectedProperty) return []
+    const property = propertyByKey.get(`${caseSeed.key}:property:${selectedProperty.key}`)
+    return property ? [[caseSeed.key, property]] : []
+  }))
+  const propertyIds = [...new Set(
+    [...selectedPropertyByCaseKey.values()].map(property => String(property.id)),
+  )]
+  const propertyRows = assertResult(
+    await adminClient
+      .from('crm_properties')
+      .select('id, price_amount, appraisal_value_amount, updated_at')
+      .eq('organization_id', organizationId)
+      .in('id', propertyIds),
+    'Reading demo CRM properties for bank applications',
+  ) ?? []
+  const propertyById = new Map(propertyRows.map(property => [String(property.id), property]))
+
+  const existingRows = assertResult(
+    await adminClient
+      .from('crm_case_bank_applications')
+      .select('submission_id, case_id, offer_id, bank_id, property_id, slot, snapshot_status')
+      .eq('organization_id', organizationId)
+      .in('offer_id', applicationSeeds.map(seed => seed.offerId)),
+    'Reading existing demo CRM bank applications',
+  ) ?? []
+  const applicationByOfferId = new Map(
+    existingRows.map(application => [String(application.offer_id), application]),
+  )
+  const baselineOfferByCaseKey = new Map()
+  for (const seed of applicationSeeds) {
+    if (!baselineOfferByCaseKey.has(seed.caseSeed.key)) {
+      baselineOfferByCaseKey.set(seed.caseSeed.key, seed.offerId)
+    }
+  }
+
+  for (const seed of applicationSeeds) {
+    const existing = applicationByOfferId.get(seed.offerId)
+    if (existing) {
+      if (existing.snapshot_status !== 'complete') {
+        throw new Error(`Existing demo bank application ${existing.submission_id} is not complete`)
+      }
+      continue
+    }
+
+    const offer = offerById.get(seed.offerId)
+    const seededProperty = selectedPropertyByCaseKey.get(seed.caseSeed.key)
+    const property = seededProperty
+      ? propertyById.get(String(seededProperty.id))
+      : null
+    const baselineOfferId = baselineOfferByCaseKey.get(seed.caseSeed.key)
+    if (!offer || !property || !baselineOfferId || !caseByKey.get(seed.caseSeed.key)) {
+      throw new Error(`Demo bank application ${seed.key} is missing its case, offer or property`)
+    }
+
+    const snapshots = demoMortgageApplicationSnapshots({
+      offer,
+      property,
+      baselineOfferId,
+    })
+    const created = assertResult(
+      await adminClient.rpc('create_crm_case_bank_application_snapshot', {
+        target_organization_id: organizationId,
+        target_case_id: offer.case_id,
+        target_offer_id: offer.id,
+        target_property_id: property.id,
+        target_actor_user_id: ownerUserId,
+        expected_property_updated_at: property.updated_at,
+        target_scenario_snapshot: snapshots.scenarioSnapshot,
+        target_calculation_snapshot: snapshots.calculationSnapshot,
+      }),
+      `Creating demo bank application for ${offer.bank_name}`,
+    )
+    const application = Array.isArray(created) ? created[0] : created
+    if (!application?.submission_id || application.snapshot_status !== 'complete') {
+      throw new Error(`Demo bank application for ${offer.bank_name} was not created as complete`)
+    }
+    applicationByOfferId.set(seed.offerId, application)
+  }
+
+  return applicationSeeds.map(seed => applicationByOfferId.get(seed.offerId)).filter(Boolean)
+}
+
+async function ensureCaseMultiformDraft({
+  adminClient,
+  organizationId,
+  ownerUserId,
+  caseByKey,
+  clientByKey,
+  offers,
+  bankApplications,
+}) {
+  const targetCase = caseByKey.get('case-mortgage-warszewo')
+  const jan = clientByKey.get('client-jan-kowalski')
+  const anna = clientByKey.get('client-anna-kowalska')
+  if (!targetCase || !jan || !anna) {
+    throw new Error('Multiwniosek demo draft is missing its case or applicants')
+  }
+
+  const caseApplications = bankApplications
+    .filter(application => String(application.case_id) === String(targetCase.id))
+  const offerIds = caseApplications.map(application => String(application.offer_id)).sort()
+  const offerById = new Map(offers.map(offer => [String(offer.id), offer]))
+  const templateIds = [...new Set(offerIds.flatMap((offerId) => {
+    const configured = offerById.get(offerId)?.catalog_snapshot?.version?.multiform_template_ids
+    return Array.isArray(configured)
+      ? configured.filter(templateId => typeof templateId === 'string' && templateId)
+      : []
+  }))].sort()
+  const applicationIds = caseApplications
+    .map(application => String(application.submission_id))
+    .sort()
+
+  if (applicationIds.length !== 2 || offerIds.length !== 2 || templateIds.length < 2) {
+    throw new Error('Multiwniosek demo draft requires two applications, offers and templates')
+  }
+
+  const selectionFingerprint = createHash('sha256')
+    .update(JSON.stringify({ applicationIds, offerIds, templateIds }))
+    .digest('hex')
+  const intakeAnswers = {
+    applicants: {
+      [String(jan.id)]: {
+        incomeSource: 'employment',
+        employmentType: 'indefinite',
+        incomePaidToAccount: true,
+        additionalIncome: false,
+        liabilities: null,
+      },
+      [String(anna.id)]: {
+        incomeSource: 'employment',
+        employmentType: 'indefinite',
+        incomePaidToAccount: true,
+        additionalIncome: null,
+        liabilities: null,
+      },
+    },
+    case: {
+      loanPurpose: 'purchase_secondary',
+      preliminaryAgreement: null,
+      landRegister: null,
+      appraisalAvailable: true,
+      trancheDisbursement: false,
+    },
+  }
+
+  return assertResult(
+    await adminClient
+      .from('crm_case_multiform_drafts')
+      .upsert({
+        organization_id: organizationId,
+        case_id: targetCase.id,
+        selection_fingerprint: selectionFingerprint,
+        revision: 1,
+        active_step: 2,
+        intake_answers: intakeAnswers,
+        form_values: {},
+        collection_counts: {},
+        selected_document_ids: [],
+        updated_by_user_id: ownerUserId,
+      }, { onConflict: 'organization_id,case_id' })
+      .select('organization_id, case_id, selection_fingerprint, revision, active_step')
+      .single(),
+    'Seeding the Multiwniosek workflow draft',
+  )
+}
+
 async function ensureTasks({
   adminClient,
   organizationId,
@@ -1866,6 +2460,12 @@ async function ensureDocuments({
     const crmCase = caseByKey.get(caseSeed.key)
     const primaryClient = clientByKey.get(caseSeed.clientKeys[0])
     for (const documentSeed of caseSeed.documents) {
+      const documentClient = documentSeed.clientKey
+        ? clientByKey.get(documentSeed.clientKey)
+        : primaryClient
+      if (!documentClient) {
+        throw new Error(`Demo CRM document ${documentSeed.key} references a missing client`)
+      }
       const key = `${caseSeed.key}:document:${documentSeed.key}`
       const existing = documentByKey.get(key)
       const caseItem = documentSeed.itemKey
@@ -1877,7 +2477,7 @@ async function ensureDocuments({
       })
       const values = {
         organization_id: organizationId,
-        client_id: primaryClient.id,
+        client_id: documentClient.id,
         case_id: crmCase.id,
         case_item_id: caseItem?.id ?? null,
         submission_id: null,
@@ -2095,6 +2695,21 @@ export async function seedDemoCrm({
     caseByKey,
     itemByKey,
   })
+  const offers = await ensureCaseOffers({
+    adminClient,
+    organizationId,
+    ownerUserId,
+    seedNow: referenceNow,
+    caseByKey,
+  })
+  const bankApplications = await ensureCaseBankApplications({
+    adminClient,
+    organizationId,
+    ownerUserId,
+    caseByKey,
+    propertyByKey,
+    offers,
+  })
   const taskByKey = await ensureTasks({
     adminClient,
     organizationId,
@@ -2112,6 +2727,15 @@ export async function seedDemoCrm({
     clientByKey: clientResult.clientByKey,
     caseByKey,
     itemByKey,
+  })
+  const multiformDraft = await ensureCaseMultiformDraft({
+    adminClient,
+    organizationId,
+    ownerUserId,
+    caseByKey,
+    clientByKey: clientResult.clientByKey,
+    offers,
+    bankApplications,
   })
   const activityByKey = await ensureActivities({
     adminClient,
@@ -2164,6 +2788,9 @@ export async function seedDemoCrm({
       caseItems: itemByKey.size,
       settlements: settlementByItemId.size,
       properties: propertyByKey.size,
+      offers: offers.length,
+      bankApplications: bankApplications.length,
+      multiformDrafts: multiformDraft ? 1 : 0,
       tasks: taskByKey.size,
       documents: documentByKey.size,
       activities: activityByKey.size,

@@ -6,7 +6,7 @@ defineProps<{
   description: string
 }>()
 
-const hasSupabaseConfig = useHasSupabaseConfig()
+const hasAuthConfig = useHasAuthConfig()
 </script>
 
 <template>
@@ -36,12 +36,12 @@ const hasSupabaseConfig = useHasSupabaseConfig()
       </template>
 
       <UAlert
-        v-if="!hasSupabaseConfig"
+        v-if="!hasAuthConfig"
         role="alert"
         color="warning"
         variant="subtle"
         icon="i-lucide-alert-triangle"
-        title="Brakuje konfiguracji Supabase"
+        title="Brakuje konfiguracji logowania"
         description="Uruchom pnpm db:setup, aby przygotować lokalne środowisko."
       />
 

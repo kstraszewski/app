@@ -35,9 +35,9 @@ export default defineEventHandler(async (event) => {
     ? 1
     : integerValue(query.days, 'days', 1, BOOKING_WEEK_DAYS)
   const requestedRange = bookingDateRange(date, days)
-  const supabase = await getPublicSchedulingClient(event)
+  const dataApi = await getPublicSchedulingClient(event)
 
-  const catalogResult = await supabase.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
+  const catalogResult = await dataApi.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
   throwBookingError(catalogResult.error)
   if (!catalogResult.data) throw createError({ statusCode: 404, statusMessage: 'Booking widget not found' })
   await assertPublicBookingRateLimit(event, 'slots', widgetKey, 120, 60_000)
@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
 
   const expertNames = new Map(catalog.experts.map(expert => [expert.userId, expert.name]))
   async function loadExpertSlots(startsOn: string, endsOn: string) {
-    const { data, error } = await supabase.rpc('get_booking_widget_slots', {
+    const { data, error } = await dataApi.rpc('get_booking_widget_slots', {
       p_widget_token: widgetKey,
       p_service_id: serviceId,
       p_starts_on: startsOn,

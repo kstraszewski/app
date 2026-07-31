@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   await requireOrganizationMember(session, userId)
   await requireAdministrativePermission(session, 'privacy.grants.request')
 
-  const permissionsResult = await session.supabase
+  const permissionsResult = await session.dataApi
     .from('administrative_role_permissions')
     .select('role_key')
     .eq('permission_key', 'privacy.grants.approve')
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   const directRoleKeys = eligibleRoleKeys.filter(roleKey => roleKey !== 'organization_admin')
 
   const [membershipsResult, assignmentsResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select(`
         user_id,
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
       `)
       .eq('organization_id', session.organizationId),
     directRoleKeys.length
-      ? session.supabase
+      ? session.dataApi
           .from('organization_user_admin_roles')
           .select('user_id, role_key')
           .eq('organization_id', session.organizationId)

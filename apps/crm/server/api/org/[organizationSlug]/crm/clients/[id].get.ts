@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getQuery, setHeader } from 'h3'
 import {
   getRequiredParam,
@@ -7,6 +7,7 @@ import {
   requireCrmSession,
   throwDbError,
 } from '~~/server/utils/crm'
+import { canCreateClientAnonymizationRequest } from '~~/server/utils/client-anonymization-requests'
 import { listAccessibleFacilityIds } from '~~/server/utils/scheduling'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -55,7 +56,7 @@ export default defineEventHandler(async (event) => {
     100_000,
   )
 
-  const { data: client, error } = await session.supabase
+  const { data: client, error } = await session.dataApi
     .from('crm_clients')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -67,13 +68,31 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Client not found' })
   }
 
-  const canViewPrivacyRequests = await hasAdministrativePermission(
-    session,
-    'privacy.requests.read',
+  const isClientOwner = String(client.owner_user_id ?? '') === session.userId
+  const [
+    hasPrivacyReadPermission,
+    hasPrivacyCreatePermission,
+  ] = await Promise.all([
+    hasAdministrativePermission(session, 'privacy.requests.read'),
+    hasAdministrativePermission(session, 'privacy.requests.create'),
+  ])
+  const canCreatePrivacyRequestByAccess =
+    canCreateClientAnonymizationRequest({
+      currentUserId: session.userId,
+      ownerUserId: client.owner_user_id
+        ? String(client.owner_user_id)
+        : null,
+      hasCreatePermission: hasPrivacyCreatePermission,
+      clientStatus: String(client.status_code),
+    })
+  const canViewPrivacyRequests = (
+    isClientOwner
+    || hasPrivacyReadPermission
+    || hasPrivacyCreatePermission
   )
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const accessibleFacilityIds = await listAccessibleFacilityIds(session)
-  let appointmentsRequest: any = serviceRole
+  let appointmentsRequest: any = backendData
     .from('appointments')
     .select(
       'id, client_id, facility_id, service_id, expert_user_id, starts_at, ends_at, timezone, status, meeting_mode, meeting_url, confirmed_at, cancelled_at, cancellation_reason, customer_name, customer_email, customer_phone, notes, source, created_at, updated_at',
@@ -90,7 +109,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ownerRequest = client.owner_user_id
-    ? session.supabase
+    ? session.dataApi
         .from('users')
         .select('id, email, full_name')
         .eq('id', client.owner_user_id)
@@ -98,7 +117,7 @@ export default defineEventHandler(async (event) => {
     : Promise.resolve({ data: null, error: null })
 
   const anonymizationRequestsRequest = canViewPrivacyRequests
-    ? session.supabase
+    ? session.dataApi
         .from('crm_client_anonymization_requests')
         .select(
           'id, organization_id, client_id, subject_person_id, request_number, status, request_channel, legal_basis, requested_at, identity_verified_at, identity_verified_by_user_id, approved_at, approved_by_user_id, due_at, justification, review_note, completed_at, completed_by_user_id, created_by_user_id, created_at, updated_at',
@@ -108,7 +127,7 @@ export default defineEventHandler(async (event) => {
         .order('requested_at', { ascending: false })
     : Promise.resolve({ data: [], error: null })
 
-  const { data: caseLinks, error: caseLinksError } = await session.supabase
+  const { data: caseLinks, error: caseLinksError } = await session.dataApi
     .from('crm_case_clients')
     .select('case_id')
     .eq('organization_id', session.organizationId)
@@ -116,7 +135,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(caseLinksError)
   const clientCaseIds = [...new Set((caseLinks ?? []).map((link: any) => String(link.case_id)))]
   const casesRequest = clientCaseIds.length
-    ? session.supabase
+    ? session.dataApi
         .from('crm_cases')
         .select('id, title, closed_at, created_at, updated_at')
         .eq('organization_id', session.organizationId)
@@ -133,7 +152,7 @@ export default defineEventHandler(async (event) => {
     appointmentsResult,
     anonymizationRequestsResult,
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_client_people')
       .select('*')
       .eq('organization_id', session.organizationId)
@@ -141,14 +160,14 @@ export default defineEventHandler(async (event) => {
       .order('role', { ascending: true })
       .order('created_at', { ascending: true }),
     casesRequest,
-    session.supabase
+    session.dataApi
       .from('crm_client_consent_events')
       .select('*', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .eq('client_id', id)
       .order('occurred_at', { ascending: false })
       .order('id', { ascending: false }),
-    session.supabase
+    session.dataApi
       .from('crm_consent_definitions')
       .select('id, code, context, current_version_id, created_at, updated_at')
       .eq('organization_id', session.organizationId)
@@ -170,7 +189,7 @@ export default defineEventHandler(async (event) => {
   const caseRows = casesResult.data ?? []
   const caseIds = caseRows.map((crmCase: any) => String(crmCase.id))
   const { data: caseOffers, error: caseOffersError } = caseIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('crm_case_offer_snapshots')
         .select('case_id')
         .eq('organization_id', session.organizationId)
@@ -198,7 +217,7 @@ export default defineEventHandler(async (event) => {
     .filter((request: any) => request.status === 'approved')
     .map((request: any) => String(request.id))
   const executionGrantResult = executableRequestIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('crm_client_anonymization_execution_grants')
         .select('id, request_id, revision, status, expires_at, approved_at')
         .eq('organization_id', session.organizationId)
@@ -220,27 +239,27 @@ export default defineEventHandler(async (event) => {
     : `client_id.eq.${id}`
 
   const [tasksResult, openTasksResult, documentsResult, activitiesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select('accepted_at, assignee_user_id, cancelled_at, case_id, case_item_id, client_id, completed_at, created_at, data_access_scope, delegated_at, delegation_status, delegator_user_id, description, due_at, id, idempotency_fingerprint, idempotency_key, metadata, organization_id, priority, rejected_at, rejection_reason, responded_at, status_code, title, updated_at', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('due_at', { ascending: true, nullsFirst: false })
       .limit(100),
-    session.supabase
+    session.dataApi
       .from('crm_tasks')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .neq('status_code', 'done'),
-    session.supabase
+    session.dataApi
       .from('crm_documents')
       .select('case_id, case_item_id, client_id, created_at, document_type, id, metadata, mime_type, name, organization_id, received_at, sha256, size_bytes, status_code, storage_bucket, storage_path, submission_id, updated_at, uploaded_by_user_id, verified_at', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('created_at', { ascending: false })
       .limit(100),
-    session.supabase
+    session.dataApi
       .from('crm_activities')
       .select('*', { count: 'exact' })
       .eq('organization_id', session.organizationId)
@@ -259,7 +278,7 @@ export default defineEventHandler(async (event) => {
     .map((activity: any) => activity.actor_user_id ? String(activity.actor_user_id) : null)
     .filter((actorId: string | null): actorId is string => Boolean(actorId)))]
   const activityActorsResult = activityActorIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('organization_memberships')
         .select('user_id, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name)')
         .eq('organization_id', session.organizationId)
@@ -314,34 +333,34 @@ export default defineEventHandler(async (event) => {
     anonymizationActorsResult,
   ] = await Promise.all([
     consentVersionIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('crm_consent_definition_versions')
           .select('*')
           .eq('organization_id', session.organizationId)
           .in('id', consentVersionIds)
       : Promise.resolve({ data: [], error: null }),
     appointmentFacilityIds.length
-      ? serviceRole
+      ? backendData
           .from('facilities')
           .select('id, name, timezone')
           .eq('organization_id', session.organizationId)
           .in('id', appointmentFacilityIds)
       : Promise.resolve({ data: [], error: null }),
     appointmentServiceIds.length
-      ? serviceRole
+      ? backendData
           .from('booking_services')
           .select('id, name, duration_minutes')
           .eq('organization_id', session.organizationId)
           .in('id', appointmentServiceIds)
       : Promise.resolve({ data: [], error: null }),
     appointmentExpertIds.length
-      ? serviceRole
+      ? backendData
           .from('users')
           .select('id, full_name, email')
           .in('id', appointmentExpertIds)
       : Promise.resolve({ data: [], error: null }),
     anonymizationActorIds.length
-      ? session.supabase
+      ? session.dataApi
           .from('users')
           .select('id, full_name, email')
           .in('id', anonymizationActorIds)
@@ -413,6 +432,11 @@ export default defineEventHandler(async (event) => {
       ? anonymizationActorsById.get(String(request.created_by_user_id)) ?? null
       : null,
   }))
+  const activeAnonymizationRequest = anonymizationRequests.find(
+    (request: any) => !['completed', 'rejected', 'cancelled'].includes(
+      String(request.status),
+    ),
+  ) ?? null
   const appointmentRows = appointments.map((appointment: any) => {
     const facility: any = facilitiesById.get(String(appointment.facility_id)) ?? null
     const service: any = servicesById.get(String(appointment.service_id)) ?? null
@@ -457,11 +481,15 @@ export default defineEventHandler(async (event) => {
       has_more: consentHistoryOffset + consentHistory.length < (consentEventsResult.count ?? 0),
     },
     anonymization_requests: anonymizationRequests,
-    current_anonymization_request: anonymizationRequests.find((request: any) => (
-      !['completed', 'rejected', 'cancelled'].includes(String(request.status))
-    )) ?? anonymizationRequests[0] ?? null,
+    current_anonymization_request:
+      activeAnonymizationRequest ?? anonymizationRequests[0] ?? null,
     privacy_access: {
       can_view_requests: canViewPrivacyRequests,
+      can_create_request: (
+        canCreatePrivacyRequestByAccess
+        && !activeAnonymizationRequest
+      ),
+      create_permission_key: 'privacy.requests.create',
       can_execute_anonymization: Boolean(executionGrant),
       execute_permission_key: 'clients.anonymization.execute',
       execution_requires_temporary_grant: true,

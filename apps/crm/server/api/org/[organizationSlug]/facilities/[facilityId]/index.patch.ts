@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'No supported facility fields provided' })
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facilities')
     .update(patch)
     .eq('organization_id', session.organizationId)

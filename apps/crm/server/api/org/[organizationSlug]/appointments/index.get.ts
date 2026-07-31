@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { requireCrmSession, textValue, throwDbError } from '~~/server/utils/crm'
 import {
   enumValue,
@@ -47,8 +47,8 @@ export default defineEventHandler(async (event) => {
   }
   if (facilityIds?.length === 0) return { data: [], count: 0 }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  let request = serviceRole
+  const backendData = serverDataBackend(event) as any
+  let request = backendData
     .from('appointments')
     .select('id, organization_id, client_id, client_person_id, facility_id, service_id, expert_user_id, widget_id, starts_at, ends_at, timezone, status, hold_expires_at, meeting_mode, meeting_url, customer_name, customer_email, customer_phone, notes, created_at, updated_at', { count: 'exact' })
     .eq('organization_id', session.organizationId)
@@ -70,13 +70,13 @@ export default defineEventHandler(async (event) => {
 
   const [facilitiesResult, servicesResult, expertsResult] = await Promise.all([
     foundFacilityIds.length
-      ? serviceRole.from('facilities').select('id, name').eq('organization_id', session.organizationId).in('id', foundFacilityIds)
+      ? backendData.from('facilities').select('id, name').eq('organization_id', session.organizationId).in('id', foundFacilityIds)
       : Promise.resolve({ data: [], error: null }),
     serviceIds.length
-      ? serviceRole.from('booking_services').select('id, name').eq('organization_id', session.organizationId).in('id', serviceIds)
+      ? backendData.from('booking_services').select('id, name').eq('organization_id', session.organizationId).in('id', serviceIds)
       : Promise.resolve({ data: [], error: null }),
     expertIds.length
-      ? serviceRole.from('users').select('id, full_name, email').in('id', expertIds)
+      ? backendData.from('users').select('id, full_name, email').in('id', expertIds)
       : Promise.resolve({ data: [], error: null }),
   ])
   throwDbError(facilitiesResult.error)

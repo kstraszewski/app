@@ -113,7 +113,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: caseRow, error: caseError } = await session.supabase
+  const { data: caseRow, error: caseError } = await session.dataApi
     .from('crm_cases')
     .select('id, client_id')
     .eq('organization_id', session.organizationId)
@@ -125,7 +125,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const marketType = body.market_type === undefined ? null : marketTypeValue(body.market_type)
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_properties')
     .insert({
       organization_id: session.organizationId,

@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   }
 
-  const { data: caseRow, error: caseError } = await session.supabase
+  const { data: caseRow, error: caseError } = await session.dataApi
     .from('crm_cases')
     .select('id, client_id')
     .eq('organization_id', session.organizationId)
@@ -123,7 +123,7 @@ export default defineEventHandler(async (event) => {
 
   let previousMetadata: Record<string, unknown> = {}
   if (body.propertyId) {
-    const { data: existingProperty, error: existingError } = await session.supabase
+    const { data: existingProperty, error: existingError } = await session.dataApi
       .from('crm_properties')
       .select('id, metadata')
       .eq('organization_id', session.organizationId)
@@ -191,7 +191,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const propertyResult = body.propertyId
-    ? await session.supabase
+    ? await session.dataApi
         .from('crm_properties')
         .update(propertyValues)
         .eq('organization_id', session.organizationId)
@@ -199,7 +199,7 @@ export default defineEventHandler(async (event) => {
         .eq('id', propertyId)
         .select(propertyPublicSelect)
         .single()
-    : await session.supabase
+    : await session.dataApi
         .from('crm_properties')
         .insert({ id: propertyId, ...propertyValues })
         .select(propertyPublicSelect)
@@ -210,7 +210,7 @@ export default defineEventHandler(async (event) => {
     await selectCasePropertyIfNone(session, caseId, propertyId, importedAt)
   }
 
-  const { data: existingImages, error: existingImagesError } = await session.supabase
+  const { data: existingImages, error: existingImagesError } = await session.dataApi
     .from('crm_property_images')
     .select('sha256, sort_order')
     .eq('organization_id', session.organizationId)
@@ -257,7 +257,7 @@ export default defineEventHandler(async (event) => {
       const sha256 = createHash('sha256').update(processed.data).digest('hex')
       if (knownHashes.has(sha256)) continue
       const storagePath = `${session.organizationId}/${caseId}/${propertyId}/${randomUUID()}.webp`
-      const { error: uploadError } = await session.supabase.storage
+      const { error: uploadError } = await session.dataApi.storage
         .from(propertyImageBucket)
         .upload(storagePath, processed.data, {
           contentType: 'image/webp',
@@ -266,7 +266,7 @@ export default defineEventHandler(async (event) => {
         })
       if (uploadError) throw new Error(uploadError.message || 'Nie udało się zapisać zdjęcia.')
 
-      const { data: imageRow, error: imageError } = await session.supabase
+      const { data: imageRow, error: imageError } = await session.dataApi
         .from('crm_property_images')
         .insert({
           organization_id: session.organizationId,
@@ -288,7 +288,7 @@ export default defineEventHandler(async (event) => {
         .single()
 
       if (imageError || !imageRow) {
-        const { error: cleanupError } = await session.supabase.storage
+        const { error: cleanupError } = await session.dataApi.storage
           .from(propertyImageBucket)
           .remove([storagePath])
         if (cleanupError) {

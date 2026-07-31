@@ -10,7 +10,7 @@ function requestedLimit(body: unknown) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBankFileAdmin(event)
+  const { session, backendData } = await requireMortgageBankFileAdmin(event)
   const runtimeConfig = useRuntimeConfig(event)
   const googleApiKey = String(runtimeConfig.googleGenerativeAiApiKey || '').trim()
   if (!googleApiKey) {
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => null)
   return processMortgageBankFileAiJobs({
-    serviceRole,
+    backendData,
     googleApiKey,
     actorUserId: session.userId,
     organizationId: session.organizationId,

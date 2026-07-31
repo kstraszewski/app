@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireAdministrativePermission(session, 'structure.manage')
   const teamId = getRequiredParam(event, 'teamId')
-  const { error } = await session.supabase
+  const { error } = await session.dataApi
     .from('teams')
     .delete()
     .eq('organization_id', session.organizationId)

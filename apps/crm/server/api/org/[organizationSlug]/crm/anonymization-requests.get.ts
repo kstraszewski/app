@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   await requireAdministrativePermission(session, 'privacy.requests.read')
   setHeader(event, 'Cache-Control', 'no-store')
 
-  const { data: requests, error: requestsError } = await session.supabase
+  const { data: requests, error: requestsError } = await session.dataApi
     .from('crm_client_anonymization_requests')
     .select('id, client_id, request_number, status, due_at')
     .eq('organization_id', session.organizationId)
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const requestRows = (requests ?? []) as AnonymizationRequestRow[]
   const clientIds = [...new Set(requestRows.map(request => String(request.client_id)))]
   const { data: clients, error: clientsError } = clientIds.length
-    ? await session.supabase
+    ? await session.dataApi
         .from('crm_clients')
         .select('id, display_name')
         .eq('organization_id', session.organizationId)

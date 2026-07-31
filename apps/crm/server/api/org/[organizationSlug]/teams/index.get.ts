@@ -13,7 +13,7 @@ type MemberRow = {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const scope = await resolveTeamAdminScope(session)
-  const facilityAdminResult = await session.supabase
+  const facilityAdminResult = await session.dataApi
     .from('facility_memberships')
     .select('facility_id')
     .eq('organization_id', session.organizationId)
@@ -57,24 +57,24 @@ export default defineEventHandler(async (event) => {
 
   const managedTeamIds = new Set(scope.managedTeamIds)
   const [teamsResult, edgesResult, membershipsResult, membersResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('teams')
       .select('*')
       .eq('organization_id', session.organizationId)
       .in('id', scope.managedTeamIds)
       .order('name'),
-    session.supabase
+    session.dataApi
       .from('team_edges')
       .select('*')
       .eq('organization_id', session.organizationId)
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('*')
       .eq('organization_id', session.organizationId)
       .in('team_id', scope.managedTeamIds)
       .order('created_at'),
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select('user_id, role, user:users!organization_memberships_user_id_fkey!inner(id, email, full_name, avatar_url)')
       .eq('organization_id', session.organizationId),

@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const rules = availabilityRulesPayload(body.rules)
   const overrides = availabilityOverridesPayload(body.overrides)
 
-  const { error } = await session.supabase.rpc('replace_expert_availability', {
+  const { error } = await session.dataApi.rpc('replace_expert_availability', {
     p_organization_id: session.organizationId,
     p_facility_id: access.facility.id,
     p_user_id: userId,
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(error)
 
   const [rulesResult, overridesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('expert_availability_rules')
       .select('*')
       .eq('organization_id', session.organizationId)
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
       .eq('user_id', userId)
       .order('weekday')
       .order('starts_at'),
-    session.supabase
+    session.dataApi
       .from('expert_availability_overrides')
       .select('*')
       .eq('organization_id', session.organizationId)

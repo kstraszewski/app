@@ -1,60 +1,146 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { createClient } from '@supabase/supabase-js'
+import {
+  createAuthenticatedDataApiClient,
+  createDataApiTokenSigner,
+} from '@openexpert/data-api'
 
-const appBaseUrl = process.env.CRM_TEST_BASE_URL ?? 'http://127.0.0.1:3027'
-const envText = await readFile(new URL('../.env', import.meta.url), 'utf8')
-const localEnv = Object.fromEntries(
-  envText
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#') && line.includes('='))
-    .map((line) => {
-      const separator = line.indexOf('=')
-      return [line.slice(0, separator), line.slice(separator + 1)]
-    }),
-)
+const appBaseUrl = (
+  process.env.CRM_TEST_BASE_URL ?? 'http://127.0.0.1:3027'
+).replace(/\/+$/u, '')
 
-const supabaseUrl = localEnv.NUXT_PUBLIC_SUPABASE_URL
-const publicKey = localEnv.NUXT_PUBLIC_SUPABASE_KEY
-const secretKey = localEnv.NUXT_SUPABASE_SECRET_KEY
-assert.ok(supabaseUrl && publicKey && secretKey, 'Local Supabase env is incomplete')
-
-const serviceClient = createClient(supabaseUrl, secretKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
-
-function sessionCookie(session) {
-  const encoded = `base64-${Buffer.from(JSON.stringify(session)).toString('base64url')}`
-  const name = 'openexpert-local-auth'
-  if (encoded.length <= 3_180) return `${name}=${encoded}`
-
-  const chunks = []
-  for (let offset = 0; offset < encoded.length; offset += 3_180) {
-    chunks.push(`${name}.${chunks.length}=${encoded.slice(offset, offset + 3_180)}`)
+async function readOptionalText(url) {
+  try {
+    return await readFile(url, 'utf8')
   }
-  return chunks.join('; ')
+  catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') return ''
+    throw error
+  }
+}
+
+function parseEnvText(text) {
+  const values = {}
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const normalized = line.startsWith('export ') ? line.slice(7) : line
+    const separator = normalized.indexOf('=')
+    if (separator < 1) continue
+
+    const key = normalized.slice(0, separator).trim()
+    let value = normalized.slice(separator + 1).trim()
+    if (
+      value.length >= 2
+      && ((value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith('\'') && value.endsWith('\'')))
+    ) {
+      value = value.slice(1, -1)
+    }
+    values[key] = value
+  }
+  return values
+}
+
+const [rootEnvText, stackEnvText, crmEnvText] = await Promise.all([
+  readOptionalText(new URL('../../../.env', import.meta.url)),
+  readOptionalText(new URL('../../../.env.local-stack', import.meta.url)),
+  readOptionalText(new URL('../.env', import.meta.url)),
+])
+const localEnv = {
+  ...parseEnvText(rootEnvText),
+  ...parseEnvText(stackEnvText),
+  ...parseEnvText(crmEnvText),
+  ...process.env,
+}
+const authOrigin = new URL(localEnv.BETTER_AUTH_URL || appBaseUrl).origin
+
+function requiredEnv(key) {
+  const value = String(localEnv[key] ?? '').trim()
+  assert.ok(value, `Local environment is missing ${key}`)
+  return value
+}
+
+function dataApiPrivateKey(value) {
+  const normalized = String(value ?? '').trim()
+  if (normalized.includes('-----BEGIN')) return normalized.replace(/\\n/gu, '\n')
+
+  const decoded = Buffer.from(normalized, 'base64').toString('utf8').trim()
+  assert.match(
+    decoded,
+    /-----BEGIN PRIVATE KEY-----/u,
+    'NUXT_DATA_API_JWT_PRIVATE_KEY must contain base64-encoded PKCS8 PEM',
+  )
+  return decoded
+}
+
+const dataApiUrl = requiredEnv('NUXT_PUBLIC_DATA_API_URL')
+const dataApiHost = new URL(dataApiUrl).hostname
+assert.ok(
+  ['127.0.0.1', 'localhost', '::1'].includes(dataApiHost),
+  `Task delegation smoke requires local Data API (received ${dataApiHost})`,
+)
+const signer = createDataApiTokenSigner({
+  audience: requiredEnv('NUXT_DATA_API_JWT_AUDIENCE'),
+  issuer: requiredEnv('NUXT_DATA_API_JWT_ISSUER'),
+  keyId: requiredEnv('NUXT_DATA_API_JWT_KEY_ID'),
+  privateKey: dataApiPrivateKey(requiredEnv('NUXT_DATA_API_JWT_PRIVATE_KEY')),
+  ttlSeconds: 60,
+})
+const backendClient = createAuthenticatedDataApiClient(
+  dataApiUrl,
+  () => signer.signBackend({ source: 'task-delegation-smoke' }),
+  {
+    headers: {
+      'X-Client-Info': 'openexpert-task-delegation-smoke/2.0',
+    },
+    retry: false,
+  },
+)
+const authBasePath = (localEnv.BETTER_AUTH_BASE_PATH || '/api/auth').replace(/\/+$/u, '')
+
+function responseCookies(response) {
+  const values = response.headers.getSetCookie?.() ?? []
+  assert.ok(values.length, 'Better Auth did not return a session cookie')
+  return values.map(value => value.split(';', 1)[0]).join('; ')
 }
 
 async function loginCookie(email, password) {
-  const client = createClient(supabaseUrl, publicKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+  const response = await fetch(`${appBaseUrl}${authBasePath}/sign-in/email`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      origin: authOrigin,
+    },
+    body: JSON.stringify({ email, password }),
+    redirect: 'error',
   })
-  const { data, error } = await client.auth.signInWithPassword({ email, password })
-  assert.ifError(error)
-  assert.ok(data.session, `No session returned for ${email}`)
-  return sessionCookie(data.session)
+  const detail = await response.text()
+  assert.equal(
+    response.ok,
+    true,
+    `Better Auth login failed for ${email}: HTTP ${response.status} ${detail}`,
+  )
+  return responseCookies(response)
 }
 
-async function loginClient(email, password) {
-  const client = createClient(supabaseUrl, publicKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+async function logoutCookie(cookie) {
+  const response = await fetch(`${appBaseUrl}${authBasePath}/sign-out`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      cookie,
+      origin: authOrigin,
+    },
+    body: '{}',
+    redirect: 'error',
   })
-  const { data, error } = await client.auth.signInWithPassword({ email, password })
-  assert.ifError(error)
-  assert.ok(data.session, `No direct session returned for ${email}`)
-  return client
+  if (!response.ok) {
+    throw new Error(`Better Auth logout failed: HTTP ${response.status} ${await response.text()}`)
+  }
 }
 
 async function api(cookie, path, init = {}) {
@@ -77,6 +163,15 @@ async function api(cookie, path, init = {}) {
   return { response, body }
 }
 
+async function userDataToken(cookie) {
+  const result = await api(cookie, '/api/data/token')
+  assert.equal(result.response.status, 200, 'User Data API token endpoint failed')
+  assert.equal(result.body?.tokenType, 'Bearer')
+  assert.equal(result.body?.expiresIn, 60)
+  assert.equal(typeof result.body?.accessToken, 'string')
+  return result.body.accessToken
+}
+
 function warsawDate(daysFromToday = 0) {
   const date = new Date(Date.now() + daysFromToday * 86_400_000)
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -89,44 +184,57 @@ function warsawDate(daysFromToday = 0) {
   return `${values.year}-${values.month}-${values.day}`
 }
 
-const adminCookie = await loginCookie(
-  'admin@openexpert.local',
-  'OpenExpert123!',
-)
-const annaCookie = await loginCookie(
-  'anna.nowak@openexpert.local',
-  'OpenExpert123!',
-)
-const piotrCookie = await loginCookie(
-  'piotr.zielinski@openexpert.local',
-  'OpenExpert123!',
-)
-const piotrClient = await loginClient(
-  'piotr.zielinski@openexpert.local',
-  'OpenExpert123!',
-)
+const authenticatedCookies = []
 
-const linkedMeetingResult = await serviceClient
-  .from('appointments')
-  .select('crm_task_id')
-  .not('crm_task_id', 'is', null)
-  .limit(1)
-  .single()
-assert.ifError(linkedMeetingResult.error)
-const linkedTaskResult = await serviceClient
-  .from('crm_tasks')
-  .select('case_id')
-  .eq('id', linkedMeetingResult.data.crm_task_id)
-  .single()
-assert.ifError(linkedTaskResult.error)
+async function loginTestUsers() {
+  try {
+    const adminCookie = await loginCookie(
+      'admin@openexpert.local',
+      'OpenExpert123!',
+    )
+    authenticatedCookies.push(adminCookie)
+    const annaCookie = await loginCookie(
+      'anna.nowak@openexpert.local',
+      'OpenExpert123!',
+    )
+    authenticatedCookies.push(annaCookie)
+    const piotrCookie = await loginCookie(
+      'piotr.zielinski@openexpert.local',
+      'OpenExpert123!',
+    )
+    authenticatedCookies.push(piotrCookie)
+    return { adminCookie, annaCookie, piotrCookie }
+  }
+  catch (error) {
+    await Promise.allSettled(
+      authenticatedCookies.map(cookie => logoutCookie(cookie)),
+    )
+    throw error
+  }
+}
 
-const organizationSlug = 'openexpert-local'
-const caseId = linkedTaskResult.data.case_id
-const casePath = `/api/org/${organizationSlug}/crm/cases/${caseId}/tasks`
+const { adminCookie, annaCookie, piotrCookie } = await loginTestUsers()
 const temporaryTaskIds = []
 const temporaryAppointmentIds = []
 
 try {
+  const linkedMeetingResult = await backendClient
+    .from('appointments')
+    .select('crm_task_id')
+    .not('crm_task_id', 'is', null)
+    .limit(1)
+    .single()
+  assert.ifError(linkedMeetingResult.error)
+  const linkedTaskResult = await backendClient
+    .from('crm_tasks')
+    .select('case_id')
+    .eq('id', linkedMeetingResult.data.crm_task_id)
+    .single()
+  assert.ifError(linkedTaskResult.error)
+
+  const organizationSlug = 'openexpert-local'
+  const caseId = linkedTaskResult.data.case_id
+  const casePath = `/api/org/${organizationSlug}/crm/cases/${caseId}/tasks`
   const assignees = await api(adminCookie, `${casePath}/assignees`)
   assert.equal(assignees.response.status, 200)
   assert.ok(assignees.body?.data?.members?.length >= 3)
@@ -139,6 +247,16 @@ try {
     member => member.email === 'piotr.zielinski@openexpert.local',
   )
   assert.ok(piotr, 'Piotr is missing from task assignees')
+  const piotrDataClient = createAuthenticatedDataApiClient(
+    dataApiUrl,
+    () => userDataToken(piotrCookie),
+    {
+      headers: {
+        'X-Client-Info': 'openexpert-task-delegation-smoke/2.0',
+      },
+      retry: false,
+    },
+  )
   assert.equal(typeof anna.open_task_count, 'number')
   assert.ok(anna.team_name)
 
@@ -235,7 +353,7 @@ try {
   assert.equal(replay.body?.data?.id, cancelledTaskId)
   assert.equal(replay.body?.appointment?.id, cancelledAppointmentId)
 
-  const disableAssignment = await serviceClient
+  const disableAssignment = await backendClient
     .from('facility_service_experts')
     .update({ is_active: false })
     .eq('organization_id', created.body.appointment.organizationId)
@@ -256,7 +374,7 @@ try {
     )
   }
   finally {
-    const restoreAssignment = await serviceClient
+    const restoreAssignment = await backendClient
       .from('facility_service_experts')
       .update({ is_active: true })
       .eq('organization_id', created.body.appointment.organizationId)
@@ -276,7 +394,7 @@ try {
     }),
   })
   assert.equal(conflict.response.status, 409)
-  const rolledBackTask = await serviceClient
+  const rolledBackTask = await backendClient
     .from('crm_tasks')
     .select('id')
     .eq('idempotency_key', conflictIdempotencyKey)
@@ -375,7 +493,7 @@ try {
   assert.equal(rejected.body?.changed, true)
   assert.equal(rejected.body?.data?.delegation_status, 'rejected')
 
-  const reassigned = await serviceClient
+  const reassigned = await backendClient
     .from('crm_tasks')
     .update({ assignee_user_id: piotr.user_id })
     .eq('id', reassignedTaskId)
@@ -385,7 +503,7 @@ try {
   assert.equal(reassigned.data.assignee_user_id, piotr.user_id)
   assert.equal(reassigned.data.delegation_status, 'pending')
 
-  const appointmentStates = await serviceClient
+  const appointmentStates = await backendClient
     .from('appointments')
     .select('id, status, cancellation_reason, crm_task_id')
     .in('id', temporaryAppointmentIds)
@@ -515,7 +633,7 @@ try {
     },
   )
   assert.equal(acceptedRevokedAccessTask.response.status, 200)
-  const forbiddenDelegatorStatusUpdate = await piotrClient
+  const forbiddenDelegatorStatusUpdate = await piotrDataClient
     .from('crm_tasks')
     .update({ status_code: 'done' })
     .eq('id', revokedAccessTaskId)
@@ -535,7 +653,7 @@ try {
     availabilityRules,
     availabilityOverrides,
   ] = await Promise.all([
-    serviceClient
+    backendClient
       .from('facility_memberships')
       .select(`
         organization_id,
@@ -549,18 +667,18 @@ try {
       .eq('facility_id', appointmentContext.facilityId)
       .eq('user_id', piotr.user_id)
       .single(),
-    serviceClient
+    backendClient
       .from('team_memberships')
       .select('organization_id, team_id, user_id, role')
       .eq('organization_id', organizationId)
       .eq('user_id', piotr.user_id),
-    serviceClient
+    backendClient
       .from('facility_service_experts')
       .select('organization_id, facility_id, service_id, user_id, is_active')
       .eq('organization_id', organizationId)
       .eq('facility_id', appointmentContext.facilityId)
       .eq('user_id', piotr.user_id),
-    serviceClient
+    backendClient
       .from('expert_availability_rules')
       .select(`
         id,
@@ -577,7 +695,7 @@ try {
       .eq('organization_id', organizationId)
       .eq('facility_id', appointmentContext.facilityId)
       .eq('user_id', piotr.user_id),
-    serviceClient
+    backendClient
       .from('expert_availability_overrides')
       .select(`
         id,
@@ -603,13 +721,13 @@ try {
     assert.ifError(configurationResult.error)
   }
 
-  const deleteTeams = await serviceClient
+  const deleteTeams = await backendClient
     .from('team_memberships')
     .delete()
     .eq('organization_id', organizationId)
     .eq('user_id', piotr.user_id)
   assert.ifError(deleteTeams.error)
-  const deleteFacilityMembership = await serviceClient
+  const deleteFacilityMembership = await backendClient
     .from('facility_memberships')
     .delete()
     .eq('organization_id', organizationId)
@@ -628,14 +746,14 @@ try {
     assert.equal(replayWithoutFacilityAccess.body?.appointment, null)
   }
   finally {
-    const restoreFacilityMembership = await serviceClient
+    const restoreFacilityMembership = await backendClient
       .from('facility_memberships')
       .upsert(facilityMembership.data, {
         onConflict: 'organization_id,facility_id,user_id',
       })
     assert.ifError(restoreFacilityMembership.error)
     if (teamMemberships.data.length) {
-      const restoreTeams = await serviceClient
+      const restoreTeams = await backendClient
         .from('team_memberships')
         .upsert(teamMemberships.data, {
           onConflict: 'organization_id,team_id,user_id',
@@ -643,7 +761,7 @@ try {
       assert.ifError(restoreTeams.error)
     }
     if (serviceAssignments.data.length) {
-      const restoreServices = await serviceClient
+      const restoreServices = await backendClient
         .from('facility_service_experts')
         .upsert(serviceAssignments.data, {
           onConflict: 'organization_id,facility_id,service_id,user_id',
@@ -651,13 +769,13 @@ try {
       assert.ifError(restoreServices.error)
     }
     if (availabilityRules.data.length) {
-      const restoreRules = await serviceClient
+      const restoreRules = await backendClient
         .from('expert_availability_rules')
         .upsert(availabilityRules.data, { onConflict: 'id' })
       assert.ifError(restoreRules.error)
     }
     if (availabilityOverrides.data.length) {
-      const restoreOverrides = await serviceClient
+      const restoreOverrides = await backendClient
         .from('expert_availability_overrides')
         .upsert(availabilityOverrides.data, { onConflict: 'id' })
       assert.ifError(restoreOverrides.error)
@@ -671,29 +789,37 @@ try {
   )
 }
 finally {
-  if (temporaryAppointmentIds.length) {
-    const outboxCleanup = await serviceClient
-      .from('booking_outbox')
-      .delete()
-      .in('aggregate_id', temporaryAppointmentIds)
-    assert.ifError(outboxCleanup.error)
-    const appointmentCleanup = await serviceClient
-      .from('appointments')
-      .delete()
-      .in('id', temporaryAppointmentIds)
-    assert.ifError(appointmentCleanup.error)
+  try {
+    if (temporaryAppointmentIds.length) {
+      const outboxCleanup = await backendClient
+        .from('booking_outbox')
+        .delete()
+        .in('aggregate_id', temporaryAppointmentIds)
+      assert.ifError(outboxCleanup.error)
+      const appointmentCleanup = await backendClient
+        .from('appointments')
+        .delete()
+        .in('id', temporaryAppointmentIds)
+      assert.ifError(appointmentCleanup.error)
+    }
+    if (temporaryTaskIds.length) {
+      const auditCleanup = await backendClient
+        .from('crm_activities')
+        .delete()
+        .in('task_id', temporaryTaskIds)
+      assert.ifError(auditCleanup.error)
+      const taskCleanup = await backendClient
+        .from('crm_tasks')
+        .delete()
+        .in('id', temporaryTaskIds)
+      assert.ifError(taskCleanup.error)
+    }
   }
-  if (temporaryTaskIds.length) {
-    const auditCleanup = await serviceClient
-      .from('crm_activities')
-      .delete()
-      .in('task_id', temporaryTaskIds)
-    assert.ifError(auditCleanup.error)
-    const taskCleanup = await serviceClient
-      .from('crm_tasks')
-      .delete()
-      .in('id', temporaryTaskIds)
-    assert.ifError(taskCleanup.error)
+  finally {
+    const results = await Promise.allSettled(
+      authenticatedCookies.map(cookie => logoutCookie(cookie)),
+    )
+    const failures = results.filter(result => result.status === 'rejected')
+    assert.equal(failures.length, 0, 'Better Auth session cleanup failed')
   }
-  await piotrClient.auth.signOut({ scope: 'local' })
 }

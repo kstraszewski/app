@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const values = profileToRow(body)
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('expert_brand_profiles')
     .upsert({
       organization_id: session.organizationId,

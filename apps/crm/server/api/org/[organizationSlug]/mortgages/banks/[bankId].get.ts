@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError } from 'h3'
 import {
   mortgageBackofficeUuid,
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   await requireSuperAdmin(session)
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
   const [
     bankResult,
@@ -132,34 +132,34 @@ export default defineEventHandler(async (event) => {
     revisionsResult,
     bankFilesResult,
   ] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, slug, name, website_url, logo_url, logo_background_color, created_at, updated_at')
       .eq('id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_bank_overrides')
       .select('id, is_enabled, custom_name, custom_website_url, logo_path, notes, revision, created_at, updated_at, created_by, updated_by')
       .eq('organization_id', session.organizationId)
       .eq('bank_id', bankId)
       .maybeSingle(),
-    serviceRole
+    backendData
       .from('mortgage_products')
       .select('id, bank_id, slug, name, category, distribution_channel, is_active, current_published_version_id, revision, archived_at, created_at, updated_at, created_by_user_id, updated_by_user_id')
       .eq('bank_id', bankId)
       .order('name'),
-    serviceRole
+    backendData
       .from('mortgage_source_documents')
       .select('id, product_id, title, source_url, source_kind, mime_type, sha256, retrieved_at, published_at, retrieval_status, extraction_status, error_message, created_at, updated_at')
       .eq('bank_id', bankId)
       .order('retrieved_at', { ascending: false }),
-    serviceRole
+    backendData
       .from('mortgage_bank_override_revisions')
       .select('id, revision, action, is_enabled, custom_name, custom_website_url, logo_path, notes, changed_by, created_at')
       .eq('organization_id', session.organizationId)
       .eq('bank_id', bankId)
       .order('created_at', { ascending: false }),
-    serviceRole
+    backendData
       .from('mortgage_bank_files')
       .select('id', { count: 'exact', head: true })
       .eq('bank_id', bankId)
@@ -185,16 +185,16 @@ export default defineEventHandler(async (event) => {
 
   const [draftsResult, versionsResult, productOverridesResult] = productIds.length
     ? await Promise.all([
-        serviceRole
+        backendData
           .from('mortgage_product_drafts')
           .select('id, product_id, base_version_id, revision, draft_data, validation_report, created_at, updated_at, created_by_user_id, updated_by_user_id')
           .in('product_id', productIds),
-        serviceRole
+        backendData
           .from('mortgage_product_versions')
           .select('id, product_id, version_number, lifecycle_status, effective_from, effective_to, data_status, completeness_score, interest_type, fixed_rate_pct, fixed_period_months, margin_pct, reference_rate_code, reference_rate_pct, reference_rate_as_of, representative_apr_pct, cost_rules, requirements, unknown_fields, document_requirements, published_at, retired_at, retrieved_at, updated_at')
           .in('product_id', productIds)
           .order('version_number', { ascending: false }),
-        serviceRole
+        backendData
           .from('mortgage_product_overrides')
           .select('id, product_id, is_enabled, custom_name, notes, revision, created_at, updated_at')
           .eq('organization_id', session.organizationId)
@@ -210,7 +210,7 @@ export default defineEventHandler(async (event) => {
   const productOverrides = (productOverridesResult.data ?? []) as DatabaseRecord[]
   const versionIds = versions.map(version => String(version.id))
   const { data: versionSources, error: versionSourcesError } = versionIds.length
-    ? await serviceRole
+    ? await backendData
         .from('mortgage_product_version_sources')
         .select('product_version_id, source_document_id, source_role, created_at')
         .in('product_version_id', versionIds)
@@ -221,7 +221,7 @@ export default defineEventHandler(async (event) => {
     .map(revision => text(revision.changed_by))
     .filter((value): value is string => Boolean(value)))]
   const { data: actors, error: actorsError } = actorIds.length
-    ? await serviceRole.from('users').select('id, full_name, email').in('id', actorIds)
+    ? await backendData.from('users').select('id, full_name, email').in('id', actorIds)
     : { data: [], error: null }
   throwMortgageBackofficeDbError(actorsError)
 
@@ -337,7 +337,7 @@ export default defineEventHandler(async (event) => {
   )
 
   const logoUrl = override?.logo_path
-    ? session.supabase.storage.from(logoBucket).getPublicUrl(String(override.logo_path)).data.publicUrl
+    ? session.dataApi.storage.from(logoBucket).getPublicUrl(String(override.logo_path)).data.publicUrl
     : text(bank.logo_url)
 
   return {

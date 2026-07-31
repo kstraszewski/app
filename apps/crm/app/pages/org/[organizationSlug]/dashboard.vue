@@ -241,6 +241,8 @@ function formatMetric(metric: DashboardMetric) {
       </UButton>
     </template>
 
+    <DashboardSalesSummary class="dashboard-block" :to="orgPath('/sales')" />
+
     <UAlert
       v-if="error"
       class="dashboard-block"
@@ -248,7 +250,7 @@ function formatMetric(metric: DashboardMetric) {
       variant="subtle"
       icon="i-lucide-database"
       title="CRM API nie zwrocilo danych"
-      description="Po zastosowaniu migracji i konfiguracji Supabase pulpit pokaze realne sprawy."
+      description="Po zastosowaniu migracji i konfiguracji Data API pulpit pokaże realne sprawy."
     >
       <template #actions>
         <UButton icon="i-lucide-refresh-cw" variant="ghost" @click="refresh()">

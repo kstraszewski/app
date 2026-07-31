@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   let service: any
   let createdServiceId: string | null = null
   if (existingServiceId) {
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('booking_services')
       .select('*')
       .eq('organization_id', session.organizationId)
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     service = data
   } else {
     await requireAdministrativePermission(session, 'structure.manage')
-    const { data, error } = await session.supabase
+    const { data, error } = await session.dataApi
       .from('booking_services')
       .insert({
         organization_id: session.organizationId,
@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
   const isAvailable = body.isAvailable === undefined && body.is_available === undefined
     ? true
     : booleanValue(body.isAvailable ?? body.is_available, 'isAvailable')
-  const linkResult = await session.supabase
+  const linkResult = await session.dataApi
     .from('facility_services')
     .upsert({
       organization_id: session.organizationId,
@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
     .single()
   if (linkResult.error) {
     if (createdServiceId) {
-      await session.supabase
+      await session.dataApi
         .from('booking_services')
         .delete()
         .eq('organization_id', session.organizationId)
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (expertUserIds.length) {
-    const { error } = await session.supabase.from('facility_service_experts').insert(
+    const { error } = await session.dataApi.from('facility_service_experts').insert(
       expertUserIds.map(userId => ({
         organization_id: session.organizationId,
         facility_id: access.facility.id,
@@ -86,14 +86,14 @@ export default defineEventHandler(async (event) => {
       })),
     )
     if (error) {
-      await session.supabase
+      await session.dataApi
         .from('facility_services')
         .delete()
         .eq('organization_id', session.organizationId)
         .eq('facility_id', access.facility.id)
         .eq('service_id', service.id)
       if (createdServiceId) {
-        await session.supabase
+        await session.dataApi
           .from('booking_services')
           .delete()
           .eq('organization_id', session.organizationId)

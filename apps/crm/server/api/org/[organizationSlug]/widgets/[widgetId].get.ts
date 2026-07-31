@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const widgetId = uuidValue(getRouterParam(event, 'widgetId'), 'widgetId')
 
-  const { data: widget, error: widgetError } = await session.supabase
+  const { data: widget, error: widgetError } = await session.dataApi
     .from('booking_widgets')
     .select('*')
     .eq('organization_id', session.organizationId)
@@ -29,32 +29,32 @@ export default defineEventHandler(async (event) => {
     servicesResult,
     widgetServicesResult,
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('facilities')
       .select('id, organization_id, name, slug, description, timezone, address_line1, address_line2, postal_code, city, country_code, phone, email, is_active, created_at, updated_at')
       .eq('organization_id', session.organizationId)
       .eq('id', facilityId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('facility_services')
       .select('service_id, is_active')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', facilityId)
       .eq('is_active', true),
-    session.supabase
+    session.dataApi
       .from('facility_service_experts')
       .select('service_id, is_active')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', facilityId)
       .eq('user_id', session.userId)
       .eq('is_active', true),
-    session.supabase
+    session.dataApi
       .from('booking_services')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('is_active', true)
       .order('name'),
-    session.supabase
+    session.dataApi
       .from('booking_widget_services')
       .select('service_id')
       .eq('organization_id', session.organizationId)

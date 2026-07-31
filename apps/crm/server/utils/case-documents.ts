@@ -62,7 +62,7 @@ export function assertUuid(value: string, field: string): void {
 
 export async function requireCrmCase(session: CrmSession, caseId: string): Promise<void> {
   assertUuid(caseId, 'case id')
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_cases')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -81,7 +81,7 @@ export async function resolveOfferRequirement(
   let offerId = requestedOfferId
   if (offerId) assertUuid(offerId, 'offerId')
   if (!offerId) {
-    const { data: selection, error: selectionError } = await session.supabase
+    const { data: selection, error: selectionError } = await session.dataApi
       .from('crm_case_offer_selections')
       .select('offer_id')
       .eq('organization_id', session.organizationId)
@@ -97,7 +97,7 @@ export async function resolveOfferRequirement(
     })
   }
 
-  const { data: application, error: applicationError } = await session.supabase
+  const { data: application, error: applicationError } = await session.dataApi
     .from('crm_case_bank_applications')
     .select('submission_id, case_item_id, scenario_snapshot')
     .eq('organization_id', session.organizationId)
@@ -111,7 +111,7 @@ export async function resolveOfferRequirement(
       statusMessage: 'Saved offer is not part of the active bank applications',
     })
   }
-  const { data: offer, error: offerError } = await session.supabase
+  const { data: offer, error: offerError } = await session.dataApi
     .from('crm_case_offer_snapshots')
     .select('id, catalog_snapshot, scenario_snapshot')
     .eq('organization_id', session.organizationId)
@@ -164,7 +164,7 @@ export async function resolveRequirementClient(
   if (requestedClientId) assertUuid(requestedClientId, 'clientId')
 
   if (requirement.scope === 'primary_applicant') {
-    const { data: primaryClient, error } = await session.supabase
+    const { data: primaryClient, error } = await session.dataApi
       .from('crm_case_clients')
       .select('client_id')
       .eq('organization_id', session.organizationId)
@@ -193,7 +193,7 @@ export async function resolveRequirementClient(
   }
   if (!requestedClientId) return null
 
-  const { data: linkedClient, error } = await session.supabase
+  const { data: linkedClient, error } = await session.dataApi
     .from('crm_case_clients')
     .select('client_id')
     .eq('organization_id', session.organizationId)

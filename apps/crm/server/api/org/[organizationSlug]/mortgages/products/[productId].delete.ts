@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(session)
   const productId = getRequiredParam(event, 'productId')
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('mortgage_product_overrides')
     .delete()
     .eq('organization_id', session.organizationId)

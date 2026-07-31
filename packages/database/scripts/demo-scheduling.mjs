@@ -492,7 +492,7 @@ export async function seedDemoScheduling({
   seedNow,
 }) {
   if (!adminClient?.from || !adminClient?.rpc) {
-    throw new Error('Demo scheduling requires a Supabase adminClient.')
+    throw new Error('Demo scheduling requires an administrative data client.')
   }
   const organizationId = requiredString(
     profile?.organization_id ?? profile?.organizationId,

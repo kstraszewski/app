@@ -16,19 +16,19 @@ export default defineEventHandler(async (event) => {
     teamMembershipsResult,
     facilityMembershipsResult,
   ] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('organization_memberships')
       .select('user_id, role, created_at, user:users!organization_memberships_user_id_fkey!inner(email, full_name, avatar_url)')
       .eq('organization_id', session.organizationId),
-    session.supabase
+    session.dataApi
       .from('organization_user_admin_roles')
       .select('user_id, role_key')
       .eq('organization_id', session.organizationId),
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('user_id, team:teams!team_memberships_team_fkey!inner(name)')
       .eq('organization_id', session.organizationId),
-    session.supabase
+    session.dataApi
       .from('facility_memberships')
       .select('user_id, facility:facilities!facility_memberships_facility_fkey!inner(name)')
       .eq('organization_id', session.organizationId),

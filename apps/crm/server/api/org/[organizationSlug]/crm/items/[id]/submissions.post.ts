@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const id = getRequiredParam(event, 'id')
   const body = asRecord(await readBody(event))
 
-  const { data: item, error: itemError } = await session.supabase
+  const { data: item, error: itemError } = await session.dataApi
     .from('crm_case_items')
     .select('id, case_id, crm_cases(client_id)')
     .eq('organization_id', session.organizationId)
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     .single()
   throwDbError(itemError, 404)
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_item_submissions')
     .insert({
       organization_id: session.organizationId,

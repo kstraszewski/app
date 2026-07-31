@@ -43,7 +43,7 @@ function fileMatchFallback(version: DatabaseRecord, description: string | null) 
 }
 
 export default defineEventHandler(async (event) => {
-  const { session, serviceRole } = await requireMortgageBankFileAdmin(event)
+  const { session, backendData } = await requireMortgageBankFileAdmin(event)
   const query = getQuery(event)
   const bankId = mortgageBankFileOptionalUuid(firstQueryValue(query.bankId), 'bankId')
   const productId = mortgageBankFileOptionalUuid(firstQueryValue(query.productId), 'productId')
@@ -63,16 +63,16 @@ export default defineEventHandler(async (event) => {
     institutionsResult,
     productsResult,
   ] = await Promise.all([
-    serviceRole
+    backendData
       .from('mortgage_bank_file_categories')
       .select('id, category_key, label, icon, sort_order, is_archived')
       .order('sort_order'),
-    serviceRole
+    backendData
       .from('mortgage_banks')
       .select('id, name, logo_url')
       .order('name'),
     (() => {
-      let request = serviceRole
+      let request = backendData
         .from('mortgage_products')
         .select('id, bank_id, name')
         .eq('is_active', true)
@@ -90,7 +90,7 @@ export default defineEventHandler(async (event) => {
     ? categories.find(item => String(item.id) === requestedCategory || item.category_key === requestedCategory)
     : null
 
-  let fileRequest = serviceRole
+  let fileRequest = backendData
     .from('mortgage_bank_files')
     .select('id, bank_id, category_id, title, description, source_page_url, current_version_id, created_by_user_id, created_at, updated_at')
     .is('archived_at', null)
@@ -109,13 +109,13 @@ export default defineEventHandler(async (event) => {
     linksResult,
   ] = await Promise.all([
     versionIds.length
-      ? serviceRole
+      ? backendData
           .from('mortgage_bank_file_versions')
           .select('id, file_id, version_number, version_label, original_file_name, storage_path, mime_type, mime_group, size_bytes, checksum_sha256, source_download_url, resolved_download_url, effective_from, effective_to, published_at, status, extraction_status, embedding_status, page_count, extracted_text, generated_description, retrieved_at, created_by_user_id, created_at')
           .in('id', versionIds)
       : Promise.resolve({ data: [], error: null }),
     fileIds.length
-      ? serviceRole
+      ? backendData
           .from('mortgage_bank_file_products')
           .select('file_id, product_id')
           .in('file_id', fileIds)
@@ -129,7 +129,7 @@ export default defineEventHandler(async (event) => {
   const links = (linksResult.data ?? []) as DatabaseRecord[]
   const linkedProductIds = [...new Set(links.map(link => String(link.product_id)))]
   const linkedProductsResult = linkedProductIds.length
-    ? await serviceRole
+    ? await backendData
         .from('mortgage_products')
         .select('id, bank_id, name')
         .in('id', linkedProductIds)
@@ -171,7 +171,7 @@ export default defineEventHandler(async (event) => {
       queryEmbedding = null
     }
 
-    const searchResult = await serviceRole.rpc('search_mortgage_bank_file_chunks', {
+    const searchResult = await backendData.rpc('search_mortgage_bank_file_chunks', {
       query_text: searchText,
       query_embedding: queryEmbedding,
       filter_bank_id: bankId,
@@ -214,7 +214,7 @@ export default defineEventHandler(async (event) => {
       .map(String)
   }))]
   const actorsResult = actorIds.length
-    ? await serviceRole.from('users').select('id, full_name, email').in('id', actorIds)
+    ? await backendData.from('users').select('id, full_name, email').in('id', actorIds)
     : { data: [], error: null }
   if (actorsResult.error) throw actorsResult.error
   const actorById = new Map(

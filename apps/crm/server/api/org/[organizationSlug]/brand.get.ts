@@ -9,13 +9,13 @@ import {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const [profileResult, designResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('expert_brand_profiles')
       .select(expertBrandProfileSelect)
       .eq('organization_id', session.organizationId)
       .eq('user_id', session.userId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('organization_design_settings')
       .select('settings, updated_at')
       .eq('organization_id', session.organizationId)

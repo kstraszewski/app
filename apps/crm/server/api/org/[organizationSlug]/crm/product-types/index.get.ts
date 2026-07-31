@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const domain = textValue(getQuery(event).domain)
 
-  let request = session.supabase
+  let request = session.dataApi
     .from('crm_product_types')
     .select('*')
     .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)

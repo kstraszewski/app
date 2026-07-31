@@ -299,7 +299,7 @@ function throwQueryError(error: { message?: string, code?: string } | null | und
 }
 
 export async function normalizeCrmMeetingRecords(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   rows: Array<Record<string, any>>,
 ): Promise<CrmMeetingRecord[]> {
@@ -322,27 +322,27 @@ export async function normalizeCrmMeetingRecords(
     servicesResult,
     expertsResult,
   ] = await Promise.all([
-    serviceRole
+    backendData
       .from('crm_cases')
       .select('id, title')
       .eq('organization_id', organizationId)
       .in('id', caseIds),
-    serviceRole
+    backendData
       .from('crm_clients')
       .select('id, display_name')
       .eq('organization_id', organizationId)
       .in('id', clientIds),
-    serviceRole
+    backendData
       .from('facilities')
       .select('id, name')
       .eq('organization_id', organizationId)
       .in('id', facilityIds),
-    serviceRole
+    backendData
       .from('booking_services')
       .select('id, name')
       .eq('organization_id', organizationId)
       .in('id', serviceIds),
-    serviceRole
+    backendData
       .from('users')
       .select('id, full_name, email')
       .in('id', expertIds),
@@ -395,11 +395,11 @@ export async function normalizeCrmMeetingRecords(
 }
 
 export async function normalizeCrmMeetingRecord(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   row: Record<string, any>,
 ): Promise<CrmMeetingRecord> {
-  const [meeting] = await normalizeCrmMeetingRecords(serviceRole, organizationId, [row])
+  const [meeting] = await normalizeCrmMeetingRecords(backendData, organizationId, [row])
   if (!meeting) {
     throw createError({ statusCode: 404, statusMessage: 'Meeting not found' })
   }

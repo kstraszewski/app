@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getQuery, setHeader } from 'h3'
 import {
   getRequiredParam,
@@ -50,7 +50,7 @@ function defaultPeriod() {
 }
 
 async function loadAppointments(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   memberIds: string[],
   facilityIds: string[] | null,
@@ -63,7 +63,7 @@ async function loadAppointments(
   for (const memberBatch of chunks(memberIds)) {
     let offset = 0
     while (true) {
-      let request = serviceRole
+      let request = backendData
         .from('appointments')
         .select('id, expert_user_id, facility_id, service_id, starts_at, ends_at, status, hold_expires_at, meeting_mode, customer_name')
         .eq('organization_id', organizationId)
@@ -90,7 +90,7 @@ async function loadAppointments(
 }
 
 async function loadTimeOff(
-  serviceRole: any,
+  backendData: any,
   organizationId: string,
   memberIds: string[],
   startsFrom: string,
@@ -102,7 +102,7 @@ async function loadTimeOff(
   for (const memberBatch of chunks(memberIds)) {
     let offset = 0
     while (true) {
-      const result = await serviceRole
+      const result = await backendData
         .from('expert_time_off')
         .select('id, expert_user_id, starts_at, ends_at, timezone')
         .eq('organization_id', organizationId)
@@ -128,14 +128,14 @@ async function loadTimeOff(
 }
 
 async function loadNamedRows(
-  serviceRole: any,
+  backendData: any,
   table: 'facilities' | 'booking_services',
   organizationId: string,
   ids: string[],
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>()
   for (const idBatch of chunks([...new Set(ids.filter(Boolean))])) {
-    const result = await serviceRole
+    const result = await backendData
       .from(table)
       .select('id, name')
       .eq('organization_id', organizationId)
@@ -170,7 +170,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Team calendar range must not exceed 31 days' })
   }
 
-  const teamResult = await session.supabase
+  const teamResult = await session.dataApi
     .from('teams')
     .select('id, name')
     .eq('organization_id', session.organizationId)
@@ -182,19 +182,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const memberIds = await resolveTeamScopeUserIds(session, teamId)
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
   const accessibleFacilityIds = await listAccessibleFacilityIds(session)
 
   const [membersResult, appointments, timeOff] = await Promise.all([
     memberIds.length
-      ? serviceRole
+      ? backendData
           .from('organization_memberships')
           .select('user_id, user:users!organization_memberships_user_id_fkey!inner(email, full_name, avatar_url)')
           .eq('organization_id', session.organizationId)
           .in('user_id', memberIds)
       : Promise.resolve({ data: [], error: null }),
     loadAppointments(
-      serviceRole,
+      backendData,
       session.organizationId,
       memberIds,
       accessibleFacilityIds,
@@ -202,7 +202,7 @@ export default defineEventHandler(async (event) => {
       startsBefore,
     ),
     loadTimeOff(
-      serviceRole,
+      backendData,
       session.organizationId,
       memberIds,
       startsFrom,
@@ -217,13 +217,13 @@ export default defineEventHandler(async (event) => {
   ))
   const [facilityNames, serviceNames] = await Promise.all([
     loadNamedRows(
-      serviceRole,
+      backendData,
       'facilities',
       session.organizationId,
       visibleAppointments.map(row => String(row.facility_id)),
     ),
     loadNamedRows(
-      serviceRole,
+      backendData,
       'booking_services',
       session.organizationId,
       visibleAppointments.map(row => String(row.service_id)),

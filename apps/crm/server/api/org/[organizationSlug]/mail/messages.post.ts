@@ -48,7 +48,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   setResponseHeader(event, 'cache-control', 'private, no-store')
   requireSameOriginMultipartRequest(event)
   const session = await requireCrmSession(event)
-  const { serviceRole, connection } = await requireUserMailConnection(event, session)
+  const { backendData, connection } = await requireUserMailConnection(event, session)
   if (!mailTokenIncludesSendAccess(connection.scopes)) {
     throw createError({
       statusCode: 409,
@@ -161,7 +161,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     })
   }
 
-  const accessToken = await activeMailAccessToken(event, serviceRole, connection)
+  const accessToken = await activeMailAccessToken(event, backendData, connection)
   let claimedRequest: MailSendRequestRow | null = null
   try {
     const reply = threadId
@@ -179,7 +179,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       attachments,
     })
     const claim = await claimMailSendRequest(
-      serviceRole,
+      backendData,
       session,
       connection,
       idempotencyKey,
@@ -188,14 +188,14 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     if (!claim.claimed) {
       return {
         data: await resolveExistingSendRequest(
-          serviceRole,
+          backendData,
           claim.row,
           accessToken,
         ),
       }
     }
     claimedRequest = claim.row
-    await enforceMailSendRateLimit(serviceRole, session)
+    await enforceMailSendRateLimit(backendData, session)
 
     let payload
     try {
@@ -228,7 +228,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     const sent = await sendGmailMessage(accessToken, payload)
     try {
       await markMailSendRequestSent(
-        serviceRole,
+        backendData,
         claim.row,
         sent.id,
         sent.threadId,
@@ -242,7 +242,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     }
     if (connection.status !== 'active') {
       try {
-        await markMailConnectionStatus(serviceRole, connection, 'active', null)
+        await markMailConnectionStatus(backendData, connection, 'active', null)
       } catch {
         // The send result is durable; a cosmetic connection status must not turn it into a retry.
       }
@@ -256,7 +256,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       )
       try {
         await markMailSendRequestOutcome(
-          serviceRole,
+          backendData,
           claimedRequest,
           ambiguous ? 'unknown' : 'failed',
           statusCode ? `HTTP_${statusCode}` : 'SEND_ERROR',
@@ -267,7 +267,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     }
     if (statusCode === 401 || statusCode === 403) {
       await markMailConnectionStatus(
-        serviceRole,
+        backendData,
         connection,
         'revoked',
         'Google no longer authorizes access to this Gmail account',
@@ -282,7 +282,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
 })
 
 async function resolveExistingSendRequest(
-  serviceRole: any,
+  backendData: any,
   row: MailSendRequestRow,
   accessToken: string,
 ): Promise<MailSendPayload['data']> {
@@ -324,7 +324,7 @@ async function resolveExistingSendRequest(
   const found = await findGmailSentMessage(accessToken, row.message_id_header)
   if (found) {
     await markMailSendRequestSent(
-      serviceRole,
+      backendData,
       row,
       found.id,
       found.threadId,
@@ -333,7 +333,7 @@ async function resolveExistingSendRequest(
   }
   if (row.status === 'pending') {
     await markMailSendRequestOutcome(
-      serviceRole,
+      backendData,
       row,
       'unknown',
       'STALE_PENDING',

@@ -5,14 +5,14 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
   const [hoursResult, overridesResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('facility_opening_hours')
       .select('*')
       .eq('organization_id', session.organizationId)
       .eq('facility_id', access.facility.id)
       .order('weekday')
       .order('opens_at'),
-    session.supabase
+    session.dataApi
       .from('facility_opening_overrides')
       .select('*')
       .eq('organization_id', session.organizationId)

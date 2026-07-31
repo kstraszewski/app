@@ -132,9 +132,9 @@ export default defineEventHandler(async (event) => {
     )),
     bookingContext: rawBookingContext,
   })
-  const supabase = await getPublicSchedulingClient(event)
+  const dataApi = await getPublicSchedulingClient(event)
 
-  const catalogResult = await supabase.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
+  const catalogResult = await dataApi.rpc('get_booking_widget_catalog', { p_widget_token: widgetKey })
   throwBookingError(catalogResult.error)
   if (!catalogResult.data) throw createError({ statusCode: 404, statusMessage: 'Booking widget not found' })
   assertWidgetRequestOrigin(event, catalogAllowedOrigins(catalogResult.data), widgetKey)
@@ -148,7 +148,7 @@ export default defineEventHandler(async (event) => {
   if (isAuthorizedPreview) {
     throw createError({ statusCode: 403, statusMessage: 'Booking is disabled in preview mode' })
   }
-  const replayResult = await supabase.rpc('replay_widget_booking', {
+  const replayResult = await dataApi.rpc('replay_widget_booking', {
     p_widget_token: widgetKey,
     p_idempotency_key: idempotencyKey,
     p_request_fingerprint: requestFingerprint,
@@ -254,7 +254,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data, error } = await supabase.rpc('create_widget_booking', {
+  const { data, error } = await dataApi.rpc('create_widget_booking', {
     p_widget_token: widgetKey,
     p_service_id: serviceId,
     p_starts_at: startsAt,

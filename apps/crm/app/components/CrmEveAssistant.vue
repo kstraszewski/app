@@ -17,7 +17,6 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-const supabase = useSupabaseClient()
 const toast = useToast()
 const open = ref(false)
 const chat = ref<{ focusComposer: () => Promise<void> | void } | null>(null)
@@ -55,9 +54,9 @@ function isModelConfigurationError(caught: { message?: string } | null | undefin
 }
 
 async function assistantHeaders() {
-  const { data: sessionResult, error: sessionError } = await supabase.auth.getSession()
-  const authSession = sessionResult.session
-  if (sessionError || !authSession?.access_token) {
+  const token = await $fetch<{ accessToken: string }>('/api/data/token')
+    .catch(() => null)
+  if (!token?.accessToken) {
     throw new Error('Sesja CRM wygasła. Zaloguj się ponownie.')
   }
   if (!organizationSlug.value) {
@@ -65,7 +64,7 @@ async function assistantHeaders() {
   }
 
   return {
-    Authorization: `Bearer ${authSession.access_token}`,
+    Authorization: `Bearer ${token.accessToken}`,
     'x-openexpert-organization': organizationSlug.value,
   }
 }

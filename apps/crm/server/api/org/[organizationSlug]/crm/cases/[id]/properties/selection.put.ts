@@ -20,13 +20,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const [{ data: caseRow, error: caseError }, { data: property, error: propertyError }] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('crm_cases')
       .select('id, client_id')
       .eq('organization_id', session.organizationId)
       .eq('id', caseId)
       .maybeSingle(),
-    session.supabase
+    session.dataApi
       .from('crm_properties')
       .select('id, address, city')
       .eq('organization_id', session.organizationId)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   if (!caseRow) throw createError({ statusCode: 404, statusMessage: 'Case not found' })
   if (!property) throw createError({ statusCode: 404, statusMessage: 'Property not found' })
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_case_property_selections')
     .upsert({
       organization_id: session.organizationId,

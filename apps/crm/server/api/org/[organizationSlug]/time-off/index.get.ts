@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { getQuery, setHeader } from 'h3'
 import { requireCrmSession } from '~~/server/utils/crm'
 import {
@@ -48,8 +48,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  let request = serviceRole
+  const backendData = serverDataBackend(event) as any
+  let request = backendData
     .from('expert_time_off')
     .select(expertTimeOffSelect)
     .eq('organization_id', session.organizationId)

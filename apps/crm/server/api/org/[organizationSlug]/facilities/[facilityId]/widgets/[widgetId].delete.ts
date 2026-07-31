@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'view')
   const widgetId = uuidValue(getRouterParam(event, 'widgetId'), 'widgetId')
-  const { data: existing, error: existingError } = await session.supabase
+  const { data: existing, error: existingError } = await session.dataApi
     .from('booking_widgets')
     .select('id, fixed_expert_user_id')
     .eq('organization_id', session.organizationId)
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const isSelfServiceExpert = !access.canManage
   if (isSelfServiceExpert) {
-    const { data: membership, error: membershipError } = await session.supabase
+    const { data: membership, error: membershipError } = await session.dataApi
       .from('facility_memberships')
       .select('user_id')
       .eq('organization_id', session.organizationId)
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  let deleteQuery = session.supabase
+  let deleteQuery = session.dataApi
     .from('booking_widgets')
     .delete()
     .eq('organization_id', session.organizationId)

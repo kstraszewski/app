@@ -2,9 +2,9 @@
 definePageMeta({ middleware: 'guest' })
 
 const route = useRoute()
-const hasSupabaseConfig = useHasSupabaseConfig()
-const supabase = hasSupabaseConfig ? useSupabaseClient() : null
-const redirectCookie = useSupabaseCookieRedirect()
+const hasAuthConfig = useHasAuthConfig()
+const authClient = hasAuthConfig ? useAuthClient() : null
+const redirectCookie = useAuthCookieRedirect()
 const { callbackUrl, errorMessage, resolvePostAuthPath, safeRedirect, syncAuthenticatedUser } = useAuthFlow()
 
 const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
@@ -37,50 +37,58 @@ async function finishLogin() {
 
 async function signInWithPassword() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
   loading.value = 'password'
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    email: email.value.trim().toLowerCase(),
-    password: password.value,
-  })
-  loading.value = null
-
-  if (signInError) {
-    error.value = errorMessage(signInError)
-    return
-  }
-
   try {
+    const { error: signInError } = await authClient.signIn.email({
+      email: email.value.trim().toLowerCase(),
+      password: password.value,
+    })
+    if (signInError) {
+      error.value = errorMessage(signInError)
+      return
+    }
     await finishLogin()
-  } catch (sessionError) {
+  }
+  catch (sessionError) {
     error.value = errorMessage(sessionError as { message?: string })
+  }
+  finally {
+    loading.value = null
   }
 }
 
 async function sendMagicLink() {
   error.value = null
-  if (!supabase) return
+  if (!authClient) return
   if (!email.value.trim()) {
     error.value = 'Podaj adres email.'
     return
   }
 
   loading.value = 'magic'
-  const { error: magicError } = await supabase.auth.signInWithOtp({
-    email: email.value.trim().toLowerCase(),
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: callbackUrl('/confirm', intendedDestination.value),
-    },
-  })
-  loading.value = null
-
-  if (magicError) {
-    error.value = errorMessage(magicError)
-    return
+  try {
+    await $fetch('/api/auth/existing-magic-link', {
+      method: 'POST',
+      body: {
+        email: email.value.trim().toLowerCase(),
+        callbackURL: callbackUrl('/confirm', intendedDestination.value),
+        errorCallbackURL: callbackUrl('/confirm', intendedDestination.value),
+      },
+    })
+    magicLinkSent.value = true
   }
-
-  magicLinkSent.value = true
+  catch (magicError) {
+    error.value = errorMessage(magicError as {
+      message?: string
+      status?: number
+      statusCode?: number
+      data?: { message?: string, code?: string }
+    })
+  }
+  finally {
+    loading.value = null
+  }
 }
 </script>
 

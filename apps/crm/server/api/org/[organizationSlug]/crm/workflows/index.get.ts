@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const scope = textValue(getQuery(event).scope)
 
-  let workflowRequest = session.supabase
+  let workflowRequest = session.dataApi
     .from('crm_workflows')
     .select('*')
     .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const [{ data: workflows, error: workflowsError }, { data: statuses, error: statusesError }] = await Promise.all([
     workflowRequest,
-    session.supabase
+    session.dataApi
       .from('crm_workflow_statuses')
       .select('*')
       .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)

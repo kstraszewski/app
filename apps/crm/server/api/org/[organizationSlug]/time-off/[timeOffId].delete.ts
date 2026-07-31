@@ -1,4 +1,4 @@
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { setHeader } from 'h3'
 import { getRequiredParam, requireCrmSession } from '~~/server/utils/crm'
 import { uuidValue } from '~~/server/utils/scheduling'
@@ -7,8 +7,8 @@ import { throwTimeOffDbError } from '~~/server/utils/time-off'
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const timeOffId = uuidValue(getRequiredParam(event, 'timeOffId'), 'timeOffId')
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const { data: timeOff, error: loadError } = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const { data: timeOff, error: loadError } = await backendData
     .from('expert_time_off')
     .select('id, expert_user_id')
     .eq('organization_id', session.organizationId)
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: cancelled, error } = await serviceRole
+  const { data: cancelled, error } = await backendData
     .from('expert_time_off')
     .update({
       status: 'cancelled',

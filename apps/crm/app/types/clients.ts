@@ -345,6 +345,7 @@ export interface ClientAnonymizationRequest {
   id: string
   organization_id: string
   client_id: string
+  subject_person_id: string
   request_number: string
   status: ClientAnonymizationRequestStatus
   request_channel: ClientAnonymizationRequestChannel
@@ -370,6 +371,8 @@ export interface ClientAnonymizationRequest {
 
 export interface ClientPrivacyAccess {
   can_view_requests: boolean
+  can_create_request: boolean
+  create_permission_key: 'privacy.requests.create'
   can_execute_anonymization: boolean
   execute_permission_key: 'clients.anonymization.execute'
   execution_requires_temporary_grant: true

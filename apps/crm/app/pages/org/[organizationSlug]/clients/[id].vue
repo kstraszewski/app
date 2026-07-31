@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { ClientDetailResponse } from '~/types/clients'
+import type { FormSubmitEvent } from '@nuxt/ui'
+import * as z from 'zod'
+import type {
+  ClientAnonymizationRequestChannel,
+  ClientDetailResponse,
+} from '~/types/clients'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
 
@@ -44,6 +49,8 @@ const emptyDetail = (): ClientDetailResponse => ({
   current_anonymization_request: null,
   privacy_access: {
     can_view_requests: false,
+    can_create_request: false,
+    create_permission_key: 'privacy.requests.create',
     can_execute_anonymization: false,
     execute_permission_key: 'clients.anonymization.execute',
     execution_requires_temporary_grant: true,
@@ -115,7 +122,10 @@ const clientTabs = computed(() => [
     count: data.value.summary.consent_definition_count,
     to: viewLocation('consents'),
   },
-  ...(data.value.privacy_access.can_view_requests
+  ...((
+    data.value.privacy_access.can_view_requests
+    || data.value.privacy_access.can_create_request
+  )
     ? [{
         label: 'Prywatność danych',
         icon: 'i-lucide-shield-alert',
@@ -194,6 +204,49 @@ const clientInitials = computed(() => {
 })
 
 const currentAnonymizationRequest = computed(() => data.value.current_anonymization_request)
+const activeAnonymizationRequest = computed(() => (
+  data.value.anonymization_requests.find(request => (
+    !['completed', 'rejected', 'cancelled'].includes(request.status)
+  )) ?? null
+))
+
+const anonymizationRequestChannelItems: Array<{
+  label: string
+  value: ClientAnonymizationRequestChannel
+}> = [
+  { label: 'E-mail', value: 'email' },
+  { label: 'Telefon', value: 'phone' },
+  { label: 'Osobiście', value: 'in_person' },
+  { label: 'List', value: 'letter' },
+  { label: 'Inny', value: 'other' },
+]
+
+const anonymizationRequestSchema = z.object({
+  subjectPersonId: z.string().regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    'Wybierz osobę, której dotyczy żądanie.',
+  ),
+  requestChannel: z.enum(['email', 'phone', 'in_person', 'letter', 'other']),
+  requestedAt: z.string()
+    .min(1, 'Podaj datę otrzymania żądania.')
+    .refine((value) => {
+      const milliseconds = new Date(value).getTime()
+      return Number.isFinite(milliseconds) && milliseconds <= Date.now() + 60_000
+    }, 'Data otrzymania nie może być w przyszłości.'),
+  justification: z.string()
+    .trim()
+    .min(20, 'Opisz żądanie w co najmniej 20 znakach.')
+    .max(2_000, 'Opis może zawierać maksymalnie 2000 znaków.'),
+})
+
+type AnonymizationRequestForm = z.output<typeof anonymizationRequestSchema>
+
+const anonymizationRequestSubjectItems = computed(() => (
+  data.value.people.map(person => ({
+    label: person.display_name || 'Osoba bez nazwy',
+    value: person.id,
+  }))
+))
 
 const anonymizationStatuses = {
   received: { label: 'Otrzymane', color: 'info', icon: 'i-lucide-inbox' },
@@ -446,10 +499,19 @@ async function createCase() {
 }
 
 const editOpen = ref(false)
+const anonymizationRequestOpen = ref(false)
 const anonymizationExecutionOpen = ref(false)
 const anonymizationExecutionConfirmation = ref('')
+const anonymizationRequestIdempotencyKey = ref('')
+const savingAnonymizationRequest = ref(false)
 const executingAnonymization = ref(false)
 const savingClient = ref(false)
+const anonymizationRequestForm = reactive<Partial<AnonymizationRequestForm>>({
+  subjectPersonId: '',
+  requestChannel: 'email',
+  requestedAt: '',
+  justification: '',
+})
 const editForm = reactive({
   display_name: '',
   primary_email: '',
@@ -457,6 +519,107 @@ const editForm = reactive({
   tags: '',
   notes: '',
 })
+
+function localDateTimeValue(date = new Date()) {
+  const localDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60_000,
+  )
+  return localDate.toISOString().slice(0, 16)
+}
+
+function resetAnonymizationRequestForm() {
+  anonymizationRequestForm.subjectPersonId = ''
+  anonymizationRequestForm.requestChannel = 'email'
+  anonymizationRequestForm.requestedAt = ''
+  anonymizationRequestForm.justification = ''
+  anonymizationRequestIdempotencyKey.value = ''
+}
+
+function openAnonymizationRequest() {
+  if (
+    !data.value.privacy_access.can_create_request
+    || activeAnonymizationRequest.value
+  ) return
+
+  const subjectPersonId = (
+    data.value.primary_person?.id
+    || data.value.people[0]?.id
+  )
+  if (!subjectPersonId) {
+    toast.add({
+      title: 'Nie można zgłosić żądania',
+      description:
+        'Klient nie ma osoby, której można przypisać żądanie anonimizacji.',
+      color: 'warning',
+      icon: 'i-lucide-user-x',
+    })
+    return
+  }
+
+  anonymizationRequestForm.subjectPersonId = subjectPersonId
+  anonymizationRequestForm.requestChannel = 'email'
+  anonymizationRequestForm.requestedAt = localDateTimeValue()
+  anonymizationRequestForm.justification = ''
+  anonymizationRequestIdempotencyKey.value = crypto.randomUUID()
+  anonymizationRequestOpen.value = true
+}
+
+async function createAnonymizationRequest(
+  event: FormSubmitEvent<AnonymizationRequestForm>,
+) {
+  if (
+    savingAnonymizationRequest.value
+    || !data.value.privacy_access.can_create_request
+    || activeAnonymizationRequest.value
+  ) return
+
+  const requestedAt = new Date(event.data.requestedAt)
+  if (Number.isNaN(requestedAt.getTime())) return
+
+  if (!anonymizationRequestIdempotencyKey.value) {
+    anonymizationRequestIdempotencyKey.value = crypto.randomUUID()
+  }
+
+  savingAnonymizationRequest.value = true
+  try {
+    const response = await $fetch<{
+      data: {
+        requestNumber: string
+        replayed: boolean
+      }
+    }>(crmApiPath(`/clients/${clientId.value}/anonymization-requests`), {
+      method: 'POST',
+      body: {
+        subjectPersonId: event.data.subjectPersonId,
+        requestChannel: event.data.requestChannel,
+        requestedAt: requestedAt.toISOString(),
+        justification: event.data.justification,
+        idempotencyKey: anonymizationRequestIdempotencyKey.value,
+      },
+    })
+
+    await refresh()
+    anonymizationRequestOpen.value = false
+    toast.add({
+      title: 'Żądanie anonimizacji zostało zgłoszone',
+      description:
+        `${response.data.requestNumber} oczekuje na weryfikację tożsamości i zakresu.`,
+      color: 'success',
+      icon: 'i-lucide-shield-check',
+    })
+  }
+  catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się zgłosić żądania',
+      description: caught?.data?.statusMessage ?? caught?.message,
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  }
+  finally {
+    savingAnonymizationRequest.value = false
+  }
+}
 
 function openEdit() {
   editForm.display_name = data.value.data.display_name
@@ -562,6 +725,13 @@ const headerMenuItems = computed(() => [
         label: 'Otwórz żądanie anonimizacji',
         icon: 'i-lucide-shield-alert',
         onSelect: () => navigateTo(viewLocation('privacy')),
+      }]]
+    : []),
+  ...(data.value.privacy_access.can_create_request
+    ? [[{
+        label: 'Zgłoś żądanie anonimizacji',
+        icon: 'i-lucide-shield-plus',
+        onSelect: openAnonymizationRequest,
       }]]
     : []),
 ])
@@ -956,14 +1126,25 @@ const headerMenuItems = computed(() => [
             <h2 id="client-privacy-title">Prywatność danych</h2>
             <span>Zweryfikowane żądania, terminy i kontrolowane wykonanie anonimizacji.</span>
           </div>
-          <UBadge
-            v-if="currentAnonymizationRequest"
-            :color="anonymizationStatusMeta(currentAnonymizationRequest.status).color"
-            variant="subtle"
-            :icon="anonymizationStatusMeta(currentAnonymizationRequest.status).icon"
-          >
-            {{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}
-          </UBadge>
+          <div class="workspace-heading__actions">
+            <UBadge
+              v-if="currentAnonymizationRequest"
+              :color="anonymizationStatusMeta(currentAnonymizationRequest.status).color"
+              variant="subtle"
+              :icon="anonymizationStatusMeta(currentAnonymizationRequest.status).icon"
+            >
+              {{ anonymizationStatusMeta(currentAnonymizationRequest.status).label }}
+            </UBadge>
+            <UButton
+              v-if="data.privacy_access.can_create_request"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-shield-plus"
+              @click="openAnonymizationRequest"
+            >
+              Zgłoś żądanie
+            </UButton>
+          </div>
         </header>
 
         <div v-if="currentAnonymizationRequest" class="client-privacy-layout">
@@ -1057,7 +1238,20 @@ const headerMenuItems = computed(() => [
                 <span><UIcon :name="currentAnonymizationRequest.completed_at ? 'i-lucide-check' : 'i-lucide-lock-keyhole'" /></span>
                 <div>
                   <strong>Anonimizacja danych</strong>
-                  <small>{{ formatDateTime(currentAnonymizationRequest.completed_at, 'Oczekuje na uprawnionego wykonawcę') }}</small>
+                  <small v-if="currentAnonymizationRequest.completed_at">
+                    {{ formatDateTime(currentAnonymizationRequest.completed_at) }}
+                  </small>
+                  <small v-else-if="currentAnonymizationRequest.status === 'approved'">
+                    Oczekuje na uprawnionego wykonawcę
+                  </small>
+                  <small
+                    v-else-if="['rejected', 'cancelled'].includes(currentAnonymizationRequest.status)"
+                  >
+                    Nie wykonano
+                  </small>
+                  <small v-else>
+                    Oczekuje na weryfikację i zatwierdzenie
+                  </small>
                 </div>
               </li>
             </ol>
@@ -1082,6 +1276,24 @@ const headerMenuItems = computed(() => [
                 icon="i-lucide-shield-check"
                 title="Anonimizacja zakończona"
                 :description="`Dane zanonimizowano ${formatDateTime(currentAnonymizationRequest.completed_at)}. Jednorazowy grant został zużyty i nie można wykonać operacji ponownie.`"
+              />
+
+              <UAlert
+                v-else-if="['rejected', 'cancelled'].includes(currentAnonymizationRequest.status)"
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-shield-x"
+                title="Proces zakończony bez anonimizacji"
+                description="To żądanie nie może zostać wykonane. Jeśli klient złoży nowe żądanie, zarejestruj osobny proces."
+              />
+
+              <UAlert
+                v-else-if="currentAnonymizationRequest.status !== 'approved'"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-hourglass"
+                title="Żądanie nie jest jeszcze zatwierdzone"
+                description="Przed nadaniem jednorazowego grantu trzeba potwierdzić tożsamość osoby oraz zatwierdzić zakres anonimizacji."
               />
 
               <template v-else>
@@ -1140,6 +1352,13 @@ const headerMenuItems = computed(() => [
           <span><UIcon name="i-lucide-shield-check" /></span>
           <h3>Brak żądania anonimizacji</h3>
           <p>Dla tego klienta nie zarejestrowano aktywnego procesu usunięcia danych.</p>
+          <UButton
+            v-if="data.privacy_access.can_create_request"
+            icon="i-lucide-shield-plus"
+            @click="openAnonymizationRequest"
+          >
+            Zgłoś żądanie anonimizacji
+          </UButton>
         </div>
       </section>
 
@@ -1257,6 +1476,132 @@ const headerMenuItems = computed(() => [
         </aside>
       </section>
     </template>
+
+    <UModal
+      v-model:open="anonymizationRequestOpen"
+      title="Zgłoś żądanie anonimizacji"
+      description="Zarejestruj otrzymane żądanie klienta i rozpocznij kontrolowany proces jego obsługi."
+      :dismissible="!savingAnonymizationRequest"
+      :ui="{
+        content: 'sm:max-w-xl',
+        header: 'shrink-0',
+        body: 'min-h-0 overflow-y-auto',
+        footer: 'shrink-0 justify-end',
+      }"
+      @after:leave="resetAnonymizationRequestForm"
+    >
+      <template #body>
+        <UForm
+          id="client-anonymization-request-form"
+          :schema="anonymizationRequestSchema"
+          :state="anonymizationRequestForm"
+          class="client-modal-form"
+          @submit="createAnonymizationRequest"
+        >
+          <UAlert
+            color="info"
+            variant="subtle"
+            icon="i-lucide-info"
+            title="To zgłoszenie nie usuwa danych"
+            description="Powstanie formalne żądanie ze statusem „Otrzymane”. Tożsamość, zakres i podstawa prawna muszą zostać zweryfikowane przed anonimizacją."
+          />
+
+          <UFormField
+            name="subjectPersonId"
+            label="Osoba, której dane dotyczą"
+            description="Wskaż osobę, od której otrzymano żądanie."
+            required
+          >
+            <USelect
+              v-model="anonymizationRequestForm.subjectPersonId"
+              class="w-full"
+              :items="anonymizationRequestSubjectItems"
+              value-key="value"
+              label-key="label"
+              :disabled="savingAnonymizationRequest"
+              placeholder="Wybierz osobę"
+            />
+          </UFormField>
+
+          <div class="client-modal-form__grid">
+            <UFormField
+              name="requestChannel"
+              label="Kanał zgłoszenia"
+              required
+            >
+              <USelect
+                v-model="anonymizationRequestForm.requestChannel"
+                class="w-full"
+                :items="anonymizationRequestChannelItems"
+                value-key="value"
+                label-key="label"
+                :disabled="savingAnonymizationRequest"
+              />
+            </UFormField>
+
+            <UFormField
+              name="requestedAt"
+              label="Data otrzymania"
+              description="Od tej daty zostanie wyliczony miesięczny termin."
+              required
+            >
+              <UInput
+                v-model="anonymizationRequestForm.requestedAt"
+                class="w-full"
+                type="datetime-local"
+                :max="localDateTimeValue()"
+                :disabled="savingAnonymizationRequest"
+              />
+            </UFormField>
+          </div>
+
+          <UFormField
+            name="justification"
+            label="Opis żądania"
+            description="Zapisz treść i kontekst żądania bez kopiowania zbędnych danych osobowych."
+            required
+          >
+            <UTextarea
+              v-model="anonymizationRequestForm.justification"
+              class="w-full"
+              :rows="5"
+              autoresize
+              :maxrows="9"
+              :maxlength="2000"
+              :disabled="savingAnonymizationRequest"
+              placeholder="Np. klient zażądał usunięcia danych po zakończeniu obsługi..."
+            />
+          </UFormField>
+
+          <div class="client-anonymization-request-basis">
+            <UIcon name="i-lucide-scale" />
+            <div>
+              <small>Podstawa procesu</small>
+              <strong>RODO art. 17 · prawo do usunięcia danych</strong>
+            </div>
+          </div>
+        </UForm>
+      </template>
+
+      <template #footer="{ close }">
+        <UButton
+          color="neutral"
+          variant="outline"
+          :disabled="savingAnonymizationRequest"
+          @click="close"
+        >
+          Anuluj
+        </UButton>
+        <UButton
+          type="submit"
+          form="client-anonymization-request-form"
+          icon="i-lucide-send"
+          :loading="savingAnonymizationRequest"
+        >
+          Zgłoś żądanie
+        </UButton>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="anonymizationExecutionOpen"
@@ -1465,7 +1810,9 @@ const headerMenuItems = computed(() => [
 .client-timeline__item article > footer,
 .client-history-summary dl div,
 .client-history-start,
-.client-case-assignment {
+.client-case-assignment,
+.workspace-heading__actions,
+.client-anonymization-request-basis {
   display: flex;
   align-items: center;
 }
@@ -1626,11 +1973,18 @@ const headerMenuItems = computed(() => [
   font-size: 22px;
 }
 
-.workspace-heading > div > span {
+.workspace-heading > div:first-child > span {
   display: block;
   margin-top: 5px;
   color: var(--ui-text-muted);
   font-size: 13px;
+}
+
+.workspace-heading__actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .client-profile {
@@ -2708,6 +3062,35 @@ const headerMenuItems = computed(() => [
   gap: 12px;
 }
 
+.client-anonymization-request-basis {
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: 11px;
+  color: var(--ui-text-toned);
+  background: var(--ui-bg-elevated);
+}
+
+.client-anonymization-request-basis > svg {
+  flex: 0 0 auto;
+}
+
+.client-anonymization-request-basis > div {
+  display: grid;
+  gap: 2px;
+}
+
+.client-anonymization-request-basis small {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.client-anonymization-request-basis strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .client-case-assignment {
   gap: 10px;
   padding: 12px;
@@ -2868,6 +3251,14 @@ const headerMenuItems = computed(() => [
   .workspace-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .workspace-heading__actions {
+    justify-content: flex-start;
+  }
+
+  .client-modal-form__grid {
+    grid-template-columns: 1fr;
   }
 
   .client-appointment-row {

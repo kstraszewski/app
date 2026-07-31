@@ -1,14 +1,16 @@
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { serverDataClient, serverDataUser } from '~~/server/utils/data-api'
 import { useRuntimeConfig } from '#imports'
 import { createError, getRouterParam, type H3Event } from 'h3'
 import { expandManagedTeamIds, type TeamScopeEdge } from './team-scope'
 
-type CrmSupabaseClient = any
+type CrmDataClient = any
 
 export interface AuthIdentity {
-  supabase: CrmSupabaseClient
+  dataApi: CrmDataClient
   userId: string
   email: string
+  emailVerified: boolean
+  emailConfirmedAt: string | null
   phone: string
   fullName: string
 }
@@ -31,22 +33,22 @@ export interface TeamAdminScope {
 }
 
 export async function requireAuthIdentity(event: H3Event): Promise<AuthIdentity> {
-  const supabaseConfig = useRuntimeConfig(event).public.supabase as { url?: string; key?: string }
-  if (!supabaseConfig.url || !supabaseConfig.key || supabaseConfig.key === 'local-development-placeholder') {
+  const dataApiConfig = useRuntimeConfig(event).dataApi as { url?: string }
+  if (!dataApiConfig.url) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Supabase is not configured',
+      statusMessage: 'Data API is not configured',
     })
   }
 
-  const claims = await serverSupabaseUser(event)
+  const claims = await serverDataUser(event)
   const userId = typeof claims?.sub === 'string' ? claims.sub : null
   if (!userId) {
     throw createError({ statusCode: 401, statusMessage: 'Authentication required' })
   }
 
-  const supabase = await serverSupabaseClient(event) as CrmSupabaseClient
-  const { data: profile, error: profileError } = await supabase
+  const dataApi = await serverDataClient(event) as CrmDataClient
+  const { data: profile, error: profileError } = await dataApi
     .from('profiles')
     .select('display_name')
     .eq('id', userId)
@@ -58,9 +60,11 @@ export async function requireAuthIdentity(event: H3Event): Promise<AuthIdentity>
   const metadata = asRecord(claimRecord.user_metadata)
 
   return {
-    supabase,
+    dataApi,
     userId,
     email: textValue(claimRecord.email) ?? '',
+    emailVerified: claimRecord.email_verified === true,
+    emailConfirmedAt: textValue(claimRecord.email_confirmed_at) ?? null,
     phone: textValue(claimRecord.phone) ?? '',
     fullName: textValue(profile?.display_name)
       ?? textValue(metadata.full_name)
@@ -70,7 +74,7 @@ export async function requireAuthIdentity(event: H3Event): Promise<AuthIdentity>
 
 export async function requireAuthenticatedSession(event: H3Event): Promise<AuthenticatedSession> {
   const identity = await requireAuthIdentity(event)
-  const { data: profile, error } = await identity.supabase
+  const { data: profile, error } = await identity.dataApi
     .from('users')
     .select('id, organization_id, email, full_name')
     .eq('id', identity.userId)
@@ -102,7 +106,7 @@ export async function requireCrmSession(
     throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
   }
 
-  const { data: organization, error: organizationError } = await authenticated.supabase
+  const { data: organization, error: organizationError } = await authenticated.dataApi
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', organizationSlug)
@@ -112,7 +116,7 @@ export async function requireCrmSession(
     throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
   }
 
-  const { data: membership, error: membershipError } = await authenticated.supabase
+  const { data: membership, error: membershipError } = await authenticated.dataApi
     .from('organization_memberships')
     .select('role')
     .eq('organization_id', organization.id)
@@ -144,11 +148,11 @@ export async function hasAdministrativePermission(
 ): Promise<boolean> {
   const now = new Date().toISOString()
   const [rolePermissionsResult, directGrantResult] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('administrative_role_permissions')
       .select('role_key')
       .eq('permission_key', permissionKey),
-    session.supabase
+    session.dataApi
       .from('organization_user_direct_grants')
       .select('id')
       .eq('organization_id', session.organizationId)
@@ -180,7 +184,7 @@ export async function hasAdministrativePermission(
   const directRoleKeys = permittedRoleKeys.filter(roleKey => roleKey !== 'organization_admin')
   if (!directRoleKeys.length) return false
 
-  const roleAssignmentResult = await session.supabase
+  const roleAssignmentResult = await session.dataApi
     .from('organization_user_admin_roles')
     .select('role_key')
     .eq('organization_id', session.organizationId)
@@ -209,7 +213,7 @@ export async function requireOrganizationMember(
   session: CrmSession,
   userId: string,
 ): Promise<void> {
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('organization_memberships')
     .select('user_id')
     .eq('organization_id', session.organizationId)
@@ -224,7 +228,7 @@ export async function requireOrganizationMember(
 
 export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAdminScope> {
   const [directMembershipsResult, canManageStructure] = await Promise.all([
-    session.supabase
+    session.dataApi
       .from('team_memberships')
       .select('team_id')
       .eq('organization_id', session.organizationId)
@@ -240,7 +244,7 @@ export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAd
   )).sort()
 
   if (canManageStructure) {
-    const teamsResult = await session.supabase
+    const teamsResult = await session.dataApi
       .from('teams')
       .select('id')
       .eq('organization_id', session.organizationId)
@@ -263,7 +267,7 @@ export async function resolveTeamAdminScope(session: CrmSession): Promise<TeamAd
     }
   }
 
-  const edgesResult = await session.supabase
+  const edgesResult = await session.dataApi
     .from('team_edges')
     .select('parent_team_id, child_team_id')
     .eq('organization_id', session.organizationId)
@@ -309,7 +313,7 @@ export async function requireFacilityAdminMembership(
 ): Promise<void> {
   if (await hasAdministrativePermission(session, 'structure.manage')) return
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('facility_memberships')
     .select('facility_id')
     .eq('organization_id', session.organizationId)
@@ -331,7 +335,7 @@ export async function requireSafeTeamAdminRemoval(
 ): Promise<{ role: string }> {
   const scope = await requireTeamAdmin(session, teamId)
 
-  const membershipResult = await session.supabase
+  const membershipResult = await session.dataApi
     .from('team_memberships')
     .select('role')
     .eq('organization_id', session.organizationId)
@@ -346,7 +350,7 @@ export async function requireSafeTeamAdminRemoval(
 
   const role = String(membershipResult.data.role ?? 'member')
   if (!scope.organizationAdmin && role === 'admin') {
-    const adminCountResult = await session.supabase
+    const adminCountResult = await session.dataApi
       .from('team_memberships')
       .select('*', { count: 'exact', head: true })
       .eq('organization_id', session.organizationId)
@@ -366,7 +370,7 @@ export async function requireSafeTeamAdminRemoval(
 }
 
 export async function hasSuperAdminRole(session: AuthenticatedSession): Promise<boolean> {
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('platform_user_roles')
     .select('user_id')
     .eq('user_id', session.userId)
@@ -456,7 +460,7 @@ export async function resolveProductType(
   const productTypeId = textValue(body.product_type_id)
   const productTypeCode = textValue(body.product_type_code)
 
-  let query = session.supabase
+  let query = session.dataApi
     .from('crm_product_types')
     .select('id, domain, name')
     .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)
@@ -497,7 +501,7 @@ export async function recordCrmActivity(
     payload?: Record<string, unknown>
   },
 ): Promise<void> {
-  const { error } = await session.supabase.from('crm_activities').insert({
+  const { error } = await session.dataApi.from('crm_activities').insert({
     organization_id: session.organizationId,
     actor_user_id: session.userId,
     client_id: activity.client_id ?? null,

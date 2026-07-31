@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readMultipartFormData } from 'h3'
 import sharp from 'sharp'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const access = await requireFacilityPermission(session, getRouterParam(event, 'facilityId'), 'manage')
   const facilityId = String(access.facility.id)
-  const serviceRole = serverSupabaseServiceRole(event) as any
+  const backendData = serverDataBackend(event) as any
 
   const parts = await readMultipartFormData(event)
   const image = parts?.find(part => part.name === 'image' && part.filename)
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const countResult = await session.supabase
+  const countResult = await session.dataApi
     .from('facility_images')
     .select('*', { count: 'exact', head: true })
     .eq('organization_id', session.organizationId)
@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const sha256 = createHash('sha256').update(processed.data).digest('hex')
-  const duplicateResult = await session.supabase
+  const duplicateResult = await session.dataApi
     .from('facility_images')
     .select('id')
     .eq('organization_id', session.organizationId)
@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const sortResult = await session.supabase
+  const sortResult = await session.dataApi
     .from('facility_images')
     .select('sort_order')
     .eq('organization_id', session.organizationId)
@@ -110,7 +110,7 @@ export default defineEventHandler(async (event) => {
   const sortOrder = sortResult.data ? Number(sortResult.data.sort_order) + 1 : 0
   const storagePath = `${session.organizationId}/${facilityId}/${randomUUID()}.webp`
 
-  const { error: uploadError } = await serviceRole.storage
+  const { error: uploadError } = await backendData.storage
     .from(facilityImageBucket)
     .upload(storagePath, processed.data, {
       cacheControl: '31536000',
@@ -125,7 +125,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const originalFilename = String(image.filename).trim().slice(0, 255) || 'facility-image'
-  const insertResult = await serviceRole
+  const insertResult = await backendData
     .from('facility_images')
     .insert({
       organization_id: session.organizationId,
@@ -146,7 +146,7 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (insertResult.error || !insertResult.data) {
-    const { error: cleanupError } = await serviceRole.storage
+    const { error: cleanupError } = await backendData.storage
       .from(facilityImageBucket)
       .remove([storagePath])
     if (cleanupError) {
@@ -158,7 +158,7 @@ export default defineEventHandler(async (event) => {
     throwDbError(insertResult.error)
   }
 
-  const signedResult = await serviceRole.storage
+  const signedResult = await backendData.storage
     .from(facilityImageBucket)
     .createSignedUrl(storagePath, 60 * 60)
 

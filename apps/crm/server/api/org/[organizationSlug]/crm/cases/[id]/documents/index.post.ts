@@ -55,13 +55,15 @@ export default defineEventHandler(async (event) => {
   )
   const validatedClientId = await resolveRequirementClient(session, caseId, requirement, clientId)
 
+  let supersedesDocumentId: string | null = null
   if (!requirement.multiple) {
-    let existingQuery = session.supabase
+    let existingQuery = session.dataApi
       .from('crm_documents')
       .select('id')
       .eq('organization_id', session.organizationId)
       .eq('case_id', caseId)
       .eq('document_type', documentType)
+      .order('created_at', { ascending: false })
       .limit(1)
     existingQuery = validatedClientId
       ? existingQuery.eq('client_id', validatedClientId)
@@ -71,12 +73,9 @@ export default defineEventHandler(async (event) => {
       : existingQuery.is('submission_id', null)
     const { data: existingDocuments, error: existingError } = await existingQuery
     throwDbError(existingError)
-    if (existingDocuments?.length) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'This checklist item already has a document; delete it before uploading a replacement',
-      })
-    }
+    supersedesDocumentId = existingDocuments?.[0]?.id
+      ? String(existingDocuments[0].id)
+      : null
   }
 
   if (file.data.length > maxCaseDocumentBytes) {
@@ -102,7 +101,7 @@ export default defineEventHandler(async (event) => {
   const originalName = safeOriginalFileName(file.filename, `${documentType}.${extension}`)
   const receivedAt = new Date().toISOString()
 
-  const { error: uploadError } = await session.supabase.storage
+  const { error: uploadError } = await session.dataApi.storage
     .from(caseDocumentBucket)
     .upload(storagePath, file.data, {
       contentType: mimeType,
@@ -113,7 +112,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: uploadError.message || 'Document upload failed' })
   }
 
-  const { data, error } = await session.supabase
+  const { data, error } = await session.dataApi
     .from('crm_documents')
     .insert({
       organization_id: session.organizationId,
@@ -134,13 +133,14 @@ export default defineEventHandler(async (event) => {
       metadata: {
         uploadedForOfferId: validatedOfferId,
         requirementLabel: requirement.label,
+        ...(supersedesDocumentId ? { supersedesDocumentId } : {}),
       },
     })
     .select(caseDocumentPublicSelect)
     .single()
 
   if (error || !data) {
-    const { error: cleanupError } = await session.supabase.storage
+    const { error: cleanupError } = await session.dataApi.storage
       .from(caseDocumentBucket)
       .remove([storagePath])
     if (cleanupError) {

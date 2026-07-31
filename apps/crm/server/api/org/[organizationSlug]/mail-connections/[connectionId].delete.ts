@@ -14,7 +14,7 @@ import {
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const connectionId = getRequiredParam(event, 'connectionId')
-  const { serviceRole, connection } = await loadUserMailConnection(event, session)
+  const { backendData, connection } = await loadUserMailConnection(event, session)
   if (!connection || connection.id !== connectionId) {
     throw createError({ statusCode: 404, statusMessage: 'Mail connection not found' })
   }
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     // OAuth configuration has already been removed.
   }
 
-  const result = await serviceRole
+  const result = await backendData
     .from('mail_connections')
     .delete()
     .eq('organization_id', session.organizationId)

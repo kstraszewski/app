@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, getRouterParam, readMultipartFormData } from 'h3'
 import sharp from 'sharp'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
@@ -48,8 +48,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 415, statusMessage: 'File is not a valid supported image' })
   }
 
-  const serviceRole = serverSupabaseServiceRole(event) as any
-  const existingResult = await serviceRole
+  const backendData = serverDataBackend(event) as any
+  const existingResult = await backendData
     .from('expert_brand_profiles')
     .select('portrait_path')
     .eq('organization_id', session.organizationId)
@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(existingResult.error)
 
   const storagePath = `${session.organizationId}/${session.userId}/${kind}/${randomUUID()}.webp`
-  const uploadResult = await serviceRole.storage
+  const uploadResult = await backendData.storage
     .from(brandAssetBucket)
     .upload(storagePath, processed, {
       cacheControl: '31536000',
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: uploadResult.error.message || 'Brand asset upload failed' })
   }
 
-  const result = await serviceRole
+  const result = await backendData
     .from('expert_brand_profiles')
     .upsert({
       organization_id: session.organizationId,
@@ -81,13 +81,13 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (result.error || !result.data) {
-    await serviceRole.storage.from(brandAssetBucket).remove([storagePath])
+    await backendData.storage.from(brandAssetBucket).remove([storagePath])
     throwDbError(result.error)
   }
 
   const oldPath = existingResult.data?.portrait_path
   if (oldPath && oldPath !== storagePath) {
-    const cleanup = await serviceRole.storage.from(brandAssetBucket).remove([oldPath])
+    const cleanup = await backendData.storage.from(brandAssetBucket).remove([oldPath])
     if (cleanup.error) console.warn('[brand] failed to remove replaced asset', cleanup.error.message)
   }
 

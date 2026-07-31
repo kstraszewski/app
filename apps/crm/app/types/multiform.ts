@@ -177,6 +177,30 @@ export interface MultiformCrmContext {
   selectedApplicationsValidation: MultiformApplicationsValidation
 }
 
+export interface CaseMultiformDraft {
+  organizationId: string
+  caseId: string
+  selectionFingerprint: string
+  revision: number
+  activeStep: number
+  intakeAnswers: Record<string, unknown>
+  formValues: Record<string, unknown>
+  collectionCounts: Record<string, number>
+  selectedDocumentIds: string[]
+  updatedByUserId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CaseMultiformDraftResponse {
+  selectionFingerprint: string
+  draft: CaseMultiformDraft | null
+}
+
+export interface CaseMultiformDraftSaveResponse {
+  draft: CaseMultiformDraft
+}
+
 export interface MultiformFlatGroup {
   kind: 'fields'
   id: string

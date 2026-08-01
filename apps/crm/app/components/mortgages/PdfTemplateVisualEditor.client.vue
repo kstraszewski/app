@@ -3711,8 +3711,8 @@ summary:focus-visible {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    min-height: 640px;
-    height: 760px;
+    min-height: 0;
+    height: 100%;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
   }

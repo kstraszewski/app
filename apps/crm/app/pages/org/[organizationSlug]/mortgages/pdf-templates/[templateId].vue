@@ -536,6 +536,7 @@ async function publishDraft() {
         </div>
       </div>
       <UButton
+        class="studio-header-action"
         color="neutral"
         variant="ghost"
         icon="i-lucide-shield-check"
@@ -546,6 +547,7 @@ async function publishDraft() {
         Sprawdź
       </UButton>
       <UButton
+        class="studio-header-action"
         color="neutral"
         variant="solid"
         icon="i-lucide-save"
@@ -556,6 +558,7 @@ async function publishDraft() {
         Zapisz
       </UButton>
       <UButton
+        class="studio-header-action"
         color="success"
         variant="outline"
         icon="i-lucide-rocket"
@@ -823,6 +826,7 @@ async function publishDraft() {
 }
 
 .template-studio-shell :deep(.crm-page-header) {
+  flex: 0 0 auto;
   grid-template-columns: minmax(250px, 1fr) auto;
   align-items: center;
   gap: 14px;
@@ -1154,24 +1158,57 @@ async function publishDraft() {
 @media (max-width: 900px) {
   .template-studio-shell :deep(.crm-page-header) {
     grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 8px;
   }
 
   .template-studio-shell :deep(.crm-page-header__actions) {
+    display: grid;
     grid-column: 1;
     grid-row: 2;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    padding-bottom: 2px;
-    overflow-x: auto;
-  }
-
-  .template-editor-page--visual {
-    min-height: 760px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+    gap: 6px;
+    width: 100%;
     overflow: visible;
   }
 
+  .studio-save-state {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    padding: 0 2px;
+  }
+
+  .studio-save-state small {
+    display: none;
+  }
+
+  .studio-header-action {
+    grid-row: 2;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 8px;
+    justify-content: center;
+  }
+
+  .studio-publish-blocker {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    justify-self: end;
+    max-width: none;
+    padding-right: 2px;
+    text-align: right;
+  }
+
+  .template-editor-page--visual {
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .template-editor-page--json {
-    min-height: 620px;
+    min-height: 0;
   }
 
   .json-editor__toolbar {

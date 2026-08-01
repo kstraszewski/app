@@ -20,5 +20,7 @@ export {
   type OpenExpertAuthConfig,
   type OpenExpertAuthEmail,
   type OpenExpertAuthEmailSender,
+  type OpenExpertAuthSocialProviderConfig,
+  type OpenExpertAuthSocialProvidersConfig,
   type OpenExpertAuthUser,
 } from './types.ts'

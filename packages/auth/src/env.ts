@@ -42,6 +42,20 @@ function integerValue(
   return parsed
 }
 
+function socialProviderValue(
+  env: OpenExpertAuthEnvironment,
+  prefix: 'GOOGLE' | 'APPLE',
+  issues: string[],
+) {
+  const clientId = env[`BETTER_AUTH_${prefix}_CLIENT_ID`]?.trim() ?? ''
+  const clientSecret = env[`BETTER_AUTH_${prefix}_CLIENT_SECRET`]?.trim() ?? ''
+  if (!clientId && !clientSecret) return undefined
+  if (!clientId) issues.push(`BETTER_AUTH_${prefix}_CLIENT_ID is required when ${prefix} sign-in is configured`)
+  if (!clientSecret) issues.push(`BETTER_AUTH_${prefix}_CLIENT_SECRET is required when ${prefix} sign-in is configured`)
+  if (!clientId || !clientSecret) return undefined
+  return { clientId, clientSecret, disableSignUp: true }
+}
+
 export function readOpenExpertAuthEnv(
   env: OpenExpertAuthEnvironment,
 ): OpenExpertAuthConfig {
@@ -118,6 +132,8 @@ export function readOpenExpertAuthEnv(
     60 * 60,
     issues,
   )
+  const google = socialProviderValue(env, 'GOOGLE', issues)
+  const apple = socialProviderValue(env, 'APPLE', issues)
 
   if (issues.length) throw new OpenExpertAuthConfigurationError(issues)
 
@@ -141,5 +157,6 @@ export function readOpenExpertAuthEnv(
     bcryptCost,
     sessionExpiresIn,
     jwtExpiresIn,
+    socialProviders: google || apple ? { google, apple } : undefined,
   }
 }

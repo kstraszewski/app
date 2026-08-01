@@ -3,8 +3,8 @@ import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/institutions/:bankId',
-  alias: ['/org/:organizationSlug/mortgages/institutions/:bankId'],
+  path: 'settings/institutions/:bankId',
+  alias: ['mortgages/institutions/:bankId'],
 })
 
 type ChecklistItem = {

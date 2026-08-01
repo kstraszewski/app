@@ -25,8 +25,6 @@ const { organizationSlug, crmApiPath, orgApiPath, orgPath } = useOrganizationCon
 const requestFetch = useRequestFetch()
 const toast = useToast()
 
-type ConsentChoice = 'granted' | 'declined'
-
 interface ClientCreateFormState {
   display_name: string
   owner_user_id: string
@@ -86,7 +84,6 @@ const page = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = ref(25)
 const createOpen = ref(false)
 const saving = ref(false)
-const consentDecisions = reactive<Record<string, ConsentChoice | undefined>>({})
 
 const form = reactive<ClientCreateFormState>({
   display_name: '',
@@ -410,13 +407,6 @@ const consentDecisionFilterItems = [
   { label: 'Brak decyzji', value: 'unknown' },
 ]
 
-watch(consentDefinitions, (definitions) => {
-  const currentVersionIds = new Set(definitions.map(definition => definition.current_version_id))
-  for (const id of Object.keys(consentDecisions)) {
-    if (!currentVersionIds.has(id)) delete consentDecisions[id]
-  }
-}, { immediate: true })
-
 watch(memberConfiguration, (configuration) => {
   const currentOwnerExists = configuration.members.some(member => member.userId === form.owner_user_id)
   if (!currentOwnerExists) form.owner_user_id = configuration.currentUserId
@@ -432,47 +422,10 @@ function channelLabel(channel: ClientConsentVersion['channel']) {
   })[channel]
 }
 
-function channelIsAvailable(channel: ClientConsentVersion['channel']) {
-  if (channel === 'email') return Boolean(form.primary_email.trim())
-  if (channel === 'sms' || channel === 'phone' || channel === 'messaging') {
-    return Boolean(form.primary_phone.trim())
-  }
-  return Boolean(form.primary_email.trim() || form.primary_phone.trim())
-}
-
-watch(() => [form.primary_email, form.primary_phone], () => {
-  for (const definition of consentDefinitions.value) {
-    if (
-      consentDecisions[definition.current_version_id] === 'granted'
-      && !channelIsAvailable(definition.current_version.channel)
-    ) {
-      consentDecisions[definition.current_version_id] = undefined
-    }
-  }
-})
-
-function consentDecisionItems(definition: ClientConsentDefinition) {
-  return [
-    {
-      label: 'Udziela zgody',
-      value: 'granted',
-      disabled: !channelIsAvailable(definition.current_version.channel),
-    },
-    { label: 'Nie udziela', value: 'declined' },
-  ]
-}
-
-const incompleteConsentCount = computed(() => consentDefinitions.value.filter((definition) => {
-  const choice = consentDecisions[definition.current_version_id]
-  return !choice || (definition.current_version.is_required && choice !== 'granted')
-}).length)
-
 const saveDisabled = computed(() => (
   membersPending.value
   || Boolean(membersError.value)
   || !form.owner_user_id
-  || filtersPending.value
-  || Boolean(filtersError.value)
 ))
 
 function validateClientForm(state: Partial<ClientCreateFormState>): FormError[] {
@@ -500,26 +453,6 @@ function validateClientForm(state: Partial<ClientCreateFormState>): FormError[] 
     errors.push({ name: 'primary_email', message: 'Podaj poprawny adres e-mail.' })
   }
 
-  const undecided = consentDefinitions.value.filter(definition => (
-    !consentDecisions[definition.current_version_id]
-  ))
-  const requiredNotGranted = consentDefinitions.value.filter(definition => (
-    definition.current_version.is_required
-    && consentDecisions[definition.current_version_id] !== 'granted'
-  ))
-
-  if (undecided.length) {
-    errors.push({
-      name: 'consents',
-      message: `Zapisz decyzję dla ${undecided.length} ${undecided.length === 1 ? 'zgody' : 'zgód'}.`,
-    })
-  } else if (requiredNotGranted.length) {
-    errors.push({
-      name: 'consents',
-      message: 'Wszystkie wymagane zgody muszą zostać udzielone.',
-    })
-  }
-
   return errors
 }
 
@@ -532,7 +465,6 @@ function resetCreateForm() {
   form.primary_phone = ''
   form.tags = ''
   form.notes = ''
-  for (const id of Object.keys(consentDecisions)) delete consentDecisions[id]
 }
 
 function handleCreateClosed() {
@@ -582,11 +514,9 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
       email: compactText(form.primary_email),
       phone: compactText(form.primary_phone),
     },
-    consent_decisions: consentDefinitions.value.map(definition => ({
-      definition_id: definition.id,
-      version_id: definition.current_version_id,
-      granted: consentDecisions[definition.current_version_id] === 'granted',
-    })),
+    // A CRM user creates only the client record. The data subject makes every
+    // consent decision later in the verified SMS flow from the client card.
+    consent_decisions: [],
   }
 
   saving.value = true
@@ -601,7 +531,7 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
     await Promise.all([refreshClients(), refreshFilters()])
     toast.add({
       title: 'Dodano klienta',
-      description: 'Karta klienta, osoba główna i decyzje zgód zostały zapisane.',
+      description: 'Karta klienta została zapisana. Prośby o zgodę możesz wysłać SMS-em z karty klienta.',
       color: 'success',
     })
   } catch (caught: any) {
@@ -1198,8 +1128,8 @@ const columns: TableColumn<ClientListItem>[] = [
               <div class="form-section__head form-section__head--consents">
                 <span><UIcon name="i-lucide-shield-check" /></span>
                 <div>
-                  <h3 id="client-consents-heading">Aktualne zgody i oświadczenia</h3>
-                  <p>Każda decyzja jest zapisywana z treścią i numerem bieżącej wersji.</p>
+                  <h3 id="client-consents-heading">Zgody pozyskiwane od klienta</h3>
+                  <p>Pracownik nie zaznacza zgód za klienta. Po zapisie wyślesz bezpieczną prośbę SMS.</p>
                 </div>
                 <UBadge color="neutral" variant="outline">
                   {{ consentDefinitions.length }}
@@ -1211,11 +1141,11 @@ const columns: TableColumn<ClientListItem>[] = [
               </div>
               <UAlert
                 v-else-if="filtersError"
-                color="error"
+                color="warning"
                 variant="subtle"
                 icon="i-lucide-triangle-alert"
                 title="Nie można pobrać aktualnych zgód"
-                description="Zapis klienta jest wstrzymany, aby nie utracić śladu decyzji."
+                description="Klienta nadal możesz zapisać. Lista zgód będzie dostępna na jego karcie po odświeżeniu."
                 :actions="[{ label: 'Spróbuj ponownie', onClick: () => refreshFilters() }]"
               />
               <div v-else-if="consentDefinitions.length" class="consent-list">
@@ -1260,22 +1190,10 @@ const columns: TableColumn<ClientListItem>[] = [
                     </div>
                   </dl>
 
-                  <URadioGroup
-                    v-model="consentDecisions[definition.current_version_id]"
-                    :name="`consent-${definition.id}`"
-                    :items="consentDecisionItems(definition)"
-                    value-key="value"
-                    orientation="horizontal"
-                    variant="card"
-                    size="sm"
-                  />
-
-                  <small
-                    v-if="!channelIsAvailable(definition.current_version.channel)"
-                    class="consent-option__hint"
-                  >
-                    Uzupełnij {{ definition.current_version.channel === 'email' ? 'adres e-mail' : 'numer telefonu' }}, aby można było udzielić tej zgody. Odmowa pozostaje dostępna.
-                  </small>
+                  <div class="consent-option__capture">
+                    <UIcon name="i-lucide-message-square-lock" />
+                    <span>Decyzję potwierdzi klient kodem jednorazowym wysłanym na jego numer telefonu.</span>
+                  </div>
                 </article>
               </div>
               <UAlert
@@ -1286,15 +1204,6 @@ const columns: TableColumn<ClientListItem>[] = [
                 title="Brak opublikowanych zgód"
                 description="Klient zostanie dodany bez decyzji marketingowych. Definicje można opublikować w panelu zgód."
               />
-
-              <UAlert
-                v-if="!filtersPending && !filtersError && incompleteConsentCount"
-                color="warning"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                title="Decyzje nie są kompletne"
-                :description="`Pozostało ${incompleteConsentCount} ${incompleteConsentCount === 1 ? 'pozycja' : 'pozycji'} do uzupełnienia.`"
-              />
             </section>
           </UFormField>
         </UForm>
@@ -1303,8 +1212,8 @@ const columns: TableColumn<ClientListItem>[] = [
       <template #footer>
         <div class="slideover-footer">
           <span>
-            <UIcon name="i-lucide-lock-keyhole" />
-            Zapis obejmuje wersje zgód widoczne w formularzu.
+            <UIcon name="i-lucide-message-square-lock" />
+            Zgody nie są nadawane przez pracownika — klient potwierdza je SMS-em.
           </span>
           <div>
             <UButton color="neutral" variant="ghost" :disabled="saving" @click="closeCreateForm">
@@ -1721,6 +1630,24 @@ const columns: TableColumn<ClientListItem>[] = [
   color: var(--ui-text-warning);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.consent-option__capture {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: 10px;
+  color: var(--ui-text-toned);
+  background: var(--ui-bg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.consent-option__capture > .iconify {
+  flex: 0 0 auto;
+  color: var(--ui-primary);
 }
 
 .slideover-footer {

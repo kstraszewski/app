@@ -19,6 +19,7 @@
     "dev": "turbo run dev",
     "dev:landing": "turbo run dev --filter=@openexpert/landing",
     "dev:crm": "turbo run dev --filter=@openexpert/crm",
+    "dev:client": "turbo run dev --filter=@openexpert/client",
     "generate": "turbo run generate",
     "mortgage:sync": "turbo run mortgage:sync --filter=@openexpert/database",
     "preview": "turbo run preview",

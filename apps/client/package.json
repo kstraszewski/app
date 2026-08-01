@@ -1,0 +1,35 @@
+{
+  "name": "@openexpert/client",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.11.0 <25"
+  },
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev --host 127.0.0.1 --port 3006",
+    "generate": "nuxt generate",
+    "prepare": "nuxt prepare",
+    "preview": "nuxt preview --host 127.0.0.1 --port 3006",
+    "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@nuxt/ui": "^4.10.0",
+    "@openexpert/auth": "workspace:*",
+    "@openexpert/data-api": "workspace:*",
+    "@openexpert/email": "workspace:*",
+    "@openexpert/storage": "workspace:*",
+    "h3": "1.15.11",
+    "nuxt": "^4.5.1",
+    "tailwindcss": "^4.3.3",
+    "vue": "^3.5.40",
+    "vue-router": "^5.2.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.119",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.8"
+  }
+}

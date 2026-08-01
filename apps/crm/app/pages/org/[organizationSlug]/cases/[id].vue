@@ -113,6 +113,7 @@ const requestFetch = useRequestFetch()
 const authenticatedUser = useAuthUser()
 
 const emptyCase = (): CaseDetailResponse => ({
+  current_user_id: '',
   data: {
     id: '',
     organization_id: '',
@@ -1148,17 +1149,24 @@ watch(
       <USkeleton class="h-96 w-full" />
     </div>
 
-    <CaseCommandOverview
-      v-else-if="currentView === 'overview'"
-      :case-data="data.data"
-      :active-offer="activeOffer"
-      :document-progress="requiredDocumentProgress"
-      :multiform-blockers="multiformContext?.selectedOfferValidation.blockers ?? []"
-      :multiform-pending="multiformContextPending"
-      :selecting-property-id="selectingPropertyId"
-      :selecting-financing-variant-key="selectingFinancingVariantKey"
-      :actions="commandActions"
-    />
+    <div v-else-if="currentView === 'overview'" class="case-overview-stack">
+      <CaseProcessesOverview
+        :case-data="data.data"
+        :current-user-id="data.current_user_id"
+        @changed="refresh()"
+      />
+
+      <CaseCommandOverview
+        :case-data="data.data"
+        :active-offer="activeOffer"
+        :document-progress="requiredDocumentProgress"
+        :multiform-blockers="multiformContext?.selectedOfferValidation.blockers ?? []"
+        :multiform-pending="multiformContextPending"
+        :selecting-property-id="selectingPropertyId"
+        :selecting-financing-variant-key="selectingFinancingVariantKey"
+        :actions="commandActions"
+      />
+    </div>
 
     <section v-else-if="currentView === 'credit'" class="case-credit-view">
       <div id="case-bank-applications">
@@ -1455,6 +1463,11 @@ watch(
           <span>Jedna prowadzona ścieżka: wywiad, dokumenty, formularze bankowe i gotowa paczka ZIP.</span>
         </div>
       </div>
+
+      <CaseClientPortalAccess
+        :case-id="data.data.id"
+        @changed="refresh()"
+      />
 
       <CaseMultiformWorkspace
         :case-data="data.data"
@@ -1771,6 +1784,11 @@ watch(
 .case-command-loading {
   display: grid;
   grid-template-columns: minmax(0, 1.75fr) minmax(320px, .75fr);
+  gap: 16px;
+}
+
+.case-overview-stack {
+  display: grid;
   gap: 16px;
 }
 

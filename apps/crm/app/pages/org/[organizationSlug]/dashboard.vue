@@ -257,6 +257,8 @@ function formatMetric(metric: DashboardMetric) {
       </template>
     </UAlert>
 
+    <DashboardProcessInbox />
+
     <section class="dashboard-calendar dashboard-block" aria-labelledby="dashboard-calendar-title">
       <header class="dashboard-calendar__header">
         <div class="dashboard-calendar__heading">

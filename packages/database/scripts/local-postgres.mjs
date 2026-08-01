@@ -21,6 +21,11 @@ import { spawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createDefaultBcryptPasswordStrategy } from '@openexpert/auth'
 import { createAuthenticatedDataApiClient } from '@openexpert/data-api'
+import { seedDemoCrm } from './demo-crm.mjs'
+import {
+  createLocalMortgageCatalogClient,
+  syncMortgageCatalog,
+} from './sync-mortgage-catalog.mjs'
 
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const composeFile = resolve(repositoryRoot, 'compose.local.yml')
@@ -37,6 +42,40 @@ const composeProject = 'openexpert-local'
 const defaultEnvFile = resolve(repositoryRoot, '.env.local-stack')
 const managedBlockStart = '# >>> openexpert local stack (managed)'
 const managedBlockEnd = '# <<< openexpert local stack (managed)'
+
+const demoDelegateAccounts = [
+  {
+    key: 'anna-nowak',
+    email: 'anna.nowak@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Anna Nowak',
+    specialty: 'Nieruchomości',
+    avatarUrl: '/avatars/experts/anna-nowak.webp',
+  },
+  {
+    key: 'piotr-zielinski',
+    email: 'piotr.zielinski@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Piotr Zieliński',
+    specialty: 'Ubezpieczenia',
+    avatarUrl: '/avatars/experts/piotr-zielinski.webp',
+  },
+  {
+    key: 'marta-wojcik',
+    email: 'marta.wojcik@openexpert.local',
+    password: 'OpenExpert123!',
+    fullName: 'Marta Wójcik',
+    specialty: 'Obsługa klienta',
+    avatarUrl: '/avatars/experts/marta-wojcik.webp',
+  },
+]
+
+const demoClientPortalAccount = {
+  email: 'jan.kowalski@example.local',
+  password: 'OpenExpert123!',
+  fullName: 'Jan Kowalski',
+  avatarUrl: '/assets/logo-mark.svg',
+}
 
 const defaults = {
   BETTER_AUTH_COOKIE_PREFIX: 'openexpert-local',
@@ -180,6 +219,13 @@ function syncApplicationEnvFiles(values) {
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/crm/.env'), {
     ...dataApi,
     NUXT_BOOKING_RATE_LIMIT_SECRET: values.NUXT_BOOKING_RATE_LIMIT_SECRET,
+    NUXT_CLIENT_PORTAL_BASE_URL: 'http://127.0.0.1:3006',
+    NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL: 'http://127.0.0.1:3006',
+  })
+  replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/client/.env'), {
+    ...dataApi,
+    NUXT_AUTH_BASE_URL: 'http://127.0.0.1:3006',
+    NUXT_PUBLIC_CLIENT_BASE_URL: 'http://127.0.0.1:3006',
   })
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/landing/.env'), dataApi)
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/meetings/.env'), {
@@ -446,6 +492,7 @@ function compose(context, args, options = {}) {
 }
 
 async function waitForPostgres(context, attempts = 90) {
+  let consecutiveReadyChecks = 0
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const result = compose(
       context,
@@ -461,7 +508,15 @@ async function waitForPostgres(context, attempts = 90) {
       ],
       { allowFailure: true, stdio: 'pipe' },
     )
-    if (result.status === 0) return
+    if (result.status === 0) {
+      consecutiveReadyChecks += 1
+      // A fresh PostgreSQL volume briefly exposes the bootstrap server before
+      // the entrypoint shuts it down and starts the final server. Requiring a
+      // stable ready window keeps migrations out of that restart race.
+      if (consecutiveReadyChecks >= 4) return
+    } else {
+      consecutiveReadyChecks = 0
+    }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 500))
   }
   throw new Error('PostgreSQL did not become ready within 45 seconds')
@@ -558,6 +613,78 @@ function stableUuid(value) {
   ].join('-')
 }
 
+const demoPortalTimeZone = 'Europe/Warsaw'
+
+function localDateString(date, timeZone = demoPortalTimeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function addCivilDays(localDate, days) {
+  const [year, month, day] = localDate.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days))
+    .toISOString()
+    .slice(0, 10)
+}
+
+function isWeekday(localDate) {
+  const [year, month, day] = localDate.split('-').map(Number)
+  const weekday = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay()
+  return weekday >= 1 && weekday <= 5
+}
+
+function timeZoneOffsetMs(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  const representedAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  )
+  return representedAsUtc - Math.floor(date.valueOf() / 1_000) * 1_000
+}
+
+function zonedDateTimeIso(localDate, localTime, timeZone = demoPortalTimeZone) {
+  const [year, month, day] = localDate.split('-').map(Number)
+  const [hour, minute] = localTime.split(':').map(Number)
+  const wallClockAsUtc = Date.UTC(year, month - 1, day, hour, minute)
+  let offset = timeZoneOffsetMs(new Date(wallClockAsUtc), timeZone)
+  let instant = wallClockAsUtc - offset
+  const correctedOffset = timeZoneOffsetMs(new Date(instant), timeZone)
+  if (correctedOffset !== offset) {
+    offset = correctedOffset
+    instant = wallClockAsUtc - offset
+  }
+  return new Date(instant).toISOString()
+}
+
+function demoAppointmentPeriod(localDate, localTime) {
+  const startsAt = zonedDateTimeIso(localDate, localTime)
+  return {
+    startsAt,
+    endsAt: new Date(new Date(startsAt).getTime() + 60 * 60 * 1_000)
+      .toISOString(),
+  }
+}
+
 function readBetterAuthAccount(context, email) {
   const result = psql(
     context,
@@ -600,17 +727,27 @@ LIMIT 1;
   }
 }
 
-async function ensureBetterAuthAccount(context) {
+async function ensureBetterAuthAccount(context, account = {}) {
   const values = context.values
-  const email = values.OPENEXPERT_DEV_EMAIL.trim().toLowerCase()
-  const fullName = values.OPENEXPERT_DEV_FULL_NAME.trim()
-  const password = values.OPENEXPERT_DEV_PASSWORD
-  const organizationName = values.OPENEXPERT_DEV_ORGANIZATION.trim()
-  const organizationSlug = values.OPENEXPERT_DEV_ORGANIZATION_SLUG.trim()
+  const email = String(account.email ?? values.OPENEXPERT_DEV_EMAIL)
+    .trim()
+    .toLowerCase()
+  const fullName = String(account.fullName ?? values.OPENEXPERT_DEV_FULL_NAME)
+    .trim()
+  const password = String(account.password ?? values.OPENEXPERT_DEV_PASSWORD)
+  const organizationName = String(
+    account.organizationName ?? values.OPENEXPERT_DEV_ORGANIZATION,
+  ).trim()
+  const organizationSlug = String(
+    account.organizationSlug ?? values.OPENEXPERT_DEV_ORGANIZATION_SLUG,
+  ).trim()
+  const avatarUrl = String(
+    account.avatarUrl ?? '/avatars/experts/local-administrator.webp',
+  ).trim()
   if (!email || !email.includes('@')) {
     throw new Error('OPENEXPERT_DEV_EMAIL must contain a valid local email')
   }
-  if (!fullName) throw new Error('OPENEXPERT_DEV_FULL_NAME cannot be empty')
+  if (!fullName) throw new Error('Local Better Auth account name cannot be empty')
   if (!organizationName) {
     throw new Error('OPENEXPERT_DEV_ORGANIZATION cannot be empty')
   }
@@ -619,8 +756,11 @@ async function ensureBetterAuthAccount(context) {
       'OPENEXPERT_DEV_ORGANIZATION_SLUG must be a lowercase URL slug',
     )
   }
+  if (!avatarUrl) throw new Error('Local Better Auth avatar URL cannot be empty')
   if (password.length < 10) {
-    throw new Error('OPENEXPERT_DEV_PASSWORD must contain at least 10 characters')
+    throw new Error(
+      'Local Better Auth password must contain at least 10 characters',
+    )
   }
 
   const existing = readBetterAuthAccount(context, email)
@@ -732,7 +872,7 @@ COMMIT;
       '--set',
       `seed_full_name=${fullName}`,
       '--set',
-      `seed_image=/avatars/experts/local-administrator.webp`,
+      `seed_image=${avatarUrl}`,
       '--set',
       `seed_organization_name=${organizationName}`,
       '--set',
@@ -795,9 +935,10 @@ function createToken(values, userId, role = 'authenticated') {
 }
 
 function dataApiClient(values, token) {
+  const tokenProvider = typeof token === 'function' ? token : () => token
   return createAuthenticatedDataApiClient(
     values.NUXT_PUBLIC_DATA_API_URL,
-    () => token,
+    tokenProvider,
     {
       headers: {
         'x-client-info': 'openexpert-local-seed/1.0',
@@ -901,6 +1042,18 @@ async function ensureLocalDemoAccount(context) {
       }, { onConflict: 'user_id,role' }),
     'Assigning the local SuperAdmin role',
   )
+  assertDataApiResult(
+    await backendClient
+      .from('organization_user_admin_roles')
+      .upsert({
+        organization_id: organization.id,
+        user_id: account.userId,
+        role_key: 'consents_admin',
+        assigned_by_user_id: account.userId,
+        reason: 'Local demo account for consent compliance administration.',
+      }, { onConflict: 'organization_id,user_id,role_key' }),
+    'Assigning the local consent administrator role',
+  )
 
   const membership = assertDataApiResult(
     await userClient
@@ -918,17 +1071,631 @@ async function ensureLocalDemoAccount(context) {
   return { account, organization }
 }
 
+async function ensureDemoDelegateAccounts(context, organizationId) {
+  const delegateByKey = new Map()
+
+  for (const account of demoDelegateAccounts) {
+    const identity = await ensureBetterAuthAccount(context, account)
+    psql(
+      context,
+      `
+BEGIN;
+SET LOCAL ROLE openexpert_owner;
+
+INSERT INTO public.users (
+  id,
+  organization_id,
+  email,
+  role,
+  full_name,
+  avatar_url
+)
+VALUES (
+  :'seed_user_id'::uuid,
+  :'seed_organization_id'::uuid,
+  :'seed_email',
+  'expert',
+  :'seed_full_name',
+  :'seed_avatar_url'
+)
+ON CONFLICT (id) DO UPDATE
+SET
+  organization_id = excluded.organization_id,
+  email = excluded.email,
+  role = 'expert',
+  full_name = excluded.full_name,
+  avatar_url = excluded.avatar_url;
+
+INSERT INTO public.organization_memberships (
+  organization_id,
+  user_id,
+  role
+)
+VALUES (
+  :'seed_organization_id'::uuid,
+  :'seed_user_id'::uuid,
+  'expert'
+)
+ON CONFLICT (organization_id, user_id) DO UPDATE
+SET role = 'expert', updated_at = now();
+
+INSERT INTO public.organization_user_access_states (
+  organization_id,
+  user_id
+)
+VALUES (
+  :'seed_organization_id'::uuid,
+  :'seed_user_id'::uuid
+)
+ON CONFLICT (organization_id, user_id) DO NOTHING;
+
+INSERT INTO public.profiles (id, display_name, locale)
+VALUES (:'seed_user_id'::uuid, :'seed_full_name', 'pl-PL')
+ON CONFLICT (id) DO UPDATE
+SET display_name = excluded.display_name, locale = excluded.locale;
+
+COMMIT;
+`,
+      [
+        '--set',
+        `seed_user_id=${identity.userId}`,
+        '--set',
+        `seed_organization_id=${organizationId}`,
+        '--set',
+        `seed_email=${identity.email}`,
+        '--set',
+        `seed_full_name=${identity.fullName}`,
+        '--set',
+        `seed_avatar_url=${account.avatarUrl}`,
+      ],
+    )
+
+    delegateByKey.set(account.key, {
+      id: identity.userId,
+      email: identity.email,
+      fullName: identity.fullName,
+      specialty: account.specialty,
+      avatarUrl: account.avatarUrl,
+    })
+  }
+
+  return delegateByKey
+}
+
+async function ensureDemoClientPortalAccess({
+  backendClient,
+  organizationId,
+  ownerUserId,
+  identity,
+  crm,
+  seedNow,
+}) {
+  const client = crm.clients.find(candidate => (
+    candidate.primary_email === identity.email
+  ))
+  const targetCase = crm.cases.find(candidate => (
+    candidate.metadata?.demo_seed_key === 'case-mortgage-warszewo'
+  ))
+  const clientPersonId = String(client?.primaryPerson?.id ?? '')
+  if (!client?.id || !clientPersonId || !targetCase?.id) {
+    throw new Error(
+      'The client portal seed is missing Jan Kowalski or the Warszewo case',
+    )
+  }
+
+  const verifiedAt = new Date(seedNow.getTime() - 3 * 24 * 60 * 60 * 1_000)
+    .toISOString()
+  const multiformEnabledAt = new Date(
+    seedNow.getTime() - 24 * 60 * 60 * 1_000,
+  ).toISOString()
+
+  const existingLinks = assertDataApiResult(
+    await backendClient
+      .from('client_account_links')
+      .select('auth_user_id, organization_id, client_id, client_person_id, verification_method, verified_contact_normalized, verified_at, revoked_at')
+      .eq('organization_id', organizationId)
+      .eq('client_person_id', clientPersonId),
+    'Reading the local client portal account link',
+  ) ?? []
+  if (existingLinks.some(link => (
+    !link.revoked_at && String(link.auth_user_id) !== identity.userId
+  ))) {
+    throw new Error(
+      'Jan Kowalski is already linked to another active local portal identity',
+    )
+  }
+
+  let accountLink = existingLinks.find(link => (
+    String(link.auth_user_id) === identity.userId
+  )) ?? null
+  if (accountLink && !accountLink.revoked_at && (
+    String(accountLink.client_id) !== String(client.id)
+    || accountLink.verification_method !== 'email'
+    || accountLink.verified_contact_normalized !== identity.email
+  )) {
+    throw new Error('The active local client portal account link is inconsistent')
+  }
+  if (!accountLink) {
+    accountLink = assertDataApiResult(
+      await backendClient
+        .from('client_account_links')
+        .insert({
+          auth_user_id: identity.userId,
+          organization_id: organizationId,
+          client_id: client.id,
+          client_person_id: clientPersonId,
+          source_appointment_id: null,
+          verification_method: 'email',
+          verified_contact_normalized: identity.email,
+          verified_at: verifiedAt,
+          revoked_at: null,
+        })
+        .select('auth_user_id, organization_id, client_id, client_person_id, verification_method, verified_contact_normalized, verified_at, revoked_at')
+        .single(),
+      'Seeding the local client portal account link',
+    )
+  }
+
+  let grant = assertDataApiResult(
+    await backendClient
+      .from('client_portal_case_grants')
+      .select('organization_id, case_id, client_id, client_person_id, portal_enabled, multiform_enabled, portal_enabled_at, multiform_enabled_at, revoked_at, revision')
+      .eq('organization_id', organizationId)
+      .eq('case_id', targetCase.id)
+      .eq('client_person_id', clientPersonId)
+      .maybeSingle(),
+    'Reading the local client portal case grant',
+  )
+  if (!grant && !accountLink.revoked_at) {
+    grant = assertDataApiResult(
+      await backendClient
+        .from('client_portal_case_grants')
+        .insert({
+          organization_id: organizationId,
+          case_id: targetCase.id,
+          client_id: client.id,
+          client_person_id: clientPersonId,
+          portal_enabled: true,
+          multiform_enabled: true,
+          granted_by_user_id: ownerUserId,
+          portal_enabled_at: verifiedAt,
+          multiform_enabled_at: multiformEnabledAt,
+          revoked_at: null,
+          revision: 1,
+        })
+        .select('organization_id, case_id, client_id, client_person_id, portal_enabled, multiform_enabled, portal_enabled_at, multiform_enabled_at, revoked_at, revision')
+        .single(),
+      'Seeding the local client portal case grant',
+    )
+  }
+
+  return {
+    accountLink,
+    grant,
+    caseId: String(targetCase.id),
+    caseTitle: targetCase.title,
+    clientId: String(client.id),
+    clientPersonId,
+    expertUserId: String(targetCase.owner_user_id ?? ownerUserId),
+    accessActive: Boolean(
+      !accountLink.revoked_at
+      && grant?.portal_enabled
+      && grant?.multiform_enabled
+      && !grant?.revoked_at,
+    ),
+  }
+}
+
+async function insertDemoRowIfMissing({
+  backendClient,
+  table,
+  filters,
+  values,
+  select,
+  operation,
+}) {
+  let query = backendClient.from(table).select(select)
+  for (const [column, value] of Object.entries(filters)) {
+    query = query.eq(column, value)
+  }
+  const existing = assertDataApiResult(
+    await query.maybeSingle(),
+    `Reading ${operation}`,
+  )
+  if (existing) return existing
+  return assertDataApiResult(
+    await backendClient
+      .from(table)
+      .insert(values)
+      .select(select)
+      .single(),
+    `Creating ${operation}`,
+  )
+}
+
+async function findAvailableDemoAppointmentPeriod({
+  backendClient,
+  expertUserId,
+  seedNow,
+}) {
+  const localTimes = ['10:00', '11:30', '13:00', '14:30']
+  const localToday = localDateString(seedNow)
+  for (let dayOffset = 1; dayOffset <= 45; dayOffset += 1) {
+    const localDate = addCivilDays(localToday, dayOffset)
+    if (!isWeekday(localDate)) continue
+
+    for (const localTime of localTimes) {
+      const period = demoAppointmentPeriod(localDate, localTime)
+      const conflicts = assertDataApiResult(
+        await backendClient
+          .from('appointment_resource_reservations')
+          .select('id')
+          .eq('resource_type', 'expert')
+          .eq('resource_id', expertUserId)
+          .in('status', ['hold', 'confirmed'])
+          .overlaps(
+            'busy_period',
+            `[${period.startsAt},${period.endsAt})`,
+          )
+          .limit(1),
+        'Checking the local client portal expert availability',
+      ) ?? []
+      if (!conflicts.length) return period
+    }
+  }
+  throw new Error(
+    'No free local client portal appointment was found in the next 45 days',
+  )
+}
+
+async function ensureDemoPortalAppointment({
+  backendClient,
+  organizationId,
+  ownerUserId,
+  identity,
+  portalAccess,
+  seedNow,
+}) {
+  const facilityId = stableUuid('openexpert:local-demo:facility:szczecin')
+  const serviceId = stableUuid('openexpert:local-demo:service:case-consultation')
+  const fixtureKey = 'jan-kowalski-next-appointment'
+
+  const facility = await insertDemoRowIfMissing({
+    backendClient,
+    table: 'facilities',
+    filters: { id: facilityId },
+    values: {
+      id: facilityId,
+      organization_id: organizationId,
+      name: 'OpenExpert Szczecin',
+      slug: 'openexpert-szczecin',
+      description: 'Lokalne biuro demonstracyjne OpenExpert.',
+      timezone: demoPortalTimeZone,
+      address_line1: 'al. Piastów 30',
+      address_line2: null,
+      postal_code: '70-064',
+      city: 'Szczecin',
+      country_code: 'PL',
+      phone: null,
+      email: null,
+      is_active: true,
+    },
+    select: [
+      'id',
+      'organization_id',
+      'name',
+      'city',
+      'address_line1',
+      'address_line2',
+      'postal_code',
+    ].join(', '),
+    operation: 'the local client portal facility',
+  })
+  if (String(facility.organization_id) !== organizationId) {
+    throw new Error(
+      'The local client portal facility belongs to another organization',
+    )
+  }
+
+  await insertDemoRowIfMissing({
+    backendClient,
+    table: 'facility_memberships',
+    filters: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      user_id: portalAccess.expertUserId,
+    },
+    values: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      user_id: portalAccess.expertUserId,
+      role: 'admin',
+      is_bookable: true,
+      booking_priority: 100,
+    },
+    select: 'organization_id, facility_id, user_id, role, is_bookable',
+    operation: 'the local client portal expert facility membership',
+  })
+
+  const service = await insertDemoRowIfMissing({
+    backendClient,
+    table: 'booking_services',
+    filters: { id: serviceId },
+    values: {
+      id: serviceId,
+      organization_id: organizationId,
+      name: 'Konsultacja kredytowa',
+      slug: 'konsultacja-kredytowa-portal-demo',
+      description: [
+        'Omówienie dokumentów i kolejnych kroków',
+        'w sprawie kredytowej.',
+      ].join(' '),
+      duration_minutes: 60,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      slot_interval_minutes: 15,
+      min_notice_minutes: 60,
+      max_advance_days: 90,
+      is_active: true,
+    },
+    select: 'id, organization_id, name, duration_minutes',
+    operation: 'the local client portal booking service',
+  })
+  if (String(service.organization_id) !== organizationId) {
+    throw new Error('The local client portal service belongs to another organization')
+  }
+
+  await insertDemoRowIfMissing({
+    backendClient,
+    table: 'facility_services',
+    filters: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      service_id: serviceId,
+    },
+    values: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      service_id: serviceId,
+      is_active: true,
+    },
+    select: 'organization_id, facility_id, service_id, is_active',
+    operation: 'the local client portal facility service',
+  })
+
+  await insertDemoRowIfMissing({
+    backendClient,
+    table: 'facility_service_experts',
+    filters: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      service_id: serviceId,
+      user_id: portalAccess.expertUserId,
+    },
+    values: {
+      organization_id: organizationId,
+      facility_id: facilityId,
+      service_id: serviceId,
+      user_id: portalAccess.expertUserId,
+      is_active: true,
+    },
+    select: 'organization_id, facility_id, service_id, user_id, is_active',
+    operation: 'the local client portal facility service expert',
+  })
+
+  const appointmentSelect = [
+    'id',
+    'organization_id',
+    'facility_id',
+    'service_id',
+    'expert_user_id',
+    'client_id',
+    'client_person_id',
+    'starts_at',
+    'ends_at',
+    'status',
+    'customer_email',
+    'booking_context',
+  ].join(', ')
+  const fixtureAppointments = assertDataApiResult(
+    await backendClient
+      .from('appointments')
+      .select(appointmentSelect)
+      .eq('organization_id', organizationId)
+      .contains('booking_context', {
+        demo_seed_namespace: 'openexpert-local-demo',
+        demo_seed_key: fixtureKey,
+      })
+      .order('starts_at', { ascending: true }),
+    'Reading the local client portal appointments',
+  ) ?? []
+  const futureAppointments = fixtureAppointments.filter(appointment => (
+    Date.parse(String(appointment.ends_at)) >= seedNow.getTime()
+  ))
+  if (futureAppointments.length > 1) {
+    throw new Error(
+      'The local client portal seed has more than one future appointment',
+    )
+  }
+  let appointment = futureAppointments[0] ?? null
+  if (!appointment) {
+    const { startsAt, endsAt } = await findAvailableDemoAppointmentPeriod({
+      backendClient,
+      expertUserId: portalAccess.expertUserId,
+      seedNow,
+    })
+    const appointmentId = stableUuid(
+      `openexpert:local-demo:appointment:jan-kowalski:${startsAt}`,
+    )
+    const manageToken = stableUuid(
+      `openexpert:local-demo:appointment:jan-kowalski:${startsAt}:manage`,
+    )
+    appointment = assertDataApiResult(
+      await backendClient
+        .from('appointments')
+        .insert({
+          id: appointmentId,
+          organization_id: organizationId,
+          facility_id: facilityId,
+          service_id: serviceId,
+          expert_user_id: portalAccess.expertUserId,
+          widget_id: null,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          timezone: demoPortalTimeZone,
+          status: 'confirmed',
+          hold_expires_at: null,
+          confirmed_at: new Date(seedNow.getTime() - 60 * 60 * 1_000)
+            .toISOString(),
+          cancelled_at: null,
+          cancellation_reason: null,
+          customer_name: identity.fullName,
+          customer_email: identity.email,
+          customer_phone: null,
+          notes: 'Omówienie dokumentów i kolejnych kroków w sprawie.',
+          source: 'staff',
+          idempotency_key: `demo-portal:jan-kowalski:${startsAt}`,
+          manage_token: manageToken,
+          created_by_user_id: ownerUserId,
+          client_id: portalAccess.clientId,
+          client_person_id: portalAccess.clientPersonId,
+          booking_context: {
+            demo_seed_namespace: 'openexpert-local-demo',
+            demo_seed_key: fixtureKey,
+            case_id: portalAccess.caseId,
+          },
+          request_fingerprint: null,
+          meeting_mode: 'office',
+          meeting_url: null,
+        })
+        .select(appointmentSelect)
+        .single(),
+      'Creating the local client portal appointment',
+    )
+  }
+  else {
+    const isExpectedFixture = (
+      String(appointment.organization_id) === organizationId
+      && String(appointment.facility_id) === facilityId
+      && String(appointment.service_id) === serviceId
+      && String(appointment.expert_user_id) === portalAccess.expertUserId
+      && String(appointment.client_id) === portalAccess.clientId
+      && String(appointment.client_person_id) === portalAccess.clientPersonId
+      && appointment.customer_email === identity.email
+      && appointment.booking_context?.demo_seed_key === fixtureKey
+    )
+    if (!isExpectedFixture) {
+      throw new Error(
+        'The local client portal appointment fixture is inconsistent',
+      )
+    }
+  }
+
+  return { appointment, facility, service }
+}
+
 async function seedLocalDemo(context) {
   const result = await ensureLocalDemoAccount(context)
+  psql(
+    context,
+    `
+BEGIN;
+SET LOCAL ROLE openexpert_owner;
+SELECT private.provision_default_crm_consents(:'seed_organization_id'::uuid);
+COMMIT;
+`,
+    [
+      '--set',
+      `seed_organization_id=${result.organization.id}`,
+    ],
+  )
+  const delegateByKey = await ensureDemoDelegateAccounts(
+    context,
+    result.organization.id,
+  )
+  await syncMortgageCatalog(
+    createLocalMortgageCatalogClient(context.values),
+    { offline: true },
+  )
+
+  const userClient = dataApiClient(
+    context.values,
+    () => createToken(context.values, result.account.userId),
+  )
+  const backendClient = dataApiClient(
+    context.values,
+    () => createToken(context.values, result.account.userId, 'openexpert_service'),
+  )
+  const clientPortalIdentity = await ensureBetterAuthAccount(
+    context,
+    demoClientPortalAccount,
+  )
+  const seedNow = new Date()
+  const crm = await seedDemoCrm({
+    adminClient: backendClient,
+    userClient,
+    profile: {
+      id: result.account.userId,
+      organization_id: result.organization.id,
+      email: result.account.email,
+      full_name: result.account.fullName,
+    },
+    delegateByKey,
+    seedNow,
+  })
+  if (crm.clients.length !== 9 || crm.cases.length !== 8) {
+    throw new Error(
+      `The local CRM seed is incomplete: ${crm.clients.length} clients / ${crm.cases.length} cases`,
+    )
+  }
+  const clientPortal = await ensureDemoClientPortalAccess({
+    backendClient,
+    organizationId: result.organization.id,
+    ownerUserId: result.account.userId,
+    identity: clientPortalIdentity,
+    crm,
+    seedNow,
+  })
+  const clientPortalAppointment = await ensureDemoPortalAppointment({
+    backendClient,
+    organizationId: result.organization.id,
+    ownerUserId: result.account.userId,
+    identity: clientPortalIdentity,
+    portalAccess: clientPortal,
+    seedNow,
+  })
+
   console.log('')
-  console.log('OpenExpert local account is ready:')
+  console.log('OpenExpert local demo workspace is ready:')
   console.log('  CRM:      http://127.0.0.1:3004/login')
   console.log(`  Email:    ${result.account.email}`)
   console.log(`  Password: ${result.account.password}`)
   console.log(
     `  Org:      ${result.organization.name} (${result.organization.slug})`,
   )
-  return result
+  console.log(`  CRM data: ${crm.clients.length} clients / ${crm.cases.length} cases`)
+  console.log(`  Experts:  ${delegateByKey.size} delegated-task accounts`)
+  console.log('')
+  console.log('Client portal demo account:')
+  console.log('  Portal:   http://127.0.0.1:3006/login')
+  console.log(`  Email:    ${clientPortalIdentity.email}`)
+  console.log(`  Password: ${clientPortalIdentity.password}`)
+  console.log(`  Case:     ${clientPortal.caseTitle}`)
+  console.log(`  Access:   ${clientPortal.accessActive ? 'active' : 'preserved as disabled'}`)
+  console.log(
+    `  Meeting:  ${clientPortalAppointment.appointment.starts_at}`
+    + ` (${clientPortalAppointment.appointment.status})`,
+  )
+  return {
+    ...result,
+    crm,
+    delegates: [...delegateByKey.values()],
+    clientPortal: {
+      ...clientPortal,
+      account: clientPortalIdentity,
+      appointment: clientPortalAppointment,
+    },
+  }
 }
 
 async function waitForDataApi(context, attempts = 90) {
@@ -1029,7 +1796,7 @@ async function startStack({ profiles, seed, smoke }) {
   )
   if (!seed) {
     console.log(
-      'Demo account: run db:local:seed-demo to create or repair it.',
+      'Demo workspace: run db:local:seed-demo to create or repair it.',
     )
   }
 }
@@ -1093,9 +1860,9 @@ function usage() {
   console.log(`Usage: node packages/database/scripts/local-postgres.mjs <command> [options]
 
 Commands:
-  setup [--livekit]               Start, migrate, seed account/org, and verify
+  setup [--livekit]               Start, migrate, seed demo workspace, and verify
   start [--livekit]               Start and apply pending migrations
-  seed-demo                       Idempotently seed the Better Auth account/org
+  seed-demo                       Idempotently seed Better Auth and demo CRM data
   migrate                         Apply checksum-tracked SQL migrations
   verify                          Run SQL RLS and Ed25519 PostgREST smoke tests
   status                          Show Docker Compose service status

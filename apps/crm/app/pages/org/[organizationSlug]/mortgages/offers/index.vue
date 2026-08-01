@@ -11,8 +11,8 @@ import { createDefaultMortgageOfferV2 } from '~/utils/mortgage-offer-draft'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/products',
-  alias: ['/org/:organizationSlug/mortgages/offers'],
+  path: 'settings/products',
+  alias: ['mortgages/offers'],
 })
 useHead({ title: 'Produkty kredytowe — ustawienia administracyjne — OpenExpert' })
 

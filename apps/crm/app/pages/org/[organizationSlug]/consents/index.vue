@@ -14,7 +14,9 @@ const route = useRoute()
 const { crmApiPath, orgPath } = useOrganizationContext()
 const search = ref('')
 const channelFilter = ref<ConsentChannel | 'all'>('all')
+const requirementFilter = ref<'all' | 'required' | 'optional'>('all')
 const statusFilter = ref<ConsentStatus | 'all'>('all')
+const sortMode = ref<'updated_desc' | 'title_asc' | 'version_desc'>('updated_desc')
 
 const channelItems: Array<{ label: string, value: ConsentChannel | 'all' }> = [
   { label: 'Wszystkie kanały', value: 'all' },
@@ -32,13 +34,36 @@ const statusItems: Array<{ label: string, value: ConsentStatus | 'all' }> = [
   { label: 'Zarchiwizowane', value: 'archived' },
 ]
 
+const requirementItems: Array<{ label: string, value: 'all' | 'required' | 'optional' }> = [
+  { label: 'Każda wymagalność', value: 'all' },
+  { label: 'Wymagane', value: 'required' },
+  { label: 'Dobrowolne', value: 'optional' },
+]
+
+const sortItems: Array<{ label: string, value: 'updated_desc' | 'title_asc' | 'version_desc' }> = [
+  { label: 'Ostatnio zmienione', value: 'updated_desc' },
+  { label: 'Nazwa A–Z', value: 'title_asc' },
+  { label: 'Najnowsza publikacja', value: 'version_desc' },
+]
+
 const { data, status, error, refresh } = await useFetch<ConsentPayload>(
   () => crmApiPath('/consents'),
-  { default: (): ConsentPayload => ({ role: 'expert', canManage: false, definitions: [] }) },
+  { default: (): ConsentPayload => ({ role: 'expert', canManage: false, canPublish: false, canAudit: false, definitions: [] }) },
 )
 
 const pending = computed(() => status.value === 'pending')
-const showHistory = computed(() => route.query.view === 'history')
+const currentView = computed<'active' | 'draft' | 'archived' | 'history'>(() => {
+  if (route.query.view === 'draft') return 'draft'
+  if (route.query.view === 'archived') return 'archived'
+  if (route.query.view === 'history') return 'history'
+  return 'active'
+})
+const showHistory = computed(() => currentView.value === 'history')
+const currentDefinitionStatus = computed<ConsentStatus>(() => {
+  if (currentView.value === 'draft') return 'draft'
+  if (currentView.value === 'archived') return 'archived'
+  return 'published'
+})
 const visibleCount = computed(() => showHistory.value ? visibleHistory.value.length : visibleDefinitions.value.length)
 const visibleCountLabel = computed(() => {
   const count = visibleCount.value
@@ -51,10 +76,6 @@ const visibleCountLabel = computed(() => {
   if (count >= 2 && count <= 4) return 'zgody'
   return 'zgód'
 })
-const tabs = computed(() => [
-  { label: 'Definicje', to: orgPath('/consents') },
-  { label: 'Historia zmian', to: orgPath('/consents?view=history') },
-])
 
 function currentVersionFor(definition: ConsentDefinition): ConsentVersion | null {
   return definition.current_version
@@ -67,10 +88,63 @@ function definitionTitle(definition: ConsentDefinition) {
   return version?.display_title || version?.internal_name || definition.code
 }
 
+function isVersionActive(version: ConsentVersion | null) {
+  if (!version || version.status !== 'published') return false
+  const now = Date.now()
+  const effectiveFrom = Date.parse(version.effective_from)
+  const effectiveTo = version.effective_to ? Date.parse(version.effective_to) : null
+  return Number.isFinite(effectiveFrom)
+    && effectiveFrom <= now
+    && (effectiveTo === null || (Number.isFinite(effectiveTo) && effectiveTo > now))
+}
+
 const definitions = computed(() => [...data.value.definitions].sort((left, right) => {
   const order = (currentVersionFor(left)?.sort_order ?? 0) - (currentVersionFor(right)?.sort_order ?? 0)
   return order || definitionTitle(left).localeCompare(definitionTitle(right), 'pl')
 }))
+
+const definitionCounts = computed(() => definitions.value.reduce<Record<ConsentStatus, number>>((counts, definition) => {
+  const version = currentVersionFor(definition)
+  if (version) counts[version.status] += 1
+  return counts
+}, { published: 0, draft: 0, archived: 0 }))
+
+const activeDefinitionCount = computed(() => definitions.value.filter(definition => (
+  isVersionActive(currentVersionFor(definition))
+)).length)
+
+const historyCount = computed(() => definitions.value.reduce((count, definition) => count + definition.versions.length, 0))
+
+const tabs = computed(() => [
+  {
+    label: 'Aktywne',
+    icon: 'i-lucide-shield-check',
+    count: activeDefinitionCount.value,
+    to: orgPath('/consents'),
+    active: currentView.value === 'active',
+  },
+  {
+    label: 'Wersje robocze',
+    icon: 'i-lucide-file-pen-line',
+    count: definitionCounts.value.draft,
+    to: orgPath('/consents?view=draft'),
+    active: currentView.value === 'draft',
+  },
+  {
+    label: 'Archiwalne',
+    icon: 'i-lucide-archive',
+    count: definitionCounts.value.archived,
+    to: orgPath('/consents?view=archived'),
+    active: currentView.value === 'archived',
+  },
+  {
+    label: 'Historia wersji',
+    icon: 'i-lucide-history',
+    count: historyCount.value,
+    to: orgPath('/consents?view=history'),
+    active: currentView.value === 'history',
+  },
+])
 
 const visibleDefinitions = computed(() => {
   const query = search.value.trim().toLocaleLowerCase('pl')
@@ -83,8 +157,21 @@ const visibleDefinitions = computed(() => {
       version?.purpose,
     ].some(value => String(value ?? '').toLocaleLowerCase('pl').includes(query))
     const matchesChannel = channelFilter.value === 'all' || version?.channel === channelFilter.value
-    const matchesStatus = statusFilter.value === 'all' || version?.status === statusFilter.value
-    return matchesSearch && matchesChannel && matchesStatus
+    const matchesRequirement = requirementFilter.value === 'all'
+      || (requirementFilter.value === 'required' ? version?.is_required : !version?.is_required)
+    const matchesLifecycle = currentView.value === 'active'
+      ? isVersionActive(version)
+      : version?.status === currentDefinitionStatus.value
+    return matchesSearch
+      && matchesChannel
+      && matchesRequirement
+      && matchesLifecycle
+  }).sort((left, right) => {
+    if (sortMode.value === 'title_asc') return definitionTitle(left).localeCompare(definitionTitle(right), 'pl')
+    if (sortMode.value === 'version_desc') {
+      return (currentVersionFor(right)?.version ?? 0) - (currentVersionFor(left)?.version ?? 0)
+    }
+    return Date.parse(right.updated_at) - Date.parse(left.updated_at)
   })
 })
 
@@ -102,7 +189,15 @@ const visibleHistory = computed(() => definitions.value
     const matchesStatus = statusFilter.value === 'all' || version.status === statusFilter.value
     return matchesSearch && matchesChannel && matchesStatus
   })
-  .sort((left, right) => Date.parse(right.version.created_at) - Date.parse(left.version.created_at)))
+  .sort((left, right) => {
+    if (sortMode.value === 'title_asc') {
+      return left.version.display_title.localeCompare(right.version.display_title, 'pl')
+    }
+    if (sortMode.value === 'version_desc') {
+      return Date.parse(right.version.created_at) - Date.parse(left.version.created_at)
+    }
+    return Date.parse(right.version.created_at) - Date.parse(left.version.created_at)
+  }))
 
 function channelLabel(channel: ConsentChannel) {
   return channelItems.find(item => item.value === channel)?.label ?? channel
@@ -125,6 +220,17 @@ function requirementLabel(isRequired: boolean) {
   return isRequired ? 'Wymagana' : 'Dobrowolna'
 }
 
+function contextLabel(context: string) {
+  if (context === 'client_creation') return 'Dodawanie klienta'
+  return context.replaceAll('_', ' ')
+}
+
+function formatDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Nieznana data'
+  return new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Nieznana data'
@@ -134,15 +240,17 @@ function formatDateTime(value: string) {
 function clearFilters() {
   search.value = ''
   channelFilter.value = 'all'
+  requirementFilter.value = 'all'
   statusFilter.value = 'all'
+  sortMode.value = 'updated_desc'
 }
 </script>
 
 <template>
   <CrmShell
     title="Zgody"
-    eyebrow="Panel prawny"
-    description="Definicje i niezmienne wersje treści używanych w procesach CRM."
+    eyebrow="Compliance"
+    description="Definicje zgód używanych w procesach organizacji."
     :tabs="tabs"
   >
     <template #actions>
@@ -186,145 +294,159 @@ function clearFilters() {
       variant="subtle"
       icon="i-lucide-shield-alert"
       title="Panel w trybie tylko do odczytu"
-      :description="`Możesz przeglądać definicje i ich historię. Edycja wymaga roli administratora (bieżąca rola: ${data.role}).`"
+      description="Możesz przeglądać definicje i ich historię. Edycja wymaga uprawnienia do zarządzania zgodami compliance."
     />
 
     <div class="consent-index">
-    <section class="legal-review" aria-label="Informacja prawna">
-      <UIcon name="i-lucide-scale" />
-      <div>
-        <strong>Zestaw startowy wymaga zatwierdzenia prawnego</strong>
-        <p>Przed użyciem produkcyjnym potwierdź zakres produktów, kanały i podstawy prawne z prawnikiem lub IOD.</p>
+      <p class="consent-version-rule">
+        <UIcon name="i-lucide-info" />
+        <span>Publikacja nowej treści tworzy niezmienną wersję zgody.</span>
+      </p>
+
+      <div class="consent-toolbar">
+        <UInput
+          v-model="search"
+          class="consent-toolbar__search"
+          icon="i-lucide-search"
+          placeholder="Szukaj po nazwie lub kodzie"
+          aria-label="Szukaj zgody"
+        />
+        <USelect
+          v-model="channelFilter"
+          :items="channelItems"
+          aria-label="Filtruj według kanału"
+        />
+        <USelect
+          v-if="showHistory"
+          v-model="statusFilter"
+          :items="statusItems"
+          aria-label="Filtruj według statusu wersji"
+        />
+        <USelect
+          v-else
+          v-model="requirementFilter"
+          :items="requirementItems"
+          aria-label="Filtruj według wymagalności"
+        />
+        <USelect
+          v-model="sortMode"
+          :items="sortItems"
+          aria-label="Sortuj rejestr zgód"
+        />
       </div>
-    </section>
 
-    <div class="consent-toolbar">
-      <UInput
-        v-model="search"
-        class="consent-toolbar__search"
-        icon="i-lucide-search"
-        placeholder="Szukaj po nazwie lub kodzie"
-        aria-label="Szukaj zgody"
-      />
-      <USelect
-        v-model="channelFilter"
-        :items="channelItems"
-        aria-label="Filtruj według kanału"
-      />
-      <USelect
-        v-model="statusFilter"
-        :items="statusItems"
-        aria-label="Filtruj według statusu"
-      />
-      <span class="consent-toolbar__count">
-        {{ visibleCount }} {{ visibleCountLabel }}
-      </span>
-    </div>
+      <div v-if="pending && !definitions.length" class="consent-skeleton">
+        <USkeleton class="h-14 w-full" />
+        <USkeleton v-for="index in 3" :key="index" class="h-20 w-full" />
+      </div>
 
-    <div v-if="pending && !definitions.length" class="consent-skeleton">
-      <USkeleton class="h-14 w-full" />
-      <USkeleton v-for="index in 3" :key="index" class="h-20 w-full" />
-    </div>
+      <template v-else-if="showHistory">
+        <section v-if="visibleHistory.length" class="consent-register consent-register--history" aria-label="Historia wersji zgód">
+          <div class="consent-register__head" aria-hidden="true">
+            <span>Zgoda</span>
+            <span>Wersja</span>
+            <span>Status</span>
+            <span>Kanał</span>
+            <span>Utworzona</span>
+            <span>Notatka</span>
+            <span />
+          </div>
 
-    <template v-else-if="showHistory">
-      <section v-if="visibleHistory.length" class="consent-register consent-register--history" aria-label="Historia zmian zgód">
-        <div class="consent-register__head" aria-hidden="true">
-          <span>Zgoda</span>
-          <span>Wersja</span>
-          <span>Status</span>
-          <span>Utworzona</span>
-          <span>Notatka</span>
-          <span />
-        </div>
-
-        <NuxtLink
-          v-for="{ definition, version } in visibleHistory"
-          :key="version.id"
-          :to="`${orgPath(`/consents/${definition.id}`)}#history`"
-          class="consent-register__row consent-register__row--history"
-        >
-          <span class="consent-register__identity">
-            <strong>{{ version.display_title }}</strong>
-            <small>{{ definition.code }}</small>
-          </span>
-          <span class="consent-register__details">
-            <span class="consent-register__field" data-label="Wersja">v{{ version.version }}</span>
-            <span class="consent-register__field" data-label="Status">
-              <UBadge :color="statusColor(version.status)" variant="subtle">
-                {{ statusLabel(version.status) }}
-              </UBadge>
+          <NuxtLink
+            v-for="{ definition, version } in visibleHistory"
+            :key="version.id"
+            :to="orgPath(`/consents/${definition.id}?view=history`)"
+            class="consent-register__row consent-register__row--history"
+          >
+            <span class="consent-register__identity">
+              <strong>{{ version.display_title }}</strong>
+              <small>{{ definition.code }}</small>
             </span>
-            <span class="consent-register__field" data-label="Utworzona">{{ formatDateTime(version.created_at) }}</span>
-            <span class="consent-register__field consent-register__note" data-label="Notatka">{{ version.change_note || 'Bez notatki do zmiany' }}</span>
-          </span>
-          <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
-        </NuxtLink>
-      </section>
-    </template>
-
-    <template v-else>
-      <section v-if="visibleDefinitions.length" class="consent-register" aria-label="Definicje zgód">
-        <div class="consent-register__head" aria-hidden="true">
-          <span>Zgoda</span>
-          <span>Kanał</span>
-          <span>Status</span>
-          <span>Wymagalność</span>
-          <span>Aktualna wersja</span>
-          <span />
-        </div>
-
-        <NuxtLink
-          v-for="definition in visibleDefinitions"
-          :key="definition.id"
-          :to="orgPath(`/consents/${definition.id}`)"
-          class="consent-register__row"
-        >
-          <span class="consent-register__identity">
-            <strong>{{ definitionTitle(definition) }}</strong>
-            <small>{{ definition.code }}</small>
-          </span>
-          <span class="consent-register__details">
-            <span class="consent-register__field" data-label="Kanał">{{ channelLabel(currentVersionFor(definition)?.channel || 'other') }}</span>
-            <span class="consent-register__field" data-label="Status">
-              <UBadge
-                v-if="currentVersionFor(definition)"
-                :color="statusColor(currentVersionFor(definition)!.status)"
-                variant="subtle"
-              >
-                {{ statusLabel(currentVersionFor(definition)!.status) }}
-              </UBadge>
+            <span class="consent-register__details">
+              <span class="consent-register__field" data-label="Wersja">v{{ version.version }}</span>
+              <span class="consent-register__field" data-label="Status">
+                <UBadge :color="statusColor(version.status)" variant="subtle">
+                  {{ statusLabel(version.status) }}
+                </UBadge>
+              </span>
+              <span class="consent-register__field" data-label="Kanał">{{ channelLabel(version.channel) }}</span>
+              <span class="consent-register__field" data-label="Utworzona">{{ formatDateTime(version.created_at) }}</span>
+              <span class="consent-register__field consent-register__note" data-label="Notatka">{{ version.change_note || 'Bez notatki do zmiany' }}</span>
             </span>
-            <span class="consent-register__field" data-label="Wymagalność">{{ requirementLabel(currentVersionFor(definition)?.is_required || false) }}</span>
-            <span class="consent-register__field" data-label="Aktualna wersja">v{{ currentVersionFor(definition)?.version || '—' }}</span>
-          </span>
-          <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
-        </NuxtLink>
-      </section>
-    </template>
+            <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
+          </NuxtLink>
 
-    <UCard
-      v-if="!pending && !(showHistory ? visibleHistory.length : visibleDefinitions.length)"
-      class="consent-empty"
-    >
-      <UIcon :name="definitions.length ? 'i-lucide-search-x' : 'i-lucide-shield-check'" />
-      <h2>{{ definitions.length ? 'Brak pasujących zgód' : 'Brak definicji zgód' }}</h2>
-      <p>{{ definitions.length ? 'Zmień wyszukiwanie lub filtry.' : 'Utwórz pierwszą definicję dla procesu dodawania klienta.' }}</p>
-      <UButton v-if="definitions.length" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
-      <UButton
-        v-else-if="data.canManage"
-        :to="orgPath('/consents/new')"
-        icon="i-lucide-plus"
-        variant="solid"
+          <footer class="consent-register__footer" aria-live="polite">
+            {{ visibleCount }} {{ visibleCountLabel }} w historii
+          </footer>
+        </section>
+      </template>
+
+      <template v-else>
+        <section v-if="visibleDefinitions.length" class="consent-register" aria-label="Definicje zgód">
+          <div class="consent-register__head" aria-hidden="true">
+            <span>Zgoda</span>
+            <span>Kontekst</span>
+            <span>Kanał</span>
+            <span>Wymagalność</span>
+            <span>Status</span>
+            <span>Aktualna wersja</span>
+            <span>Zmieniono</span>
+            <span />
+          </div>
+
+          <NuxtLink
+            v-for="definition in visibleDefinitions"
+            :key="definition.id"
+            :to="orgPath(`/consents/${definition.id}`)"
+            class="consent-register__row"
+          >
+            <span class="consent-register__identity">
+              <strong>{{ definitionTitle(definition) }}</strong>
+              <small>{{ definition.code }}</small>
+            </span>
+            <span class="consent-register__details">
+              <span class="consent-register__field" data-label="Kontekst">{{ contextLabel(definition.context) }}</span>
+              <span class="consent-register__field" data-label="Kanał">{{ channelLabel(currentVersionFor(definition)?.channel || 'other') }}</span>
+              <span class="consent-register__field" data-label="Wymagalność">{{ requirementLabel(currentVersionFor(definition)?.is_required || false) }}</span>
+              <span class="consent-register__field" data-label="Status">
+                <UBadge
+                  v-if="currentVersionFor(definition)"
+                  :color="statusColor(currentVersionFor(definition)!.status)"
+                  variant="subtle"
+                >
+                  {{ statusLabel(currentVersionFor(definition)!.status) }}
+                </UBadge>
+              </span>
+              <span class="consent-register__field" data-label="Aktualna wersja">v{{ currentVersionFor(definition)?.version || '—' }}</span>
+              <span class="consent-register__field" data-label="Zmieniono">{{ formatDate(definition.updated_at) }}</span>
+            </span>
+            <span class="consent-register__open" aria-hidden="true"><UIcon name="i-lucide-chevron-right" /></span>
+          </NuxtLink>
+
+          <footer class="consent-register__footer" aria-live="polite">
+            {{ visibleCount }} {{ visibleCountLabel }}
+          </footer>
+        </section>
+      </template>
+
+      <UCard
+        v-if="!pending && !(showHistory ? visibleHistory.length : visibleDefinitions.length)"
+        class="consent-empty"
       >
-        Nowa zgoda
-      </UButton>
-    </UCard>
-
-    <p v-if="showHistory ? visibleHistory.length : visibleDefinitions.length" class="consent-helper">
-      <UIcon name="i-lucide-info" />
-      <span v-if="showHistory">Wybierz wersję, aby przejść do pełnej historii zgody.</span>
-      <span v-else>Wybierz zgodę, aby zobaczyć treść, ustawienia i historię wersji.</span>
-    </p>
+        <UIcon :name="definitions.length ? 'i-lucide-search-x' : 'i-lucide-shield-check'" />
+        <h2>{{ definitions.length ? 'Brak pasujących zgód' : 'Brak definicji zgód' }}</h2>
+        <p>{{ definitions.length ? 'Zmień wyszukiwanie lub filtry.' : 'Utwórz pierwszą definicję dla procesu dodawania klienta.' }}</p>
+        <UButton v-if="definitions.length" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
+        <UButton
+          v-else-if="data.canManage"
+          :to="orgPath('/consents/new')"
+          icon="i-lucide-plus"
+          variant="solid"
+        >
+          Nowa zgoda
+        </UButton>
+      </UCard>
     </div>
   </CrmShell>
 </template>
@@ -339,42 +461,27 @@ function clearFilters() {
   margin-bottom: 18px;
 }
 
-.legal-review {
+.consent-version-rule {
   display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  margin-bottom: 24px;
-  padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--ui-warning) 35%, var(--ui-border));
-  border-radius: var(--oe-radius-surface);
-  background: color-mix(in srgb, var(--ui-warning) 9%, var(--ui-bg));
-  color: var(--ui-warning);
-}
-
-.legal-review > .iconify {
-  flex: 0 0 auto;
-  width: 21px;
-  height: 21px;
-  margin-top: 1px;
-}
-
-.legal-review strong {
-  color: var(--ui-warning);
-  font-size: 14px;
-}
-
-.legal-review p {
-  margin: 3px 0 0;
-  color: color-mix(in srgb, var(--ui-warning) 80%, var(--ui-text));
+  gap: 9px;
+  align-items: center;
+  margin: 0 0 22px;
+  color: var(--ui-text-muted);
   font-size: 13px;
+}
+
+.consent-version-rule > .iconify {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
 }
 
 .consent-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1.35fr) minmax(170px, .65fr) minmax(170px, .65fr) auto;
+  grid-template-columns: minmax(260px, 1.4fr) repeat(3, minmax(165px, .7fr));
   gap: 12px;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .consent-toolbar__search {
@@ -385,44 +492,39 @@ function clearFilters() {
   width: 100%;
 }
 
-.consent-toolbar__count {
-  min-width: 72px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  text-align: right;
-  white-space: nowrap;
-}
-
 .consent-skeleton {
   display: grid;
   gap: 8px;
 }
 
 .consent-register {
-  overflow: hidden;
-  border-top: 1px solid var(--ui-border);
-  border-bottom: 1px solid var(--ui-border);
+  overflow-x: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-surface);
+  background: var(--ui-bg);
 }
 
 .consent-register__head,
 .consent-register__row {
   display: grid;
-  grid-template-columns: minmax(240px, 1.45fr) minmax(140px, .8fr) minmax(140px, .75fr) minmax(130px, .7fr) minmax(110px, .55fr) 44px;
-  gap: 18px;
+  grid-template-columns: minmax(210px, 1.35fr) minmax(130px, .85fr) minmax(105px, .65fr) minmax(110px, .7fr) minmax(125px, .75fr) minmax(105px, .6fr) minmax(115px, .7fr) 40px;
+  gap: 16px;
   align-items: center;
+  min-width: 1080px;
 }
 
 .consent-register__head {
-  min-height: 48px;
-  padding: 0 18px;
+  min-height: 54px;
+  padding: 0 20px;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: .01em;
 }
 
 .consent-register__row {
-  min-height: 84px;
-  padding: 14px 18px;
+  min-height: 92px;
+  padding: 16px 20px;
   border-top: 1px solid var(--ui-border);
   color: var(--ui-text);
   font-size: 14px;
@@ -468,11 +570,13 @@ function clearFilters() {
 
 .consent-register__field {
   min-width: 0;
+  line-height: 1.45;
 }
 
 .consent-register--history .consent-register__head,
 .consent-register__row--history {
-  grid-template-columns: minmax(220px, 1.2fr) 70px 140px 180px minmax(180px, 1fr) 44px;
+  grid-template-columns: minmax(220px, 1.25fr) 70px 140px 120px 175px minmax(200px, 1fr) 40px;
+  min-width: 1050px;
 }
 
 .consent-register__note {
@@ -495,17 +599,16 @@ function clearFilters() {
   transform: translateX(3px);
 }
 
-.consent-helper {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 18px 0 0;
+.consent-register__footer {
+  min-width: 1080px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--ui-border);
   color: var(--ui-text-muted);
   font-size: 13px;
 }
 
-.consent-helper .iconify {
-  flex: 0 0 auto;
+.consent-register--history .consent-register__footer {
+  min-width: 1050px;
 }
 
 .consent-empty {
@@ -532,14 +635,23 @@ function clearFilters() {
   font-size: 22px;
 }
 
-@container consent-index (max-width: 1040px) {
+@container consent-index (max-width: 940px) {
   .consent-toolbar {
-    grid-template-columns: minmax(240px, 1fr) repeat(2, minmax(160px, .65fr));
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 
-  .consent-toolbar__count {
+  .consent-toolbar__search {
     grid-column: 1 / -1;
-    text-align: left;
+  }
+}
+
+@container consent-index (max-width: 720px) {
+  .consent-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .consent-toolbar__search {
+    grid-column: auto;
   }
 
   .consent-register {
@@ -555,6 +667,7 @@ function clearFilters() {
   .consent-register__row--history {
     grid-template-columns: minmax(0, 1fr) 44px;
     gap: 14px;
+    min-width: 0;
     min-height: 0;
     padding: 15px;
     border: 1px solid var(--ui-border);
@@ -592,20 +705,14 @@ function clearFilters() {
     overflow-wrap: anywhere;
   }
   .consent-register__open { grid-column: 2; grid-row: 1; }
-}
-
-@container consent-index (max-width: 620px) {
-  .consent-toolbar {
-    grid-template-columns: 1fr;
-  }
-  .consent-toolbar__count {
-    grid-column: auto;
+  .consent-register__footer,
+  .consent-register--history .consent-register__footer {
+    min-width: 0;
+    border: 0;
+    text-align: center;
   }
   .consent-register__details {
     grid-template-columns: 1fr;
-  }
-  .legal-review p {
-    line-height: 1.5;
   }
 }
 </style>

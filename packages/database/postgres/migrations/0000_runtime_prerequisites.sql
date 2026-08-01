@@ -144,16 +144,16 @@ BEGIN
 END
 $identity_function$;
 
--- Domain SQL depends only on the application-owned function. The provider
--- boundary is kept in this one wrapper and the return value is normalized to
--- UUID for all policies and functions.
+-- Domain SQL depends only on application-owned functions. Data API and local
+-- PostgREST both expose verified JWT claims through request.jwt.claims, so the
+-- provider-managed auth schema does not need to be executable by API roles.
 CREATE OR REPLACE FUNCTION app.current_user_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $function$
-  SELECT nullif(auth.user_id()::text, '')::uuid
+  SELECT app.request_jwt_subject()
 $function$;
 
 CREATE OR REPLACE FUNCTION app.storage_folder_segments(name text)

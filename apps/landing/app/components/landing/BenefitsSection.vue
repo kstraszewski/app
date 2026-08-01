@@ -2,10 +2,10 @@
 const timingBenefits = [
   {
     index: '01',
-    label: 'Akredytacja',
+    label: 'Proces akredytacji',
     icon: 'lucide:user-round-check',
-    title: 'Gotowość do działania',
-    description: 'Od kompletu wymaganych danych i dokumentów do zakończenia akredytacji.',
+    title: 'Jasna ścieżka wdrożenia',
+    description: 'Widzisz wymagane dane, dokumenty i kolejne kroki procesu akredytacji.',
   },
   {
     index: '02',
@@ -38,18 +38,18 @@ const workflowBenefits = [
 const zeroBenefits = [
   {
     index: '01',
-    title: 'Uzupełniania wniosków',
-    ariaLabel: 'Zero ręcznego uzupełniania wniosków',
+    title: 'Przygotowanie wniosków',
+    ariaLabel: 'Wsparcie AI w przygotowaniu wniosków',
   },
   {
     index: '02',
-    title: 'Raportowania statusów',
-    ariaLabel: 'Zero ręcznego raportowania statusów',
+    title: 'Aktualizacja statusów',
+    ariaLabel: 'Wsparcie AI w aktualizacji statusów',
   },
   {
     index: '03',
-    title: 'Rozliczania spraw',
-    ariaLabel: 'Zero ręcznego rozliczania spraw',
+    title: 'Rozliczanie spraw',
+    ariaLabel: 'Wsparcie AI w rozliczaniu spraw',
   },
 ]
 </script>
@@ -58,12 +58,12 @@ const zeroBenefits = [
   <section id="korzysci" class="benefits-section" aria-labelledby="benefits-title">
     <div class="benefits-inner">
       <header class="benefits-heading">
-        <p class="benefits-label">Najważniejsze przewagi</p>
+        <p class="benefits-label">Twoje zaplecze operacyjne</p>
         <h2 id="benefits-title">
-          Mniej czekania.
-          <em>Mniej pilnowania.</em>
+          Od pierwszego kontaktu.
+          <em>Do rozliczenia.</em>
         </h2>
-        <p>Akredytacja i wypłata mają jasny termin. Poczta i status kredytu są w jednej uporządkowanej sprawie.</p>
+        <p>Nie składasz procesu z osobnych narzędzi. CRM, poczta, statusy i rozliczenia od początku pracują w jednym środowisku.</p>
       </header>
 
       <div class="benefits-showcase">
@@ -126,8 +126,8 @@ const zeroBenefits = [
               <span>Automatyzacja operacji</span>
             </div>
             <h3 id="zero-panel-title">
-              Trzy czynności.
-              <em>Zero ręcznej pracy.</em>
+              Powtarzalne procesy.
+              <em>Mniej ręcznej pracy.</em>
             </h3>
           </header>
 
@@ -138,9 +138,9 @@ const zeroBenefits = [
               class="zero-benefit"
               :aria-label="benefit.ariaLabel"
             >
-              <strong class="zero-benefit__metric" aria-hidden="true">0</strong>
+              <strong class="zero-benefit__metric" aria-hidden="true">AI</strong>
               <span class="zero-benefit__copy">
-                <small>{{ benefit.index }} / ręcznego</small>
+                <small>{{ benefit.index }} / wsparcie</small>
                 <strong>{{ benefit.title }}</strong>
               </span>
             </li>

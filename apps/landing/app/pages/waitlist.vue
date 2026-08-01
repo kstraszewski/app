@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useLandingSeo({
-  title: 'Dołącz do waitlisty — OpenExpert',
-  description: 'Zapisz się na wczesny dostęp do OpenExpert.',
+  title: 'Zostań pośrednikiem z OpenExpert',
+  description: 'Opowiedz, jak chcesz uruchomić lub rozwinąć pośrednictwo kredytowe, i zapisz się na wczesny dostęp do OpenExpert.',
   path: '/waitlist',
   robots: 'noindex, follow',
 })
@@ -18,68 +18,69 @@ interface SurveyStep {
 const SURVEY_STEPS: SurveyStep[] = [
   {
     id: 'domain',
-    label: 'Twoja dziedzina',
-    question: 'Jaką dziedziną ekspercką się zajmujesz?',
+    label: 'Zakres oferty',
+    question: 'Jakie produkty chcesz oferować?',
     type: 'multi',
     options: [
-      'Finanse i kredyty',
+      'Kredyty hipoteczne',
+      'Kredyty gotówkowe i konsumenckie',
+      'Finansowanie dla firm',
       'Nieruchomości',
       'Ubezpieczenia',
-      'Prawo i compliance',
-      'Doradztwo podatkowe',
-      'Medycyna i zdrowie',
-      'Edukacja i szkolenia',
-      'Inna dziedzina',
+      'Jeszcze wybieram ofertę',
     ],
   },
   {
     id: 'usecase',
-    label: 'Zastosowanie',
-    question: 'Jak chcesz korzystać z platformy?',
+    label: 'Model działania',
+    question: 'Jak chcesz działać z OpenExpert?',
     type: 'multi',
     options: [
-      'Interfejs dla siebie lub zespołu',
-      'Backend / API dla własnej aplikacji',
-      'Silnik dla agentów AI',
-      'Budowanie i sprzedaż modułów',
+      'Startuję samodzielnie od podstaw',
+      'Rozwijam własną markę ekspercką',
+      'Buduję zespół lub sieć placówek',
+      'Dodaję pośrednictwo do istniejącej firmy',
+      'Porządkuję już działające pośrednictwo',
     ],
   },
   {
     id: 'priority',
-    label: 'Priorytety',
-    question: 'Co jest dla Ciebie najważniejsze w pierwszej kolejności?',
+    label: 'Pierwszy cel',
+    question: 'Czego potrzebujesz w pierwszej kolejności?',
     type: 'single',
     options: [
-      'Gotowe moduły do pobrania',
-      'Możliwość budowania własnych modułów',
-      'Integracja z API i zewnętrznymi danymi',
-      'Obsługa agentów AI przez MCP',
-      'Self-hosting i pełna kontrola danych',
+      'Własny CRM i uporządkowana obsługa spraw',
+      'Dostęp do produktów i przejrzystych rozliczeń',
+      'Automatyzacja pracy z agentami AI',
+      'Spójna marka i doświadczenie klienta',
+      'Rozwój sprzedaży i zespołu',
     ],
   },
   {
     id: 'contrib',
-    label: 'Wkład w projekt',
-    question: 'Czy jesteś otwarty/a na współtworzenie projektu?',
+    label: 'Etap',
+    question: 'Na jakim etapie jesteś?',
     type: 'single',
     options: [
-      'Tak — chętnie pomogę jako developer',
-      'Tak — mogę testować i dawać feedback',
-      'Tak — mogę budować i publikować moduły',
-      'Nie, interesuje mnie tylko używanie',
+      'Sprawdzam, czy to model dla mnie',
+      'Przygotowuję działalność',
+      'Mam pierwszych klientów',
+      'Prowadzę działające pośrednictwo',
+      'Rozwijam firmę lub zespół',
     ],
   },
   {
     id: 'notes',
     label: 'Uwagi',
-    question: 'Co jeszcze chcesz nam powiedzieć?',
+    question: 'Co powinniśmy wiedzieć o Twoim planie?',
     type: 'text',
     options: [],
-    placeholder: 'Przypadek użycia, pomysł na moduł, pytanie — cokolwiek przychodzi do głowy.',
+    placeholder: 'Doświadczenie, planowana oferta, zespół, pytania lub największa bariera na dziś.',
   },
 ]
 
 const TOTAL_STEPS = 1 + SURVEY_STEPS.length + 1 // email + 5 survey + done = 7
+const WAITLIST_STORAGE_KEY = 'oe-intermediary-waitlist-v1'
 
 // ── State ───────────────────────────────────────────────────────────────────
 const step       = ref(0)
@@ -93,7 +94,7 @@ const surveyToken = ref('')
 
 // ── LocalStorage persistence ─────────────────────────────────────────────────
 onMounted(() => {
-  const saved = localStorage.getItem('oe-waitlist')
+  const saved = localStorage.getItem(WAITLIST_STORAGE_KEY)
   if (saved) {
     try {
       const {
@@ -117,7 +118,7 @@ onMounted(() => {
 
 watch([step, email, answers, emailSaved, surveyToken], () => {
   if (step.value < TOTAL_STEPS - 1) {
-    localStorage.setItem('oe-waitlist', JSON.stringify({
+    localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify({
       step:       step.value,
       email:      email.value,
       answers:    answers.value,
@@ -208,7 +209,7 @@ async function submitSurvey() {
         answers: answers.value,
       },
     })
-    localStorage.removeItem('oe-waitlist')
+    localStorage.removeItem(WAITLIST_STORAGE_KEY)
     step.value = TOTAL_STEPS - 1
   } catch {
     submitErr.value = 'Nie udało się zapisać ankiety — spróbuj ponownie.'
@@ -219,17 +220,17 @@ async function submitSurvey() {
 
 // ── Progress bar ─────────────────────────────────────────────────────────────
 const progressLabel = computed(() => {
-  if (step.value === 0)               return 'Waitlista'
+  if (step.value === 0)               return 'Start'
   if (step.value < TOTAL_STEPS - 1)  return `Ankieta ${step.value}/${SURVEY_STEPS.length}`
   return 'Gotowe'
 })
 
 // ── Thank you summary ─────────────────────────────────────────────────────────
 const LABELS: Record<string, string> = {
-  domain:   'Dziedzina',
-  usecase:  'Zastosowanie',
-  priority: 'Priorytet',
-  contrib:  'Wkład',
+  domain:   'Oferta',
+  usecase:  'Model działania',
+  priority: 'Pierwszy cel',
+  contrib:  'Etap',
   notes:    'Uwagi',
 }
 
@@ -274,11 +275,11 @@ const filledAnswers = computed(() =>
 
         <!-- STEP 0: EMAIL FORM -->
         <div v-if="step === 0 && !emailSaved" class="wl-step" :key="'email'">
-          <div class="wl-eyebrow">OpenExpert — early access</div>
-          <h1 class="wl-heading">Dołącz do<br><em>waitlisty.</em></h1>
+          <div class="wl-eyebrow">OpenExpert — program wczesnego dostępu</div>
+          <h1 class="wl-heading">Zbuduj własne<br><em>pośrednictwo.</em></h1>
           <p class="wl-sub">
-            Platforma jest w budowie. Zapisz się — dostaniesz dostęp jako jeden z pierwszych
-            i pomożesz kształtować to, co budujemy.
+            Zacznij samodzielnie albo rozwijaj istniejącą firmę. Zostaw kontakt i opowiedz nam,
+            jaki model chcesz zbudować z OpenExpert.
           </p>
           <div class="wl-email-row">
             <input
@@ -296,12 +297,13 @@ const filledAnswers = computed(() =>
               :disabled="loading"
               @click="handleEmailSubmit"
             >
-              {{ loading ? 'Zapisuję…' : 'Dołącz' }}
+              {{ loading ? 'Zapisuję…' : 'Zacznij' }}
             </button>
           </div>
           <p v-if="emailErr" class="wl-field-error">Podaj poprawny adres email.</p>
           <p v-if="submitErr" class="wl-field-error">{{ submitErr }}</p>
-          <p class="wl-privacy">Bez spamu. Tylko powiadomienie o dostępie i ważne aktualizacje projektu.</p>
+          <p class="wl-privacy">Bez spamu. Po zapisie przejdziesz do pięciu krótkich pytań o planowany model działania.</p>
+          <p class="wl-legal">OpenExpert wspiera organizację i technologię pracy. Rozpoczęcie działalności pośrednika może wymagać odrębnych umów, wpisów lub zezwoleń — zależnie od modelu i oferowanych produktów.</p>
         </div>
 
         <!-- STEPS 1–5: SURVEY -->
@@ -315,7 +317,7 @@ const filledAnswers = computed(() =>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            <span>Zapisano <strong>{{ email }}</strong> na waitliście — wypełnij ankietę poniżej.</span>
+            <span>Zapisano <strong>{{ email }}</strong> — odpowiedz na kilka pytań, abyśmy lepiej poznali Twój plan.</span>
           </div>
           <div class="wl-eyebrow">Ankieta — pytanie {{ surveyIndex + 1 }} z {{ SURVEY_STEPS.length }}</div>
           <h1 class="wl-heading wl-heading--survey">{{ currentSurvey.question }}</h1>
@@ -372,11 +374,10 @@ const filledAnswers = computed(() =>
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <h1 class="wl-heading" style="text-align:center">Jesteś na liście.</h1>
+          <h1 class="wl-heading" style="text-align:center">Twój plan jest zapisany.</h1>
           <p class="wl-sub" style="text-align:center">
-            Odezwiemy się na <strong style="color:var(--fg-primary)">{{ email }}</strong> gdy
-            platforma będzie gotowa do testów. Dziękujemy za odpowiedzi — każda z nich pomaga nam
-            budować coś lepszego.
+            Na <strong style="color:var(--fg-primary)">{{ email }}</strong> wyślemy informacje o dostępie
+            i kolejnych krokach. Dziękujemy — Twoje odpowiedzi pomogą nam dopasować ścieżkę startu.
           </p>
 
           <div v-if="filledAnswers.length > 0" class="wl-summary">
@@ -388,20 +389,16 @@ const filledAnswers = computed(() =>
 
           <div class="wl-gh-cta">
             <div>
-              <strong>Rozwijaj projekt już teraz</strong>
-              <p>OpenExpert jest open-source. Możesz eksplorować kod, zgłaszać pomysły i budować pierwsze moduły.</p>
+              <strong>Zobacz, jak działa OpenExpert</strong>
+              <p>Poznaj proces, zaplecze operacyjne i narzędzia, z którymi możesz budować własne pośrednictwo.</p>
             </div>
-            <a
-              href="https://github.com/OpenExpertApp/OpenExpert"
-              target="_blank"
-              rel="noopener"
+            <NuxtLink
+              to="/#jak-to-dziala"
               class="wl-btn-primary wl-btn-gh"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-              </svg>
-              GitHub
-            </a>
+              Poznaj platformę
+              <Icon name="lucide:arrow-right" aria-hidden="true" />
+            </NuxtLink>
           </div>
         </div>
 
@@ -583,6 +580,14 @@ const filledAnswers = computed(() =>
   font-size: var(--text-xs);
   color: var(--fg-tertiary);
   line-height: var(--leading-relaxed);
+}
+
+.wl-legal {
+  margin-top: 12px;
+  color: var(--fg-tertiary);
+  font-size: 10px;
+  line-height: var(--leading-relaxed);
+  opacity: 0.78;
 }
 
 /* ── BUTTONS ─────────────────────────────────────────────────────────────── */

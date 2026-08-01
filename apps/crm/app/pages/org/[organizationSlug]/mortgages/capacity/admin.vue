@@ -8,8 +8,8 @@ import {
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/capacity',
-  alias: ['/org/:organizationSlug/mortgages/capacity/admin'],
+  path: 'settings/capacity',
+  alias: ['mortgages/capacity/admin'],
 })
 useHead({ title: 'Zdolność — ustawienia administracyjne — OpenExpert' })
 

@@ -129,12 +129,25 @@ export default defineEventHandler(async (event) => {
     .map(offer => offer.bank_id ? String(offer.bank_id) : null)
     .filter((bankId): bankId is string => Boolean(bankId)))]
   const itemIds = items.map(item => String(item.id))
+  const itemDomains = [...new Set(items.flatMap((item) => {
+    const productType = singleRelation<Row>(item.product_type)
+    return productType?.domain ? [String(productType.domain)] : []
+  }))]
   const submissionIds = bankApplications.map(application => String(application.submission_id))
   const relatedEntityFilter = itemIds.length
     ? `case_id.eq.${id},case_item_id.in.(${itemIds.join(',')})`
     : `case_id.eq.${id}`
 
-  const [clientsResult, banksResult, propertiesResult, submissionsResult, tasksResult, activitiesResult] = await Promise.all([
+  const [
+    clientsResult,
+    banksResult,
+    propertiesResult,
+    submissionsResult,
+    tasksResult,
+    activitiesResult,
+    handoffsResult,
+    workflowsResult,
+  ] = await Promise.all([
     clientIds.length
       ? session.dataApi
           .from('crm_clients')
@@ -177,6 +190,40 @@ export default defineEventHandler(async (event) => {
       .or(relatedEntityFilter)
       .order('created_at', { ascending: false })
       .limit(20),
+    itemIds.length
+      ? session.dataApi
+          .from('crm_case_item_handoffs')
+          .select('id, organization_id, case_id, case_item_id, previous_owner_user_id, proposed_owner_user_id, requested_by_user_id, status, request_note, response_note, requested_at, resolved_at, resolved_by_user_id, revision')
+          .eq('organization_id', session.organizationId)
+          .eq('case_id', id)
+          .in('case_item_id', itemIds)
+          .order('requested_at', { ascending: false })
+          .limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    itemDomains.length
+      ? session.dataApi
+          .from('crm_workflows')
+          .select(`
+            id,
+            organization_id,
+            domain,
+            code,
+            name,
+            is_default,
+            statuses:crm_workflow_statuses!crm_workflow_statuses_workflow_id_fkey(
+              code,
+              label,
+              color,
+              sort_order,
+              is_initial,
+              is_terminal
+            )
+          `)
+          .eq('scope', 'case_item')
+          .eq('is_default', true)
+          .in('domain', itemDomains)
+          .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)
+      : Promise.resolve({ data: [], error: null }),
   ])
   throwDbError(clientsResult.error)
   throwDbError(banksResult.error)
@@ -184,14 +231,24 @@ export default defineEventHandler(async (event) => {
   throwDbError(submissionsResult.error)
   throwDbError(tasksResult.error)
   throwDbError(activitiesResult.error)
+  throwDbError(handoffsResult.error)
+  throwDbError(workflowsResult.error)
 
   const tasks = (tasksResult.data ?? []) as Row[]
   const activities = (activitiesResult.data ?? []) as Row[]
+  const handoffs = (handoffsResult.data ?? []) as Row[]
+  const workflows = (workflowsResult.data ?? []) as Row[]
   const profileIds = [...new Set([
     caseRow.owner_user_id ? String(caseRow.owner_user_id) : null,
     ...items.map(item => item.owner_user_id ? String(item.owner_user_id) : null),
     ...tasks.map(task => task.assignee_user_id ? String(task.assignee_user_id) : null),
     ...activities.map(activity => activity.actor_user_id ? String(activity.actor_user_id) : null),
+    ...handoffs.flatMap(handoff => [
+      handoff.previous_owner_user_id ? String(handoff.previous_owner_user_id) : null,
+      handoff.proposed_owner_user_id ? String(handoff.proposed_owner_user_id) : null,
+      handoff.requested_by_user_id ? String(handoff.requested_by_user_id) : null,
+      handoff.resolved_by_user_id ? String(handoff.resolved_by_user_id) : null,
+    ]),
   ].filter((profileId): profileId is string => Boolean(profileId)))]
   const profilesResult = profileIds.length
     ? await session.dataApi
@@ -213,8 +270,42 @@ export default defineEventHandler(async (event) => {
     session,
     (propertiesResult.data ?? []) as Array<Row & { id: string }>,
   )
+  const workflowByDomain = new Map<string, Row>()
+  for (const workflow of workflows) {
+    const domain = String(workflow.domain ?? '')
+    if (!domain) continue
+    const current = workflowByDomain.get(domain)
+    if (!current || (
+      workflow.organization_id === session.organizationId
+      && current.organization_id !== session.organizationId
+    )) {
+      workflowByDomain.set(domain, workflow)
+    }
+  }
+  const handoffsByItemId = new Map<string, Row[]>()
+  for (const handoff of handoffs) {
+    const itemId = String(handoff.case_item_id)
+    const entries = handoffsByItemId.get(itemId) ?? []
+    entries.push({
+      ...handoff,
+      previous_owner: handoff.previous_owner_user_id
+        ? profileById.get(String(handoff.previous_owner_user_id)) ?? null
+        : null,
+      proposed_owner: handoff.proposed_owner_user_id
+        ? profileById.get(String(handoff.proposed_owner_user_id)) ?? null
+        : null,
+      requested_by: handoff.requested_by_user_id
+        ? profileById.get(String(handoff.requested_by_user_id)) ?? null
+        : null,
+      resolved_by: handoff.resolved_by_user_id
+        ? profileById.get(String(handoff.resolved_by_user_id)) ?? null
+        : null,
+    })
+    handoffsByItemId.set(itemId, entries)
+  }
 
   return {
+    current_user_id: session.userId,
     data: {
       ...caseRow,
       owner: caseRow.owner_user_id
@@ -263,13 +354,48 @@ export default defineEventHandler(async (event) => {
         }
       }),
       documents: documentsResult.data ?? [],
-      items: items.map(item => ({
-        ...item,
-        product_type: singleRelation<Row>(item.product_type),
-        owner: item.owner_user_id
-          ? profileById.get(String(item.owner_user_id)) ?? null
-          : null,
-      })),
+      items: items.map((item) => {
+        const productType = singleRelation<Row>(item.product_type)
+        const workflow = productType?.domain
+          ? workflowByDomain.get(String(productType.domain)) ?? null
+          : null
+        const itemHandoffs = handoffsByItemId.get(String(item.id)) ?? []
+        const canManage = session.role === 'admin'
+          || String(caseRow.owner_user_id ?? '') === session.userId
+          || String(item.owner_user_id ?? '') === session.userId
+
+        return {
+          ...item,
+          product_type: productType,
+          owner: item.owner_user_id
+            ? profileById.get(String(item.owner_user_id)) ?? null
+            : null,
+          workflow: workflow
+            ? {
+                id: String(workflow.id),
+                code: String(workflow.code),
+                name: String(workflow.name),
+                domain: workflow.domain ? String(workflow.domain) : null,
+                statuses: ((workflow.statuses ?? []) as Row[])
+                  .map(status => ({
+                    code: String(status.code),
+                    label: String(status.label),
+                    color: String(status.color),
+                    sort_order: Number(status.sort_order),
+                    is_initial: Boolean(status.is_initial),
+                    is_terminal: Boolean(status.is_terminal),
+                  }))
+                  .sort((left, right) => left.sort_order - right.sort_order),
+              }
+            : null,
+          handoffs: itemHandoffs,
+          pending_handoff: itemHandoffs.find(handoff => handoff.status === 'pending') ?? null,
+          permissions: {
+            can_handoff: canManage && !itemHandoffs.some(handoff => handoff.status === 'pending'),
+            can_change_status: canManage,
+          },
+        }
+      }),
       properties,
       open_tasks: tasks.map(task => ({
         ...task,

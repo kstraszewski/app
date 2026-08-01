@@ -35,6 +35,8 @@ export type ConsentDefinition = {
 export type ConsentPayload = {
   role: 'admin' | 'expert'
   canManage: boolean
+  canPublish: boolean
+  canAudit: boolean
   definitions: ConsentDefinition[]
 }
 

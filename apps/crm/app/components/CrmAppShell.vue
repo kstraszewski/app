@@ -1325,8 +1325,8 @@ async function signOut() {
   .crm-content--workspace {
     width: 100%;
     height: calc(100dvh - 76px);
-    min-height: 720px;
-    overflow: auto;
+    min-height: 0;
+    overflow: hidden;
     padding: 0;
   }
 

@@ -316,12 +316,51 @@ export interface ClientConsentState {
   contact_value: string | null
   definition: ClientConsentDefinitionRecord
   version: ClientConsentVersion | null
+  subject_person?: Pick<ClientPerson, 'id' | 'display_name' | 'role' | 'phone'> | null
   organization_id?: string
   subject_person_id?: string
   recorded_by_user_id?: string | null
   evidence_reference?: string | null
   metadata?: ClientDetailJson
   created_at?: string
+}
+
+export type ClientConsentCaptureStatus =
+  | 'pending'
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'opened'
+  | 'verified'
+  | 'accepted'
+  | 'declined'
+  | 'withdrawn'
+  | 'expired'
+  | 'cancelled'
+  | 'failed'
+
+export interface ClientConsentCaptureRequest {
+  id: string
+  client_id: string
+  subject_person_id: string
+  definition_id: string
+  definition_version_id: string
+  intent: 'collect' | 'withdraw'
+  status: ClientConsentCaptureStatus
+  delivery_status: string | null
+  phone_masked: string
+  expires_at: string
+  sent_at: string | null
+  delivered_at: string | null
+  verified_at: string | null
+  decided_at: string | null
+  decision: ClientConsentDecision | null
+  created_at: string
+}
+
+export interface ClientConsentAccess {
+  can_request: boolean
+  can_manage: boolean
 }
 
 export type ClientAnonymizationRequestStatus =
@@ -468,6 +507,8 @@ export interface ClientDetailResponse {
   consent_definitions: ClientDetailConsentDefinition[]
   consent_history: ClientConsentHistoryEvent[]
   consent_history_count: number
+  consent_capture_requests: ClientConsentCaptureRequest[]
+  consent_access: ClientConsentAccess
   anonymization_requests: ClientAnonymizationRequest[]
   current_anonymization_request: ClientAnonymizationRequest | null
   privacy_access: ClientPrivacyAccess
@@ -521,9 +562,9 @@ export interface CreateClientConsentDecision {
 /**
  * Contract: POST /api/org/:organizationSlug/crm/clients
  *
- * `consent_decisions` must contain one decision for every active definition.
- * The server persists the client, primary person and version-pinned decisions
- * atomically. A stale version is reported as HTTP 409 and the UI reloads filters.
+ * `consent_decisions` is retained for backward compatibility. New CRM clients
+ * are created with an empty array; the data subject records version-pinned
+ * decisions later through the verified SMS capture flow.
  */
 export interface CreateClientRequest {
   display_name?: string

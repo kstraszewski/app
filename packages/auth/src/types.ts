@@ -53,6 +53,21 @@ export interface OpenExpertAuthEmailSender {
   send(message: OpenExpertAuthEmail): Promise<void>
 }
 
+export interface OpenExpertAuthSocialProviderConfig {
+  clientId: string | string[]
+  clientSecret: string
+  /**
+   * Social providers are an additional sign-in method for an already
+   * activated OpenExpert identity. Keep provider sign-up disabled by default.
+   */
+  disableSignUp?: boolean
+}
+
+export interface OpenExpertAuthSocialProvidersConfig {
+  google?: OpenExpertAuthSocialProviderConfig
+  apple?: OpenExpertAuthSocialProviderConfig
+}
+
 export interface OpenExpertAuthConfig {
   appName?: string
   baseURL: string
@@ -77,4 +92,5 @@ export interface OpenExpertAuthConfig {
   jwtExpiresIn?: number
   jwksRotationInterval?: number
   jwksGracePeriod?: number
+  socialProviders?: OpenExpertAuthSocialProvidersConfig
 }

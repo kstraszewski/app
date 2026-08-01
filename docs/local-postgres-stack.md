@@ -32,7 +32,9 @@ The command:
 5. applies checksum-tracked SQL migrations;
 6. starts PostgREST with the public JWKS;
 7. creates the verified Better Auth development account and its organization;
-8. verifies transaction-local RLS and an authenticated HTTP query.
+8. seeds the portable CRM reference catalogue, an offline mortgage catalogue,
+   three delegated-task experts, nine clients, and eight complete CRM cases;
+9. verifies transaction-local RLS and an authenticated HTTP query.
 
 Nuxt reads the synchronized app `.env` files automatically. Source
 `.env.local-stack` only for other processes started directly from the
@@ -93,18 +95,38 @@ Password: OpenExpert123!
 Org:      OpenExpert Local (openexpert-local)
 ```
 
-The account is stored in Better Auth's `auth.users` and `auth.accounts`
+The same seed also creates a case-scoped client portal login:
+
+```text
+Portal:   http://127.0.0.1:3006/login
+Email:    jan.kowalski@example.local
+Password: OpenExpert123!
+Case:     Zakup mieszkania — Warszewo
+```
+
+This identity exists in Better Auth and `profiles`, but deliberately has no
+row in `users` or `organization_memberships`. Its access comes only from a
+verified `client_account_links` row and one active
+`client_portal_case_grants` row with Multiwniosek enabled.
+It also seeds the scheduling records required for Jan's next confirmed meeting:
+a facility, service, expert assignment, and appointment on the next business
+day. These are ordinary database records loaded by the client portal API.
+
+The account is stored in Better Auth's `identity.users` and `identity.accounts`
 tables, with verified email and a bcrypt credential. Organization onboarding
 still goes through `create_organization_with_admin` with an authenticated
 end-user Data API JWT, so the same RPC and RLS boundary as the application is
 exercised. Re-run `db:local:seed-demo` to create or repair the account and
-organization without resetting PostgreSQL.
+organization, reference catalogues, mortgage fixtures, delegate accounts,
+client portal access, its next appointment, and CRM demo records without
+resetting PostgreSQL. The seed is idempotent and only updates records carrying
+its stable demo keys; it does not delete user-created data.
 
-The local seed deliberately stops at the account and organization. The former
-full-workspace fixture assumed provider-specific Admin Auth plus
-reference/catalog rows from data migrations that are not part of the portable
-schema snapshot. MinIO is ready for the shared storage adapter, but silently
-loading a partial CRM/calendar fixture would leave misleading demo data.
+The CRM fixture contains nine clients and eight cases with people, consent
+history, products, properties, saved mortgage offers, applications, tasks,
+documents, activities, and a Multiwniosek draft. Mortgage source documents are
+deterministic local fixtures stored through the same MinIO adapter as the app,
+so seeding never downloads live bank files.
 
 ## Optional LiveKit profile
 

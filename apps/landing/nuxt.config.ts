@@ -49,12 +49,14 @@ export default defineNuxtConfig({
       icons: [
         'lucide:arrow-left',
         'lucide:arrow-right',
+        'lucide:badge-check',
         'lucide:bot',
         'lucide:briefcase-business',
         'lucide:building-2',
         'lucide:calendar-days',
         'lucide:check',
         'lucide:circle-check',
+        'lucide:clipboard-check',
         'lucide:clock-3',
         'lucide:eye',
         'lucide:file-check-2',
@@ -70,6 +72,7 @@ export default defineNuxtConfig({
         'lucide:palette',
         'lucide:phone',
         'lucide:rotate-ccw',
+        'lucide:route',
         'lucide:save',
         'lucide:scan-line',
         'lucide:search',
@@ -80,6 +83,7 @@ export default defineNuxtConfig({
         'lucide:type',
         'lucide:user-round',
         'lucide:user-round-check',
+        'lucide:user-round-plus',
         'lucide:users-round',
         'lucide:workflow',
         'lucide:x',
@@ -275,11 +279,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'pl' },
-      title: 'OpenExpert — system pracy i rezerwacji dla ekspertów',
+      title: 'OpenExpert — platforma pośrednictwa kredytowego',
       meta: [
         {
           name: 'description',
-          content: 'Znajdź eksperta, umów konsultację lub prowadź klientów w jednym systemie wspieranym przez agentów AI.',
+          content: 'Uruchom lub rozwijaj pośrednictwo kredytowe pod własną marką, korzystając z jednego systemu i agentów AI.',
         },
         { name: 'apple-mobile-web-app-title', content: 'OpenExpert' },
         { name: 'theme-color', content: '#030303' },

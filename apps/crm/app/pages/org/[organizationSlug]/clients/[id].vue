@@ -3,6 +3,8 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 import type {
   ClientAnonymizationRequestChannel,
+  ClientConsentCaptureRequest,
+  ClientConsentState,
   ClientDetailResponse,
 } from '~/types/clients'
 
@@ -44,6 +46,8 @@ const emptyDetail = (): ClientDetailResponse => ({
   consent_events: [],
   consent_history: [],
   consent_history_count: 0,
+  consent_capture_requests: [],
+  consent_access: { can_request: false, can_manage: false },
   consent_history_page_info: { offset: 0, limit: 100, has_more: false },
   anonymization_requests: [],
   current_anonymization_request: null,
@@ -322,7 +326,58 @@ function consentSourceLabel(source: string | null | undefined) {
     import: 'Import',
     api: 'API',
     booking_widget: 'Widget rezerwacji',
+    sms_verification: 'SMS z kodem',
   })[source] ?? source
+}
+
+const activeConsentCaptureStatuses = new Set([
+  'pending',
+  'queued',
+  'sent',
+  'delivered',
+  'opened',
+  'verified',
+])
+
+function consentCaptureStatusLabel(request: ClientConsentCaptureRequest) {
+  if (request.status === 'failed' && request.delivery_status === 'otp_locked') {
+    return 'Kod OTP zablokowany'
+  }
+  return ({
+    pending: 'Przygotowywanie',
+    queued: 'W kolejce',
+    sent: 'SMS wysłany',
+    delivered: 'SMS dostarczony',
+    opened: 'Link otwarty',
+    verified: 'Numer potwierdzony',
+    accepted: 'Zgoda udzielona',
+    declined: 'Brak zgody',
+    withdrawn: 'Zgoda wycofana',
+    expired: 'Prośba wygasła',
+    cancelled: 'Prośba anulowana',
+    failed: 'Błąd wysyłki',
+  })[request.status] ?? request.status
+}
+
+function consentCaptureStatusColor(status: string): 'success' | 'error' | 'warning' | 'info' | 'neutral' {
+  if (['accepted', 'delivered', 'verified'].includes(status)) return 'success'
+  if (['declined', 'withdrawn', 'failed'].includes(status)) return 'error'
+  if (['pending', 'queued', 'sent', 'opened'].includes(status)) return 'info'
+  if (status === 'expired') return 'warning'
+  return 'neutral'
+}
+
+function latestConsentCaptureRequest(consent: ClientConsentState): ClientConsentCaptureRequest | null {
+  return data.value.consent_capture_requests.find(request => (
+    request.definition_id === consent.definition_id
+    && request.subject_person_id === consent.subject_person_id
+  )) ?? null
+}
+
+function consentCaptureActionLabel(consent: ClientConsentState) {
+  const latestRequest = latestConsentCaptureRequest(consent)
+  if (latestRequest && activeConsentCaptureStatuses.has(latestRequest.status)) return 'Wyślij ponownie'
+  return consent.decision === 'granted' ? 'Wyślij wycofanie' : 'Wyślij prośbę SMS'
 }
 
 function personRoleLabel(role: string) {
@@ -506,6 +561,7 @@ const anonymizationRequestIdempotencyKey = ref('')
 const savingAnonymizationRequest = ref(false)
 const executingAnonymization = ref(false)
 const savingClient = ref(false)
+const requestingConsentKey = ref('')
 const anonymizationRequestForm = reactive<Partial<AnonymizationRequestForm>>({
   subjectPersonId: '',
   requestChannel: 'email',
@@ -519,6 +575,80 @@ const editForm = reactive({
   tags: '',
   notes: '',
 })
+
+async function requestConsentBySms(consent: ClientConsentState) {
+  const subjectPersonId = consent.subject_person_id || consent.subject_person?.id
+  const phone = consent.subject_person?.phone
+  if (!data.value.consent_access.can_request || !subjectPersonId || !phone) {
+    toast.add({
+      title: 'Nie można wysłać prośby',
+      description: !phone
+        ? 'Uzupełnij numer telefonu tej osoby przed wysłaniem SMS-a.'
+        : 'Nie masz dostępu do wysyłania próśb o zgodę dla tego klienta.',
+      color: 'warning',
+      icon: 'i-lucide-message-square-warning',
+    })
+    return
+  }
+
+  const requestKey = `${subjectPersonId}:${consent.definition_id}`
+  requestingConsentKey.value = requestKey
+  try {
+    const response = await $fetch<{
+      data: ClientConsentCaptureRequest & {
+        maskedPhone?: string
+        devOtp?: string
+        demoUrl?: string
+      }
+    }>(crmApiPath(`/consents/${consent.definition_id}/requests`), {
+      method: 'POST',
+      body: {
+        clientId: clientId.value,
+        subjectPersonId,
+        intent: consent.decision === 'granted' ? 'withdraw' : 'collect',
+      },
+    })
+
+    await refresh()
+    toast.add({
+      title: response.data.demoUrl
+        ? (consent.decision === 'granted'
+            ? 'Utworzono demo wycofania zgody'
+            : 'Utworzono prośbę demo')
+        : consent.decision === 'granted'
+          ? 'Wysłano prośbę o potwierdzenie wycofania'
+          : 'Wysłano prośbę o zgodę',
+      description: response.data.demoUrl
+        ? 'Tryb demo: SMS nie został wysłany. Otwórz formularz, aby przejść proces z automatycznie uzupełnionym kodem.'
+        : response.data.devOtp
+          ? `Tryb lokalny: kod testowy ${response.data.devOtp}. W produkcji kod trafia wyłącznie SMS-em do klienta.`
+          : `SMS został skierowany na numer ${response.data.maskedPhone || response.data.phone_masked}.`,
+      color: 'success',
+      icon: response.data.demoUrl ? 'i-lucide-flask-conical' : 'i-lucide-message-square-check',
+      ...(response.data.demoUrl
+        ? {
+            actions: [{
+              label: 'Otwórz formularz demo',
+              onClick: () => {
+                window.open(response.data.demoUrl, '_blank', 'noopener,noreferrer')
+              },
+            }],
+          }
+        : {}),
+    })
+  }
+  catch (caught: any) {
+    toast.add({
+      title: 'Nie udało się wysłać SMS-a',
+      description: caught?.data?.statusMessage ?? caught?.message ?? 'Spróbuj ponownie.',
+      color: 'error',
+      icon: 'i-lucide-message-square-warning',
+    })
+  }
+  finally {
+    requestingConsentKey.value = ''
+  }
+}
 
 function localDateTimeValue(date = new Date()) {
   const localDate = new Date(
@@ -1084,13 +1214,28 @@ const headerMenuItems = computed(() => [
           <UBadge color="neutral" variant="outline">{{ data.consent_states.length }} definicje</UBadge>
         </header>
 
+        <UAlert
+          class="client-consent-capture-note"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-message-square-lock"
+          title="Decyzję zapisuje klient"
+          description="Doradca tylko inicjuje prośbę. Zgoda lub jej wycofanie zostaną zapisane dopiero po potwierdzeniu numeru jednorazowym kodem SMS."
+        />
+
         <div v-if="data.consent_states.length" class="client-consent-grid">
-          <article v-for="consent in data.consent_states" :key="consent.definition_id" class="client-consent-card">
+          <article
+            v-for="consent in data.consent_states"
+            :key="`${consent.subject_person_id}:${consent.definition_id}`"
+            class="client-consent-card"
+          >
             <header>
               <span class="client-consent-card__icon"><UIcon name="i-lucide-shield-check" /></span>
               <div>
                 <strong>{{ consent.version?.display_title || 'Zgoda' }}</strong>
                 <small>
+                  {{ consent.subject_person?.display_name || 'Klient' }}
+                  ·
                   {{ consentChannelLabel(consent.version?.channel) }}
                   · wersja {{ consent.version?.version || '—' }}
                 </small>
@@ -1100,10 +1245,44 @@ const headerMenuItems = computed(() => [
               </UBadge>
             </header>
             <p>{{ consent.version?.content || 'Brak opisu treści zgody.' }}</p>
+            <div v-if="latestConsentCaptureRequest(consent)" class="client-consent-card__request">
+              <div>
+                <UIcon name="i-lucide-message-square-more" />
+                <span>
+                  <strong>{{ consentCaptureStatusLabel(latestConsentCaptureRequest(consent)!) }}</strong>
+                  <small>
+                    {{ latestConsentCaptureRequest(consent)!.phone_masked }}
+                    · {{ formatDateTime(latestConsentCaptureRequest(consent)!.created_at) }}
+                  </small>
+                </span>
+              </div>
+              <UBadge
+                :color="consentCaptureStatusColor(latestConsentCaptureRequest(consent)!.status)"
+                variant="subtle"
+              >
+                {{ latestConsentCaptureRequest(consent)!.intent === 'withdraw' ? 'wycofanie' : 'pozyskanie' }}
+              </UBadge>
+            </div>
             <footer>
-              <span>{{ consent.version?.is_required ? 'Wymagana' : 'Dobrowolna' }}</span>
-              <span v-if="consent.occurred_at">{{ formatDateTime(consent.occurred_at) }}</span>
-              <span v-else>Nie zapisano decyzji</span>
+              <div>
+                <span>{{ consent.version?.is_required ? 'Wymagana' : 'Dobrowolna' }}</span>
+                <span v-if="consent.occurred_at">
+                  {{ formatDateTime(consent.occurred_at) }} · {{ consentSourceLabel(consent.source) }}
+                </span>
+                <span v-else>Nie zapisano decyzji</span>
+              </div>
+              <UButton
+                v-if="data.consent_access.can_request"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-send"
+                :disabled="!consent.subject_person?.phone"
+                :loading="requestingConsentKey === `${consent.subject_person_id}:${consent.definition_id}`"
+                @click="requestConsentBySms(consent)"
+              >
+                {{ consentCaptureActionLabel(consent) }}
+              </UButton>
             </footer>
           </article>
         </div>
@@ -2366,6 +2545,10 @@ const headerMenuItems = computed(() => [
   gap: 12px;
 }
 
+.client-consent-capture-note {
+  margin-bottom: 2px;
+}
+
 .client-consent-card {
   display: grid;
   gap: 16px;
@@ -2422,12 +2605,54 @@ const headerMenuItems = computed(() => [
   -webkit-line-clamp: 2;
 }
 
+.client-consent-card__request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: 10px;
+  background: var(--ui-bg);
+}
+
+.client-consent-card__request > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.client-consent-card__request > div > .iconify {
+  flex: 0 0 auto;
+  color: var(--ui-primary);
+}
+
+.client-consent-card__request span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.client-consent-card__request strong,
+.client-consent-card__request small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .client-consent-card footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--ui-border-muted);
+}
+
+.client-consent-card footer > div {
+  display: grid;
+  gap: 3px;
 }
 
 .client-privacy-layout {

@@ -5,6 +5,7 @@ import {
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
+import { issueClientPortalInvitation } from '~~/server/utils/client-portal-invitations'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -171,6 +172,13 @@ export default defineEventHandler(async (event) => {
       })
     : []
 
+  if (consentDecisions.length) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'Consent decisions must be confirmed by the client through the verified SMS flow.',
+    })
+  }
+
   const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
     p_organization_id: session.organizationId,
     p_owner_user_id: ownerUserId,
@@ -240,5 +248,35 @@ export default defineEventHandler(async (event) => {
   }
   throwDbError(error)
 
-  return data
+  const created = asRecord(data)
+  const createdClient = asRecord(created.data)
+  const createdPeople = Array.isArray(created.people) ? created.people.map(asRecord) : []
+  const createdPrimaryPerson = createdPeople[0]
+  const invitationEmail = textValue(createdPrimaryPerson?.email) ?? primaryEmail
+  let portalInvitation: Awaited<ReturnType<typeof issueClientPortalInvitation>> | null = null
+
+  if (
+    invitationEmail
+    && textValue(createdClient.id)
+    && textValue(createdPrimaryPerson?.id)
+  ) {
+    try {
+      portalInvitation = await issueClientPortalInvitation(event, {
+        organizationId: session.organizationId,
+        clientId: textValue(createdClient.id)!,
+        clientPersonId: textValue(createdPrimaryPerson?.id)!,
+        email: invitationEmail,
+        invitedByUserId: session.userId,
+        name: textValue(createdPrimaryPerson?.display_name) ?? displayName,
+      })
+    }
+    catch (invitationError) {
+      console.error('Unable to create a client portal invitation', invitationError)
+    }
+  }
+
+  return {
+    ...created,
+    portal_invitation: portalInvitation,
+  }
 })

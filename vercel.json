@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": "apps/landing",
+      "framework": "nuxtjs"
+    },
+    "eve": {
+      "root": "multiform-agent",
+      "buildCommand": "eve build",
+      "entrypoint": ".",
+      "framework": "eve"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/eve/v1/(.*)",
+      "destination": {
+        "service": "eve"
+      }
+    },
+    {
+      "source": "/_eve_internal/eve/(.*)",
+      "destination": {
+        "service": "eve"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ]
+}

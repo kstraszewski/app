@@ -1,9 +1,9 @@
 <script setup lang="ts">
 const { siteOrigin } = useLandingSeo({
-  title: 'OpenExpert — Agentowy system pracy dla ekspertów',
-  description: 'Akredytacja i wypłata do 5 dni roboczych, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu — w jednym systemie pracy dla ekspertów.',
+  title: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
+  description: 'Platforma dla osób i firm, które chcą uruchomić lub rozwinąć pośrednictwo kredytowe: CRM w Twojej marce, uporządkowany proces, rozliczenia i agenci AI.',
   path: '/',
-  socialImageAlt: 'OpenExpert — jeden ekspert i zespół agentów AI pracujących na wspólnej sprawie',
+  socialImageAlt: 'OpenExpert — platforma do budowy własnego pośrednictwa kredytowego',
 })
 
 const homeUrl = new URL('/', `${siteOrigin}/`).toString()
@@ -32,7 +32,7 @@ useHead({
           },
           email: 'hello@openexpert.app',
           sameAs: ['https://github.com/OpenExpertApp/OpenExpert'],
-          description: 'System pracy dla ekspertów: szybka akredytacja i wypłata, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu.',
+          description: 'Platforma dla osób i firm uruchamiających lub rozwijających pośrednictwo kredytowe: CRM, obsługa spraw, rozliczenia i agenci AI.',
         },
         {
           '@type': 'WebSite',
@@ -54,8 +54,8 @@ useHead({
           '@type': 'WebPage',
           '@id': homePageId,
           url: homeUrl,
-          name: 'OpenExpert — Agentowy system pracy dla ekspertów',
-          description: 'Akredytacja i wypłata do 5 dni roboczych, zintegrowana poczta oraz automatyczne monitorowanie statusów kredytu.',
+          name: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
+          description: 'Platforma do uruchomienia i rozwijania pośrednictwa kredytowego pod własną marką.',
           isPartOf: { '@id': websiteId },
           about: { '@id': organizationId },
           primaryImageOfPage: { '@id': primaryImageId },
@@ -67,6 +67,7 @@ useHead({
 })
 
 const router = useRouter()
+const WAITLIST_STORAGE_KEY = 'oe-intermediary-waitlist-v1'
 const email = ref('')
 const emailInput = ref<HTMLInputElement | null>(null)
 const waitlistError = ref<string | null>(null)
@@ -90,7 +91,7 @@ const platformRows = [
     index: '02',
     icon: 'lucide:file-check-2',
     role: 'Agent wniosków',
-    title: 'Uzupełnia wnioski za Ciebie.',
+    title: 'Przygotowuje wnioski do Twojej weryfikacji.',
     description: 'Pobiera dane klienta i sprawy, dopasowuje je do formularza oraz przygotowuje kompletny wniosek do weryfikacji.',
     flow: [
       { label: 'Start', value: 'Dane sprawy' },
@@ -126,19 +127,34 @@ const platformRows = [
 
 const expertPoints = [
   {
-    icon: 'lucide:bot',
-    title: 'Deleguj konkretną pracę',
-    description: 'Agenci wyszukują, zapisują i aktualizują dane bezpośrednio w sprawie — nie kończą na podpowiedzi w czacie.',
+    icon: 'lucide:user-round-plus',
+    title: 'Startujesz samodzielnie',
+    description: 'Od pierwszego klienta pracujesz w uporządkowanym procesie, bez składania firmy z wielu osobnych narzędzi.',
   },
   {
-    icon: 'lucide:shield-check',
-    title: 'Zachowaj kontrolę',
-    description: 'Decyzje biznesowe pozostają po Twojej stronie, a niepewne mapowania zatwierdzasz przed eksportem.',
+    icon: 'lucide:building-2',
+    title: 'Rozwijasz istniejącą firmę',
+    description: 'Łączysz zespół, placówki i sprawy we wspólnym standardzie pracy, zachowując kontrolę nad relacją z klientem.',
   },
   {
-    icon: 'lucide:workflow',
-    title: 'Skaluj pełną obsługę',
-    description: 'Jedna osoba prowadzi relację, a agenci wspierają kolejne etapy: nieruchomość, finansowanie i ochronę.',
+    icon: 'lucide:badge-check',
+    title: 'Budujesz własną markę',
+    description: 'Dopasowujesz wygląd i sposób obsługi do swojej organizacji, a OpenExpert pozostaje technologicznym zapleczem.',
+  },
+]
+
+const joinSteps = [
+  {
+    title: 'Zostaw kontakt',
+    description: 'Podaj e-mail i przejdź do krótkiej ankiety.',
+  },
+  {
+    title: 'Opisz swój model',
+    description: 'Powiedz, czy startujesz samodzielnie, rozwijasz zespół czy istniejącą firmę.',
+  },
+  {
+    title: 'Przygotuj się do startu',
+    description: 'Damy Ci znać o dostępie i kolejnych etapach wdrożenia.',
   },
 ]
 
@@ -166,7 +182,7 @@ async function submitWaitlist() {
       body: { email: value },
     })
 
-    localStorage.setItem('oe-waitlist', JSON.stringify({
+    localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify({
       step: 1,
       email: value,
       answers: {},
@@ -195,13 +211,13 @@ async function submitWaitlist() {
         </a>
 
         <nav class="desktop-nav" aria-label="Główna nawigacja">
-          <a href="#korzysci">Korzyści</a>
-          <a href="#agenci-ai">Agenci AI</a>
+          <a href="#jak-to-dziala">Jak zacząć</a>
+          <a href="#agenci-ai">Platforma</a>
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
         </nav>
 
-        <a href="#dolacz" class="button button--light header-cta">Dołącz do waitlisty</a>
+        <a href="#dolacz" class="button button--light header-cta">Zostań pośrednikiem</a>
 
         <button
           type="button"
@@ -217,11 +233,11 @@ async function submitWaitlist() {
 
         <Transition name="mobile-menu">
           <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
-            <a href="#korzysci" @click="closeMobileMenu">Korzyści</a>
-            <a href="#agenci-ai" @click="closeMobileMenu">Agenci AI</a>
+            <a href="#jak-to-dziala" @click="closeMobileMenu">Jak zacząć</a>
+            <a href="#agenci-ai" @click="closeMobileMenu">Platforma</a>
             <NuxtLink to="/eksperci" @click="closeMobileMenu">Eksperci</NuxtLink>
             <NuxtLink to="/placowki" @click="closeMobileMenu">Placówki</NuxtLink>
-            <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Dołącz do waitlisty</a>
+            <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Zostań pośrednikiem</a>
           </nav>
         </Transition>
       </header>
@@ -232,16 +248,16 @@ async function submitWaitlist() {
       <section id="poczatek" class="hero" aria-labelledby="hero-title">
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">Agentowy system pracy dla ekspertów</p>
-            <h1 id="hero-title" aria-label="Jedna sprawa. Jeden ekspert. Zespół agentów AI.">
-              <span aria-hidden="true">Jedna sprawa.</span>
-              <em aria-hidden="true">Jeden ekspert.</em>
-              <span aria-hidden="true">Zespół agentów AI.</span>
+            <p class="eyebrow">Platforma dla przyszłych i działających pośredników</p>
+            <h1 id="hero-title" aria-label="Zbuduj własne pośrednictwo z OpenExpert.">
+              <span aria-hidden="true">Zbuduj własne.</span>
+              <em aria-hidden="true">Pośrednictwo.</em>
+              <span aria-hidden="true">Z OpenExpert.</span>
             </h1>
-            <p class="hero-lead">Ty prowadzisz relację i podejmujesz decyzje. OpenExpert łączy CRM, pocztę i agentów AI, automatycznie pilnuje etapu kredytu oraz przyspiesza akredytację i wypłatę.</p>
+            <p class="hero-lead">Zacznij samodzielnie albo rozwijaj całą firmę. OpenExpert daje Ci CRM w Twojej marce, uporządkowany proces obsługi, rozliczenia i agentów AI — od pierwszego kontaktu do zakończenia sprawy.</p>
             <div class="hero-actions">
-              <a href="#dolacz" class="button button--light">Dołącz do waitlisty</a>
-              <a href="#korzysci" class="button button--dark">Zobacz korzyści</a>
+              <a href="#dolacz" class="button button--light">Zostań pośrednikiem</a>
+              <a href="#jak-to-dziala" class="button button--dark">Zobacz, jak zacząć</a>
             </div>
           </div>
 
@@ -257,9 +273,9 @@ async function submitWaitlist() {
       <section id="personalizuj" class="personalize-section" aria-labelledby="personalize-title">
         <div class="personalize-inner">
           <div class="personalize-copy">
-            <p class="section-label">CRM w identyfikacji Twojej organizacji</p>
-            <h2 id="personalize-title">Ten sam system.{{ ' ' }}<br><em>W pełni w Twojej marce.</em></h2>
-            <p>Dopasuj kolory, typografię i charakter interfejsu do swojej organizacji. Wybierz gotowy kierunek lub zbuduj własny motyw i od razu zobacz go na przykładowej sprawie klienta.</p>
+            <p class="section-label">Twoja marka od pierwszego dnia</p>
+            <h2 id="personalize-title">Twój biznes.{{ ' ' }}<br><em>Twój sposób działania.</em></h2>
+            <p>Niezależnie od tego, czy działasz samodzielnie, czy budujesz zespół, dopasujesz kolory, typografię i charakter interfejsu do własnej marki.</p>
           </div>
 
           <div class="personalize-panel">
@@ -276,14 +292,14 @@ async function submitWaitlist() {
       <section id="agenci-ai" class="platform-section" aria-labelledby="platform-title">
         <div class="platform-inner">
           <div class="platform-intro">
-            <p class="section-label section-label--dark">Wyspecjalizowani agenci</p>
-            <h2 id="platform-title">Czterech agentów.{{ ' ' }}<br><em>Od wniosku do kolejnej sprzedaży.</em></h2>
-            <p>Każdy odpowiada za konkretny etap pracy — uzupełnia dane, domyka sprawy, odkrywa okazje i udostępnia wiedzę całej firmy.</p>
+            <p class="section-label section-label--dark">Cyfrowy zespół od pierwszego dnia</p>
+            <h2 id="platform-title">Nie zaczynasz sam.{{ ' ' }}<br><em>Agenci wspierają każdy etap.</em></h2>
+            <p>OpenExpert przejmuje powtarzalną pracę operacyjną, aby jedna osoba mogła działać sprawnie od pierwszych klientów, a firma skalować obsługę bez utraty standardu.</p>
           </div>
 
           <div class="platform-board">
             <div class="platform-board__bar">
-              <span>Agentowy zespół OpenExpert</span>
+              <span>Agenci OpenExpert dla Twojej firmy</span>
               <span class="platform-board__status">
                 <Icon name="lucide:circle-check" aria-hidden="true" />
                 4 agentów gotowych do pracy
@@ -326,9 +342,9 @@ async function submitWaitlist() {
       <section id="dla-ekspertow" class="experts-section" aria-labelledby="experts-title">
         <div class="experts-inner">
           <div class="experts-heading">
-            <p class="section-label">Ekspert + zespół agentów AI</p>
-            <h2 id="experts-title">Ty prowadzisz relację.{{ ' ' }}<br><em>Agenci wykonują pracę.</em></h2>
-            <p>OpenExpert nie usuwa eksperta z procesu. Daje mu agentów, którzy pracują na wspólnych danych i przejmują konkretne zadania, podczas gdy odpowiedzialność i kontakt z klientem pozostają po Twojej stronie.</p>
+            <p class="section-label">Model, który rośnie razem z Tobą</p>
+            <h2 id="experts-title">Zacznij jako jedna osoba.{{ ' ' }}<br><em>Rozwijaj się jako firma.</em></h2>
+            <p>OpenExpert daje ten sam operacyjny fundament niezależnie od skali. Ty budujesz relacje i markę, a platforma porządkuje sprawy, pracę zespołu i kolejne kroki.</p>
           </div>
 
           <div class="expert-points">
@@ -349,37 +365,50 @@ async function submitWaitlist() {
       <section id="dolacz" class="join-section" aria-labelledby="join-title">
         <div class="join-inner">
           <div class="join-copy">
-            <p class="section-label section-label--dark">Wczesny dostęp do systemu agentowego</p>
-            <h2 id="join-title">Pracuj z agentami,{{ ' ' }}<br>którzy <em>znają całą sprawę.</em></h2>
-            <p>Dołącz do pierwszych ekspertów testujących OpenExpert i pomóż ustalić, które zadania agenci powinni przejąć jako następne.</p>
+            <p class="section-label section-label--dark">Program wczesnego dostępu</p>
+            <h2 id="join-title">Zostań pośrednikiem.{{ ' ' }}<br>Zacznij <em>po swojemu.</em></h2>
+            <p>Masz doświadczenie, sieć kontaktów albo po prostu pomysł na własny biznes? Powiedz nam, jak chcesz działać, a pokażemy Ci OpenExpert od strony dopasowanej do Twojego modelu.</p>
           </div>
 
-          <form class="join-form" novalidate @submit.prevent="submitWaitlist">
-            <label for="landing-email">Twój adres e-mail</label>
-            <div class="join-form__row">
-              <input
-                id="landing-email"
-                ref="emailInput"
-                v-model="email"
-                type="email"
-                name="email"
-                autocomplete="email"
-                inputmode="email"
-                placeholder="twoj@email.pl"
-                required
-                :disabled="waitlistLoading"
-                :aria-invalid="Boolean(waitlistError)"
-                :aria-describedby="waitlistError ? 'join-error join-note' : 'join-note'"
-                @input="waitlistError = null"
-              >
-              <button type="submit" class="button button--light" :disabled="waitlistLoading">
-                {{ waitlistLoading ? 'Zapisuję…' : 'Dołącz do waitlisty' }}
-                <Icon v-if="!waitlistLoading" name="lucide:arrow-right" aria-hidden="true" />
-              </button>
-            </div>
-            <p id="join-error" class="join-form__error" aria-live="polite">{{ waitlistError }}</p>
-            <p id="join-note" class="join-form__note">Bez spamu. Tylko informacja o dostępie i najważniejsze aktualizacje projektu.</p>
-          </form>
+          <div class="join-action">
+            <ol class="join-steps" aria-label="Jak zacząć z OpenExpert">
+              <li v-for="(step, index) in joinSteps" :key="step.title">
+                <span class="join-step__index">0{{ index + 1 }}</span>
+                <span>
+                  <strong>{{ step.title }}</strong>
+                  <small>{{ step.description }}</small>
+                </span>
+              </li>
+            </ol>
+
+            <form class="join-form" novalidate @submit.prevent="submitWaitlist">
+              <label for="landing-email">E-mail do kontaktu</label>
+              <div class="join-form__row">
+                <input
+                  id="landing-email"
+                  ref="emailInput"
+                  v-model="email"
+                  type="email"
+                  name="email"
+                  autocomplete="email"
+                  inputmode="email"
+                  placeholder="twoj@email.pl"
+                  required
+                  :disabled="waitlistLoading"
+                  :aria-invalid="Boolean(waitlistError)"
+                  :aria-describedby="waitlistError ? 'join-error join-note join-legal' : 'join-note join-legal'"
+                  @input="waitlistError = null"
+                >
+                <button type="submit" class="button button--light" :disabled="waitlistLoading">
+                  {{ waitlistLoading ? 'Zapisuję…' : 'Zacznij z OpenExpert' }}
+                  <Icon v-if="!waitlistLoading" name="lucide:arrow-right" aria-hidden="true" />
+                </button>
+              </div>
+              <p id="join-error" class="join-form__error" aria-live="polite">{{ waitlistError }}</p>
+              <p id="join-note" class="join-form__note">Bez spamu. Po zapisie przejdziesz do krótkiej ankiety o planowanym modelu działania.</p>
+              <p id="join-legal" class="join-form__legal">OpenExpert wspiera organizację i technologię pracy. Rozpoczęcie działalności pośrednika może wymagać odrębnych umów, wpisów lub zezwoleń — zależnie od modelu i oferowanych produktów.</p>
+            </form>
+          </div>
         </div>
       </section>
     </main>
@@ -390,12 +419,12 @@ async function submitWaitlist() {
           <img src="/assets/logo-dark.svg" alt="" width="24" height="24">
           <span>OpenExpert</span>
         </a>
-        <p>© 2026 OpenExpert. Jeden ekspert. Zespół agentów AI.</p>
+        <p>© 2026 OpenExpert. Twoja marka. Twoje pośrednictwo. Jeden system.</p>
         <nav aria-label="Linki w stopce">
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
           <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
-          <NuxtLink to="/waitlist">Waitlista</NuxtLink>
+          <NuxtLink to="/waitlist">Zostań pośrednikiem</NuxtLink>
           <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
             GitHub <Icon name="lucide:github" aria-hidden="true" />
           </a>
@@ -1097,7 +1126,7 @@ async function submitWaitlist() {
 .join-inner {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(480px, 1.1fr);
-  align-items: end;
+  align-items: start;
   gap: clamp(64px, 8vw, 130px);
   padding: 104px 0 112px;
 }
@@ -1112,6 +1141,50 @@ async function submitWaitlist() {
   color: #a8a8a8;
   font-size: 16px;
   line-height: 1.7;
+}
+
+.join-action {
+  min-width: 0;
+}
+
+.join-steps {
+  border-top: 1px solid #353535;
+  margin-bottom: 30px;
+  list-style: none;
+}
+
+.join-steps li {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 16px;
+  border-bottom: 1px solid #353535;
+  padding: 15px 0;
+}
+
+.join-step__index {
+  padding-top: 3px;
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.join-steps strong,
+.join-steps small {
+  display: block;
+}
+
+.join-steps strong {
+  margin-bottom: 4px;
+  color: #f2f2f2;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.join-steps small {
+  color: #929292;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
 .join-form {
@@ -1173,6 +1246,14 @@ async function submitWaitlist() {
 .join-form__note {
   color: #aaa;
   font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.join-form__legal {
+  max-width: 650px;
+  margin-top: 12px;
+  color: #707070;
+  font-size: 10.5px;
   line-height: 1.55;
 }
 
@@ -1337,7 +1418,7 @@ async function submitWaitlist() {
     padding-left: 24px;
   }
 
-  .join-form {
+  .join-action {
     max-width: 690px;
   }
 }

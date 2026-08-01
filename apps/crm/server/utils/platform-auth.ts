@@ -20,6 +20,10 @@ interface PlatformAuthRuntimeConfig {
   cookiePrefix: string
   cookieDomain: string
   trustedOrigins: string
+  socialProviders?: {
+    google?: { clientId?: string, clientSecret?: string }
+    apple?: { clientId?: string, clientSecret?: string }
+  }
 }
 
 interface PlatformAuthEmailConfig {
@@ -51,6 +55,9 @@ export interface PlatformAuthClaims {
 let cachedRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
+let cachedClientPortalRuntime:
+  | { fingerprint: string, runtime: OpenExpertAuthRuntime }
+  | undefined
 
 function escapeHtml(value: string): string {
   return value
@@ -61,7 +68,11 @@ function escapeHtml(value: string): string {
     .replaceAll('\'', '&#39;')
 }
 
-function emailContent(kind: 'email-verification' | 'magic-link' | 'password-reset', url: string) {
+function emailContent(
+  kind: 'email-verification' | 'magic-link' | 'password-reset',
+  url: string,
+  metadata?: Record<string, unknown>,
+) {
   const safeUrl = escapeHtml(url)
   if (kind === 'password-reset') {
     return {
@@ -71,6 +82,35 @@ function emailContent(kind: 'email-verification' | 'magic-link' | 'password-rese
     }
   }
   if (kind === 'magic-link') {
+    if (metadata?.clientPortalInvitation === true) {
+      return {
+        subject: 'Aktywuj bezpieczny panel klienta OpenExpert',
+        text: [
+          'Twój ekspert udostępnił Ci bezpieczny panel klienta OpenExpert.',
+          '',
+          `Aktywuj panel, otwierając ten jednorazowy link (ważny przez 1 godzinę):`,
+          url,
+          '',
+          'Link jest przeznaczony tylko dla Ciebie — nie przekazuj go dalej.',
+          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
+        ].join('\n'),
+        html: `<p>Twój ekspert udostępnił Ci bezpieczny panel klienta OpenExpert.</p><p><a href="${safeUrl}">Aktywuj panel klienta</a></p><p>Link jest jednorazowy i ważny przez 1 godzinę. Jest przeznaczony tylko dla Ciebie — nie przekazuj go dalej.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
+      }
+    }
+    if (metadata?.clientPortalBookingActivation === true) {
+      return {
+        subject: 'Aktywuj panel po rezerwacji w OpenExpert',
+        text: [
+          'Twoja konsultacja została zapisana.',
+          '',
+          'Otwórz poniższy jednorazowy link, aby aktywować panel klienta i zobaczyć termin:',
+          url,
+          '',
+          'Link jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
+        ].join('\n'),
+        html: `<p>Twoja konsultacja została zapisana.</p><p><a href="${safeUrl}">Aktywuj panel klienta</a></p><p>Link jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p>`,
+      }
+    }
     return {
       subject: 'Twój link logowania do OpenExpert',
       text: `Otwórz ten jednorazowy link, aby zalogować się do OpenExpert:\n\n${url}`,
@@ -92,13 +132,17 @@ function requestHeaders(event: H3Event): Headers {
   return result
 }
 
-export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
-  const runtimeConfig = useRuntimeConfig(event)
-  const auth = runtimeConfig.auth as PlatformAuthRuntimeConfig
-  const email = runtimeConfig.authEmail as PlatformAuthEmailConfig
-  const fingerprint = JSON.stringify({ auth, email })
-  if (cachedRuntime?.fingerprint === fingerprint) return cachedRuntime.runtime
-
+function createPlatformAuthRuntime(
+  auth: PlatformAuthRuntimeConfig,
+  email: PlatformAuthEmailConfig,
+  options: {
+    baseUrl: string
+    cookiePrefix?: string
+    cookieDomain?: string
+    trustedOrigins?: string[]
+    portalOnly?: boolean
+  },
+): OpenExpertAuthRuntime {
   const sender = createTransactionalEmailSender({
     apiKey: email.apiKey,
     from: email.from,
@@ -113,21 +157,52 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
   })
   const runtime = createOpenExpertAuth({
     config: {
-      baseURL: auth.baseUrl,
+      baseURL: options.baseUrl,
       basePath: auth.basePath,
       secret: auth.secret,
       databaseURL: auth.databaseUrl,
       databaseSchema: auth.databaseSchema,
-      cookiePrefix: auth.cookiePrefix,
-      cookieDomain: auth.cookieDomain || undefined,
-      trustedOrigins: auth.trustedOrigins
-        .split(',')
-        .map(value => value.trim())
-        .filter(Boolean),
+      cookiePrefix: options.cookiePrefix || auth.cookiePrefix,
+      cookieDomain: options.cookieDomain || undefined,
+      disableSignUp: options.portalOnly ? true : undefined,
+      magicLinkDisableSignUp: options.portalOnly ? false : undefined,
+      trustedOrigins: [...new Set([
+        auth.baseUrl,
+        options.baseUrl,
+        ...(options.trustedOrigins ?? []),
+        ...auth.trustedOrigins
+          .split(',')
+          .map(value => value.trim())
+          .filter(Boolean),
+      ])],
+      socialProviders: {
+        ...(auth.socialProviders?.google?.clientId && auth.socialProviders.google.clientSecret
+          ? {
+              google: {
+                clientId: auth.socialProviders.google.clientId,
+                clientSecret: auth.socialProviders.google.clientSecret,
+                disableSignUp: true,
+              },
+            }
+          : {}),
+        ...(auth.socialProviders?.apple?.clientId && auth.socialProviders.apple.clientSecret
+          ? {
+              apple: {
+                clientId: auth.socialProviders.apple.clientId,
+                clientSecret: auth.socialProviders.apple.clientSecret,
+                disableSignUp: true,
+              },
+            }
+          : {}),
+      },
     },
     emailSender: {
       async send(message) {
-        const content = emailContent(message.kind, message.url)
+        const content = emailContent(
+          message.kind,
+          message.url,
+          message.kind === 'magic-link' ? message.metadata : undefined,
+        )
         const result = await sender.send({
           to: message.to,
           ...content,
@@ -142,7 +217,52 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
       },
     },
   })
+  return runtime
+}
+
+export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
+  const runtimeConfig = useRuntimeConfig(event)
+  const auth = runtimeConfig.auth as PlatformAuthRuntimeConfig
+  const email = runtimeConfig.authEmail as PlatformAuthEmailConfig
+  const fingerprint = JSON.stringify({ auth, email })
+  if (cachedRuntime?.fingerprint === fingerprint) return cachedRuntime.runtime
+
+  const runtime = createPlatformAuthRuntime(auth, email, {
+    baseUrl: auth.baseUrl,
+    cookieDomain: auth.cookieDomain || undefined,
+  })
   cachedRuntime = { fingerprint, runtime }
+  return runtime
+}
+
+/**
+ * Issues portal magic links whose verification endpoint lives on the client
+ * portal itself. The resulting session cookie is host-only, so activating a
+ * client does not require a parent-domain cookie shared with the staff CRM.
+ */
+export function serverClientPortalAuth(event: H3Event): OpenExpertAuthRuntime {
+  const runtimeConfig = useRuntimeConfig(event)
+  const auth = runtimeConfig.auth as PlatformAuthRuntimeConfig
+  const email = runtimeConfig.authEmail as PlatformAuthEmailConfig
+  const portal = runtimeConfig.clientPortal as { baseUrl?: string, cookiePrefix?: string }
+  const baseUrl = String(portal?.baseUrl || '').replace(/\/$/u, '')
+  const cookiePrefix = String(portal?.cookiePrefix || '').trim()
+  if (!baseUrl || !cookiePrefix) {
+    throw new Error('Client portal auth configuration is invalid')
+  }
+
+  const fingerprint = JSON.stringify({ auth, email, baseUrl, cookiePrefix })
+  if (cachedClientPortalRuntime?.fingerprint === fingerprint) {
+    return cachedClientPortalRuntime.runtime
+  }
+  const runtime = createPlatformAuthRuntime(auth, email, {
+    baseUrl,
+    cookiePrefix,
+    cookieDomain: undefined,
+    trustedOrigins: [baseUrl],
+    portalOnly: true,
+  })
+  cachedClientPortalRuntime = { fingerprint, runtime }
   return runtime
 }
 

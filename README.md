@@ -71,7 +71,9 @@ pnpm dev
 4. stosuje migracje z kontrolą checksum;
 5. tworzy konto Better Auth oraz organizację przez ten sam RPC i RLS, których
    używa aplikacja;
-6. uruchamia test izolacji RLS i autoryzowanego zapytania HTTP.
+6. ładuje systemowe katalogi CRM, deterministyczny katalog hipotek oraz
+   idempotentny fixture demonstracyjny (9 klientów i 8 spraw);
+7. uruchamia test izolacji RLS i autoryzowanego zapytania HTTP.
 
 Lokalne konto:
 
@@ -82,10 +84,24 @@ rola:         SuperAdmin + administrator organizacji
 organizacja:  openexpert-local
 ```
 
+Lokalne konto panelu klienta:
+
+```text
+email:        jan.kowalski@example.local
+hasło:        OpenExpert123!
+sprawa:       Zakup mieszkania — Warszewo
+```
+
+To konto jest celowo oddzielone od personelu. Seed łączy je wyłącznie z osobą
+Jana w CRM i nadaje dostęp do jednej prawdziwej sprawy wraz z Multiwnioskiem.
+Tworzy też powiązaną placówkę, usługę i najbliższe spotkanie w kolejnym dniu
+roboczym, więc panel klienta nie korzysta w tym widoku z danych mockowych.
+
 Adresy:
 
 - landing: http://127.0.0.1:3003
 - CRM: http://127.0.0.1:3004/login
+- panel klienta: http://127.0.0.1:3006/login
 - Data API: http://127.0.0.1:55321
 - PostgreSQL: `127.0.0.1:55322`
 - Mailpit: http://127.0.0.1:55324

@@ -70,6 +70,7 @@ export interface PublicBookingSlotsPayload {
 }
 
 export interface PublicBookingConfirmation {
+  portalActivation?: 'sent' | 'failed'
   appointment: {
     id: string
     status: string

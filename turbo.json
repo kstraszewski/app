@@ -1,6 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
+    "BETTER_AUTH_*",
+    "DATABASE_URL",
+    "NUXT_*",
     "AI_GATEWAY_API_KEY",
     "GOOGLE_GENERATIVE_AI_API_KEY",
     "OPENEXPERT_DEV_EMAIL",

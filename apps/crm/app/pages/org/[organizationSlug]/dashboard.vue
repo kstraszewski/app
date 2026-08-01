@@ -241,8 +241,6 @@ function formatMetric(metric: DashboardMetric) {
       </UButton>
     </template>
 
-    <DashboardSalesSummary class="dashboard-block" :to="orgPath('/sales')" />
-
     <UAlert
       v-if="error"
       class="dashboard-block"
@@ -258,6 +256,8 @@ function formatMetric(metric: DashboardMetric) {
         </UButton>
       </template>
     </UAlert>
+
+    <DashboardProcessInbox />
 
     <section class="dashboard-calendar dashboard-block" aria-labelledby="dashboard-calendar-title">
       <header class="dashboard-calendar__header">

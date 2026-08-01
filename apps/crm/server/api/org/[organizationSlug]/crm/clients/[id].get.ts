@@ -72,9 +72,11 @@ export default defineEventHandler(async (event) => {
   const [
     hasPrivacyReadPermission,
     hasPrivacyCreatePermission,
+    hasConsentManagePermission,
   ] = await Promise.all([
     hasAdministrativePermission(session, 'privacy.requests.read'),
     hasAdministrativePermission(session, 'privacy.requests.create'),
+    hasAdministrativePermission(session, 'compliance.consents.definitions.manage'),
   ])
   const canCreatePrivacyRequestByAccess =
     canCreateClientAnonymizationRequest({
@@ -91,6 +93,7 @@ export default defineEventHandler(async (event) => {
     || hasPrivacyCreatePermission
   )
   const backendData = serverDataBackend(event) as any
+  const canRequestConsent = isClientOwner || hasConsentManagePermission
   const accessibleFacilityIds = await listAccessibleFacilityIds(session)
   let appointmentsRequest: any = backendData
     .from('appointments')
@@ -151,6 +154,7 @@ export default defineEventHandler(async (event) => {
     ownerResult,
     appointmentsResult,
     anonymizationRequestsResult,
+    consentCaptureRequestsResult,
   ] = await Promise.all([
     session.dataApi
       .from('crm_client_people')
@@ -175,6 +179,13 @@ export default defineEventHandler(async (event) => {
     ownerRequest,
     appointmentsRequest,
     anonymizationRequestsRequest,
+    backendData
+      .from('crm_consent_capture_requests')
+      .select('id, client_id, subject_person_id, definition_id, definition_version_id, intent, status, delivery_status, phone_e164, expires_at, sent_at, delivered_at, verified_at, decided_at, decision, created_at')
+      .eq('organization_id', session.organizationId)
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(250),
   ])
 
   throwDbError(peopleResult.error)
@@ -184,6 +195,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(ownerResult.error)
   throwDbError(appointmentsResult.error)
   throwDbError(anonymizationRequestsResult.error)
+  throwDbError(consentCaptureRequestsResult.error)
 
   const people = peopleResult.data ?? []
   const caseRows = casesResult.data ?? []
@@ -299,14 +311,14 @@ export default defineEventHandler(async (event) => {
       : null,
   }))
 
-  const latestConsentByDefinitionId = new Map<string, any>()
+  const latestConsentByPersonAndDefinition = new Map<string, any>()
   for (const consentEvent of consentEvents) {
-    const definitionId = String(consentEvent.definition_id)
-    if (!latestConsentByDefinitionId.has(definitionId)) {
-      latestConsentByDefinitionId.set(definitionId, consentEvent)
+    const key = `${String(consentEvent.subject_person_id)}:${String(consentEvent.definition_id)}`
+    if (!latestConsentByPersonAndDefinition.has(key)) {
+      latestConsentByPersonAndDefinition.set(key, consentEvent)
     }
   }
-  const latestConsentEvents = [...latestConsentByDefinitionId.values()]
+  const latestConsentEvents = [...latestConsentByPersonAndDefinition.values()]
   const consentVersionIds = [...new Set([
     ...consentDefinitions.map((definition: any) => String(definition.current_version_id)),
     ...consentHistory.map((item: any) => String(item.definition_version_id)),
@@ -376,9 +388,9 @@ export default defineEventHandler(async (event) => {
   const consentVersionById = new Map(
     (consentVersionsResult.data ?? []).map((version: any) => [String(version.id), version]),
   )
-  const consentStates = consentDefinitions.map((definition: any) => {
-    const consentEvent: any = latestConsentByDefinitionId.get(String(definition.id)) ?? null
-    return consentEvent
+  const consentStates = people.flatMap((person: any) => consentDefinitions.map((definition: any) => {
+    const consentEvent: any = latestConsentByPersonAndDefinition.get(`${String(person.id)}:${String(definition.id)}`) ?? null
+    const base = consentEvent
       ? {
           ...consentEvent,
           definition,
@@ -387,6 +399,7 @@ export default defineEventHandler(async (event) => {
       : {
           id: null,
           client_id: id,
+          subject_person_id: person.id,
           definition_id: definition.id,
           definition_version_id: definition.current_version_id,
           decision: 'missing',
@@ -396,9 +409,19 @@ export default defineEventHandler(async (event) => {
           definition,
           version: consentVersionById.get(String(definition.current_version_id)) ?? null,
         }
-  }).sort((left: any, right: any) => (
+    return {
+      ...base,
+      subject_person: {
+        id: String(person.id),
+        display_name: String(person.display_name || 'Osoba bez nazwy'),
+        role: String(person.role || 'other'),
+        phone: person.phone ? String(person.phone) : null,
+      },
+    }
+  })).sort((left: any, right: any) => (
     Number(left.version?.sort_order ?? 0) - Number(right.version?.sort_order ?? 0)
     || String(left.version?.display_title ?? '').localeCompare(String(right.version?.display_title ?? ''), 'pl')
+    || String(left.subject_person?.display_name ?? '').localeCompare(String(right.subject_person?.display_name ?? ''), 'pl')
   ))
   // Keep `consents` backward-compatible: it only contains recorded decisions.
   // `consent_states` additionally exposes definitions for which no decision
@@ -475,6 +498,30 @@ export default defineEventHandler(async (event) => {
       version: consentVersionById.get(String(consentEvent.definition_version_id)) ?? null,
     })),
     consent_history_count: consentEventsResult.count ?? 0,
+    consent_capture_requests: (consentCaptureRequestsResult.data ?? []).map((request: any) => ({
+      id: String(request.id),
+      client_id: String(request.client_id),
+      subject_person_id: String(request.subject_person_id),
+      definition_id: String(request.definition_id),
+      definition_version_id: String(request.definition_version_id),
+      intent: request.intent === 'withdraw' ? 'withdraw' : 'collect',
+      status: String(request.status),
+      delivery_status: request.delivery_status ? String(request.delivery_status) : null,
+      phone_masked: request.phone_e164
+        ? String(request.phone_e164).replace(/.(?=.{4})/g, '•')
+        : '—',
+      expires_at: String(request.expires_at),
+      sent_at: request.sent_at ? String(request.sent_at) : null,
+      delivered_at: request.delivered_at ? String(request.delivered_at) : null,
+      verified_at: request.verified_at ? String(request.verified_at) : null,
+      decided_at: request.decided_at ? String(request.decided_at) : null,
+      decision: request.decision ? String(request.decision) : null,
+      created_at: String(request.created_at),
+    })),
+    consent_access: {
+      can_request: canRequestConsent,
+      can_manage: hasConsentManagePermission,
+    },
     consent_history_page_info: {
       offset: consentHistoryOffset,
       limit: consentHistoryLimit,

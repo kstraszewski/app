@@ -81,10 +81,32 @@ function emailUser(user: { id: string; name: string; email: string }) {
   return { id: user.id, name: user.name, email: user.email }
 }
 
+function socialProviders(
+  config: ReturnType<typeof normalizeConfig>,
+): NonNullable<BetterAuthOptions['socialProviders']> {
+  const providers: NonNullable<BetterAuthOptions['socialProviders']> = {}
+
+  if (config.socialProviders?.google) {
+    providers.google = {
+      ...config.socialProviders.google,
+      disableSignUp: config.socialProviders.google.disableSignUp ?? true,
+    }
+  }
+  if (config.socialProviders?.apple) {
+    providers.apple = {
+      ...config.socialProviders.apple,
+      disableSignUp: config.socialProviders.apple.disableSignUp ?? true,
+    }
+  }
+
+  return providers
+}
+
 export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
   const config = normalizeConfig(options.config)
   const { pool, ownsPool } = createPool(config, options)
   const send = options.emailSender.send.bind(options.emailSender)
+  const configuredSocialProviders = socialProviders(config)
 
   const coreOptions = {
     appName: config.appName,
@@ -93,6 +115,7 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
     secret: config.secret,
     trustedOrigins: [config.baseURL, ...(config.trustedOrigins ?? [])],
     database: pool,
+    socialProviders: configuredSocialProviders,
     user: {
       modelName: 'users',
       fields: {
@@ -120,6 +143,15 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
     },
     account: {
       modelName: 'accounts',
+      updateAccountOnSignIn: true,
+      encryptOAuthTokens: true,
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: true,
+        allowDifferentEmails: false,
+        allowUnlinkingAll: false,
+        updateUserInfoOnLink: false,
+      },
       fields: {
         userId: 'user_id',
         accountId: 'account_id',

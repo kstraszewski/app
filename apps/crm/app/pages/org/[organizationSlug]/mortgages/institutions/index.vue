@@ -7,8 +7,8 @@ import {
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/institutions',
-  alias: ['/org/:organizationSlug/mortgages/institutions'],
+  path: 'settings/institutions',
+  alias: ['mortgages/institutions'],
 })
 useHead({ title: 'Instytucje — ustawienia administracyjne — OpenExpert' })
 

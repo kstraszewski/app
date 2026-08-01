@@ -24,7 +24,7 @@ import {
 definePageMeta({ layout: false })
 
 const route = useRoute()
-const authenticatedUser = useAuthUser()
+const runtimeConfig = useRuntimeConfig()
 const anyExpertSelectValue = '__openexpert_any_available_expert__'
 const widgetKey = computed(() => String(route.params.widgetKey ?? ''))
 const isEmbedded = computed(() => route.query.embed === '1')
@@ -69,17 +69,17 @@ const customer = reactive({
   notes: '',
 })
 const clientClaimPath = computed(() => confirmation.value
-  ? `/client/claim?appointmentId=${encodeURIComponent(confirmation.value.appointment.id)}`
-  : '/client')
-const clientActivationLink = computed(() => authenticatedUser.value
-  ? clientClaimPath.value
-  : {
-      path: '/client/login',
-      query: {
-        email: customer.email.trim().toLowerCase(),
-        redirect: clientClaimPath.value,
-      },
-    })
+  ? `/claim?appointmentId=${encodeURIComponent(confirmation.value.appointment.id)}`
+  : '/')
+const clientActivationLink = computed(() => {
+  const configuredBase = String(
+    runtimeConfig.public.openexpert?.clientPortalBaseUrl || 'http://127.0.0.1:3006',
+  )
+  const login = new URL('/login', configuredBase)
+  login.searchParams.set('email', customer.email.trim().toLowerCase())
+  login.searchParams.set('redirect', clientClaimPath.value)
+  return login.toString()
+})
 
 const emptyWidgetPayload: PublicBookingWidgetPayload = {
   widget: {
@@ -877,8 +877,9 @@ onBeforeUnmount(() => {
           <div>
             <strong>Zachowaj dostęp do konsultacji</strong>
             <p>
-              Aktywuj panel klienta, aby zobaczyć ten i kolejne terminy
-              powiązane z Twoim potwierdzonym kontaktem.
+              {{ confirmation.portalActivation === 'sent'
+                ? 'Wysłaliśmy Ci bezpieczny link aktywacyjny. Możesz też otworzyć panel od razu.'
+                : 'Aktywuj panel klienta, aby zobaczyć ten i kolejne terminy powiązane z Twoim potwierdzonym kontaktem.' }}
             </p>
           </div>
           <UButton
@@ -887,7 +888,7 @@ onBeforeUnmount(() => {
             size="lg"
             icon="i-lucide-calendar-heart"
           >
-            Aktywuj panel klienta
+            Otwórz panel klienta
           </UButton>
         </div>
       </section>

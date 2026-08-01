@@ -29,37 +29,6 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function parseConsentDecisions(input: unknown) {
-  if (input === undefined) return []
-  if (!Array.isArray(input)) {
-    throw createError({ statusCode: 400, statusMessage: 'consent_decisions must be an array' })
-  }
-
-  return input.map((rawDecision, index) => {
-    const decision = asRecord(rawDecision)
-    const definitionId = textValue(decision.definition_id)
-    const versionId = textValue(decision.version_id)
-    if (
-      !definitionId
-      || !uuidPattern.test(definitionId)
-      || !versionId
-      || !uuidPattern.test(versionId)
-      || typeof decision.granted !== 'boolean'
-    ) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Invalid consent_decisions[${index}]`,
-      })
-    }
-
-    return {
-      definition_id: definitionId,
-      version_id: versionId,
-      granted: decision.granted,
-    }
-  })
-}
-
 function throwCreateClientRpcError(error: { message?: string; code?: string } | null | undefined): void {
   if (!error) return
   if (
@@ -150,7 +119,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
     },
     {
       name: 'crm.client_creation_consents',
-      description: 'Load the exact active consent versions required when creating a client.',
+      description: 'Load active consent versions that can be requested from the client through the verified SMS flow. This tool never records a decision.',
       inputSchema: objectSchema({}),
       async handler(event) {
         const session = await requireCrmSession(event)
@@ -170,22 +139,14 @@ export function getCrmMcpTools(): CrmMcpTool[] {
     },
     {
       name: 'crm.create_client',
-      description: 'Create a CRM client with a complete consent trail. Call crm.client_creation_consents first and pass one decision for every returned version.',
+      description: 'Create a CRM client without granting or declining any consent. Consent decisions belong to the client and must be collected later through the verified SMS flow.',
       inputSchema: objectSchema({
         display_name: { type: 'string' },
         primary_email: { type: 'string' },
         primary_phone: { type: 'string' },
         lead_source: { type: 'string' },
         owner_user_id: { type: 'string', format: 'uuid' },
-        consent_decisions: {
-          type: 'array',
-          items: objectSchema({
-            definition_id: { type: 'string', format: 'uuid' },
-            version_id: { type: 'string', format: 'uuid' },
-            granted: { type: 'boolean' },
-          }, ['definition_id', 'version_id', 'granted']),
-        },
-      }, ['display_name', 'consent_decisions']),
+      }, ['display_name']),
       async handler(event, input) {
         const session = await requireCrmSession(event)
         const body = asRecord(input)
@@ -207,7 +168,6 @@ export function getCrmMcpTools(): CrmMcpTool[] {
 
         const primaryEmail = textValue(body.primary_email) ?? null
         const primaryPhone = textValue(body.primary_phone) ?? null
-        const consentDecisions = parseConsentDecisions(body.consent_decisions)
         const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
           p_organization_id: session.organizationId,
           p_owner_user_id: ownerUserId,
@@ -225,7 +185,7 @@ export function getCrmMcpTools(): CrmMcpTool[] {
             phone: primaryPhone,
             metadata: { source: 'mcp' },
           },
-          p_consent_decisions: consentDecisions,
+          p_consent_decisions: [],
         })
         throwCreateClientRpcError(error)
 

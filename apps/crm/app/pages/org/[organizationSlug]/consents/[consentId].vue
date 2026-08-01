@@ -38,22 +38,77 @@ const statusItems: Array<{ label: string, value: ConsentStatus }> = [
 
 const { data, status, error, refresh } = await useFetch<ConsentPayload>(
   () => crmApiPath('/consents'),
-  { default: (): ConsentPayload => ({ role: 'expert', canManage: false, definitions: [] }) },
+  { default: (): ConsentPayload => ({ role: 'expert', canManage: false, canPublish: false, canAudit: false, definitions: [] }) },
 )
 
 const pending = computed(() => status.value === 'pending')
 const definition = computed(() => data.value.definitions.find(item => item.id === consentId.value) ?? null)
 const activeVersion = computed(() => definition.value ? currentVersionFor(definition.value) : null)
 const versionHistory = computed(() => [...(definition.value?.versions ?? [])].sort((left, right) => right.version - left.version))
+const detailViews = ['settings', 'clients', 'statistics', 'events', 'history'] as const
+type ConsentDetailView = typeof detailViews[number]
+const currentView = computed<ConsentDetailView>(() => {
+  if (creating.value) return 'settings'
+  const requested = String(route.query.view || 'settings')
+  return detailViews.includes(requested as ConsentDetailView)
+    ? requested as ConsentDetailView
+    : 'settings'
+})
+const showHistory = computed(() => currentView.value === 'history')
 const notFound = computed(() => !creating.value && !pending.value && !error.value && !definition.value)
 const form = reactive<ConsentForm>(blankForm())
+
+const detailTabs = computed(() => creating.value ? [] : [
+  {
+    label: 'Treść i ustawienia',
+    icon: 'i-lucide-file-text',
+    to: orgPath(`/consents/${consentId.value}`),
+    active: currentView.value === 'settings',
+  },
+  {
+    label: 'Klienci',
+    icon: 'i-lucide-users-round',
+    to: orgPath(`/consents/${consentId.value}?view=clients`),
+    active: currentView.value === 'clients',
+  },
+  {
+    label: 'Statystyki',
+    icon: 'i-lucide-chart-no-axes-combined',
+    to: orgPath(`/consents/${consentId.value}?view=statistics`),
+    active: currentView.value === 'statistics',
+  },
+  {
+    label: 'Rejestr zdarzeń',
+    icon: 'i-lucide-list-checks',
+    to: orgPath(`/consents/${consentId.value}?view=events`),
+    active: currentView.value === 'events',
+  },
+  {
+    label: 'Historia wersji',
+    icon: 'i-lucide-history',
+    count: versionHistory.value.length,
+    to: orgPath(`/consents/${consentId.value}?view=history`),
+    active: showHistory.value,
+  },
+])
+
+const availableStatusItems = computed(() => statusItems.map(item => ({
+  ...item,
+  disabled: item.value === 'published' && !data.value.canPublish,
+})))
 
 const pageTitle = computed(() => creating.value
   ? 'Nowa zgoda'
   : activeVersion.value?.display_title || 'Szczegóły zgody')
 const pageDescription = computed(() => creating.value
   ? 'Utwórz definicję. Kolejne zapisy będą dodawały jej niezmienne wersje.'
-  : 'Treść, reguły użycia i pełna historia niezmiennych wersji.')
+  : ({
+      settings: 'Treść i reguły użycia obowiązujące w procesach CRM.',
+      clients: 'Aktualny stan zgody dla każdej osoby oraz wysyłka próśb SMS.',
+      statistics: 'Skuteczność pozyskania zgody i droga potwierdzeń SMS.',
+      events: 'Pełny ślad wysyłki, weryfikacji i decyzji klienta.',
+      history: 'Chronologiczny rejestr niezmiennych wersji tej zgody.',
+    })[currentView.value])
 
 useHead(() => ({ title: `${pageTitle.value} — OpenExpert CRM` }))
 
@@ -176,6 +231,15 @@ function validateForm() {
     return false
   }
 
+  if (form.status === 'published' && !data.value.canPublish) {
+    toast.add({
+      title: 'Brak uprawnienia do publikacji',
+      description: 'Możesz zapisać wersję roboczą. Publikacja wymaga osobnego uprawnienia compliance.',
+      color: 'error',
+    })
+    return false
+  }
+
   const effectiveFrom = toIsoDateTime(form.effective_from)
   const effectiveTo = toIsoDateTime(form.effective_to)
   if (!effectiveFrom) {
@@ -266,10 +330,11 @@ function formatDateTime(value: string | null | undefined) {
 <template>
   <CrmShell
     :title="pageTitle"
-    eyebrow="Panel prawny · szczegóły zgody"
+    eyebrow="Compliance · zgody"
     :description="pageDescription"
     :back-to="orgPath('/consents')"
     back-label="Wróć do zgód"
+    :tabs="detailTabs"
   >
     <template #meta>
       <div v-if="activeVersion && !creating" class="consent-detail__badges">
@@ -278,19 +343,6 @@ function formatDateTime(value: string | null | undefined) {
         <UBadge :color="statusColor(activeVersion.status)" variant="subtle">{{ statusLabel(activeVersion.status) }}</UBadge>
         <UBadge :color="requirementColor(activeVersion.is_required)" variant="subtle">{{ requirementLabel(activeVersion.is_required) }}</UBadge>
       </div>
-    </template>
-
-    <template #actions>
-      <UButton
-        v-if="!creating"
-        icon="i-lucide-refresh-cw"
-        variant="outline"
-        square
-        :loading="pending"
-        aria-label="Odśwież zgodę"
-        title="Odśwież"
-        @click="refresh()"
-      />
     </template>
 
     <UAlert
@@ -328,7 +380,17 @@ function formatDateTime(value: string | null | undefined) {
       variant="subtle"
       icon="i-lucide-shield-alert"
       title="Nie możesz utworzyć zgody"
-      description="Tworzenie definicji wymaga roli administratora."
+      description="Tworzenie definicji wymaga uprawnienia do zarządzania zgodami compliance."
+    />
+
+    <UAlert
+      v-else-if="!creating && currentView === 'settings' && !pending && definition && !data.canManage"
+      class="consent-detail__state"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-shield-alert"
+      title="Treść w trybie tylko do odczytu"
+      description="Możesz sprawdzić ustawienia i historię. Edycja wymaga uprawnienia do zarządzania zgodami compliance."
     />
 
     <div v-if="pending && !definition && !creating" class="consent-detail__loading">
@@ -337,10 +399,15 @@ function formatDateTime(value: string | null | undefined) {
     </div>
 
     <form
-      v-else-if="(creating && data.canManage) || definition"
+      v-else-if="currentView === 'settings' && ((creating && data.canManage) || definition)"
       class="consent-detail"
       @submit.prevent="save"
     >
+      <p class="consent-detail__version-rule">
+        <UIcon name="i-lucide-shield-check" />
+        <span>{{ creating ? 'Pierwszy zapis utworzy wersję 1 tej definicji.' : 'Zapis zmian utworzy nową wersję. Poprzednia pozostanie w historii.' }}</span>
+      </p>
+
       <fieldset class="consent-detail__fieldset" :disabled="!data.canManage || saving">
         <section class="consent-detail__section">
           <header>
@@ -412,8 +479,17 @@ function formatDateTime(value: string | null | undefined) {
               <USelect v-model="form.channel" class="w-full" :items="channelItems" />
             </UFormField>
 
+            <UFormField label="Metoda pozyskania" description="Obowiązuje dla nowych decyzji.">
+              <UInput
+                class="w-full"
+                model-value="SMS + kod jednorazowy"
+                disabled
+                icon="i-lucide-message-square-lock"
+              />
+            </UFormField>
+
             <UFormField label="Status" required>
-              <USelect v-model="form.status" class="w-full" :items="statusItems" />
+              <USelect v-model="form.status" class="w-full" :items="availableStatusItems" />
             </UFormField>
 
             <UFormField label="Kolejność" description="Niższa liczba oznacza wcześniejszą pozycję.">
@@ -435,12 +511,12 @@ function formatDateTime(value: string | null | undefined) {
             <UFormField
               class="consent-detail__full"
               label="Wymagalność w procesie"
-              description="Nie używaj tej opcji dla dobrowolnego marketingu."
+              description="Nie używaj tej opcji dla dobrowolnego marketingu. Nie blokuje utworzenia karty klienta."
             >
               <UCheckbox
                 v-model="form.is_required"
-                label="Wymagana do dodania klienta"
-                description="Klient nadal musi świadomie zaznaczyć checkbox."
+                label="Wymagana do przejścia procesu docelowego"
+                description="Decyzję nadal podejmuje klient w zweryfikowanym flow SMS."
               />
             </UFormField>
 
@@ -469,56 +545,85 @@ function formatDateTime(value: string | null | undefined) {
         </UButton>
       </div>
 
-      <section v-if="definition && !creating" id="history" class="consent-detail__section consent-detail__history">
-        <header>
-          <div>
-            <span>Audyt</span>
-            <h2>Historia wersji</h2>
-          </div>
-          <UBadge color="neutral" variant="outline">{{ versionHistory.length }}</UBadge>
-        </header>
-
-        <div v-if="versionHistory.length" class="history-list">
-          <details
-            v-for="version in versionHistory"
-            :key="version.id"
-            class="history-item"
-            :open="version.id === definition.current_version_id"
-          >
-            <summary>
-              <div>
-                <strong>Wersja {{ version.version }}</strong>
-                <UBadge v-if="version.id === definition.current_version_id" color="primary" variant="subtle">aktualna</UBadge>
-                <UBadge :color="statusColor(version.status)" variant="subtle">{{ statusLabel(version.status) }}</UBadge>
-                <UBadge :color="requirementColor(version.is_required)" variant="subtle">{{ requirementLabel(version.is_required) }}</UBadge>
-              </div>
-              <span>{{ formatDateTime(version.created_at) }}</span>
-            </summary>
-
-            <div class="history-item__body">
-              <p v-if="version.change_note" class="history-item__note">{{ version.change_note }}</p>
-              <dl>
-                <div><dt>Tytuł</dt><dd>{{ version.display_title }}</dd></div>
-                <div><dt>Kanał</dt><dd>{{ channelLabel(version.channel) }}</dd></div>
-                <div><dt>Podstawa prawna</dt><dd>{{ version.legal_basis }}</dd></div>
-                <div><dt>Język</dt><dd>{{ version.language_code }}</dd></div>
-                <div><dt>Obowiązuje od</dt><dd>{{ formatDateTime(version.effective_from) }}</dd></div>
-                <div><dt>Obowiązuje do</dt><dd>{{ formatDateTime(version.effective_to) }}</dd></div>
-              </dl>
-              <section>
-                <span>Cel</span>
-                <p>{{ version.purpose }}</p>
-              </section>
-              <section>
-                <span>Treść</span>
-                <p class="history-item__content">{{ version.content }}</p>
-              </section>
-              <code :title="version.content_sha256">SHA-256: {{ version.content_sha256 }}</code>
-            </div>
-          </details>
-        </div>
-      </section>
     </form>
+
+    <UAlert
+      v-else-if="definition && ['clients', 'statistics', 'events'].includes(currentView) && !data.canAudit"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-shield-alert"
+      title="Brak dostępu do danych compliance"
+      description="Rejestr klientów, statystyki i zdarzenia wymagają uprawnienia do odczytu audytu zgód."
+    />
+
+    <ConsentsClientsPanel
+      v-else-if="definition && currentView === 'clients'"
+      :definition-id="consentId"
+      :can-request="data.canManage"
+    />
+
+    <ConsentsStatisticsPanel
+      v-else-if="definition && currentView === 'statistics'"
+      :definition-id="consentId"
+    />
+
+    <ConsentsEventsPanel
+      v-else-if="definition && currentView === 'events'"
+      :definition-id="consentId"
+    />
+
+    <section v-else-if="definition && showHistory" class="consent-detail__section consent-detail__history">
+      <header>
+        <div>
+          <span>Audyt</span>
+          <h2>Historia wersji</h2>
+        </div>
+        <div class="consent-detail__history-meta">
+          <span>Wersje są niezmienne i zachowane dla audytu.</span>
+          <UBadge color="neutral" variant="outline">{{ versionHistory.length }}</UBadge>
+        </div>
+      </header>
+
+      <div v-if="versionHistory.length" class="history-list">
+        <details
+          v-for="version in versionHistory"
+          :key="version.id"
+          class="history-item"
+          :open="version.id === definition.current_version_id"
+        >
+          <summary>
+            <div>
+              <strong>Wersja {{ version.version }}</strong>
+              <UBadge v-if="version.id === definition.current_version_id" color="primary" variant="subtle">aktualna</UBadge>
+              <UBadge :color="statusColor(version.status)" variant="subtle">{{ statusLabel(version.status) }}</UBadge>
+              <UBadge :color="requirementColor(version.is_required)" variant="subtle">{{ requirementLabel(version.is_required) }}</UBadge>
+            </div>
+            <span>{{ formatDateTime(version.created_at) }}</span>
+          </summary>
+
+          <div class="history-item__body">
+            <p v-if="version.change_note" class="history-item__note">{{ version.change_note }}</p>
+            <dl>
+              <div><dt>Tytuł</dt><dd>{{ version.display_title }}</dd></div>
+              <div><dt>Kanał</dt><dd>{{ channelLabel(version.channel) }}</dd></div>
+              <div><dt>Podstawa prawna</dt><dd>{{ version.legal_basis }}</dd></div>
+              <div><dt>Język</dt><dd>{{ version.language_code }}</dd></div>
+              <div><dt>Obowiązuje od</dt><dd>{{ formatDateTime(version.effective_from) }}</dd></div>
+              <div><dt>Obowiązuje do</dt><dd>{{ formatDateTime(version.effective_to) }}</dd></div>
+            </dl>
+            <section>
+              <span>Cel</span>
+              <p>{{ version.purpose }}</p>
+            </section>
+            <section>
+              <span>Treść</span>
+              <p class="history-item__content">{{ version.content }}</p>
+            </section>
+            <code :title="version.content_sha256">SHA-256: {{ version.content_sha256 }}</code>
+          </div>
+        </details>
+      </div>
+    </section>
   </CrmShell>
 </template>
 
@@ -549,6 +654,22 @@ function formatDateTime(value: string | null | undefined) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.consent-detail__version-rule {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+.consent-detail__version-rule > .iconify {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  color: var(--ui-primary);
 }
 
 .consent-detail__section {
@@ -641,6 +762,21 @@ function formatDateTime(value: string | null | undefined) {
 .consent-detail__history {
   margin-top: 6px;
   scroll-margin-top: 20px;
+}
+
+.consent-detail__history-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.consent-detail__section > header .consent-detail__history-meta > span {
+  color: var(--ui-text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .history-list {
@@ -762,6 +898,11 @@ function formatDateTime(value: string | null | undefined) {
 
   .history-item summary > span {
     white-space: normal;
+  }
+
+  .consent-detail__history-meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

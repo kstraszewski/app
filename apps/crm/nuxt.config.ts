@@ -19,6 +19,7 @@ const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
   || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
 
 export default defineNuxtConfig({
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
   typescript: {
@@ -137,7 +138,27 @@ export default defineNuxtConfig({
         || (process.env.NODE_ENV === 'production' ? 'openexpert' : 'openexpert-local'),
       cookieDomain: process.env.NUXT_AUTH_COOKIE_DOMAIN || '',
       trustedOrigins: process.env.NUXT_AUTH_TRUSTED_ORIGINS
-        || 'http://127.0.0.1:3003,http://127.0.0.1:3004',
+        || 'http://127.0.0.1:3003,http://127.0.0.1:3004,http://127.0.0.1:3006',
+      socialProviders: {
+        google: {
+          clientId: process.env.BETTER_AUTH_GOOGLE_CLIENT_ID || '',
+          clientSecret: process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET || '',
+        },
+        apple: {
+          clientId: process.env.BETTER_AUTH_APPLE_CLIENT_ID || '',
+          clientSecret: process.env.BETTER_AUTH_APPLE_CLIENT_SECRET || '',
+        },
+      },
+    },
+    clientPortal: {
+      baseUrl: process.env.NUXT_CLIENT_PORTAL_BASE_URL
+        || (process.env.NODE_ENV === 'production'
+          ? 'https://client.openexpert.app'
+          : 'http://127.0.0.1:3006'),
+      cookiePrefix: process.env.BETTER_AUTH_CLIENT_COOKIE_PREFIX
+        || `${process.env.BETTER_AUTH_COOKIE_PREFIX
+          || (process.env.NODE_ENV === 'production' ? 'openexpert' : 'openexpert-local')}-client`,
+      invitationTtlSeconds: Number(process.env.NUXT_CLIENT_PORTAL_INVITATION_TTL_SECONDS || 3600),
     },
     authEmail: {
       apiKey: process.env.NUXT_RESEND_API_KEY || '',
@@ -156,6 +177,24 @@ export default defineNuxtConfig({
         user: process.env.NUXT_SMTP_USER || '',
         password: process.env.NUXT_SMTP_PASSWORD || '',
       },
+    },
+    consentSms: {
+      provider: process.env.NUXT_CONSENT_SMS_PROVIDER
+        || (process.env.NODE_ENV === 'production' ? 'http' : 'local'),
+      demoAutoFill: process.env.NUXT_CONSENT_SMS_DEMO_AUTO_FILL === 'true',
+      gatewayUrl: process.env.NUXT_CONSENT_SMS_GATEWAY_URL || '',
+      gatewayToken: process.env.NUXT_CONSENT_SMS_GATEWAY_TOKEN || '',
+      sender: process.env.NUXT_CONSENT_SMS_SENDER || 'OpenExpert',
+      otpSecret: process.env.NUXT_CONSENT_OTP_SECRET
+        || (process.env.NODE_ENV === 'production'
+          ? ''
+          : 'openexpert-local-consent-otp-secret-change-me'),
+      publicBaseUrl: process.env.NUXT_CONSENT_PUBLIC_BASE_URL || authBaseUrl,
+      ttlSeconds: Number(
+        process.env.NUXT_CONSENT_SMS_TTL_SECONDS
+        || (Number(process.env.NUXT_CONSENT_SMS_TTL_MINUTES || 10) * 60),
+      ),
+      maxOtpAttempts: Number(process.env.NUXT_CONSENT_OTP_MAX_ATTEMPTS || 5),
     },
     storage: {
       provider: storageProvider,
@@ -215,6 +254,11 @@ export default defineNuxtConfig({
           || (process.env.NODE_ENV === 'production'
             ? 'https://www.openexpert.app'
             : 'http://127.0.0.1:3003'),
+        clientPortalBaseUrl: process.env.NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL
+          || process.env.NUXT_CLIENT_PORTAL_BASE_URL
+          || (process.env.NODE_ENV === 'production'
+            ? 'https://client.openexpert.app'
+            : 'http://127.0.0.1:3006'),
       },
     },
   },

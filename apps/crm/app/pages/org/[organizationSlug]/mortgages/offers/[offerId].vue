@@ -54,8 +54,8 @@ import {
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/products/:offerId',
-  alias: ['/org/:organizationSlug/mortgages/offers/:offerId'],
+  path: 'settings/products/:offerId',
+  alias: ['mortgages/offers/:offerId'],
 })
 
 type OrganizationProductSettingsPayload = {

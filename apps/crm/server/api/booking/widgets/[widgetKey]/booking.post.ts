@@ -2,6 +2,7 @@ import { readBody, setHeader } from 'h3'
 import { createHash } from 'node:crypto'
 import { asRecord } from '~~/server/utils/crm'
 import { bookingCalculationContextValue } from '~~/server/utils/booking-calculators'
+import { serverClientPortalAuth } from '~~/server/utils/platform-auth'
 import {
   assertPublicBookingRateLimit,
   assertWidgetRequestOrigin,
@@ -78,6 +79,43 @@ function bookingConfirmation(
       ),
       expertName: String(expert.name ?? fallback.expertName ?? ''),
     },
+  }
+}
+
+async function sendPortalActivation(
+  event: Parameters<typeof serverClientPortalAuth>[0],
+  input: { appointmentId: string, email: string, name: string },
+): Promise<'sent' | 'failed'> {
+  const portalConfig = useRuntimeConfig(event).clientPortal as { baseUrl?: string }
+  const portalBaseUrl = String(portalConfig?.baseUrl || '').replace(/\/$/u, '')
+  if (!portalBaseUrl) return 'failed'
+
+  const claimPath = `/claim?appointmentId=${encodeURIComponent(input.appointmentId)}`
+  const callbackURL = new URL(claimPath, `${portalBaseUrl}/`).toString()
+  const loginURL = new URL('/login', `${portalBaseUrl}/`)
+  loginURL.searchParams.set('email', input.email)
+  loginURL.searchParams.set('redirect', claimPath)
+
+  try {
+    await serverClientPortalAuth(event).auth.api.signInMagicLink({
+      body: {
+        email: input.email,
+        name: input.name,
+        callbackURL,
+        newUserCallbackURL: callbackURL,
+        errorCallbackURL: loginURL.toString(),
+        metadata: {
+          clientPortalBookingActivation: true,
+          appointmentId: input.appointmentId,
+        },
+      },
+      headers: new Headers({ origin: portalBaseUrl }),
+    })
+    return 'sent'
+  }
+  catch (error) {
+    console.error('Unable to send the booking portal activation email', error)
+    return 'failed'
   }
 }
 
@@ -283,11 +321,22 @@ export default defineEventHandler(async (event) => {
   const expert = asRecord(rawAppointment.expert)
   const bookedExpertId = String(expert.userId ?? expert.user_id ?? rawAppointment.expertUserId ?? rawAppointment.expert_user_id ?? '')
   const knownExpert = catalog.experts.find(item => item.userId === bookedExpertId)
+  const appointmentId = String(rawAppointment.id || '')
+  const portalActivation = appointmentId
+    ? await sendPortalActivation(event, {
+        appointmentId,
+        email: customerEmail,
+        name: customerName,
+      })
+    : 'failed'
 
   setHeader(event, 'Cache-Control', 'no-store')
-  return bookingConfirmation(data, {
+  return {
+    ...bookingConfirmation(data, {
     facilityName: catalog.facility.name,
     serviceName: service.name,
     expertName: knownExpert?.name,
-  })
+    }),
+    portalActivation,
+  }
 })

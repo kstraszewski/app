@@ -87,12 +87,13 @@ function dataApiPrivateKey(value) {
   return decoded
 }
 
-function localPlatformClient() {
+export function createLocalMortgageCatalogClient(configuration = {}) {
   const values = {
     ...parseEnvFile(resolve(repoRoot, '.env')),
     ...parseEnvFile(resolve(repoRoot, '.env.local-stack')),
     ...parseEnvFile(resolve(repoRoot, 'apps/crm/.env')),
     ...process.env,
+    ...configuration,
   }
   const dataApiUrl = values.NUXT_PUBLIC_DATA_API_URL || values.NUXT_DATA_API_URL
   if (!dataApiUrl) {
@@ -247,7 +248,7 @@ function localDeveloperSource(source, product, manifest) {
 }
 
 export async function syncMortgageCatalog(
-  client = localPlatformClient(),
+  client = createLocalMortgageCatalogClient(),
   { offline = false } = {},
 ) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))

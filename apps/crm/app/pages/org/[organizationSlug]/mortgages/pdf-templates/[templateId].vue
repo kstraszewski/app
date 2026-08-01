@@ -8,8 +8,8 @@ import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/institutions/:bankId/pdf-templates/:templateId',
-  alias: ['/org/:organizationSlug/mortgages/institutions/:bankId/pdf-templates/:templateId'],
+  path: 'settings/institutions/:bankId/pdf-templates/:templateId',
+  alias: ['mortgages/institutions/:bankId/pdf-templates/:templateId'],
   crmContentMode: 'workspace',
 })
 

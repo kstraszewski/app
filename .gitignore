@@ -32,3 +32,4 @@ apps/*/.env.*
 
 # Local MCP configuration (each contributor supplies private integrations)
 .mcp.json
+.env*

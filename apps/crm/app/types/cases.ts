@@ -168,6 +168,52 @@ export interface CaseProductType {
   description: string | null
 }
 
+export interface CaseWorkflowStatus {
+  code: string
+  label: string
+  color: string
+  sort_order: number
+  is_initial: boolean
+  is_terminal: boolean
+}
+
+export interface CaseItemWorkflow {
+  id: string
+  code: string
+  name: string
+  domain: CaseProductType['domain'] | null
+  statuses: CaseWorkflowStatus[]
+}
+
+export type CaseItemHandoffStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled'
+export type CaseItemHandoffAction = 'accept' | 'reject' | 'cancel'
+
+export interface CaseItemHandoff {
+  id: string
+  organization_id: string
+  case_id: string
+  case_item_id: string
+  previous_owner_user_id: string | null
+  proposed_owner_user_id: string
+  requested_by_user_id: string
+  status: CaseItemHandoffStatus
+  request_note: string | null
+  response_note: string | null
+  requested_at: string
+  resolved_at: string | null
+  resolved_by_user_id: string | null
+  revision: number
+  previous_owner: CaseUserSummary | null
+  requested_by: CaseUserSummary | null
+  proposed_owner: CaseUserSummary | null
+  resolved_by: CaseUserSummary | null
+}
+
+export interface CaseItemPermissions {
+  can_change_status: boolean
+  can_handoff: boolean
+}
+
 export interface CaseItem {
   id: string
   case_id: string
@@ -185,6 +231,10 @@ export interface CaseItem {
   updated_at: string
   product_type: CaseProductType | null
   owner: CaseUserSummary | null
+  workflow: CaseItemWorkflow | null
+  handoffs: CaseItemHandoff[]
+  pending_handoff: CaseItemHandoff | null
+  permissions: CaseItemPermissions
 }
 
 export interface CaseProperty {
@@ -291,6 +341,7 @@ export interface CaseDetail {
 
 export interface CaseDetailResponse {
   data: CaseDetail
+  current_user_id: string
 }
 
 export interface CreateCaseResponse {

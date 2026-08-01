@@ -1,8 +1,8 @@
 <script setup lang="ts">
 definePageMeta({
   middleware: ['auth', 'organization'],
-  path: '/org/:organizationSlug/settings/institution-files',
-  alias: ['/org/:organizationSlug/mortgages/files'],
+  path: 'settings/institution-files',
+  alias: ['mortgages/files'],
 })
 
 useHead({ title: 'Pliki z banków — OpenExpert' })

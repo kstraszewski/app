@@ -1,24 +1,24 @@
 <script setup lang="ts">
 const journey = [
   {
-    icon: 'lucide:house',
-    title: 'Nieruchomość',
-    description: 'Znalezienie i weryfikacja właściwej nieruchomości',
+    icon: 'lucide:route',
+    title: 'Wybierz model',
+    description: 'Zacznij samodzielnie albo rozwijaj pośrednictwo jako firma',
   },
   {
-    icon: 'lucide:landmark',
-    title: 'Kredyt',
-    description: 'Analiza i wybór najlepszego finansowania',
+    icon: 'lucide:clipboard-check',
+    title: 'Przygotuj start',
+    description: 'Ustal zakres współpracy oraz wymagane dane i formalności',
   },
   {
-    icon: 'lucide:shield-check',
-    title: 'Ubezpieczenie',
-    description: 'Dobór ochrony dla klienta i jego majątku',
+    icon: 'lucide:palette',
+    title: 'Skonfiguruj markę',
+    description: 'Dopasuj system i uporządkuj sposób obsługi klientów',
   },
   {
-    icon: 'lucide:user-round-check',
-    title: 'Jeden ekspert',
-    description: 'Prowadzi relację i podejmuje kluczowe decyzje',
+    icon: 'lucide:briefcase-business',
+    title: 'Prowadź klientów',
+    description: 'Zarządzaj sprawami, komunikacją i rozliczeniami w jednym miejscu',
   },
 ]
 </script>
@@ -27,8 +27,8 @@ const journey = [
   <section id="jak-to-dziala" class="journey-section" aria-labelledby="journey-title">
     <div class="journey-inner">
       <div class="journey-heading">
-        <h2 id="journey-title">Ty prowadzisz klienta. Agenci wykonują pracę.</h2>
-        <p>Nieruchomość, finansowanie i ubezpieczenie pozostają w jednej sprawie. Agenci korzystają z tego samego kontekstu i wspierają każdy kolejny etap.</p>
+        <h2 id="journey-title">Od pomysłu do własnego pośrednictwa.</h2>
+        <p>OpenExpert porządkuje drogę wejścia i daje system do codziennej pracy. Dokładny zakres przygotowania zależy od modelu działania i oferowanych produktów.</p>
       </div>
 
       <ol class="journey-list">
@@ -48,7 +48,7 @@ const journey = [
         </template>
       </ol>
 
-      <p class="journey-mantra"><span aria-hidden="true" /> Jedna relacja. Jeden system. Ekspert + agenci AI.</p>
+      <p class="journey-mantra"><span aria-hidden="true" /> Osoba lub firma. Własna marka. Jedna platforma.</p>
     </div>
   </section>
 </template>

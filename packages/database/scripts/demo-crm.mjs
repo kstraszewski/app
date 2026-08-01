@@ -912,6 +912,7 @@ async function loadActiveConsentCatalogue(adminClient, organizationId) {
       .from('crm_consent_definitions')
       .select('id, code, current_version_id')
       .eq('organization_id', organizationId)
+      .eq('context', 'client_creation')
       .order('code'),
     'Reading CRM consent definitions',
   ) ?? []

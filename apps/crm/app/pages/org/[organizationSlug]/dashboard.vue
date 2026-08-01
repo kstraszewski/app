@@ -241,8 +241,6 @@ function formatMetric(metric: DashboardMetric) {
       </UButton>
     </template>
 
-    <DashboardSalesSummary class="dashboard-block" :to="orgPath('/sales')" />
-
     <UAlert
       v-if="error"
       class="dashboard-block"

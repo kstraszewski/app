@@ -60,6 +60,8 @@ function caseLink(item: SalesRecentWin) {
     eyebrow="Wyniki eksperta"
     description="Skuteczność, pipeline i prowizje produktów aktualnie przypisanych do Ciebie."
   >
+    <SalesPayoutSummary />
+
     <SalesDashboard
       :data="salesPayload?.data"
       :status="status"

@@ -12,6 +12,8 @@ const props = withDefaults(defineProps<{
   categorySlug: '',
 })
 
+const route = useRoute()
+const router = useRouter()
 const {
   activeCategory,
   activeSearchQuery,
@@ -60,7 +62,17 @@ const pageDescription = computed(() => (
 ))
 const pageEyebrow = computed(() => activeCategory.value ? 'Kategoria forum' : 'Wiedza organizacji')
 const initialCategoryId = computed(() => activeCategory.value?.id || '')
-const categoriesToShow = computed(() => categories.value.slice(0, 8))
+const hasDirectoryFilters = computed(() => Boolean(activeCategory.value) || hasActiveFilters.value)
+const compactSearchModeLabel = computed(() => {
+  if (threadList.value.searchMode === 'hybrid') return 'Wektory + słowa kluczowe'
+  if (threadList.value.searchMode === 'lexical') return 'Słowa kluczowe'
+  return 'Wyszukiwanie forum'
+})
+const allThreadsTarget = computed<RouteLocationRaw>(() => ({
+  path: forumBasePath.value,
+  query: directoryQuery(),
+}))
+const allThreadsHref = computed(() => router.resolve(allThreadsTarget.value).href)
 const openThreadCount = computed(() => (
   threadList.value.threads.filter(thread => thread.status === 'open').length
 ))
@@ -87,7 +99,7 @@ const pageTabs = computed(() => {
     active?: boolean
   }> = [{
     label: 'Wszystkie wątki',
-    to: forumBasePath.value,
+    to: allThreadsTarget.value,
     icon: 'i-lucide-messages-square',
     exact: true,
   }]
@@ -118,7 +130,17 @@ useHead({
 })
 
 function categoryTarget(slug: string): RouteLocationRaw {
-  return `${forumBasePath.value}/categories/${encodeURIComponent(slug)}`
+  return {
+    path: `${forumBasePath.value}/categories/${encodeURIComponent(slug)}`,
+    query: directoryQuery(),
+  }
+}
+
+function directoryQuery() {
+  const query = { ...route.query }
+  delete query.thread
+  delete query.category
+  return query
 }
 
 function threadTarget(thread: ForumThreadSummary): RouteLocationRaw {
@@ -139,6 +161,11 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   statusFilter.value = status
   await submitSearch()
 }
+
+async function clearDirectoryFilters(): Promise<void> {
+  resetFilters()
+  if (activeCategory.value) await navigateTo(forumBasePath.value)
+}
 </script>
 
 <template>
@@ -147,7 +174,7 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
       :title="pageTitle"
       :eyebrow="pageEyebrow"
       :description="pageDescription"
-      :back-to="activeCategory ? forumBasePath : undefined"
+      :back-to="activeCategory ? allThreadsHref : undefined"
       back-label="Wszystkie wątki"
       :tabs="pageTabs"
     >
@@ -155,6 +182,7 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
         <div class="forum-directory-page__actions">
           <UBadge
             v-if="canAccessModeration && moderatorRoleLabel"
+            class="forum-directory-page__role"
             color="warning"
             variant="subtle"
             icon="i-lucide-shield-check"
@@ -163,6 +191,7 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
           </UBadge>
           <UButton
             v-if="canAccessModeration"
+            class="forum-directory-page__moderation-action"
             :to="moderationPath"
             color="neutral"
             variant="outline"
@@ -197,56 +226,111 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
       </section>
 
       <template v-else>
-        <section class="forum-search-hero" aria-labelledby="forum-search-heading">
-          <div class="forum-search-hero__copy">
-            <span class="forum-search-hero__eyebrow">
-              <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-              Wyszukiwanie wektorowe i słowa kluczowe
-            </span>
-            <h2 id="forum-search-heading">
-              {{ activeCategory ? `Przeszukaj kategorię „${activeCategory.name}”` : 'Znajdź odpowiedź, zanim zadasz pytanie' }}
-            </h2>
-            <p>Możesz wpisać całe pytanie — wyszukiwarka rozumie znaczenie, nie tylko identyczne słowa.</p>
+        <section class="forum-directory-tools" aria-label="Wyszukiwanie i filtry forum">
+          <div class="forum-directory-tools__controls">
+            <form role="search" class="forum-directory-search" @submit.prevent="submitSearch">
+              <p id="forum-search-description" class="sr-only">
+                Wyszukiwanie obejmuje pytania i odpowiedzi oraz dopasowuje znaczenie zapytania i słowa kluczowe.
+              </p>
+              <UInput
+                v-model="searchInput"
+                class="forum-directory-search__input"
+                size="lg"
+                icon="i-lucide-search"
+                placeholder="Szukaj w pytaniach i odpowiedziach…"
+                aria-label="Semantyczne wyszukiwanie na forum"
+                :aria-invalid="Boolean(searchValidationMessage)"
+                :aria-describedby="searchValidationMessage ? 'forum-search-validation' : 'forum-search-description'"
+                autocomplete="off"
+                enterkeyhint="search"
+                :maxlength="200"
+              >
+                <template v-if="searchInput" #trailing>
+                  <UButton
+                    type="button"
+                    color="neutral"
+                    variant="link"
+                    square
+                    size="sm"
+                    icon="i-lucide-x"
+                    aria-label="Wyczyść wyszukiwanie"
+                    @click="clearSearch"
+                  />
+                </template>
+              </UInput>
+            </form>
+
+            <label class="forum-filter-control">
+              <span class="forum-filter-control__label">Typ</span>
+              <USelect
+                v-model="typeFilter"
+                class="forum-directory-tools__select"
+                :items="typeItems"
+                value-key="value"
+                size="lg"
+                icon="i-lucide-list-filter"
+                aria-label="Filtruj po typie tematu"
+              />
+            </label>
+            <label class="forum-filter-control">
+              <span class="forum-filter-control__label">Status</span>
+              <USelect
+                v-model="statusFilter"
+                class="forum-directory-tools__select"
+                :items="statusItems"
+                value-key="value"
+                size="lg"
+                icon="i-lucide-circle-check"
+                aria-label="Filtruj po statusie"
+              />
+            </label>
           </div>
 
-          <form role="search" class="forum-search-hero__form" @submit.prevent="submitSearch">
-            <UInput
-              v-model="searchInput"
-              class="forum-search-hero__input"
-              size="xl"
-              icon="i-lucide-search"
-              placeholder="Np. jak odpowiedzieć klientowi, gdy bank opóźnia analizę?"
-              aria-label="Semantyczne wyszukiwanie na forum"
-              autocomplete="off"
-              :maxlength="200"
-            >
-              <template v-if="searchInput" #trailing>
-                <UButton
-                  type="button"
-                  color="neutral"
-                  variant="link"
-                  square
-                  size="sm"
-                  icon="i-lucide-x"
-                  aria-label="Wyczyść wyszukiwanie"
-                  @click="clearSearch"
-                />
-              </template>
-            </UInput>
-            <UButton type="submit" size="xl" icon="i-lucide-search" :disabled="Boolean(searchValidationMessage)">
-              Szukaj
-            </UButton>
-          </form>
-
-          <p v-if="searchValidationMessage" class="forum-search-hero__validation" role="status">
+          <p
+            v-if="searchValidationMessage"
+            id="forum-search-validation"
+            class="forum-directory-search__validation"
+            role="status"
+          >
             {{ searchValidationMessage }}
           </p>
 
-          <div class="forum-search-hero__status-row">
-            <UTooltip :text="searchHelpText">
-              <button type="button" class="forum-search-hero__mode" aria-label="Jak działa wyszukiwanie forum">
+          <nav
+            id="forum-categories"
+            class="forum-category-filters"
+            aria-label="Filtruj wątki według kategorii"
+            aria-describedby="forum-categories-scroll-hint"
+          >
+            <span id="forum-categories-scroll-hint" class="sr-only">Kategorie można przewijać w poziomie.</span>
+            <NuxtLink
+              :to="allThreadsTarget"
+              class="forum-category-filter"
+              :class="{ 'forum-category-filter--active': !activeCategory }"
+              :aria-current="!activeCategory ? 'page' : undefined"
+            >
+              <UIcon name="i-lucide-layout-list" class="forum-category-filter__icon" aria-hidden="true" />
+              <strong>Wszystkie</strong>
+            </NuxtLink>
+
+            <template v-if="categoriesStatus === 'idle' || categoriesStatus === 'pending'">
+              <USkeleton v-for="index in 4" :key="index" class="forum-category-filter-skeleton" />
+            </template>
+            <template v-else>
+              <ForumCategoryCard
+                v-for="category in categories"
+                :key="category.id"
+                :category="category"
+                :to="categoryTarget(category.slug)"
+                :active="activeCategory?.id === category.id"
+              />
+            </template>
+          </nav>
+
+          <div class="forum-directory-tools__status-row">
+            <UTooltip :text="`${searchModeLabel}. ${searchHelpText}`">
+              <button type="button" class="forum-search-mode" aria-label="Jak działa wyszukiwanie forum">
                 <UIcon :name="threadList.searchMode === 'hybrid' ? 'i-lucide-sparkles' : 'i-lucide-search-check'" aria-hidden="true" />
-                {{ searchModeLabel }}
+                {{ compactSearchModeLabel }}
                 <UIcon name="i-lucide-circle-help" aria-hidden="true" />
               </button>
             </UTooltip>
@@ -262,28 +346,9 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
               <UIcon :name="realtimeStatus.icon" aria-hidden="true" />
               {{ realtimePulse ? 'Zaktualizowano teraz' : realtimeStatus.label }}
             </span>
-          </div>
-        </section>
-
-        <section v-if="!activeCategory" id="forum-categories" class="forum-categories" aria-labelledby="forum-categories-heading">
-          <div class="forum-section-heading">
-            <div>
-              <span>Obszary wiedzy</span>
-              <h2 id="forum-categories-heading">Przeglądaj kategorie</h2>
-              <p>Wejdź do wybranego obszaru, aby zobaczyć tylko związane z nim rozmowy.</p>
-            </div>
-          </div>
-
-          <div v-if="categoriesStatus === 'idle' || categoriesStatus === 'pending'" class="forum-category-grid" aria-label="Ładowanie kategorii">
-            <USkeleton v-for="index in 4" :key="index" class="h-36 w-full" />
-          </div>
-          <div v-else class="forum-category-grid">
-            <ForumCategoryCard
-              v-for="category in categoriesToShow"
-              :key="category.id"
-              :category="category"
-              :to="categoryTarget(category.slug)"
-            />
+            <span class="forum-directory-tools__result-summary">
+              {{ threadList.total }} {{ threadTotalLabel }} · {{ activeSearchQuery ? 'wg trafności' : 'ostatnia aktywność' }}
+            </span>
           </div>
         </section>
 
@@ -293,41 +358,18 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
               <div>
                 <span>{{ activeSearchQuery ? 'Wyniki wyszukiwania' : (activeCategory ? 'Rozmowy w kategorii' : 'Najnowsza aktywność') }}</span>
                 <h2 id="forum-conversations-heading">
-                  {{ activeSearchQuery ? `Wyniki dla „${activeSearchQuery}”` : 'Wątki ekspertów' }}
+                  {{ activeSearchQuery ? `Wyniki dla „${activeSearchQuery}”` : (activeCategory ? 'Wątki w tej kategorii' : 'Najnowsze wątki') }}
                 </h2>
-                <p>
-                  {{ threadList.total }}
-                  {{ threadTotalLabel }}
-                  · {{ activeSearchQuery ? 'najlepsze dopasowanie' : 'ostatnia aktywność' }}
-                </p>
               </div>
               <UButton
-                v-if="hasActiveFilters"
+                v-if="hasDirectoryFilters"
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-filter-x"
-                @click="resetFilters"
+                @click="clearDirectoryFilters"
               >
                 Wyczyść filtry
               </UButton>
-            </div>
-
-            <div class="forum-filter-bar" aria-label="Filtry forum">
-              <USelect
-                v-model="typeFilter"
-                :items="typeItems"
-                value-key="value"
-                icon="i-lucide-list-filter"
-                aria-label="Filtruj po typie tematu"
-              />
-              <USelect
-                v-model="statusFilter"
-                :items="statusItems"
-                value-key="value"
-                icon="i-lucide-circle-check"
-                aria-label="Filtruj po statusie"
-              />
-              <span>Sortowanie: {{ activeSearchQuery ? 'trafność' : 'ostatnia aktywność' }}</span>
             </div>
 
             <ClientOnly>
@@ -353,14 +395,14 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
             </div>
 
             <div v-else-if="!threadList.threads.length" class="forum-directory-state">
-              <span><UIcon :name="hasActiveFilters ? 'i-lucide-search-x' : 'i-lucide-messages-square'" aria-hidden="true" /></span>
-              <h2>{{ hasActiveFilters ? 'Nie znaleziono tematów' : 'Rozpocznij pierwszą rozmowę' }}</h2>
+              <span><UIcon :name="hasDirectoryFilters ? 'i-lucide-search-x' : 'i-lucide-messages-square'" aria-hidden="true" /></span>
+              <h2>{{ hasDirectoryFilters ? 'Nie znaleziono tematów' : 'Rozpocznij pierwszą rozmowę' }}</h2>
               <p>
-                {{ hasActiveFilters
+                {{ hasDirectoryFilters
                   ? 'Zmień pytanie albo filtry. Wyszukiwarka rozumie także inne sformułowania tego samego problemu.'
                   : 'Zadaj pytanie ekspertom albo rozpocznij dyskusję dla całej organizacji.' }}
               </p>
-              <UButton v-if="hasActiveFilters" color="neutral" variant="outline" icon="i-lucide-filter-x" @click="resetFilters">
+              <UButton v-if="hasDirectoryFilters" color="neutral" variant="outline" icon="i-lucide-filter-x" @click="clearDirectoryFilters">
                 Wyczyść filtry
               </UButton>
               <UButton v-else icon="i-lucide-plus" @click="composerOpen = true">
@@ -464,92 +506,137 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   gap: 8px;
 }
 
-.forum-search-hero {
+.forum-directory-tools {
   display: grid;
-  gap: 16px;
-  padding: clamp(22px, 3vw, 34px);
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ui-border-muted);
+}
+
+.forum-directory-tools__controls {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(155px, 190px) minmax(170px, 205px);
+  align-items: center;
+  gap: 8px;
+}
+
+.forum-directory-search {
+  min-width: 0;
+}
+
+.forum-filter-control {
+  display: block;
+  min-width: 0;
+}
+
+.forum-filter-control__label {
+  display: none;
+}
+
+.forum-directory-search__input,
+.forum-directory-tools__select {
+  width: 100%;
+}
+
+.forum-filter-control :deep(.forum-directory-tools__select) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.forum-directory-search__validation {
+  margin: -3px 0 0;
+  color: var(--ui-error);
+  font-size: 10px;
+}
+
+.forum-category-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 1px 2px 3px;
+  scroll-padding-inline: 2px;
+  scrollbar-width: none;
+}
+
+.forum-category-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.forum-category-filter {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-surface);
-  background:
-    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--ui-primary) 11%, transparent), transparent 34%),
-    var(--ui-bg-muted);
+  border-radius: 999px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg);
+  font-size: 11px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color var(--oe-motion-fast),
+    color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast);
 }
 
-.forum-search-hero__copy {
-  display: grid;
-  max-width: 760px;
-  gap: 5px;
+.forum-category-filter:hover {
+  border-color: var(--ui-border-accented);
+  color: var(--ui-text-highlighted);
+  background: var(--ui-bg-elevated);
 }
 
-.forum-search-hero__eyebrow,
-.forum-search-hero__mode,
+.forum-category-filter--active {
+  border-color: color-mix(in srgb, var(--ui-primary) 45%, var(--ui-border));
+  color: var(--ui-text-highlighted);
+  background: color-mix(in srgb, var(--ui-primary) 10%, var(--ui-bg));
+}
+
+.forum-category-filter:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+.forum-category-filter__icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ui-primary);
+}
+
+.forum-category-filter-skeleton {
+  width: 116px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.forum-directory-tools__status-row,
+.forum-search-mode,
 .forum-realtime-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.forum-search-hero__eyebrow {
-  color: var(--ui-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.forum-search-hero__eyebrow :deep(svg) {
-  width: 14px;
-  height: 14px;
-}
-
-.forum-search-hero h2 {
-  margin: 0;
-  color: var(--ui-text-highlighted);
-  font-size: clamp(22px, 2.5vw, 31px);
-  font-weight: 590;
-  line-height: 1.15;
-}
-
-.forum-search-hero__copy p {
-  margin: 2px 0 0;
+.forum-directory-tools__status-row {
+  min-width: 0;
   color: var(--ui-text-muted);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
-.forum-search-hero__form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  max-width: 920px;
-  gap: 10px;
-}
-
-.forum-search-hero__input {
-  width: 100%;
-}
-
-.forum-search-hero__validation {
-  margin: -8px 0 0;
-  color: var(--ui-error);
-  font-size: 11px;
-}
-
-.forum-search-hero__status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  max-width: 920px;
-}
-
-.forum-search-hero__mode,
-.forum-realtime-pill {
+.forum-search-mode,
+.forum-realtime-pill,
+.forum-directory-tools__result-summary {
   color: var(--ui-text-muted);
   font-size: 10px;
+  white-space: nowrap;
 }
 
-.forum-search-hero__mode {
+.forum-search-mode {
   padding: 0;
   border: 0;
   background: transparent;
@@ -557,20 +644,27 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   text-align: left;
 }
 
-.forum-search-hero__mode:focus-visible {
+.forum-search-mode:focus-visible {
   border-radius: 4px;
   outline: 2px solid var(--ui-primary);
   outline-offset: 3px;
 }
 
-.forum-search-hero__mode :deep(svg),
+.forum-search-mode :deep(svg),
 .forum-realtime-pill :deep(svg) {
   width: 13px;
   height: 13px;
 }
 
-.forum-search-hero__mode :deep(svg:first-child) {
+.forum-search-mode :deep(svg:first-child) {
   color: var(--ui-primary);
+}
+
+.forum-directory-tools__result-summary {
+  overflow: hidden;
+  margin-left: auto;
+  color: var(--ui-text-dimmed);
+  text-overflow: ellipsis;
 }
 
 .forum-realtime-pill--live :deep(svg) {
@@ -602,9 +696,8 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   50% { transform: scale(1.22); }
 }
 
-.forum-categories,
 .forum-conversations {
-  margin-top: 30px;
+  margin-top: 14px;
 }
 
 .forum-section-heading {
@@ -637,25 +730,6 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   font-weight: 620;
 }
 
-.forum-section-heading p {
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.forum-category-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-@container (min-width: 1150px) {
-  .forum-category-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
-
 .forum-conversations {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 270px;
@@ -665,24 +739,6 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
 
 .forum-conversations__main {
   min-width: 0;
-}
-
-.forum-filter-bar {
-  display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(170px, 230px) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-control);
-  background: var(--ui-bg-muted);
-}
-
-.forum-filter-bar > span {
-  justify-self: end;
-  color: var(--ui-text-dimmed);
-  font-size: 9px;
 }
 
 .forum-thread-list {
@@ -923,24 +979,19 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
   }
 }
 
+@container (max-width: 820px) {
+  .forum-directory-tools__controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .forum-directory-search {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 720px) {
-  .forum-search-hero {
-    border-radius: var(--oe-radius-control);
-  }
-
-  .forum-search-hero__form,
-  .forum-filter-bar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .forum-search-hero__form > :deep(button),
-  .forum-filter-bar > :deep(button) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .forum-filter-bar > span {
-    justify-self: start;
+  .forum-directory-tools__status-row {
+    flex-wrap: wrap;
   }
 
   .forum-section-heading,
@@ -955,12 +1006,29 @@ async function showStatus(status: ForumThreadStatus | 'all'): Promise<void> {
 }
 
 @media (max-width: 520px) {
-  .forum-category-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .forum-directory-page__role,
+  .forum-directory-page__moderation-action {
+    display: none;
   }
 
-  .forum-search-hero {
-    padding: 19px 15px;
+  .forum-filter-control__label {
+    display: block;
+    margin: 0 0 3px 2px;
+    color: var(--ui-text-dimmed);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+  }
+
+  .forum-category-filters {
+    padding-right: 24px;
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+  }
+
+  .forum-directory-tools__result-summary {
+    display: none;
   }
 
   .forum-directory-page__actions {

@@ -10,14 +10,13 @@ const props = withDefaults(defineProps<{
   preview: false,
 })
 
-type CaseView = 'updates' | 'messages' | 'details'
+type CaseView = 'updates' | 'details'
 
 const route = useRoute()
 const casePath = computed(() => props.preview
   ? `/preview/cases/${encodeURIComponent(props.caseData.id)}`
   : `/cases/${encodeURIComponent(props.caseData.id)}`)
 const activeView = computed<CaseView>(() => {
-  if (route.query.view === 'messages') return 'messages'
   if (route.query.view === 'details') return 'details'
   return 'updates'
 })
@@ -27,12 +26,6 @@ const viewTabs = computed(() => [
     label: 'Aktualności',
     icon: 'i-lucide-list-tree',
     to: casePath.value,
-  },
-  {
-    value: 'messages' as const,
-    label: 'Wiadomości',
-    icon: 'i-lucide-message-circle-more',
-    to: { path: casePath.value, query: { view: 'messages' } },
   },
   {
     value: 'details' as const,
@@ -54,15 +47,11 @@ const updatedLabel = computed(() => {
 })
 
 const viewHeading = computed(() => {
-  if (activeView.value === 'messages') return 'Wiadomości w Twojej sprawie'
   if (activeView.value === 'details') return 'Szczegóły i postęp sprawy'
   return 'Co dzieje się w Twojej sprawie'
 })
 
 const viewDescription = computed(() => {
-  if (activeView.value === 'messages') {
-    return `Rozmawiasz z ekspertem: ${props.caseData.expert.name}.`
-  }
   if (activeView.value === 'details') {
     return 'Zakres, postęp i najważniejsze informacje w jednym miejscu.'
   }
@@ -81,7 +70,7 @@ const viewDescription = computed(() => {
     <div class="portal-case-layout">
       <PortalCaseSidebar class="portal-case-layout__sidebar" :case-data="caseData" :preview="preview" />
 
-      <main class="portal-case-main">
+      <main :class="['portal-case-main', `is-view-${activeView}`]">
         <NuxtLink
           :to="preview ? '/preview' : '/'"
           class="portal-case-main__back"
@@ -111,25 +100,19 @@ const viewDescription = computed(() => {
           </NuxtLink>
         </nav>
 
-        <PortalCaseConversation
-          v-if="activeView === 'messages'"
-          :case-id="caseData.id"
-          :expert-name="caseData.expert.name"
-          :preview="preview"
-          surface="pane"
-        />
-        <div v-else-if="activeView === 'details'" class="portal-case-main__details">
+        <div class="portal-case-main__details">
           <PortalCaseSidebar
             mobile
             :case-data="caseData"
             :preview="preview"
           />
         </div>
-        <PortalTimeline
-          v-else
-          :case-data="caseData"
-          :preview="preview"
-        />
+        <div class="portal-case-main__updates">
+          <PortalTimeline
+            :case-data="caseData"
+            :preview="preview"
+          />
+        </div>
       </main>
     </div>
   </div>
@@ -200,7 +183,7 @@ const viewDescription = computed(() => {
 }
 
 .portal-case-main__tabs {
-  display: grid;
+  display: none;
   grid-template-columns: repeat(2, minmax(0, 170px));
   gap: 6px;
   width: fit-content;
@@ -236,11 +219,8 @@ const viewDescription = computed(() => {
   height: 17px;
 }
 
-.portal-case-main__tab--details {
-  display: none !important;
-}
-
 .portal-case-main__details {
+  display: none;
   max-width: 560px;
 }
 
@@ -266,12 +246,18 @@ const viewDescription = computed(() => {
   }
 
   .portal-case-main__tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
 
-  .portal-case-main__tab--details {
-    display: inline-flex !important;
+  .portal-case-main__updates {
+    display: none;
+  }
+
+  .portal-case-main.is-view-updates .portal-case-main__updates,
+  .portal-case-main.is-view-details .portal-case-main__details {
+    display: block;
   }
 
   .portal-case-main__back {

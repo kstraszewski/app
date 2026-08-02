@@ -285,7 +285,7 @@ const delegationCurrentUserId = computed(() => (
   || null
 ))
 
-const validViews = ['overview', 'credit', 'documents', 'delegations', 'history'] as const
+const validViews = ['overview', 'messages', 'credit', 'documents', 'delegations', 'history'] as const
 type CaseView = typeof validViews[number]
 const currentView = computed<CaseView>(() => {
   const value = String(route.query.view ?? 'overview')
@@ -329,6 +329,7 @@ watch(
 
 const caseTabs = computed(() => [
   { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
+  { label: 'Wiadomości', icon: 'i-lucide-messages-square', to: viewLocation('messages') },
   { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
   { label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length, to: viewLocation('documents') },
   { label: 'Delegacje', icon: 'i-lucide-send', count: delegatedTasks.value.length, to: viewLocation('delegations') },
@@ -1167,6 +1168,11 @@ watch(
         :actions="commandActions"
       />
     </div>
+
+    <CaseConversationPanel
+      v-else-if="currentView === 'messages'"
+      :case-id="data.data.id"
+    />
 
     <section v-else-if="currentView === 'credit'" class="case-credit-view">
       <div id="case-bank-applications">

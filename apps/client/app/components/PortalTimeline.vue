@@ -9,15 +9,15 @@ const props = withDefaults(defineProps<{
 }>(), {
   preview: false,
 })
+const emit = defineEmits<{
+  openConversation: []
+}>()
 
 const toast = useToast()
 const authenticatedUser = useAuthUser()
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadedFileName = ref('')
-const contactOpen = ref(false)
-const contactMessage = ref('')
-const sendingMessage = ref(false)
 
 function refreshMutatedCase() {
   clearNuxtData(clientPortalDataKey(authenticatedUser.value?.id))
@@ -128,38 +128,6 @@ async function uploadDocument(event: Event) {
   }
 }
 
-async function sendMessage() {
-  const message = contactMessage.value.trim()
-  if (!message) return
-  sendingMessage.value = true
-  try {
-    if (!props.preview) {
-      await $fetch(`/api/client/cases/${encodeURIComponent(props.caseData.id)}/messages`, {
-        method: 'POST',
-        body: { message },
-      })
-      refreshMutatedCase()
-    }
-    contactOpen.value = false
-    contactMessage.value = ''
-    toast.add({
-      title: `Wiadomość została wysłana do ${props.caseData.expert.name.split(' ')[0]}`,
-      icon: 'i-lucide-send',
-      color: 'success',
-    })
-  }
-  catch {
-    toast.add({
-      title: 'Nie udało się wysłać wiadomości',
-      description: 'Spróbuj ponownie za chwilę.',
-      icon: 'i-lucide-circle-alert',
-      color: 'error',
-    })
-  }
-  finally {
-    sendingMessage.value = false
-  }
-}
 </script>
 
 <template>
@@ -279,13 +247,13 @@ async function sendMessage() {
       </article>
     </div>
 
-    <section id="kontakt" class="case-contact">
+    <section v-if="!preview" id="kontakt" class="case-contact">
       <UButton
         color="neutral"
         variant="ghost"
         icon="i-lucide-message-circle"
         class="case-contact__button"
-        @click="contactOpen = true"
+        @click="emit('openConversation')"
       >
         Napisz do {{ caseData.expert.name.split(' ')[0] }}
       </UButton>
@@ -295,43 +263,6 @@ async function sendMessage() {
       </p>
     </section>
 
-    <UModal
-      v-model:open="contactOpen"
-      :title="`Napisz do ${caseData.expert.name}`"
-      description="Wiadomość zostanie przypisana do tej sprawy."
-    >
-      <template #body>
-        <form id="expert-message-form" class="contact-form" @submit.prevent="sendMessage">
-          <UFormField label="Wiadomość" required>
-            <UTextarea
-              v-model="contactMessage"
-              :rows="5"
-              autoresize
-              :maxrows="8"
-              placeholder="Napisz, w czym możemy pomóc…"
-              class="w-full"
-            />
-          </UFormField>
-        </form>
-      </template>
-      <template #footer>
-        <div class="contact-form__actions">
-          <UButton color="neutral" variant="ghost" @click="contactOpen = false">
-            Anuluj
-          </UButton>
-          <UButton
-            type="submit"
-            form="expert-message-form"
-            variant="solid"
-            icon="i-lucide-send"
-            :loading="sendingMessage"
-            :disabled="!contactMessage.trim()"
-          >
-            Wyślij wiadomość
-          </UButton>
-        </div>
-      </template>
-    </UModal>
   </div>
 </template>
 
@@ -654,17 +585,6 @@ async function sendMessage() {
   color: var(--ui-text-muted);
   font-size: 12px;
   line-height: 1.55;
-}
-
-.contact-form {
-  padding: 2px;
-}
-
-.contact-form__actions {
-  display: flex;
-  width: 100%;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 @media (max-width: 1180px) {

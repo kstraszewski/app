@@ -49,6 +49,9 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    messaging: {
+      ablyApiKey: process.env.NUXT_ABLY_API_KEY || '',
+    },
     portalAssets: {
       publicBaseUrl: portalPublicAssetBaseUrl,
     },

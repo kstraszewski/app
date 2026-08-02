@@ -12,6 +12,19 @@ const props = withDefaults(defineProps<{
 
 const mobileSummaryOpen = ref(false)
 
+function openConversation() {
+  if (!import.meta.client) return
+  document.getElementById('portal-case-conversation')?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  })
+  window.setTimeout(() => {
+    document.querySelector<HTMLTextAreaElement>(
+      '#portal-case-conversation textarea',
+    )?.focus()
+  }, 500)
+}
+
 const updatedLabel = computed(() => {
   const date = new Date(props.caseData.updatedAt)
   const datePart = new Intl.DateTimeFormat('pl-PL', {
@@ -76,7 +89,16 @@ const updatedLabel = computed(() => {
           <p>Ostatnia aktualizacja: {{ updatedLabel }}</p>
         </header>
 
-        <PortalTimeline :case-data="caseData" :preview="preview" />
+        <PortalCaseConversation
+          v-if="!preview"
+          :case-id="caseData.id"
+          :expert-name="caseData.expert.name"
+        />
+        <PortalTimeline
+          :case-data="caseData"
+          :preview="preview"
+          @open-conversation="openConversation"
+        />
       </main>
     </div>
   </div>

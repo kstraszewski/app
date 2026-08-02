@@ -683,49 +683,70 @@ async function sendMessage() {
 
 @media (max-width: 760px) {
   .action-update {
-    grid-template-columns: 1fr;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    column-gap: 8px;
     min-height: 0;
-    padding: 22px 18px 20px;
+    padding: 18px 16px 0;
+    overflow: hidden;
     border-radius: 18px;
+    background: #000;
+    color: #fff;
   }
 
   .action-update__icon {
-    width: 54px;
-    height: 54px;
-    margin: 0 auto 16px;
+    grid-column: 1;
+    grid-row: 1;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
     transform: none;
   }
 
   .action-update__icon svg {
-    width: 25px;
-    height: 25px;
+    width: 22px;
+    height: 22px;
   }
 
-  .action-update__content {
-    padding-left: 0;
-  }
-
-  .action-update__header {
-    align-items: center;
-    flex-direction: column;
-    gap: 10px;
-    text-align: center;
-  }
-
+  .action-update__content,
+  .action-update__header,
   .action-update__meta {
-    align-items: center;
-    flex-direction: column;
-    gap: 13px;
+    display: contents;
+  }
+
+  .action-update__new {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    color: #fff;
+  }
+
+  .action-update__new i {
+    width: 8px;
+    height: 8px;
+    background: #fff;
   }
 
   .action-update__author {
+    grid-column: 1 / -1;
+    grid-row: 5;
     display: grid;
-    grid-template-columns: 35px minmax(0, auto);
-    gap: 1px 10px;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 2px 12px;
+    min-width: 0;
+    margin: 14px -16px 0;
+    padding: 17px 18px 13px;
+    background: var(--portal-warm-surface);
+    color: var(--ui-text-muted);
     text-align: left;
   }
 
   .action-update__avatar {
+    width: 38px;
+    height: 38px;
     grid-row: 1 / 3;
   }
 
@@ -733,6 +754,10 @@ async function sendMessage() {
   .action-update__role {
     grid-column: 2;
     line-height: 1.25;
+  }
+
+  .action-update__author strong {
+    overflow-wrap: anywhere;
   }
 
   .action-update__role {
@@ -744,44 +769,75 @@ async function sendMessage() {
   }
 
   .action-update time {
-    max-width: none;
-    text-align: center;
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    max-width: 140px;
+    color: #c8c8c8;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: right;
   }
 
   .action-update h2 {
-    max-width: 360px;
-    margin: 19px auto 10px;
-    font-size: 20px;
-    text-align: center;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+    margin: 16px 0 0;
+    color: #fff;
+    font-size: 18px;
+    text-align: left;
   }
 
   .action-update__description {
-    max-width: 380px;
-    margin-inline: auto;
-    font-size: 15px;
-    text-align: center;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    max-width: none;
+    margin: 6px 0 0;
+    color: #d1d1d1;
+    font-size: 14px;
+    line-height: 1.45;
+    text-align: left;
   }
 
   .action-update__deadline {
-    justify-content: center;
+    grid-column: 1 / -1;
+    grid-row: 4;
+    justify-content: flex-start;
     flex-wrap: wrap;
-    text-align: center;
+    margin-top: 14px;
+    color: #d1d1d1;
+    text-align: left;
+  }
+
+  .action-update__deadline svg,
+  .action-update__deadline strong {
+    color: #fff;
   }
 
   .action-update__footer {
-    gap: 16px;
-    margin-top: 24px;
-    padding-top: 20px;
+    grid-column: 1 / -1;
+    grid-row: 6;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin: -1px -16px 0;
+    padding: 1px 16px 18px;
+    border-top: 0;
+    background: var(--portal-warm-surface);
   }
 
   .action-update__security {
     order: 2;
     width: 100%;
-    max-width: 360px;
-    margin-inline: auto;
+    max-width: none;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 10px;
+    padding-top: 18px;
+    border-top: 1px solid var(--portal-line);
   }
 
   .action-update__cta {
+    order: 1;
     width: 100%;
     justify-items: stretch;
   }
@@ -789,11 +845,19 @@ async function sendMessage() {
   .action-update__cta :deep(button),
   .action-update__cta :deep(a) {
     width: 100%;
+    min-height: 48px;
     justify-content: center;
+    font-size: 14px;
   }
 
   .action-update__cta small {
-    font-size: 12px;
+    max-width: none;
+    font-size: 11px;
+  }
+
+  .action-update__security p {
+    font-size: 11px;
+    line-height: 1.55;
   }
 
   .timeline-list {

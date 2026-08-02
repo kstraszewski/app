@@ -874,9 +874,9 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.portal-conversation__expert p,
-.portal-conversation__expert strong,
-.portal-conversation__expert span {
+.portal-conversation__expert > div p,
+.portal-conversation__expert > div strong,
+.portal-conversation__expert > div > span {
   display: block;
 }
 

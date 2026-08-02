@@ -1,4 +1,7 @@
 export default defineNuxtPlugin(async () => {
+  const route = useRoute()
+  if (route.path === '/demo' || route.path.startsWith('/preview')) return
+
   const user = useAuthUser()
   await refreshAuthUser()
 

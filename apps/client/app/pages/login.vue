@@ -17,6 +17,7 @@ const redirectPath = computed(() => safeRedirect(
   '/',
 ))
 const social = computed(() => runtimeConfig.public.openexpert.social)
+const demoEnabled = computed(() => runtimeConfig.public.openexpert.demoEnabled)
 
 useHead({ title: 'Zaloguj się — panel klienta OpenExpert' })
 
@@ -229,6 +230,21 @@ function changeMode(nextMode: 'magic' | 'password') {
         Nie masz osobnego konta? To w porządku — pierwsze logowanie linkiem
         bezpiecznie powiąże Cię ze sprawą udostępnioną przez eksperta.
       </p>
+
+      <div v-if="demoEnabled" class="login-demo">
+        <div>
+          <strong>Chcesz tylko zobaczyć panel?</strong>
+          <span>Otwórz wersję z przykładowymi danymi klienta.</span>
+        </div>
+        <UButton
+          to="/demo"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-presentation"
+        >
+          Wersja demonstracyjna
+        </UButton>
+      </div>
     </div>
   </PortalAuthShell>
 </template>
@@ -238,6 +254,37 @@ function changeMode(nextMode: 'magic' | 'password') {
 .login-form {
   display: grid;
   gap: 18px;
+}
+
+.login-demo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid var(--portal-line);
+  border-radius: 14px;
+  background: var(--ui-bg-muted);
+}
+
+.login-demo div {
+  display: grid;
+  gap: 3px;
+}
+
+.login-demo strong {
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+}
+
+.login-demo span {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .login-demo { align-items: stretch; flex-direction: column; }
 }
 
 .login-modes {

@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{
 })
 
 const toast = useToast()
+const runtimeConfig = useRuntimeConfig()
 const loggingOut = ref(false)
 
 const initials = computed(() => {
@@ -21,6 +22,17 @@ const initials = computed(() => {
 
 async function signOut() {
   if (props.preview) {
+    if (runtimeConfig.public.openexpert.demoEnabled) {
+      loggingOut.value = true
+      try {
+        await $fetch('/api/demo/logout', { method: 'POST' })
+        await navigateTo('/demo')
+      }
+      finally {
+        loggingOut.value = false
+      }
+      return
+    }
     toast.add({ title: 'To jest bezpieczny podgląd panelu', icon: 'i-lucide-eye' })
     return
   }

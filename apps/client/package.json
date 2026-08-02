@@ -12,6 +12,7 @@
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3006",
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
+    "test:demo": "node --test --experimental-strip-types test/demo-session.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {

@@ -14,6 +14,9 @@ const googleClientId = process.env.BETTER_AUTH_GOOGLE_CLIENT_ID || ''
 const googleClientSecret = process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET || ''
 const appleClientId = process.env.BETTER_AUTH_APPLE_CLIENT_ID || ''
 const appleClientSecret = process.env.BETTER_AUTH_APPLE_CLIENT_SECRET || ''
+const demoEnabled = process.env.NUXT_PUBLIC_OPENEXPERT_DEMO_ENABLED === 'true'
+  || process.env.NUXT_PUBLIC_DEMO_ENABLED === 'true'
+const demoServerEnabled = process.env.NUXT_DEMO_ENABLED === 'true' || demoEnabled
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -44,6 +47,11 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    demo: {
+      enabled: demoServerEnabled,
+      passwordHash: process.env.NUXT_DEMO_PASSWORD_HASH || '',
+      sessionSecret: process.env.NUXT_DEMO_SESSION_SECRET || '',
+    },
     dataApi: {
       url: dataApiUrl,
       jwt: {
@@ -125,6 +133,7 @@ export default defineNuxtConfig({
       openexpert: {
         portalBaseUrl,
         authBaseUrl: process.env.NUXT_PUBLIC_AUTH_BASE_URL || '',
+        demoEnabled,
         hasAuthConfig: process.env.NODE_ENV !== 'production'
           || Boolean(process.env.BETTER_AUTH_SECRET || process.env.NUXT_AUTH_SECRET),
         social: {

@@ -21,6 +21,7 @@
     "db:status": "node ./scripts/local-postgres.mjs status",
     "db:stop": "node ./scripts/local-postgres.mjs stop",
     "db:verify": "node ./scripts/local-postgres.mjs verify",
+    "client:provision-test-login": "node ./scripts/provision-client-portal-test-login.mjs",
     "mortgage:sync": "node ./scripts/sync-mortgage-catalog.mjs"
   },
   "dependencies": {

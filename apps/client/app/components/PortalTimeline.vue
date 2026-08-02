@@ -174,10 +174,10 @@ async function sendMessage() {
           <div class="action-update__meta">
             <span class="action-update__new"><i /> NOWE</span>
             <span class="action-update__author">
-              <span>{{ initials(caseData.expert.name) }}</span>
+              <span class="action-update__avatar">{{ initials(caseData.expert.name) }}</span>
               <strong>{{ caseData.expert.name }}</strong>
-              <i>·</i>
-              Twój ekspert
+              <i aria-hidden="true">·</i>
+              <span class="action-update__role">Twój ekspert</span>
             </span>
           </div>
           <time :datetime="caseData.updatedAt">{{ dateTimeLabel(caseData.updatedAt) }}</time>
@@ -220,7 +220,7 @@ async function sendMessage() {
             >
               {{ uploadedFileName ? 'Dodaj kolejny' : action.label || 'Dodaj dokument' }}
             </UButton>
-            <small>{{ uploadedFileName || 'PDF, JPG do 20 MB' }}</small>
+            <small>{{ uploadedFileName || 'PDF, JPG, PNG do 20 MB' }}</small>
           </div>
 
           <div v-else-if="action.kind === 'complete_multiform'" class="action-update__cta">
@@ -419,7 +419,7 @@ async function sendMessage() {
   font-size: 14px;
 }
 
-.action-update__author > span {
+.action-update__avatar {
   display: grid;
   width: 35px;
   height: 35px;
@@ -438,6 +438,10 @@ async function sendMessage() {
 
 .action-update__author i {
   font-style: normal;
+}
+
+.action-update__role {
+  color: inherit;
 }
 
 .action-update time,
@@ -680,13 +684,16 @@ async function sendMessage() {
 @media (max-width: 760px) {
   .action-update {
     grid-template-columns: 1fr;
-    padding: 20px;
+    min-height: 0;
+    padding: 22px 18px 20px;
+    border-radius: 18px;
   }
 
   .action-update__icon {
     width: 54px;
     height: 54px;
-    margin-bottom: 17px;
+    margin: 0 auto 16px;
+    transform: none;
   }
 
   .action-update__icon svg {
@@ -699,40 +706,79 @@ async function sendMessage() {
   }
 
   .action-update__header {
-    align-items: flex-start;
+    align-items: center;
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
   }
 
   .action-update__meta {
-    align-items: flex-start;
+    align-items: center;
     flex-direction: column;
+    gap: 13px;
   }
 
-  .action-update__author i,
-  .action-update__author i + * {
+  .action-update__author {
+    display: grid;
+    grid-template-columns: 35px minmax(0, auto);
+    gap: 1px 10px;
+    text-align: left;
+  }
+
+  .action-update__avatar {
+    grid-row: 1 / 3;
+  }
+
+  .action-update__author strong,
+  .action-update__role {
+    grid-column: 2;
+    line-height: 1.25;
+  }
+
+  .action-update__role {
+    font-size: 12px;
+  }
+
+  .action-update__author i {
     display: none;
   }
 
   .action-update time {
-    max-width: 100px;
-    text-align: right;
+    max-width: none;
+    text-align: center;
   }
 
   .action-update h2 {
-    margin-top: 21px;
+    max-width: 360px;
+    margin: 19px auto 10px;
     font-size: 20px;
+    text-align: center;
   }
 
   .action-update__description {
+    max-width: 380px;
+    margin-inline: auto;
     font-size: 15px;
+    text-align: center;
   }
 
   .action-update__deadline {
-    align-items: flex-start;
+    justify-content: center;
     flex-wrap: wrap;
+    text-align: center;
+  }
+
+  .action-update__footer {
+    gap: 16px;
+    margin-top: 24px;
+    padding-top: 20px;
   }
 
   .action-update__security {
     order: 2;
+    width: 100%;
+    max-width: 360px;
+    margin-inline: auto;
   }
 
   .action-update__cta {
@@ -743,10 +789,15 @@ async function sendMessage() {
   .action-update__cta :deep(button),
   .action-update__cta :deep(a) {
     width: 100%;
+    justify-content: center;
+  }
+
+  .action-update__cta small {
+    font-size: 12px;
   }
 
   .timeline-list {
-    padding-inline: 1px;
+    padding: 32px 1px 0;
   }
 
   .timeline-item {

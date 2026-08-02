@@ -46,20 +46,29 @@ const updatedLabel = computed(() => {
 
         <div class="portal-case-main__mobile-summary">
           <UButton
+            class="portal-case-main__summary-toggle"
             color="neutral"
             variant="outline"
-            block
-            :icon="mobileSummaryOpen ? 'i-lucide-x' : 'i-lucide-folder-open'"
+            icon="i-lucide-folder-open"
+            :trailing-icon="mobileSummaryOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            aria-controls="mobile-case-summary"
+            :aria-expanded="mobileSummaryOpen"
             @click="mobileSummaryOpen = !mobileSummaryOpen"
           >
             {{ mobileSummaryOpen ? 'Zamknij szczegóły sprawy' : 'Szczegóły i postęp sprawy' }}
           </UButton>
-          <PortalCaseSidebar
+          <div
             v-if="mobileSummaryOpen"
-            mobile
-            :case-data="caseData"
-            :preview="preview"
-          />
+            id="mobile-case-summary"
+            role="region"
+            aria-label="Szczegóły i postęp sprawy"
+          >
+            <PortalCaseSidebar
+              mobile
+              :case-data="caseData"
+              :preview="preview"
+            />
+          </div>
         </div>
 
         <header class="portal-case-main__title">
@@ -106,6 +115,9 @@ const updatedLabel = computed(() => {
   align-items: center;
   gap: 8px;
   width: fit-content;
+  min-height: 44px;
+  padding: 0 4px;
+  margin-left: -4px;
   margin-bottom: 18px;
   color: var(--ui-text-muted);
   font-size: 13px;
@@ -165,8 +177,37 @@ const updatedLabel = computed(() => {
     margin-bottom: 28px;
   }
 
+  .portal-case-main__summary-toggle {
+    min-height: 48px;
+    max-width: 100%;
+    justify-self: center;
+    padding-inline: 22px;
+    border-radius: 999px;
+  }
+
   .portal-case-main__back {
     display: inline-flex;
+  }
+}
+
+@media (max-width: 760px) {
+  .portal-case-main__title {
+    max-width: 440px;
+    margin: 0 auto 24px;
+    text-align: center;
+  }
+
+  .portal-case-main__title h1 {
+    max-width: 360px;
+    margin-inline: auto;
+    letter-spacing: -0.035em;
+    line-height: 1.14;
+  }
+
+  .portal-case-main__title p {
+    max-width: 340px;
+    margin: 8px auto 0;
+    line-height: 1.45;
   }
 }
 
@@ -175,16 +216,11 @@ const updatedLabel = computed(() => {
     padding: 22px 16px calc(56px + env(safe-area-inset-bottom));
   }
 
-  .portal-case-main__title {
-    margin-bottom: 22px;
-  }
-
   .portal-case-main__title h1 {
     font-size: 28px;
   }
 
   .portal-case-main__title p {
-    max-width: 290px;
     font-size: 13px;
   }
 }

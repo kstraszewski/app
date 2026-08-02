@@ -1,71 +1,68 @@
-# Design QA — rejestr zgód compliance
+**Findings**
 
-## Evidence
+- No actionable P0, P1, or P2 differences remain.
+- [P3] The browser-rendered card remains about 19% taller than the generated concept after normalizing both cards to the same width.
+  Location: mobile `.action-update` card in `apps/client/app/components/PortalTimeline.vue`.
+  Evidence: the concept card crop is 897 × 812 px and the final implementation crop is 358 × 387 CSS px. The focused comparison in `design-qa-mobile-variant-3-comparison-final.jpg` normalizes both to 720 px wide.
+  Impact: the implementation is slightly roomier, but retains the selected two-tone hierarchy and fits fully at 390 × 844. The remaining height comes from readable browser text wrapping and the 48 px accessible CTA target.
+  Fix: none required for acceptance; a later polish pass could reduce body copy to 13 px or the CTA below 48 px, but that would trade readability and touch comfort for closer mock density.
+- [P3] The generated source contains a merged-character artifact in the task title.
+  Location: source mock heading.
+  Evidence: the source visually merges characters in “brakujące dokumenty”; the implementation renders the correct application copy.
+  Impact: none; the implementation intentionally preserves correct product text.
+  Fix: none.
 
-- Source visual truth: `/Users/konradstraszewski/.codex/generated_images/019f99a0-9547-7fa2-bb96-0d5906454c0c/exec-8830756c-b570-438b-b685-9cc211a7a5fd.png`
-- Browser-rendered implementation: `/Users/konradstraszewski/Documents/GitHub/app/apps/crm/design-qa-consents-register-final.jpg`
-- Side-by-side comparison: `/Users/konradstraszewski/Documents/GitHub/app/apps/crm/design-qa-consents-comparison-final.jpg`
-- Route: `http://127.0.0.1:3004/org/openexpert-local/consents`
-- Viewport: `1410 × 1116` CSS px, light theme.
-- Source pixels: `1410 × 1116`.
-- Implementation pixels: `1410 × 1116` after capture with `scale: "css"`; browser-reported DPR was `1`. The CSS-scale capture removed the native screenshot density mismatch before comparison.
-- State: authenticated as `admin@openexpert.local`, active-consents tab, three effective published definitions, read-only because the account has no granular compliance-management grant. The source mock shows the permission-enabled state; this state difference is intentional and is represented by the compact permission banner and hidden creation action.
+**Comparison Target**
 
-## Findings
+- Source visual truth: `/Users/konradstraszewski/.codex/generated_images/019fc2a4-8690-7ce2-b74f-680e3e45b2a4/exec-590f05f0-db20-4f1b-8283-a6e89b57ccd2.png`.
+- Final browser-rendered implementation: `design-qa-mobile-variant-3-compact.jpg`.
+- Live preview with the repository's longer default fixture: `design-qa-mobile-variant-3-live.jpg`.
+- Route: `http://127.0.0.1:3016/preview/cases/case-preview-warszewo`.
+- Viewport: 390 × 844 CSS px, device scale factor 1, light theme.
+- State: `upload_document`, new update, expert `Konrad Administracyjny`, task `Uzupełnij brakujące dokumenty`, no deadline. This matching-content screenshot was captured by temporarily substituting preview data, then the fixture was reverted without leaving a diff. The shipped component styles are identical in the live preview.
 
-- No actionable P0, P1, or P2 visual or interaction findings remain.
-- [P3] The global floating Agent AI control can overlap the lower-right edge of a consent card at the `390 px` mobile viewport. This is an existing app-shell behavior outside the consent-page changes; consent content remains reachable and the document itself has no horizontal overflow.
+**Normalization**
 
-## Fidelity Review
+- Source pixels: 972 × 1619. The generated mock has no reliable declared device density, so it was not treated as a literal CSS-pixel capture.
+- Implementation pixels: 390 × 844 at 390 × 844 CSS px and density 1.
+- Full-view comparison: both images were scaled to 840 px high and centered in equal 800 × 900 cells.
+- Focused card comparison: source crop 897 × 812 px and implementation crop 358 × 387 px were both scaled to 720 px wide and centered in equal 800 × 800 cells.
+- Combined evidence: `design-qa-mobile-variant-3-comparison-final.jpg` (source left, implementation right; full view above, focused card below).
 
-- Fonts and typography: the implementation uses the product's existing typography and `CrmPageHeader` hierarchy. The title is intentionally larger than in the isolated mock because the user explicitly requested the header shared across CRM screens. Weights, line heights, truncation, and table labels remain legible.
-- Spacing and layout rhythm: the mock's compact filter bar and dense register were retained. The implementation adds the canonical CRM shell, shared page margins, shared header spacing, and shared tab strip. Table rows, dividers, padding, and radius are internally consistent; no page-level overflow occurs at `1410`, `900`, or `390 px`.
-- Colors and tokens: neutral surfaces, borders, semantic green published badges, warning permission state, and active-tab underline all use existing CRM/Nuxt UI tokens. The mock's amber primary button was intentionally replaced by the product's canonical primary action styling.
-- Image quality and assets: the screen contains no bespoke imagery. Product icons come from the existing Lucide/Nuxt Icon system; no placeholder art, CSS drawings, custom SVG substitutes, or rasterized UI were introduced.
-- Copy and content: labels are written for a compliance workflow: active, draft, archived and immutable history states; process context; required/optional state; effective-version explanation; and permission-specific read-only guidance.
-- Icons and affordances: search, filter controls, lifecycle tabs, row chevrons, refresh, status badges, back navigation, and detail/history navigation use the shared product icon family and visible focusable controls.
-- Accessibility: inputs have accessible labels, lifecycle and detail navigation are semantic links, the register has labeled regions, counts use live regions, disabled editing follows permissions, and no page-level horizontal overflow was found.
+**Required Fidelity Surfaces**
 
-## Full-view Comparison Evidence
+- Fonts and typography: implementation uses the product's DM Sans variable font. Weight, hierarchy, capitalization, letter spacing, alignment, and wrapping match the concept's intent. Small text remains readable; no truncation is present.
+- Spacing and layout rhythm: the selected black task region and warm-white action region are preserved as one clipped 18 px-radius card. Metadata, expert identity, CTA, file hint, divider, and safety note follow the concept's order. The final compact pass materially reduced the initial excess height.
+- Colors and visual tokens: black, white, warm surface, muted neutral text, and existing border token match the monochrome source and the established OpenExpert design system. Contrast is strong in the task and CTA regions.
+- Image quality and asset fidelity: the target has no photography or raster artwork. Document, upload, calendar, and lock symbols use the existing Nuxt UI Lucide icon library; no placeholder, emoji, handcrafted SVG, or CSS-drawn replacement was introduced.
+- Copy and content: production copy is preserved. The implementation intentionally corrects the source mock's generated title artifact and supports longer real task text and optional deadlines.
 
-The source and final implementation were combined into one `2820 × 1116` side-by-side image and visually inspected. The information hierarchy, lifecycle navigation, immutable-version note, four-control filter row, seven-column register, row density, semantic status badges, and row navigation match the selected direction. Differences caused by the canonical CRM shell/header and by the current account's read-only permission state are intentional product constraints.
+**Responsive and Interaction Evidence**
 
-## Focused-region Comparison Evidence
+- 390 × 844: `design-qa-mobile-variant-3-live.jpg`; the complete card is visible, `scrollWidth` and `clientWidth` both equal 390.
+- 320 × 844: `design-qa-mobile-variant-3-320.jpg`; long title, description, deadline, expert row, and CTA reflow without horizontal overflow or clipping. Remaining content is reachable by normal vertical scrolling.
+- 761 × 900: desktop styling remains active and unchanged; the two-tone restructuring is scoped to `max-width: 760px`.
+- Primary interactions tested: details toggle opens and closes; “Dodaj dokument” opens one file chooser; no file was uploaded.
+- Console check: no error or warning entries. Development logs contain only Vite connection messages and Vue's informational Suspense notice.
 
-A separate crop was not required after normalization: at `1410 × 1116`, the filter controls and complete register were readable in the full implementation capture. The dense table region was additionally verified through DOM measurements: its desktop content fits the CRM page; at `900 px` it scrolls only inside the register (`866 px` client width, `1080 px` content width); at `390 px` it converts to `358 px` cards with no document overflow.
+**Comparison History**
 
-## Interaction and Runtime Checks
+1. Initial comparison: `design-qa-mobile-variant-3-comparison.jpg`.
+   Earlier P2 finding: the first implementation card was 358 × 476 px versus a 358 × 324 px width-normalized source, making the card about 47% taller and materially changing mobile density.
+   Fixes made: reduced mobile outer padding, icon and avatar size, title and body type, section gaps, footer padding, safety-note grid, and CTA height while keeping the CTA at an accessible 48 px minimum.
+2. Post-fix comparison: `design-qa-mobile-variant-3-comparison-final.jpg`.
+   Result: the final card is 358 × 387 px, the source hierarchy and two-tone composition are preserved, all content remains readable, and the residual density difference is P3 rather than blocking.
 
-- Lifecycle tabs: active, drafts, archived and aggregate history routes opened successfully.
-- Search: filtering for `SMS` showed one matching definition and hid the unrelated entries; clearing restored all three rows.
-- Detail: a consent opened from the register and rendered the shared `Treść i ustawienia` / `Historia wersji` tabs.
-- History: the immutable version record, audit metadata, content hash and effective dates rendered successfully.
-- Permissions: the list and detail explain read-only state; creation and publication actions are driven by separate granular compliance grants.
-- Browser console: checked after the full flow; zero errors.
-- Typecheck: `pnpm --filter @openexpert/crm typecheck` passed.
-- Production build: `pnpm --filter @openexpert/crm build` passed. Only pre-existing Node engine and bundle-size warnings were emitted.
-- Whitespace validation: `git diff --check` passed.
+**Implementation Checklist**
 
-## Comparison History
+- [x] Match variant 3's black-upper/warm-lower card structure on mobile.
+- [x] Keep expert identity, full-width upload CTA, file hint, divider, and safety note in the lower region.
+- [x] Preserve long-content reflow and optional deadline rendering.
+- [x] Preserve desktop layout above 760 px.
+- [x] Verify 320 px and 390 px widths, interactions, console, tests, typecheck, and production build.
 
-1. Initial implementation capture used the browser's native screenshot scale and produced a misleading two-times crop. The implementation was recaptured with `scale: "css"`, giving equal `1410 × 1116` evidence before visual judgment.
-2. The first product-quality review found a P1 permission mismatch: organization administrators were shown manage/publish controls even though mutation endpoints require dedicated compliance grants. The API payload now exposes only the granular manage and publish checks; the post-fix browser capture shows the correct read-only state.
-3. The same review found a P2 lifecycle mismatch: the `Aktywne` tab counted every published current version, including future or expired ones. The list and count now require `effective_from <= now` and no expired `effective_to`, matching runtime consent selection. The post-fix active tab contains the three currently effective versions.
-4. A P3 history-sort ambiguity was removed by renaming the option to `Najnowsza publikacja` and sorting aggregate history by version creation time rather than comparing version numbers across unrelated definitions.
-5. Final side-by-side review found no remaining actionable P0/P1/P2 differences.
+**Follow-up Polish**
 
-## Implementation Checklist
-
-- [x] Reuse `CrmShell` and `CrmPageHeader` instead of local header/tab variants.
-- [x] Add lifecycle register tabs and route-backed history.
-- [x] Build a compact searchable/filterable CRM table with responsive card fallback.
-- [x] Move per-consent history into its own shared-header tab.
-- [x] Keep immutable-version and effective-date semantics visible.
-- [x] Separate manage and publish permissions in the UI contract.
-- [x] Verify desktop, tablet and mobile layout, primary interactions, browser errors, typecheck and production build.
-
-## Follow-up Polish
-
-- Consider globally offsetting the Agent AI floating action on narrow viewports so it never covers the lower-right edge of cards across CRM screens.
+- Optional only: revisit the final 19% height difference if future production copy becomes consistently shorter and a denser card is preferred over the current touch/readability balance.
 
 final result: passed

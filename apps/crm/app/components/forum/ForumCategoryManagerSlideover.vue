@@ -68,9 +68,11 @@ const props = withDefaults(defineProps<{
   canManageCategories: boolean
   initialCategories?: ForumCategoryManagementRecord[]
   realtimeRevision?: number
+  initialSection?: 'hidden' | 'categories'
 }>(), {
   initialCategories: () => [],
   realtimeRevision: 0,
+  initialSection: 'hidden',
 })
 
 const emit = defineEmits<{
@@ -131,13 +133,23 @@ const colorItems = [
 watch(() => props.open, (open) => {
   if (!open) return
   editorMode.value = 'list'
-  activeSection.value = props.canModerate ? 'hidden' : 'categories'
+  activeSection.value = props.initialSection === 'categories' && props.canManageCategories
+    ? 'categories'
+    : props.canModerate
+      ? 'hidden'
+      : 'categories'
   categories.value = props.initialCategories.map(category => ({
     ...category,
     isActive: category.isActive ?? true,
   }))
-  if (props.canModerate) void loadHiddenItems()
-  else if (props.canManageCategories) void loadCategories()
+  if (activeSection.value === 'hidden' && props.canModerate) void loadHiddenItems()
+  else if (activeSection.value === 'categories' && props.canManageCategories) void loadCategories()
+}, { immediate: true })
+
+watch(() => props.initialSection, (section) => {
+  if (!props.open) return
+  if (section === 'hidden' && props.canModerate) selectSection('hidden')
+  if (section === 'categories' && props.canManageCategories) selectSection('categories')
 })
 
 watch(() => props.endpoint, () => {

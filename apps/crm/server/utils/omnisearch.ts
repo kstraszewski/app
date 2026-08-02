@@ -304,8 +304,7 @@ function mapForum(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
         ? 'i-lucide-messages-square'
         : 'i-lucide-message-circle-question',
       to: {
-        path: organizationPath(slug, '/forum'),
-        query: { thread: id },
+        path: organizationPath(slug, `/forum/threads/${encodeURIComponent(id)}`),
       },
     }]
   })

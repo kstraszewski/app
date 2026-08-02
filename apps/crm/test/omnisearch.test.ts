@@ -92,8 +92,7 @@ test('maps a minimal grouped response to safe deep links', () => {
   }, 'moja-organizacja', 'Kowalski')
 
   assert.deepEqual(response.groups.forum[0]?.to, {
-    path: '/org/moja-organizacja/forum',
-    query: { thread: forumThreadId },
+    path: `/org/moja-organizacja/forum/threads/${forumThreadId}`,
   })
   assert.equal(response.groups.cases[0]?.to, `/org/moja-organizacja/cases/${caseId}`)
   assert.deepEqual(response.groups.appointments[0]?.to, {

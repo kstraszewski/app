@@ -52,6 +52,7 @@ const props = withDefaults(defineProps<{
   moderation?: ForumModerationAccess
   threadModerationEndpoint?: string
   postsModerationEndpoint?: string
+  forumBasePath?: string
 }>(), {
   categories: () => [],
   moderation: () => ({
@@ -61,6 +62,7 @@ const props = withDefaults(defineProps<{
   }),
   threadModerationEndpoint: '',
   postsModerationEndpoint: '',
+  forumBasePath: '',
 })
 
 const emit = defineEmits<{
@@ -400,7 +402,13 @@ async function confirmMove(): Promise<void> {
     <header class="forum-detail__header">
       <div class="forum-detail__topline">
         <nav class="forum-detail__breadcrumbs" aria-label="Położenie wątku">
-          <span>{{ thread.category.name }}</span>
+          <NuxtLink
+            v-if="forumBasePath"
+            :to="`${forumBasePath}/categories/${encodeURIComponent(thread.category.slug)}`"
+          >
+            {{ thread.category.name }}
+          </NuxtLink>
+          <span v-else>{{ thread.category.name }}</span>
           <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
           <span>{{ typeLabels[thread.type] }}</span>
           <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
@@ -803,6 +811,23 @@ async function confirmMove(): Promise<void> {
 .forum-detail__breadcrumbs :deep(svg) {
   width: 13px;
   height: 13px;
+}
+
+.forum-detail__breadcrumbs a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.forum-detail__breadcrumbs a:hover {
+  color: var(--ui-text-highlighted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.forum-detail__breadcrumbs a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 3px;
 }
 
 .forum-detail__status-label {

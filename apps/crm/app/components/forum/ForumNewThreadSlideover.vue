@@ -11,11 +11,14 @@ import type {
 } from '#shared/types/forum'
 import { apiErrorMessage } from '~/utils/api-error'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   endpoint: string
   categories: ForumCategory[]
-}>()
+  initialCategoryId?: string
+}>(), {
+  initialCategoryId: '',
+})
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -59,17 +62,32 @@ const similarityQuery = computed(() => {
 })
 
 watch(() => props.open, (open) => {
-  if (open && !form.categoryId && props.categories[0]) {
+  if (open && props.initialCategoryId && props.categories.some(category => category.id === props.initialCategoryId)) {
+    form.categoryId = props.initialCategoryId
+  } else if (open && !form.categoryId && props.categories[0]) {
     form.categoryId = props.categories[0].id
   }
   if (!open) cancelSimilaritySearch()
 })
 
 watch(() => props.categories, (categories) => {
-  if (!form.categoryId && categories[0]) form.categoryId = categories[0].id
+  if (form.categoryId && categories.some(category => category.id === form.categoryId)) {
+    return
+  }
+  if (props.initialCategoryId && categories.some(category => category.id === props.initialCategoryId)) {
+    form.categoryId = props.initialCategoryId
+  } else if (!form.categoryId && categories[0]) {
+    form.categoryId = categories[0].id
+  }
 }, { immediate: true })
 
-watch(similarityQuery, () => {
+watch(() => props.initialCategoryId, (categoryId) => {
+  if (categoryId && props.categories.some(category => category.id === categoryId)) {
+    form.categoryId = categoryId
+  }
+})
+
+watch([similarityQuery, () => form.categoryId], () => {
   if (similarityTimer) clearTimeout(similarityTimer)
   if (!similarityQuery.value || !props.open) {
     cancelSimilaritySearch()
@@ -147,7 +165,7 @@ function resetForm(): void {
   form.type = 'question'
   form.title = ''
   form.body = ''
-  form.categoryId = props.categories[0]?.id || ''
+  form.categoryId = props.initialCategoryId || props.categories[0]?.id || ''
   form.languageCode = 'pl'
   form.visibility = 'organization'
   similarThreads.value = []

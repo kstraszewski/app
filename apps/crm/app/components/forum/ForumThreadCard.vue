@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import type { RouteLocationRaw } from 'vue-router'
 import type {
   ForumMatchLocation,
   ForumThreadStatus,
   ForumThreadSummary,
   ForumThreadType,
 } from '#shared/types/forum'
+import { forumHighlightedSegments } from '~/utils/forum-highlight'
 
 const props = withDefaults(defineProps<{
   thread: ForumThreadSummary
+  to: RouteLocationRaw
   selected?: boolean
   query?: string
   bestMatch?: boolean
@@ -60,34 +63,8 @@ const matchLabel = computed(() => {
 })
 const previewText = computed(() => props.thread.snippet?.trim() || props.thread.excerpt)
 
-interface TextSegment {
-  text: string
-  highlighted: boolean
-}
-
-function highlightedSegments(value: string): TextSegment[] {
-  const tokens = [...new Set(
-    props.query
-      .trim()
-      .split(/\s+/u)
-      .map(token => token.replace(/[^\p{L}\p{N}-]/gu, ''))
-      .filter(token => token.length >= 3),
-  )]
-  if (!tokens.length) return [{ text: value, highlighted: false }]
-
-  const pattern = tokens
-    .map(token => token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
-    .join('|')
-  if (!pattern) return [{ text: value, highlighted: false }]
-
-  const expression = new RegExp(`(${pattern})`, 'giu')
-  return value
-    .split(expression)
-    .filter(Boolean)
-    .map((text, index) => ({
-      text,
-      highlighted: index % 2 === 1,
-    }))
+function highlightedSegments(value: string) {
+  return forumHighlightedSegments(value, props.query)
 }
 
 function formatShortDate(value: string): string {
@@ -102,9 +79,9 @@ function formatShortDate(value: string): string {
 </script>
 
 <template>
-  <button
+  <NuxtLink
     :id="`forum-thread-card-${thread.id}`"
-    type="button"
+    :to="to"
     class="forum-thread-card"
     :class="{
       'forum-thread-card--selected': selected,
@@ -172,7 +149,7 @@ function formatShortDate(value: string): string {
         <span class="sr-only">odpowiedzi</span>
       </span>
     </span>
-  </button>
+  </NuxtLink>
 </template>
 
 <style scoped>
@@ -186,6 +163,7 @@ function formatShortDate(value: string): string {
   color: var(--ui-text);
   background: var(--ui-bg);
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   transition:
     border-color var(--oe-motion-fast),

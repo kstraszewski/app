@@ -73,6 +73,7 @@
   --portal-warm-surface: #fffdfb;
   --portal-warm-border: #e1ddd7;
   --portal-line: #dfdfdf;
+  --portal-mobile-nav-clearance: calc(104px + env(safe-area-inset-bottom));
 }
 
 * {

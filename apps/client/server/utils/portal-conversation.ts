@@ -13,10 +13,22 @@ import { createError, type H3Event } from 'h3'
 import { serverDataBackend } from './data-api'
 import {
   asRecord,
+  loadClientPortalSession,
   requirePortalCaseAccess,
   throwPortalDbError,
+  type ClientPortalSession,
   type PortalCaseAccess,
 } from './portal-auth'
+import { loadGrantedScopes, type GrantedScope } from './portal-cases'
+import {
+  buildPortalConversationSummary,
+  filterPortalConversationsInGrantedScopes,
+  type PortalConversationSummary,
+} from './portal-conversation-summary'
+import {
+  chunkPortalQueryValues,
+  runPortalQueryChunks,
+} from './portal-query'
 import {
   conversationRealtime,
   publishConversationEvent,
@@ -73,6 +85,186 @@ export interface ConversationPageRequest {
 export interface PortalConversationContext {
   access: PortalCaseAccess
   conversation: Conversation
+}
+
+interface ConversationScopeQuery {
+  organizationId: string
+  clientId: string
+  clientPersonId: string
+  caseIds: string[]
+}
+
+function conversationScopeQueries(
+  scopes: GrantedScope[],
+): ConversationScopeQuery[] {
+  const grouped = new Map<string, ConversationScopeQuery>()
+  for (const scope of scopes) {
+    const key = JSON.stringify([
+      scope.grant.organizationId,
+      scope.grant.clientId,
+      scope.link.clientPersonId,
+    ])
+    const query = grouped.get(key) ?? {
+      organizationId: scope.grant.organizationId,
+      clientId: scope.grant.clientId,
+      clientPersonId: scope.link.clientPersonId,
+      caseIds: [],
+    }
+    query.caseIds.push(scope.grant.caseId)
+    grouped.set(key, query)
+  }
+
+  return [...grouped.values()].flatMap(query => (
+    chunkPortalQueryValues([...new Set(query.caseIds)]).map(caseIds => ({
+      ...query,
+      caseIds,
+    }))
+  ))
+}
+
+async function loadExistingPortalConversations(
+  event: H3Event,
+  scopes: GrantedScope[],
+): Promise<Conversation[]> {
+  const backend = serverDataBackend(event) as any
+  const queries = conversationScopeQueries(scopes)
+  const rowGroups = await runPortalQueryChunks(
+    queries.map(query => [query]),
+    async ([query]) => {
+      if (!query) return []
+      const result = await backend
+        .from('crm_case_conversations')
+        .select(conversationSelect)
+        .eq('organization_id', query.organizationId)
+        .eq('client_id', query.clientId)
+        .eq('client_person_id', query.clientPersonId)
+        .in('case_id', query.caseIds)
+        .limit(query.caseIds.length)
+      throwPortalDbError(result.error, 'could not list client conversations')
+      return (result.data ?? []) as unknown[]
+    },
+  )
+
+  return filterPortalConversationsInGrantedScopes(
+    rowGroups.flat().map(mapConversationRow),
+    scopes,
+  )
+}
+
+async function loadPortalConversationLastMessages(
+  event: H3Event,
+  conversations: Conversation[],
+): Promise<Map<string, Message>> {
+  const backend = serverDataBackend(event) as any
+  const conversationsWithMessages = conversations.filter(
+    conversation => conversation.lastMessageSequence > 0,
+  )
+  const rowsByChunk = await runPortalQueryChunks(
+    chunkPortalQueryValues(conversationsWithMessages, 20),
+    async (chunk) => {
+      const conversationById = new Map(chunk.map(conversation => [
+        conversation.id,
+        conversation,
+      ]))
+      const sequences = [...new Set(chunk.map(
+        conversation => conversation.lastMessageSequence,
+      ))]
+      const result = await backend
+        .from('crm_case_messages')
+        .select(messageSelect)
+        .in('organization_id', [...new Set(chunk.map(
+          conversation => conversation.organizationId,
+        ))])
+        .in('conversation_id', [...conversationById.keys()])
+        .in('sequence', sequences)
+        .limit(chunk.length * sequences.length)
+      throwPortalDbError(result.error, 'could not load conversation previews')
+      return (result.data ?? [])
+        .map(mapMessageRow)
+        .filter((message: Message) => {
+          const conversation = conversationById.get(message.conversationId)
+          return Boolean(
+            conversation
+            && message.organizationId === conversation.organizationId
+            && message.sequence === conversation.lastMessageSequence,
+          )
+        })
+    },
+  )
+
+  return new Map(rowsByChunk.flat().map(message => [
+    message.conversationId,
+    message,
+  ]))
+}
+
+async function loadPortalConversationReceipts(
+  event: H3Event,
+  conversations: Conversation[],
+): Promise<Map<string, Receipt>> {
+  const backend = serverDataBackend(event) as any
+  const conversationById = new Map(conversations.map(conversation => [
+    conversation.id,
+    conversation,
+  ]))
+  const rowsByChunk = await runPortalQueryChunks(
+    chunkPortalQueryValues(conversations, 40),
+    async (chunk) => {
+      const result = await backend
+        .from('crm_case_conversation_states')
+        .select(receiptSelect)
+        .in('conversation_id', chunk.map(conversation => conversation.id))
+        .eq('participant_kind', 'client')
+        .limit(chunk.length)
+      throwPortalDbError(result.error, 'could not load conversation read state')
+      return mapReceiptRows(result.data ?? []).filter((receipt) => {
+        const conversation = conversationById.get(receipt.conversationId)
+        return Boolean(
+          conversation
+          && receipt.organizationId === conversation.organizationId
+          && receipt.participantClientPersonId === conversation.clientPersonId,
+        )
+      })
+    },
+  )
+
+  return new Map(rowsByChunk.flat().map(receipt => [
+    receipt.conversationId,
+    receipt,
+  ]))
+}
+
+export async function listPortalConversationSummaries(
+  event: H3Event,
+  providedSession?: ClientPortalSession,
+): Promise<PortalConversationSummary[]> {
+  const session = providedSession ?? await loadClientPortalSession(event)
+  const scopes = await loadGrantedScopes(event, session)
+  if (!scopes.length) return []
+
+  // Unlike a case conversation GET/POST, an inbox read must never create a
+  // conversation merely because the client can access the case.
+  const conversations = await loadExistingPortalConversations(event, scopes)
+  if (!conversations.length) return []
+
+  const [lastMessageByConversation, receiptByConversation] = await Promise.all([
+    loadPortalConversationLastMessages(event, conversations),
+    loadPortalConversationReceipts(event, conversations),
+  ])
+
+  return conversations
+    .map(conversation => buildPortalConversationSummary(
+      conversation,
+      receiptByConversation.get(conversation.id) ?? null,
+      lastMessageByConversation.get(conversation.id) ?? null,
+    ))
+    .sort((left, right) => {
+      const leftTime = left.lastMessageAt ? Date.parse(left.lastMessageAt) : -1
+      const rightTime = right.lastMessageAt ? Date.parse(right.lastMessageAt) : -1
+      return rightTime - leftTime
+        || left.caseId.localeCompare(right.caseId)
+        || left.conversationId.localeCompare(right.conversationId)
+    })
 }
 
 function parseInteger(

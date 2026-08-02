@@ -726,7 +726,11 @@ export async function sendStaffConversationMessage(
           access.clientPerson.clientPersonId,
         )
         deliveryResults.push(...await Promise.all(recipientIds.map(clientId => (
-          publishDirectMessagePush(event, clientId, `/cases/${access.caseId}`)
+          publishDirectMessagePush(
+            event,
+            clientId,
+            `/messages?case=${encodeURIComponent(access.caseId)}`,
+          )
         ))))
       }
       catch (error) {
@@ -878,7 +882,7 @@ async function pushOutboxMessage(
     const results = await Promise.all(ids.map(clientId => publishDirectMessagePush(
       event,
       clientId,
-      `/cases/${caseId}`,
+      `/messages?case=${encodeURIComponent(caseId)}`,
     )))
     requireSuccessfulPushes(results)
     return

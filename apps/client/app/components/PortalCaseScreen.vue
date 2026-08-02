@@ -10,20 +10,37 @@ const props = withDefaults(defineProps<{
   preview: false,
 })
 
-const mobileSummaryOpen = ref(false)
+type CaseView = 'updates' | 'messages' | 'details'
 
-function openConversation() {
-  if (!import.meta.client) return
-  document.getElementById('portal-case-conversation')?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'center',
-  })
-  window.setTimeout(() => {
-    document.querySelector<HTMLTextAreaElement>(
-      '#portal-case-conversation textarea',
-    )?.focus()
-  }, 500)
-}
+const route = useRoute()
+const casePath = computed(() => props.preview
+  ? `/preview/cases/${encodeURIComponent(props.caseData.id)}`
+  : `/cases/${encodeURIComponent(props.caseData.id)}`)
+const activeView = computed<CaseView>(() => {
+  if (route.query.view === 'messages') return 'messages'
+  if (route.query.view === 'details') return 'details'
+  return 'updates'
+})
+const viewTabs = computed(() => [
+  {
+    value: 'updates' as const,
+    label: 'Aktualności',
+    icon: 'i-lucide-list-tree',
+    to: casePath.value,
+  },
+  {
+    value: 'messages' as const,
+    label: 'Wiadomości',
+    icon: 'i-lucide-message-circle-more',
+    to: { path: casePath.value, query: { view: 'messages' } },
+  },
+  {
+    value: 'details' as const,
+    label: 'Szczegóły',
+    icon: 'i-lucide-folder-open',
+    to: { path: casePath.value, query: { view: 'details' } },
+  },
+])
 
 const updatedLabel = computed(() => {
   const date = new Date(props.caseData.updatedAt)
@@ -34,6 +51,22 @@ const updatedLabel = computed(() => {
     hour: '2-digit', minute: '2-digit', timeZone: PORTAL_TIME_ZONE,
   }).format(date)
   return `${datePart}, ${timePart}`
+})
+
+const viewHeading = computed(() => {
+  if (activeView.value === 'messages') return 'Wiadomości w Twojej sprawie'
+  if (activeView.value === 'details') return 'Szczegóły i postęp sprawy'
+  return 'Co dzieje się w Twojej sprawie'
+})
+
+const viewDescription = computed(() => {
+  if (activeView.value === 'messages') {
+    return `Rozmawiasz z ekspertem: ${props.caseData.expert.name}.`
+  }
+  if (activeView.value === 'details') {
+    return 'Zakres, postęp i najważniejsze informacje w jednym miejscu.'
+  }
+  return `Ostatnia aktualizacja: ${updatedLabel.value}`
 })
 </script>
 
@@ -57,47 +90,45 @@ const updatedLabel = computed(() => {
           Wróć do „Co teraz”
         </NuxtLink>
 
-        <div class="portal-case-main__mobile-summary">
-          <UButton
-            class="portal-case-main__summary-toggle"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-folder-open"
-            :trailing-icon="mobileSummaryOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-            aria-controls="mobile-case-summary"
-            :aria-expanded="mobileSummaryOpen"
-            @click="mobileSummaryOpen = !mobileSummaryOpen"
-          >
-            {{ mobileSummaryOpen ? 'Zamknij szczegóły sprawy' : 'Szczegóły i postęp sprawy' }}
-          </UButton>
-          <div
-            v-if="mobileSummaryOpen"
-            id="mobile-case-summary"
-            role="region"
-            aria-label="Szczegóły i postęp sprawy"
-          >
-            <PortalCaseSidebar
-              mobile
-              :case-data="caseData"
-              :preview="preview"
-            />
-          </div>
-        </div>
-
         <header class="portal-case-main__title">
-          <h1>Co dzieje się w Twojej sprawie</h1>
-          <p>Ostatnia aktualizacja: {{ updatedLabel }}</p>
+          <h1>{{ viewHeading }}</h1>
+          <p>{{ viewDescription }}</p>
         </header>
 
+        <nav class="portal-case-main__tabs" aria-label="Widok sprawy">
+          <NuxtLink
+            v-for="tab in viewTabs"
+            :key="tab.value"
+            :to="tab.to"
+            :class="[
+              `portal-case-main__tab--${tab.value}`,
+              { 'is-active': activeView === tab.value },
+            ]"
+            :aria-current="activeView === tab.value ? 'page' : undefined"
+          >
+            <UIcon :name="tab.icon" />
+            <span>{{ tab.label }}</span>
+          </NuxtLink>
+        </nav>
+
         <PortalCaseConversation
-          v-if="!preview"
+          v-if="activeView === 'messages'"
           :case-id="caseData.id"
           :expert-name="caseData.expert.name"
+          :preview="preview"
+          surface="pane"
         />
+        <div v-else-if="activeView === 'details'" class="portal-case-main__details">
+          <PortalCaseSidebar
+            mobile
+            :case-data="caseData"
+            :preview="preview"
+          />
+        </div>
         <PortalTimeline
+          v-else
           :case-data="caseData"
           :preview="preview"
-          @open-conversation="openConversation"
         />
       </main>
     </div>
@@ -129,7 +160,7 @@ const updatedLabel = computed(() => {
 }
 
 .portal-case-main__title {
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .portal-case-main__back {
@@ -168,8 +199,49 @@ const updatedLabel = computed(() => {
   font-size: 14px;
 }
 
-.portal-case-main__mobile-summary {
-  display: none;
+.portal-case-main__tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 170px));
+  gap: 6px;
+  width: fit-content;
+  margin-bottom: 24px;
+  padding: 5px;
+  border: 1px solid var(--portal-line);
+  border-radius: 16px;
+  background: var(--ui-bg-muted);
+}
+
+.portal-case-main__tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 11px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.portal-case-main__tabs a.is-active {
+  background: var(--ui-bg);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 7%);
+  color: var(--ui-text-highlighted);
+}
+
+.portal-case-main__tabs svg {
+  width: 17px;
+  height: 17px;
+}
+
+.portal-case-main__tab--details {
+  display: none !important;
+}
+
+.portal-case-main__details {
+  max-width: 560px;
 }
 
 @media (max-width: 1100px) {
@@ -190,21 +262,16 @@ const updatedLabel = computed(() => {
   .portal-case-main {
     max-width: 820px;
     margin: 0 auto;
-    padding: 28px 24px calc(56px + env(safe-area-inset-bottom));
+    padding: 28px 24px var(--portal-mobile-nav-clearance);
   }
 
-  .portal-case-main__mobile-summary {
-    display: grid;
-    gap: 14px;
-    margin-bottom: 28px;
+  .portal-case-main__tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
   }
 
-  .portal-case-main__summary-toggle {
-    min-height: 48px;
-    max-width: 100%;
-    justify-self: center;
-    padding-inline: 22px;
-    border-radius: 999px;
+  .portal-case-main__tab--details {
+    display: inline-flex !important;
   }
 
   .portal-case-main__back {
@@ -215,7 +282,7 @@ const updatedLabel = computed(() => {
 @media (max-width: 760px) {
   .portal-case-main__title {
     max-width: 440px;
-    margin: 0 auto 24px;
+    margin: 0 auto 20px;
     text-align: center;
   }
 
@@ -235,7 +302,32 @@ const updatedLabel = computed(() => {
 
 @media (max-width: 540px) {
   .portal-case-main {
-    padding: 22px 16px calc(56px + env(safe-area-inset-bottom));
+    padding: 22px 16px var(--portal-mobile-nav-clearance);
+  }
+
+  .portal-case-main__tabs {
+    position: sticky;
+    z-index: 15;
+    top: 8px;
+    gap: 3px;
+    margin-bottom: 18px;
+    padding: 4px;
+    border-radius: 15px;
+    background: rgb(250 250 250 / 94%);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 7%);
+    backdrop-filter: blur(16px);
+  }
+
+  .portal-case-main__tabs a {
+    gap: 5px;
+    min-height: 43px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .portal-case-main__tabs svg {
+    width: 16px;
+    height: 16px;
   }
 
   .portal-case-main__title h1 {

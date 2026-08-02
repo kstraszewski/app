@@ -149,10 +149,8 @@ const preparationActionLabel = computed(() => preparationCompleted.value
 
 const contactTo = computed(() => {
   if (!expert.value || !actionCase.value) return null
-  const base = props.preview
-    ? `/preview/cases/${encodeURIComponent(actionCase.value.id)}`
-    : `/cases/${encodeURIComponent(actionCase.value.id)}`
-  return `${base}#kontakt`
+  const base = props.preview ? '/preview/messages' : '/messages'
+  return `${base}?case=${encodeURIComponent(actionCase.value.id)}`
 })
 
 const expertInitials = computed(() => {
@@ -345,7 +343,7 @@ const meetingModeLabel = computed(() => {
               icon="i-lucide-message-circle"
               block
             >
-              Napisz do eksperta
+              Przejdź do wiadomości
             </UButton>
           </template>
           <div v-else class="context-card__empty">
@@ -762,7 +760,7 @@ const meetingModeLabel = computed(() => {
 @media (max-width: 760px) {
   .portal-dashboard__main {
     width: min(calc(100% - 32px), 640px);
-    padding: 36px 0 calc(56px + env(safe-area-inset-bottom));
+    padding: 36px 0 var(--portal-mobile-nav-clearance);
   }
 
   .portal-dashboard__welcome {

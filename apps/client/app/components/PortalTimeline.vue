@@ -9,10 +9,6 @@ const props = withDefaults(defineProps<{
 }>(), {
   preview: false,
 })
-const emit = defineEmits<{
-  openConversation: []
-}>()
-
 const toast = useToast()
 const authenticatedUser = useAuthUser()
 const uploadInput = ref<HTMLInputElement | null>(null)
@@ -246,22 +242,6 @@ async function uploadDocument(event: Event) {
         </div>
       </article>
     </div>
-
-    <section v-if="!preview" id="kontakt" class="case-contact">
-      <UButton
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-message-circle"
-        class="case-contact__button"
-        @click="emit('openConversation')"
-      >
-        Napisz do {{ caseData.expert.name.split(' ')[0] }}
-      </UButton>
-      <p>
-        Masz pytanie lub chcesz coś doprecyzować?<br>
-        Jesteśmy tu, aby Ci pomóc.
-      </p>
-    </section>
 
   </div>
 </template>
@@ -553,40 +533,6 @@ async function uploadDocument(event: Event) {
   text-decoration: none;
 }
 
-.case-contact {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  align-items: center;
-  gap: 25px;
-  min-height: 70px;
-  margin-top: 6px;
-  padding: 0 24px;
-  border: 1px solid var(--portal-line);
-  border-radius: 12px;
-}
-
-.case-contact__button {
-  justify-content: flex-start;
-  padding-left: 5px;
-  border: 0;
-  box-shadow: none;
-  color: var(--ui-text-highlighted);
-  font-size: 15px;
-}
-
-.case-contact__button :deep(svg) {
-  width: 25px;
-  height: 25px;
-  margin-right: 5px;
-}
-
-.case-contact p {
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 @media (max-width: 1180px) {
   .action-update__meta {
     gap: 15px;
@@ -817,14 +763,5 @@ async function uploadDocument(event: Event) {
     left: 13px;
   }
 
-  .case-contact {
-    grid-template-columns: 1fr;
-    gap: 0;
-    padding: 14px 18px;
-  }
-
-  .case-contact p {
-    padding-left: 7px;
-  }
 }
 </style>

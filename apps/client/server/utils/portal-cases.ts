@@ -24,7 +24,7 @@ import {
 
 type Row = Record<string, any>
 
-interface GrantedScope {
+export interface GrantedScope {
   grant: PortalGrant
   link: PortalClientLink
 }
@@ -313,7 +313,7 @@ async function loadVisiblePortalMessages(
   )
 }
 
-async function loadGrantedScopes(
+export async function loadGrantedScopes(
   event: H3Event,
   session: ClientPortalSession,
 ): Promise<GrantedScope[]> {

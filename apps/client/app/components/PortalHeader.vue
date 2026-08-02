@@ -11,7 +11,36 @@ const props = withDefaults(defineProps<{
 
 const toast = useToast()
 const runtimeConfig = useRuntimeConfig()
+const route = useRoute()
 const loggingOut = ref(false)
+const currentCaseId = computed(() => typeof route.params.caseId === 'string'
+  ? route.params.caseId
+  : '')
+const messagesTo = computed(() => {
+  const base = props.preview ? '/preview/messages' : '/messages'
+  return currentCaseId.value
+    ? `${base}?case=${encodeURIComponent(currentCaseId.value)}`
+    : base
+})
+
+const navigationItems = computed(() => [
+  {
+    label: 'Co teraz',
+    icon: 'i-lucide-house',
+    to: props.preview ? '/preview' : '/',
+    active: props.preview
+      ? route.path === '/preview'
+      : route.path === '/',
+  },
+  {
+    label: 'Wiadomości',
+    icon: 'i-lucide-message-circle-more',
+    to: messagesTo.value,
+    active: props.preview
+      ? route.path.startsWith('/preview/messages')
+      : route.path.startsWith('/messages'),
+  },
+])
 
 const initials = computed(() => {
   const parts = props.userName.trim().split(/\s+/u).filter(Boolean)
@@ -55,11 +84,14 @@ async function signOut() {
 
     <nav class="portal-header__nav" aria-label="Główna nawigacja">
       <NuxtLink
-        :to="preview ? '/preview' : '/'"
-        class="is-active"
+        v-for="item in navigationItems"
+        :key="item.label"
+        :to="item.to"
+        :class="{ 'is-active': item.active }"
+        :aria-current="item.active ? 'page' : undefined"
       >
-        <UIcon name="i-lucide-house" class="portal-header__nav-icon" />
-        <span>Co teraz</span>
+        <UIcon :name="item.icon" class="portal-header__nav-icon" />
+        <span>{{ item.label }}</span>
       </NuxtLink>
     </nav>
 
@@ -112,6 +144,7 @@ async function signOut() {
       </UDropdownMenu>
     </div>
   </header>
+  <PortalBottomNavigation :preview="preview" />
 </template>
 
 <style scoped>
@@ -136,6 +169,7 @@ async function signOut() {
 
 .portal-header__brand {
   display: inline-flex;
+  flex: 0 0 auto;
   width: fit-content;
   text-decoration: none;
 }
@@ -159,7 +193,7 @@ async function signOut() {
 .portal-header__nav {
   display: flex;
   align-items: center;
-  gap: 46px;
+  gap: 36px;
   height: 100%;
 }
 
@@ -303,6 +337,10 @@ async function signOut() {
 
   .portal-header__nav a {
     font-size: 14px;
+  }
+
+  .portal-header__nav-icon {
+    display: block;
   }
 
   .portal-header__preview-label {

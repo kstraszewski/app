@@ -22,9 +22,18 @@ interface ConversationResponse {
   }
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   caseId: string
   expertName: string
+  preview?: boolean
+  surface?: 'card' | 'pane'
+}>(), {
+  preview: false,
+  surface: 'card',
+})
+const emit = defineEmits<{
+  messageSent: []
+  receiptUpdated: []
 }>()
 
 const toast = useToast()
@@ -32,14 +41,101 @@ const apiPath = computed(
   () => `/api/client/cases/${encodeURIComponent(props.caseId)}/conversation`,
 )
 const requestFetch = useRequestFetch()
+
+function previewConversationResponse(): ConversationResponse {
+  const conversationId = `preview-conversation-${props.caseId}`
+  const messages: Message[] = [
+    {
+      id: `${conversationId}-1`,
+      organizationId: 'org-openexpert-local',
+      conversationId,
+      sequence: 1,
+      clientMessageId: `${conversationId}-client-1`,
+      senderKind: 'staff',
+      senderUserId: 'preview-expert',
+      senderClientPersonId: null,
+      senderAuthUserId: null,
+      body: 'Dzień dobry, dodałam najważniejsze informacje do sprawy. Jeśli coś będzie niejasne, proszę napisać tutaj.',
+      createdAt: '2026-08-01T08:42:00.000Z',
+      editedAt: null,
+      deletedAt: null,
+    },
+    {
+      id: `${conversationId}-2`,
+      organizationId: 'org-openexpert-local',
+      conversationId,
+      sequence: 2,
+      clientMessageId: `${conversationId}-client-2`,
+      senderKind: 'client',
+      senderUserId: null,
+      senderClientPersonId: 'preview-client',
+      senderAuthUserId: 'preview-auth-user',
+      body: 'Dziękuję. Dokument prześlę jeszcze dzisiaj po południu.',
+      createdAt: '2026-08-01T09:08:00.000Z',
+      editedAt: null,
+      deletedAt: null,
+    },
+    {
+      id: `${conversationId}-3`,
+      organizationId: 'org-openexpert-local',
+      conversationId,
+      sequence: 3,
+      clientMessageId: `${conversationId}-client-3`,
+      senderKind: 'staff',
+      senderUserId: 'preview-expert',
+      senderClientPersonId: null,
+      senderAuthUserId: null,
+      body: 'Świetnie. Gdy tylko plik się pojawi, od razu go sprawdzę.',
+      createdAt: '2026-08-01T09:11:00.000Z',
+      editedAt: null,
+      deletedAt: null,
+    },
+  ]
+
+  return {
+    data: {
+      conversation: {
+        id: conversationId,
+        organizationId: 'org-openexpert-local',
+        caseId: props.caseId,
+        clientId: 'preview-client-account',
+        clientPersonId: 'preview-client',
+        lastMessageSequence: messages.length,
+        lastMessageAt: messages.at(-1)?.createdAt ?? null,
+        createdAt: '2026-07-29T08:00:00.000Z',
+        updatedAt: messages.at(-1)?.createdAt ?? '2026-07-29T08:00:00.000Z',
+      },
+      messages,
+      receipt: null,
+      peerReceipt: {
+        id: `${conversationId}-peer-receipt`,
+        organizationId: 'org-openexpert-local',
+        conversationId,
+        participantKind: 'staff',
+        participantUserId: 'preview-expert',
+        participantClientPersonId: null,
+        deliveredThroughSequence: 2,
+        readThroughSequence: 2,
+        deliveredAt: '2026-08-01T09:09:00.000Z',
+        readAt: '2026-08-01T09:09:00.000Z',
+        updatedAt: '2026-08-01T09:09:00.000Z',
+      },
+      pageInfo: { lastSequence: messages.length, hasMore: false },
+      realtime: { mode: 'polling', channel: null, ephemeralChannel: null },
+    },
+  }
+}
+
 const {
   data: initialResponse,
   status,
   error: initialError,
   refresh,
 } = useAsyncData(
-  () => `portal-case-conversation:${props.caseId}`,
-  () => requestFetch<ConversationResponse>(apiPath.value),
+  () => `portal-case-conversation:${props.preview ? 'preview:' : ''}${props.caseId}`,
+  () => props.preview
+    ? Promise.resolve(previewConversationResponse())
+    : requestFetch<ConversationResponse>(apiPath.value),
   { watch: [apiPath] },
 )
 
@@ -63,7 +159,9 @@ const listElement = ref<HTMLElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
 const conversationVisible = ref(false)
-const connectionState = ref<'connecting' | 'connected' | 'polling' | 'offline'>('connecting')
+const connectionState = ref<'connecting' | 'connected' | 'polling' | 'offline'>(
+  props.preview ? 'connected' : 'connecting',
+)
 const peerTyping = ref(false)
 const notificationsState = ref<'unsupported' | 'default' | 'denied' | 'granted'>('unsupported')
 const activatingNotifications = ref(false)
@@ -94,7 +192,7 @@ const isLoading = computed(() => status.value === 'pending' && !conversation.val
 const loadError = computed(() => Boolean(initialError.value) && !conversation.value)
 const canSend = computed(() => {
   const body = composer.value.trim()
-  return body.length >= 1 && body.length <= 4000 && !sending.value
+  return body.length >= 1 && body.length <= 4000 && !sending.value && !loadError.value
 })
 
 function mergeMessages(incoming: Message[]) {
@@ -160,7 +258,7 @@ function updateListPosition() {
 }
 
 async function syncMissingMessages() {
-  if (!conversation.value) return
+  if (props.preview || !conversation.value) return
   if (syncing.value) {
     syncRequested = true
     return
@@ -200,6 +298,7 @@ async function syncMissingMessages() {
 }
 
 async function loadOlderMessages() {
+  if (props.preview) return
   const firstSequence = messages.value[0]?.sequence
   if (!conversation.value || !firstSequence || loadingOlder.value) return
   loadingOlder.value = true
@@ -240,12 +339,13 @@ function receiptPayload() {
 }
 
 function scheduleReceipt() {
-  if (!import.meta.client || !conversation.value) return
+  if (props.preview || !import.meta.client || !conversation.value) return
   if (receiptTimer) clearTimeout(receiptTimer)
   receiptTimer = setTimeout(() => void acknowledgeMessages(), 250)
 }
 
 async function acknowledgeMessages() {
+  if (props.preview) return
   const payload = receiptPayload()
   if (!payload || !conversation.value) return
   const delivered = ownReceipt.value?.deliveredThroughSequence ?? 0
@@ -261,6 +361,7 @@ async function acknowledgeMessages() {
       { method: 'POST', body: payload },
     )
     ownReceipt.value = response.data.receipt
+    emit('receiptUpdated')
   }
   catch {
     // The next sync or visibility change retries this monotonic acknowledgement.
@@ -270,6 +371,29 @@ async function acknowledgeMessages() {
 async function sendMessage() {
   const body = composer.value.trim()
   if (!body || !canSend.value) return
+
+  if (props.preview) {
+    const sequence = latestSequence.value + 1
+    mergeMessages([{
+      id: crypto.randomUUID(),
+      organizationId: conversation.value?.organizationId || 'org-openexpert-local',
+      conversationId: conversation.value?.id || `preview-conversation-${props.caseId}`,
+      sequence,
+      clientMessageId: crypto.randomUUID(),
+      senderKind: 'client',
+      senderUserId: null,
+      senderClientPersonId: 'preview-client',
+      senderAuthUserId: 'preview-auth-user',
+      body,
+      createdAt: new Date().toISOString(),
+      editedAt: null,
+      deletedAt: null,
+    }])
+    composer.value = ''
+    emit('messageSent')
+    void nextTick(scrollToEnd)
+    return
+  }
 
   const clientMessageId = failedAttempt.value?.body === body
     ? failedAttempt.value.clientMessageId
@@ -290,6 +414,7 @@ async function sendMessage() {
     )
     if (response.data.message) mergeMessages([response.data.message])
     if (response.data.peerReceipt !== undefined) peerReceipt.value = response.data.peerReceipt
+    emit('messageSent')
     failedAttempt.value = null
     pendingBody.value = ''
     void nextTick(scrollToEnd)
@@ -327,6 +452,7 @@ function stopPolling() {
 }
 
 function startPolling(interval = 5_000) {
+  if (props.preview) return
   stopPolling()
   connectionState.value = connectionState.value === 'offline' ? 'offline' : 'polling'
   pollTimer = setInterval(() => void syncMissingMessages(), interval)
@@ -334,6 +460,8 @@ function startPolling(interval = 5_000) {
 
 async function connectRealtime() {
   if (
+    props.preview
+    ||
     !import.meta.client
     || !conversation.value
     || connectedConversationId === conversation.value.id
@@ -441,6 +569,7 @@ function disconnectRealtime() {
 }
 
 function publishTyping(active: boolean) {
+  if (props.preview) return
   if (!ephemeralChannel || connectionState.value !== 'connected') return
   void ephemeralChannel.publish('typing.updated', {
     kind: 'typing.updated',
@@ -496,6 +625,10 @@ watch(
 )
 
 onMounted(() => {
+  if (props.preview) {
+    connectionState.value = 'connected'
+    return
+  }
   notificationsState.value = (
     'Notification' in window
     && 'serviceWorker' in navigator
@@ -527,7 +660,10 @@ onBeforeUnmount(() => {
 <template>
   <section
     id="portal-case-conversation"
-    class="portal-conversation"
+    :class="[
+      'portal-conversation',
+      `portal-conversation--${surface}`,
+    ]"
     aria-labelledby="portal-conversation-title"
   >
     <header class="portal-conversation__header">
@@ -577,7 +713,10 @@ onBeforeUnmount(() => {
 
     <div
       ref="listElement"
-      class="portal-conversation__messages"
+      :class="[
+        'portal-conversation__messages',
+        { 'is-error': loadError },
+      ]"
       aria-live="polite"
       @scroll.passive="updateListPosition"
     >
@@ -615,7 +754,7 @@ onBeforeUnmount(() => {
 
       <div v-else-if="!messages.length && !pendingBody" class="portal-conversation__empty">
         <span><UIcon name="i-lucide-messages-square" /></span>
-        <strong>Zacznij rozmowę z {{ expertFirstName }}</strong>
+        <strong>Zacznij rozmowę</strong>
         <p>Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu.</p>
       </div>
 
@@ -657,7 +796,7 @@ onBeforeUnmount(() => {
       <span ref="readSentinelElement" class="portal-conversation__read-sentinel" aria-hidden="true" />
     </div>
 
-    <form class="portal-conversation__composer" @submit.prevent="sendMessage">
+    <form v-if="!loadError" class="portal-conversation__composer" @submit.prevent="sendMessage">
       <UTextarea
         v-model="composer"
         class="w-full"
@@ -665,8 +804,8 @@ onBeforeUnmount(() => {
         :rows="1"
         :maxrows="6"
         :maxlength="4000"
-        :disabled="sending"
-        :placeholder="`Napisz do ${expertFirstName}…`"
+        :disabled="sending || loadError"
+        placeholder="Napisz wiadomość…"
         aria-label="Treść wiadomości"
         @input="onComposerInput"
         @blur="stopTyping"
@@ -681,7 +820,7 @@ onBeforeUnmount(() => {
         aria-label="Wyślij wiadomość"
       />
     </form>
-    <p class="portal-conversation__hint">
+    <p v-if="!loadError" class="portal-conversation__hint">
       Enter wysyła · Shift+Enter dodaje nową linię
     </p>
   </section>
@@ -695,6 +834,14 @@ onBeforeUnmount(() => {
   border-radius: 18px;
   background: var(--ui-bg);
   box-shadow: 0 18px 45px rgb(15 23 42 / 5%);
+}
+
+.portal-conversation--pane {
+  overflow: visible;
+  margin-bottom: 0;
+  border-width: 1px 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .portal-conversation__header {
@@ -781,6 +928,12 @@ onBeforeUnmount(() => {
   padding: 24px 20px 18px;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
+}
+
+.portal-conversation__messages.is-error {
+  min-height: 0;
+  max-height: none;
+  padding-block: 18px;
 }
 
 .portal-conversation__messages > :deep(.u-skeleton):nth-child(even) {
@@ -961,6 +1114,21 @@ onBeforeUnmount(() => {
     border-radius: 17px;
   }
 
+  .portal-conversation--pane {
+    margin-inline: 0;
+    border-radius: 0;
+  }
+
+  .portal-conversation--pane .portal-conversation__composer {
+    position: sticky;
+    z-index: 20;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    margin-inline: 0;
+    padding: 10px 12px;
+    background: rgb(255 255 255 / 96%);
+    backdrop-filter: blur(14px);
+  }
+
   .portal-conversation__header {
     align-items: flex-start;
     flex-direction: column;
@@ -971,6 +1139,11 @@ onBeforeUnmount(() => {
     min-height: 330px;
     max-height: 62dvh;
     padding: 20px 12px 16px;
+  }
+
+  .portal-conversation__messages.is-error {
+    min-height: 0;
+    padding: 14px 0;
   }
 
   .portal-message > div {

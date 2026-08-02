@@ -6,6 +6,7 @@ export const administrativeRoleIds = [
   'structure_admin',
   'consents_admin',
   'crm_config_admin',
+  'forum_admin',
 ] as const
 
 export type AdministrativeRoleId = typeof administrativeRoleIds[number]

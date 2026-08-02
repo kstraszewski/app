@@ -11,9 +11,12 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const statusLabels: Record<string, string> = {
   accepted: 'Przyjęte',
   active: 'Aktywny',
+  answered: 'Odpowiedziane',
   archived: 'Archiwalny',
   cancelled: 'Anulowane',
+  closed: 'Zamknięte',
   completed: 'Zakończone',
+  concluded: 'Zakończona',
   confirmed: 'Potwierdzone',
   draft: 'Szkic',
   braki: 'Braki',
@@ -23,11 +26,14 @@ const statusLabels: Record<string, string> = {
   missing: 'Brak',
   new: 'Nowy',
   open: 'Otwarte',
+  needs_clarification: 'Wymaga doprecyzowania',
   pending: 'Oczekuje',
   received: 'Odebrany',
   rejected: 'Odrzucone',
+  resolved: 'Rozwiązane',
   sent: 'Wysłane',
   verified: 'Zweryfikowane',
+  waiting_summary: 'Oczekuje na podsumowanie',
   w_analizie: 'W analizie',
   won: 'Wygrane',
   wyslane: 'Wysłane',
@@ -273,6 +279,38 @@ function mapDocuments(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
   })
 }
 
+function mapForum(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
+  return rows.flatMap((row) => {
+    const id = uuid(row.thread_id ?? row.id)
+    const label = text(row.title ?? row.label)
+    if (!id || !label) return []
+
+    const matchedIn = text(row.matched_in ?? row.matchedIn)
+    const category = text(row.category_name ?? row.categoryName)
+    const excerpt = text(row.excerpt ?? row.matched_excerpt ?? row.description)
+    const description = joinDetails(
+      matchedIn ? `Trafienie: ${matchedIn}` : undefined,
+      category,
+      excerpt,
+    ) ?? 'Wątek forum ekspertów'
+
+    return [{
+      id,
+      kind: 'forum_thread' as const,
+      label,
+      description,
+      suffix: statusLabel(row.status) ?? 'Forum',
+      icon: text(row.type) === 'discussion'
+        ? 'i-lucide-messages-square'
+        : 'i-lucide-message-circle-question',
+      to: {
+        path: organizationPath(slug, '/forum'),
+        query: { thread: id },
+      },
+    }]
+  })
+}
+
 export function mapCrmOmnisearchResponse(
   payload: unknown,
   organizationSlug: string,
@@ -283,6 +321,7 @@ export function mapCrmOmnisearchResponse(
   return {
     query,
     groups: {
+      forum: mapForum(recordArray(groups.forum), organizationSlug),
       cases: mapCases(recordArray(groups.cases), organizationSlug),
       clients: mapClients(recordArray(groups.clients), organizationSlug),
       appointments: mapAppointments(recordArray(groups.appointments), organizationSlug),

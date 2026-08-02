@@ -8,6 +8,7 @@
     "./client": "./src/client.ts"
   },
   "scripts": {
+    "test": "node --test --experimental-strip-types test/*.test.ts",
     "trigger:deploy": "trigger deploy --skip-sync-env-vars",
     "trigger:dev": "trigger dev --skip-update-check",
     "trigger:login": "trigger login",

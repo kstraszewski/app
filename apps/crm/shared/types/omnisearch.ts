@@ -1,4 +1,5 @@
 export type CrmOmnisearchKind =
+  | 'forum_thread'
   | 'case'
   | 'client'
   | 'appointment'
@@ -14,6 +15,7 @@ export function canAccessCrmOmnisearch(
 }
 
 export type CrmOmnisearchGroupKey =
+  | 'forum'
   | 'cases'
   | 'clients'
   | 'appointments'

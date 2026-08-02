@@ -12,6 +12,7 @@ type AdminRoleKey =
   | 'access_admin'
   | 'structure_admin'
   | 'consents_admin'
+  | 'forum_admin'
   | 'crm_config_admin'
   | 'none'
 type AssignedAdminRoleKey = Exclude<AdminRoleKey, 'none'>
@@ -95,6 +96,12 @@ const accessProfiles: Record<AdminRoleKey, {
     summary: 'Definicje, wersje i audyt zgód',
     icon: 'i-lucide-file-check-2',
     color: 'warning',
+  },
+  forum_admin: {
+    label: 'Administrator forum',
+    summary: 'Moderacja tematów, odpowiedzi i kategorii',
+    icon: 'i-lucide-messages-square',
+    color: 'success',
   },
   crm_config_admin: {
     label: 'Administrator ustawień operacyjnych',

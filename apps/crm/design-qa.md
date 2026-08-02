@@ -67,6 +67,61 @@ final result: passed
 
 ---
 
+## 2026-08-02 — forum ekspertów, wyszukiwanie i moderacja
+
+### Materiał porównawczy
+
+- Źródło prawdy: `apps/crm/forum-design-reference.png` (`1487 × 1058 px`).
+- Implementacja desktop: `/private/tmp/forum-live-desktop-expanded-final.png` (`1486 × 1057 px`).
+- Wspólne porównanie źródła i implementacji: `/private/tmp/forum-comparison-desktop-expanded-final.png`.
+- Implementacja tablet: `/private/tmp/forum-live-tablet.png` (`820 × 900 px`).
+- Implementacja mobile — szczegóły: `/private/tmp/forum-live-mobile-fixed.png` (`390 × 844 px`).
+- Implementacja mobile — lista: `/private/tmp/forum-live-mobile-list.png` (`390 × 844 px`).
+- Stan desktop: zapytanie „dochód B2B”, najlepszy wynik, zweryfikowana odpowiedź eksperta, oficjalna odpowiedź administracji i aktywne narzędzia moderatora.
+
+### Porównanie i historia korekt
+
+- P1: przy zwiniętym sidebarze drugi przycisk Omni Search przebijał się pod mobilnym nagłówkiem z powodu wyższej specyficzności selektora. Ukryto wariant desktopowy również dla `.crm-shell--collapsed`; po korekcie pozostaje jeden przycisk w nagłówku.
+- P1: query-container próbował zmieniać własną siatkę. Kontener przeniesiono na zewnętrzny wrapper, dzięki czemu przy `820 px` i `390 px` forum przechodzi do prawidłowego widoku jednokolumnowego.
+- P1: wyszukiwanie wysyłało do API zapytania krótsze niż 3 znaki. Dodano lokalną podpowiedź, limit 200 znaków i brak requestu dla niepoprawnej długości.
+- P1: lokalny, nietrwały przycisk „Obserwuj” sugerował zapisaną funkcję. Usunięto go do czasu wdrożenia trwałej obserwacji.
+- P1: niepełny wzorzec ARIA `listbox` został zastąpiony semantyczną listą przycisków; zachowano jednoznaczne nazwy i obsługę fokusu.
+- P2: pełny UUID konkurował z tytułem wątku. Skrócono identyfikator do ośmiu znaków (`CCA50A32`).
+- P2: na przejściu lista ↔ szczegóły oraz po operacjach moderatora ginął fokus. Dodano jawny focus handoff i odświeżanie szczegółu bez wymiany całego panelu na skeleton.
+- P2: nullable moderator i powód mogły przerwać render ukrytych treści. Dodano bezpieczne typy i tekstowe fallbacki.
+- P2: etykieta bezpośredniej roli `Administrator forum` była przykrywana ogólną rolą eksperta. Priorytet otrzymuje teraz `roleLabel`.
+- P2: modalne operacje mogły zostać zamknięte podczas requestu. Przycisk zamknięcia jest blokowany na czas zapisu, a błędy są ogłaszane przez `role="alert"`.
+- Po finalnym wspólnym porównaniu nie pozostały problemy P0, P1 ani P2. Różnica liczby wyników względem wizualnego wzorca wynika z celowego trybu leksykalnego bez lokalnego klucza dostawcy embeddingów; interfejs komunikuje ten tryb zamiast sugerować działającą semantykę.
+
+### Funkcjonalność i dostępność
+
+- Sprawdzono przeglądanie sześciu tematów seed, wyszukiwanie krótkiego zapytania, wyszukiwanie „dochód B2B”, podświetlenie trafienia i otwarcie szczegółu.
+- Sprawdzono Omni Search: osobna grupa „Forum ekspertów”, właściwy wynik i bezpośrednia nawigacja do wątku.
+- Sprawdzono rolę administratora forum w treści oraz panel administracyjny: zamknięcie/ponowne otwarcie wątku, ukrycie wpisu z obowiązkowym powodem, odzyskanie wpisu, utworzenie i archiwizację kategorii.
+- Sprawdzono formularz nowego pytania bez publikowania danych testowych oraz odpowiedź administracyjną i zweryfikowaną odpowiedź eksperta.
+- Po testach mutacyjnych ponownie wykonano `pnpm db:seed-demo`; forum wróciło do sześciu kategorii, sześciu tematów i szesnastu wpisów.
+- Viewporty `1486 × 1057`, `820 × 900` i `390 × 844` nie mają poziomego overflow ani kolizji akcji. Mobile zachowuje powrót do aktywnej karty wątku.
+- Konsola finalnego widoku: `0` błędów i `0` ostrzeżeń.
+- Końcowy Nuxt typecheck, testy kontraktów forum/moderacji/Omni Search oraz `git diff --check` przechodzą.
+
+final result: passed
+
+### Realtime bez F5
+
+- PostgreSQL przechowuje organizacyjny, monotoniczny kursor zmian; triggery obejmują nowe i zmienione wątki, wpisy, kategorie oraz operacje moderatora. Aktualizacja samego licznika odsłon nie generuje zdarzenia.
+- Ably przenosi wyłącznie identyfikatory i numer rewizji przez kanał organizacji z tokenem `subscribe-only`. Treść forum jest zawsze ponownie pobierana z autoryzowanego API.
+- Bez skonfigurowanego Ably klient automatycznie synchronizuje się co 4 sekundy. Przy aktywnym Ably pozostaje kontrolny polling co 30 sekund, więc utracona invalidacja nie wymaga F5.
+- Odświeżenie odbywa się w tle: lista i otwarty wątek zachowują treść, fokus oraz scroll; nie wracają do skeletonów. Czytający starsze odpowiedzi dostaje przycisk z liczbą nowych wpisów, a użytkownik przy końcu wątku jest przewijany do nowej odpowiedzi.
+- Panel moderacji aktualizuje otwartą listę ukrytych treści lub kategorii bez nadpisania aktywnego formularza edycji.
+- Test dwóch równoległych kart w lokalnej przeglądarce bez Ably: odpowiedź pojawiła się w drugiej karcie po około `2,7 s`, nowy temat po `3,5 s`, a zamknięcie wątku przez moderatora po `1,6 s`. URL i wybrany wątek pozostały stabilne, lista nie pokazała skeletonu, konsola: `0` błędów i `0` ostrzeżeń.
+- Po QA usunięto dwa jednoznacznie oznaczone rekordy testowe; finalny stan to 6 kategorii, 6 tematów, 16 wpisów i 10 odpowiedzi.
+- Lokalnie brak `GOOGLE_GENERATIVE_AI_API_KEY`, dlatego interfejs jawnie pokazał tryb leksykalny. Kontrakt zapytania wektorowego, `pgvector`, kolejka embeddingów i fallback leksykalny są testowane; pełny tryb hybrydowy wymaga klucza dostawcy w środowisku docelowym.
+- Trigger.dev uruchamia worker embeddingów co minutę, pojedynczo i w maksymalnie trzech batchach po 40 z retry/backoff. Checksum, rewizja źródła i lease w PostgreSQL zapewniają idempotencję.
+
+final realtime result: passed
+
+---
+
 ## 2026-07-29 — repozytorium plików bankowych
 
 ### Materiał porównawczy

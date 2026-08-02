@@ -15,6 +15,7 @@ type AdminRoleId =
   | 'access_admin'
   | 'structure_admin'
   | 'consents_admin'
+  | 'forum_admin'
   | 'crm_config_admin'
 
 type AdminRoleDefinition = {
@@ -319,9 +320,9 @@ const roleDefinitions: AdminRoleDefinition[] = [
     label: 'Administrator organizacji',
     description: 'Administracja organizacją bez edycji i publikowania definicji zgód.',
     icon: 'i-lucide-crown',
-    permissionCount: 18,
+    permissionCount: 20,
     emphasis: 'highest',
-    permissions: ['Ustawienia organizacji', 'Użytkownicy i dostępy', 'Struktura', 'Ustawienia operacyjne'],
+    permissions: ['Ustawienia organizacji', 'Użytkownicy i dostępy', 'Struktura', 'Moderacja forum', 'Ustawienia operacyjne'],
   },
   {
     id: 'access_admin',
@@ -347,6 +348,14 @@ const roleDefinitions: AdminRoleDefinition[] = [
     permissionCount: 4,
     emphasis: 'sensitive',
     permissions: ['Wersje robocze', 'Podgląd', 'Historia wersji'],
+  },
+  {
+    id: 'forum_admin',
+    label: 'Administrator forum',
+    description: 'Moderuje tematy i odpowiedzi oraz zarządza kategoriami forum ekspertów.',
+    icon: 'i-lucide-shield-check',
+    permissionCount: 2,
+    permissions: ['Moderacja treści', 'Kategorie forum'],
   },
   {
     id: 'crm_config_admin',
@@ -804,6 +813,14 @@ const effectiveAreas = computed<EffectiveArea[]>(() => {
       highRisk: true,
     },
     {
+      id: 'forum',
+      label: 'Forum ekspertów',
+      description: 'Moderacja treści i zarządzanie kategoriami forum',
+      icon: 'i-lucide-messages-square',
+      granted: organization || draft.roles.forum_admin,
+      source: effectiveSource('forum_admin', 'Administrator forum'),
+    },
+    {
       id: 'operations',
       label: 'Ustawienia operacyjne',
       description: 'Założenia zdolności i wspólne parametry usług',
@@ -1053,6 +1070,7 @@ function blankRoles(): Record<AdminRoleId, boolean> {
     access_admin: false,
     structure_admin: false,
     consents_admin: false,
+    forum_admin: false,
     crm_config_admin: false,
   }
 }

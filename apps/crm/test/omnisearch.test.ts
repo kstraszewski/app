@@ -13,6 +13,7 @@ const expertId = '00000000-0000-4000-8000-000000000004'
 const taskId = '00000000-0000-4000-8000-000000000005'
 const documentId = '00000000-0000-4000-8000-000000000006'
 const submissionId = '00000000-0000-4000-8000-000000000007'
+const forumThreadId = '00000000-0000-4000-8000-000000000008'
 
 test('allows omnisearch only for supported CRM organization roles', () => {
   assert.equal(canAccessCrmOmnisearch('expert'), true)
@@ -36,6 +37,16 @@ test('parses and bounds an omnisearch request without rewriting natural input', 
 
 test('maps a minimal grouped response to safe deep links', () => {
   const response = mapCrmOmnisearchResponse({
+    forum: [{
+      thread_id: forumThreadId,
+      title: 'Jak policzyć dochód z B2B?',
+      type: 'question',
+      status: 'resolved',
+      category_name: 'Kredyty hipoteczne',
+      matched_in: 'zweryfikowana odpowiedź',
+      excerpt: 'Bank bierze pod uwagę dochód po odliczeniu kosztów.',
+      body: 'full private post body must not leak',
+    }],
     cases: [{
       id: caseId,
       title: 'Kredyt hipoteczny',
@@ -80,6 +91,10 @@ test('maps a minimal grouped response to safe deep links', () => {
     }],
   }, 'moja-organizacja', 'Kowalski')
 
+  assert.deepEqual(response.groups.forum[0]?.to, {
+    path: '/org/moja-organizacja/forum',
+    query: { thread: forumThreadId },
+  })
   assert.equal(response.groups.cases[0]?.to, `/org/moja-organizacja/cases/${caseId}`)
   assert.deepEqual(response.groups.appointments[0]?.to, {
     path: '/org/moja-organizacja/calendar',
@@ -103,6 +118,7 @@ test('maps a minimal grouped response to safe deep links', () => {
   assert.equal(serialized.includes('must not leak'), false)
   assert.equal(serialized.includes('secret.example.test'), false)
   assert.equal(serialized.includes('private/secret.pdf'), false)
+  assert.equal(serialized.includes('full private post body must not leak'), false)
   assert.equal(serialized.includes('"metadata"'), false)
 })
 

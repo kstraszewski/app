@@ -115,6 +115,11 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    forumRealtime: {
+      ablyApiKey: process.env.NUXT_FORUM_ABLY_API_KEY
+        || process.env.NUXT_ABLY_API_KEY
+        || '',
+    },
     messaging: {
       ablyApiKey: process.env.NUXT_ABLY_API_KEY || '',
       outboxSecret: process.env.NUXT_MESSAGING_OUTBOX_SECRET || '',

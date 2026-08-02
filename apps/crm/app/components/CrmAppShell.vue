@@ -275,6 +275,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
     hideLabel: true,
     items: [
       { label: 'Dashboard', to: `${organizationBase.value}/dashboard`, icon: 'i-lucide-layout-dashboard' },
+      { label: 'Forum ekspertów', to: `${organizationBase.value}/forum`, icon: 'i-lucide-messages-square' },
     ],
   }, {
     key: 'calculators',
@@ -1191,7 +1192,8 @@ async function signOut() {
     min-height: 44px;
   }
 
-  .crm-omnisearch-trigger {
+  .crm-omnisearch-trigger,
+  .crm-shell--collapsed .crm-omnisearch-trigger {
     display: none;
   }
 

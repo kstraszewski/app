@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -10,5 +11,5 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["trigger.config.ts", "src/**/*.ts"]
+  "include": ["trigger.config.ts", "src/**/*.ts", "test/**/*.ts"]
 }

@@ -89,7 +89,7 @@ watch(
     searchTimer = setTimeout(() => {
       searchTimer = null
       void fetchSearchResults(query, organizationSlug, requestId)
-    }, 250)
+    }, 350)
   },
   { immediate: true },
 )
@@ -109,6 +109,12 @@ function remoteItems(group: CrmOmnisearchGroupKey): CommandPaletteItem[] {
 }
 
 const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [{
+  id: 'crm-forum',
+  label: 'Forum ekspertów',
+  ignoreFilter: true,
+  highlightedIcon: 'i-lucide-corner-down-left',
+  items: remoteItems('forum'),
+}, {
   id: 'crm-cases',
   label: 'Sprawy',
   ignoreFilter: true,
@@ -177,7 +183,7 @@ const statusMessage = computed(() => {
     }"
     size="md"
     title="Wyszukiwanie w CRM"
-    description="Przeszukaj sprawy, klientów, spotkania, zadania, dokumenty, wnioski i strony CRM."
+    description="Przeszukaj forum ekspertów, sprawy, klientów, spotkania, zadania, dokumenty, wnioski i strony CRM."
     placeholder="Szukaj w całym CRM…"
   >
     <template #empty>
@@ -208,7 +214,7 @@ const statusMessage = computed(() => {
       <div v-else class="grid justify-items-center gap-1 text-center">
         <UIcon name="i-lucide-search-x" class="size-5 text-muted" />
         <span>Nie znaleziono wyników dla „{{ normalizedSearchTerm }}”.</span>
-        <span class="text-xs text-muted">Spróbuj nazwiska, numeru telefonu, tytułu sprawy lub dokumentu.</span>
+        <span class="text-xs text-muted">Spróbuj pytania, nazwiska, numeru telefonu, tytułu sprawy lub dokumentu.</span>
       </div>
     </template>
 

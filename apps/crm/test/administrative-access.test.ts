@@ -39,6 +39,7 @@ describe('administrative access roles and PUT input', () => {
       'structure_admin',
       'consents_admin',
       'crm_config_admin',
+      'forum_admin',
     ])
   })
 
@@ -47,7 +48,7 @@ describe('administrative access roles and PUT input', () => {
       parseAdministrativeAccessPutInput({
         expectedRevision: 7,
         idempotencyKey: idempotencyKey.toUpperCase(),
-        roles: ['consents_admin', 'organization_admin', 'access_admin'],
+        roles: ['consents_admin', 'organization_admin', 'access_admin', 'forum_admin'],
         consentPublishingGrant: {
           justification: '  Publikacja po akceptacji compliance.  ',
           expiresAt: '2026-08-31T23:59:59+02:00',
@@ -61,6 +62,7 @@ describe('administrative access roles and PUT input', () => {
           'organization_admin',
           'access_admin',
           'consents_admin',
+          'forum_admin',
         ],
         consentPublishingGrant: {
           justification: 'Publikacja po akceptacji compliance.',

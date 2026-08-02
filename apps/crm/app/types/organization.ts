@@ -25,6 +25,7 @@ export interface OrganizationMember {
     | 'access_admin'
     | 'structure_admin'
     | 'consents_admin'
+    | 'forum_admin'
     | 'crm_config_admin'
   >
   status?: 'active' | 'pending' | 'inactive'

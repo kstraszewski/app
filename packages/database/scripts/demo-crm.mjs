@@ -2610,6 +2610,431 @@ async function ensureActivities({
   return activityByKey
 }
 
+const forumCategorySeeds = [
+  {
+    slug: 'kredyty-hipoteczne',
+    name: 'Kredyty hipoteczne',
+    description: 'Analiza zdolności, dokumenty bankowe i scenariusze finansowania.',
+    icon: 'i-lucide-landmark',
+    color: 'blue',
+  },
+  {
+    slug: 'nieruchomosci',
+    name: 'Nieruchomości',
+    description: 'Zakup, sprzedaż, wyceny i bezpieczeństwo transakcji.',
+    icon: 'i-lucide-house',
+    color: 'emerald',
+  },
+  {
+    slug: 'ubezpieczenia',
+    name: 'Ubezpieczenia',
+    description: 'Ochrona klienta, zakres polis i obsługa odnowień.',
+    icon: 'i-lucide-shield-check',
+    color: 'violet',
+  },
+  {
+    slug: 'obsluga-klienta',
+    name: 'Obsługa klienta',
+    description: 'Komunikacja, standardy odpowiedzi i trudne sytuacje.',
+    icon: 'i-lucide-messages-square',
+    color: 'amber',
+  },
+  {
+    slug: 'procesy-i-narzedzia',
+    name: 'Procesy i narzędzia',
+    description: 'Współpraca zespołów, automatyzacje i dobre praktyki operacyjne.',
+    icon: 'i-lucide-workflow',
+    color: 'slate',
+  },
+]
+
+const forumThreadSeeds = [
+  {
+    key: 'forum-income-documentation',
+    categorySlug: 'kredyty-hipoteczne',
+    authorKey: 'anna-nowak',
+    type: 'question',
+    title: 'Jak dokumentować dochód z kontraktu B2B przy hipotece?',
+    body: 'Klient prowadzi działalność od 18 miesięcy i rozlicza się liniowo. Jakie dokumenty warto zebrać przed wysłaniem zapytań do banków, żeby ograniczyć liczbę uzupełnień?',
+    languageCode: 'pl',
+    status: 'resolved',
+    daysAgo: 16,
+    replies: [
+      {
+        key: 'expert-checklist',
+        authorKey: 'piotr-zielinski',
+        body: 'Zaczynam od KPiR lub ewidencji przychodów za bieżący i poprzedni rok, PIT-u, zaświadczeń z ZUS i US oraz wyciągów z rachunku firmowego. Sprawdzam też sezonowość i zobowiązania leasingowe.',
+        verified: true,
+        accepted: true,
+        daysAfter: 1,
+      },
+      {
+        key: 'admin-process',
+        authorKey: 'admin',
+        body: 'Administracyjnie rekomendujemy dołączyć wspólną checklistę „B2B — hipoteka” i oznaczyć datę ważności każdego dokumentu. Dzięki temu zespół operacyjny nie prosi klienta drugi raz o to samo.',
+        official: true,
+        daysAfter: 2,
+      },
+      {
+        key: 'expert-bank-differences',
+        authorKey: 'marta-wojcik',
+        body: 'Warto przed analizą zapytać o kody PKD i udział jednego kontrahenta w przychodzie. To często zmienia listę banków, nawet gdy sam poziom dochodu wygląda dobrze.',
+        verified: true,
+        daysAfter: 3,
+      },
+    ],
+  },
+  {
+    key: 'forum-gifted-down-payment',
+    categorySlug: 'kredyty-hipoteczne',
+    authorKey: 'marta-wojcik',
+    type: 'question',
+    title: 'Darowizna od rodziny jako wkład własny — kiedy ją udokumentować?',
+    body: 'Rodzice klientki chcą przekazać środki na wkład własny. Czy lepiej wykonać darowiznę przed decyzją kredytową, czy dopiero przed aktem notarialnym?',
+    languageCode: 'pl',
+    status: 'answered',
+    daysAgo: 10,
+    replies: [
+      {
+        key: 'admin-compliance',
+        authorKey: 'admin',
+        body: 'Oficjalnie: środki i ich pochodzenie muszą być udokumentowane zgodnie z wymaganiem konkretnego banku. Zachowujemy potwierdzenie przelewu, umowę darowizny i potwierdzenie zgłoszenia podatkowego, jeśli jest wymagane.',
+        official: true,
+        daysAfter: 1,
+      },
+      {
+        key: 'expert-timing',
+        authorKey: 'anna-nowak',
+        body: 'Najpierw sprawdziłabym instrukcję banku. Część instytucji chce już widzieć środki na rachunku przy analizie, inne akceptują udokumentowany przelew przed uruchomieniem kredytu.',
+        verified: true,
+        daysAfter: 2,
+      },
+    ],
+  },
+  {
+    key: 'forum-client-handoff',
+    categorySlug: 'procesy-i-narzedzia',
+    authorKey: 'admin',
+    type: 'discussion',
+    title: 'Standard przekazania klienta między ekspertem a administracją',
+    body: 'Ustalmy minimalny zestaw informacji przy przekazaniu sprawy, tak aby administracja mogła działać bez odtwarzania całej historii z wiadomości.',
+    languageCode: 'pl',
+    status: 'open',
+    daysAgo: 8,
+    replies: [
+      {
+        key: 'expert-handoff-fields',
+        authorKey: 'anna-nowak',
+        body: 'Potrzebuję w jednym miejscu: celu klienta, wybranego scenariusza, terminów krytycznych, brakujących dokumentów i ustalonego kanału kontaktu. Przydatna jest też krótka notatka o ryzykach.',
+        verified: true,
+        daysAfter: 1,
+      },
+      {
+        key: 'admin-handoff-template',
+        authorKey: 'admin',
+        body: 'Dodamy oficjalny szablon przekazania z właścicielem kolejnego kroku. Każde pole będzie krótkie, ale obowiązkowe przed zmianą osoby prowadzącej.',
+        official: true,
+        daysAfter: 2,
+      },
+    ],
+  },
+  {
+    key: 'forum-bridge-insurance',
+    categorySlug: 'ubezpieczenia',
+    authorKey: 'piotr-zielinski',
+    type: 'question',
+    title: 'Jak wyjaśnić klientowi koszt ubezpieczenia pomostowego?',
+    body: 'Klient porównuje oferty tylko po racie startowej i uważa podwyższenie marży do wpisu hipoteki za ukrytą opłatę. Jak tłumaczycie ten etap jasno i bez straszenia?',
+    languageCode: 'pl',
+    status: 'resolved',
+    daysAgo: 6,
+    replies: [
+      {
+        key: 'expert-explanation',
+        authorKey: 'marta-wojcik',
+        body: 'Pokazuję dwa okresy osobno: ratę do prawomocnego wpisu hipoteki i ratę docelową. Dodaję szacowany koszt dla trzech wariantów czasu oczekiwania, zamiast obiecywać konkretną datę sądu.',
+        verified: true,
+        accepted: true,
+        daysAfter: 1,
+      },
+      {
+        key: 'admin-materials',
+        authorKey: 'admin',
+        body: 'W materiałach dla klienta używamy określenia „koszt okresu przejściowego” i zawsze wskazujemy warunek jego zakończenia. Nie przedstawiamy szacunku jako gwarantowanego terminu.',
+        official: true,
+        daysAfter: 2,
+      },
+    ],
+  },
+  {
+    key: 'forum-property-viewing-notes',
+    categorySlug: 'nieruchomosci',
+    authorKey: 'anna-nowak',
+    type: 'discussion',
+    title: 'Notatki po oględzinach nieruchomości — wspólny standard',
+    body: 'Podzielcie się elementami, które zapisujecie po oględzinach. Chcemy ujednolicić notatkę przekazywaną ekspertowi finansowemu i klientowi.',
+    languageCode: 'pl',
+    status: 'closed',
+    daysAgo: 4,
+    replies: [
+      {
+        key: 'expert-property-checklist',
+        authorKey: 'piotr-zielinski',
+        body: 'Poza stanem technicznym zapisuję status prawny, planowane nakłady, elementy wyposażenia w cenie i wszystkie deklaracje sprzedającego, które wymagają potwierdzenia dokumentem.',
+        verified: true,
+        daysAfter: 1,
+      },
+    ],
+  },
+  {
+    key: 'forum-difficult-client-response',
+    categorySlug: 'obsluga-klienta',
+    authorKey: 'marta-wojcik',
+    type: 'question',
+    title: 'Jak odpowiedzieć klientowi, gdy analiza banku się przedłuża?',
+    body: 'Klient oczekuje codziennej aktualizacji, ale bank od kilku dni nie przekazał nowych informacji. Szukam krótkiej odpowiedzi, która jest konkretna i nie składa obietnic bez pokrycia.',
+    languageCode: 'pl',
+    status: 'open',
+    daysAgo: 1,
+    replies: [],
+  },
+]
+
+async function ensureForumSeed({
+  adminClient,
+  organizationId,
+  ownerUserId,
+  delegateByKey,
+  seedNow,
+}) {
+  const authorByKey = new Map([
+    ['admin', { id: ownerUserId, role: 'admin' }],
+    ...[...delegateByKey.entries()].map(([key, author]) => [
+      key,
+      { id: String(author.id), role: 'expert' },
+    ]),
+  ])
+
+  for (const threadSeed of forumThreadSeeds) {
+    if (!authorByKey.has(threadSeed.authorKey)) {
+      throw new Error(`Forum seed is missing author ${threadSeed.authorKey}`)
+    }
+    for (const replySeed of threadSeed.replies) {
+      if (!authorByKey.has(replySeed.authorKey)) {
+        throw new Error(`Forum seed is missing reply author ${replySeed.authorKey}`)
+      }
+    }
+  }
+
+  const existingCategories = assertResult(
+    await adminClient
+      .from('forum_categories')
+      .select('id, slug')
+      .eq('organization_id', organizationId),
+    'Reading forum categories',
+  ) ?? []
+  const categoryBySlug = new Map(existingCategories.map(category => [category.slug, category]))
+
+  for (const [index, categorySeed] of forumCategorySeeds.entries()) {
+    const existing = categoryBySlug.get(categorySeed.slug)
+    const values = {
+      organization_id: organizationId,
+      slug: categorySeed.slug,
+      name: categorySeed.name,
+      description: categorySeed.description,
+      icon: categorySeed.icon,
+      color: categorySeed.color,
+      sort_order: (index + 1) * 10,
+      is_active: true,
+      created_by_user_id: ownerUserId,
+    }
+    const category = existing
+      ? assertResult(
+          await adminClient
+            .from('forum_categories')
+            .update(values)
+            .eq('organization_id', organizationId)
+            .eq('id', existing.id)
+            .select('id, slug')
+            .single(),
+          `Updating forum category ${categorySeed.name}`,
+        )
+      : assertResult(
+          await adminClient
+            .from('forum_categories')
+            .insert({
+              id: stableUuid(`forum:category:${categorySeed.slug}`),
+              ...values,
+            })
+            .select('id, slug')
+            .single(),
+          `Creating forum category ${categorySeed.name}`,
+        )
+    categoryBySlug.set(categorySeed.slug, category)
+  }
+
+  const existingThreads = assertResult(
+    await adminClient
+      .from('forum_threads')
+      .select('id, metadata')
+      .eq('organization_id', organizationId),
+    'Reading seeded forum threads',
+  ) ?? []
+  const threadByKey = new Map(existingThreads
+    .filter(thread => objectValue(thread.metadata).demo_seed_namespace === demoNamespace)
+    .map(thread => [demoKey(thread), thread]))
+
+  let replyCount = 0
+  for (const threadSeed of forumThreadSeeds) {
+    const category = categoryBySlug.get(threadSeed.categorySlug)
+    const author = authorByKey.get(threadSeed.authorKey)
+    const existingThread = threadByKey.get(threadSeed.key)
+    if (!category || !author) throw new Error(`Forum thread ${threadSeed.key} has invalid references`)
+
+    const threadValues = {
+      organization_id: organizationId,
+      category_id: category.id,
+      author_user_id: author.id,
+      thread_type: threadSeed.type,
+      title: threadSeed.title,
+      language_code: threadSeed.languageCode,
+      visibility: 'organization',
+      metadata: metadataFor(threadSeed.key, { demo_seed_kind: 'forum_thread' }),
+      is_hidden: false,
+      hidden_at: null,
+      hidden_by_user_id: null,
+      hidden_reason: null,
+    }
+    const thread = existingThread
+      ? assertResult(
+          await adminClient
+            .from('forum_threads')
+            .update(threadValues)
+            .eq('organization_id', organizationId)
+            .eq('id', existingThread.id)
+            .select('id')
+            .single(),
+          `Updating forum thread ${threadSeed.title}`,
+        )
+      : assertResult(
+          await adminClient
+            .from('forum_threads')
+            .insert({
+              id: stableUuid(`forum:thread:${threadSeed.key}`),
+              ...threadValues,
+              status: 'open',
+              created_at: isoOffset(seedNow, -threadSeed.daysAgo),
+              last_activity_at: isoOffset(seedNow, -threadSeed.daysAgo),
+            })
+            .select('id')
+            .single(),
+          `Creating forum thread ${threadSeed.title}`,
+        )
+
+    const postSeeds = [
+      {
+        key: `${threadSeed.key}:question`,
+        author,
+        kind: 'question',
+        body: threadSeed.body,
+        verified: false,
+        official: false,
+        accepted: false,
+        createdAt: isoOffset(seedNow, -threadSeed.daysAgo),
+      },
+      ...threadSeed.replies.map((replySeed) => {
+        const replyAuthor = authorByKey.get(replySeed.authorKey)
+        return {
+          key: `${threadSeed.key}:reply:${replySeed.key}`,
+          author: replyAuthor,
+          kind: 'reply',
+          body: replySeed.body,
+          verified: replySeed.verified === true,
+          official: replySeed.official === true,
+          accepted: replySeed.accepted === true,
+          createdAt: isoOffset(seedNow, -threadSeed.daysAgo + replySeed.daysAfter),
+        }
+      }),
+    ]
+
+    const postIds = postSeeds.map(postSeed => stableUuid(`forum:post:${postSeed.key}`))
+    const existingPosts = assertResult(
+      await adminClient
+        .from('forum_posts')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('thread_id', thread.id)
+        .in('id', postIds),
+      `Reading posts for forum thread ${threadSeed.title}`,
+    ) ?? []
+    const existingPostIds = new Set(existingPosts.map(post => String(post.id)))
+
+    assertResult(
+      await adminClient
+        .from('forum_posts')
+        .update({ is_accepted_answer: false })
+        .eq('organization_id', organizationId)
+        .eq('thread_id', thread.id)
+        .eq('is_accepted_answer', true),
+      `Resetting accepted answer for forum thread ${threadSeed.title}`,
+    )
+
+    for (const postSeed of postSeeds) {
+      const postId = stableUuid(`forum:post:${postSeed.key}`)
+      const values = {
+        organization_id: organizationId,
+        thread_id: thread.id,
+        author_user_id: postSeed.author.id,
+        kind: postSeed.kind,
+        content: postSeed.body,
+        is_verified_expert_answer: postSeed.verified,
+        is_official_admin_answer: postSeed.official,
+        is_accepted_answer: postSeed.accepted,
+        metadata: metadataFor(postSeed.key, { demo_seed_kind: 'forum_post' }),
+        is_hidden: false,
+        hidden_at: null,
+        hidden_by_user_id: null,
+        hidden_reason: null,
+      }
+      if (existingPostIds.has(postId)) {
+        assertResult(
+          await adminClient
+            .from('forum_posts')
+            .update(values)
+            .eq('organization_id', organizationId)
+            .eq('id', postId),
+          `Updating seeded forum post ${postSeed.key}`,
+        )
+      }
+      else {
+        assertResult(
+          await adminClient
+            .from('forum_posts')
+            .insert({ id: postId, ...values, created_at: postSeed.createdAt }),
+          `Creating seeded forum post ${postSeed.key}`,
+        )
+      }
+      if (postSeed.kind === 'reply') replyCount += 1
+    }
+
+    assertResult(
+      await adminClient
+        .from('forum_threads')
+        .update({ status: threadSeed.status })
+        .eq('organization_id', organizationId)
+        .eq('id', thread.id),
+      `Finalizing forum thread ${threadSeed.title}`,
+    )
+    threadByKey.set(threadSeed.key, thread)
+  }
+
+  return {
+    categories: forumCategorySeeds.length,
+    threads: forumThreadSeeds.length,
+    replies: replyCount,
+  }
+}
+
 export async function seedDemoCrm({
   adminClient,
   userClient,
@@ -2649,6 +3074,23 @@ export async function seedDemoCrm({
       .single(),
     'Seeding the expert Design profile',
   )
+
+  const demoForumAdministrator = delegateByKey.get('anna-nowak')
+  if (demoForumAdministrator?.id) {
+    assertResult(
+      await adminClient
+        .from('organization_user_admin_roles')
+        .upsert({
+          organization_id: organizationId,
+          user_id: String(demoForumAdministrator.id),
+          role_key: 'forum_admin',
+          assigned_by_user_id: ownerUserId,
+          reason: 'Demo: moderacja forum ekspertów i zarządzanie kategoriami.',
+        }, { onConflict: 'organization_id,user_id,role_key' }),
+      'Assigning the demo forum administrator role',
+    )
+  }
+
   const consentCatalogue = await loadActiveConsentCatalogue(adminClient, organizationId)
   const clientResult = await ensureClientRecords({
     adminClient,
@@ -2747,6 +3189,13 @@ export async function seedDemoCrm({
     caseByKey,
     itemByKey,
   })
+  const forum = await ensureForumSeed({
+    adminClient,
+    organizationId,
+    ownerUserId,
+    delegateByKey,
+    seedNow: referenceNow,
+  })
 
   const consentCountResult = await adminClient
     .from('crm_client_consent_events')
@@ -2769,6 +3218,7 @@ export async function seedDemoCrm({
       id: String(task.id),
       seed_key: seedKey,
     })),
+    forum,
     cases: caseSeeds.map((seed) => {
       const crmCase = caseByKey.get(seed.key)
       return {
@@ -2795,6 +3245,9 @@ export async function seedDemoCrm({
       tasks: taskByKey.size,
       documents: documentByKey.size,
       activities: activityByKey.size,
+      forumCategories: forum.categories,
+      forumThreads: forum.threads,
+      forumReplies: forum.replies,
     },
   }
 }

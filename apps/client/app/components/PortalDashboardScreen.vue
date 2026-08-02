@@ -160,6 +160,15 @@ const expertInitials = computed(() => {
   return expert.value.initials
     || expert.value.name.split(/\s+/u).filter(Boolean).map(part => part[0]).slice(0, 2).join('').toUpperCase()
 })
+const failedExpertAvatarUrl = ref('')
+const expertAvatarUrl = computed(() => {
+  const source = expert.value?.avatarUrl || ''
+  return source && source !== failedExpertAvatarUrl.value ? source : ''
+})
+
+function handleExpertAvatarError() {
+  failedExpertAvatarUrl.value = expert.value?.avatarUrl || ''
+}
 
 const calendarDayNumber = (date: Date, timezone?: string) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -315,7 +324,12 @@ const meetingModeLabel = computed(() => {
           <template v-if="expert">
             <div class="expert-card__identity">
               <span class="expert-card__avatar">
-                <img v-if="expert.avatarUrl" :src="expert.avatarUrl" alt="">
+                <img
+                  v-if="expertAvatarUrl"
+                  :src="expertAvatarUrl"
+                  alt=""
+                  @error="handleExpertAvatarError"
+                >
                 <template v-else>{{ expertInitials }}</template>
               </span>
               <div>

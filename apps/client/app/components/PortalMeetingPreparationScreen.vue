@@ -68,6 +68,15 @@ const expertInitials = computed(() => {
       .join('')
       .toUpperCase()
 })
+const failedExpertAvatarUrl = ref('')
+const expertAvatarUrl = computed(() => {
+  const source = expert.value?.avatarUrl || ''
+  return source && source !== failedExpertAvatarUrl.value ? source : ''
+})
+
+function handleExpertAvatarError() {
+  failedExpertAvatarUrl.value = expert.value?.avatarUrl || ''
+}
 const dashboardTo = computed(() => props.preview ? '/preview?scenario=first-meeting' : '/')
 const storageKey = computed(() => meetingPreparationStorageKey(
   props.payload.user.id,
@@ -356,7 +365,12 @@ async function completePreparation() {
 
           <div v-if="expert" class="preparation-meeting-card__expert">
             <span class="preparation-meeting-card__avatar">
-              <img v-if="expert.avatarUrl" :src="expert.avatarUrl" alt="">
+              <img
+                v-if="expertAvatarUrl"
+                :src="expertAvatarUrl"
+                alt=""
+                @error="handleExpertAvatarError"
+              >
               <template v-else>{{ expertInitials }}</template>
             </span>
             <div>

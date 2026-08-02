@@ -7,6 +7,8 @@ const storageProvider = process.env.NUXT_STORAGE_PROVIDER
 const dataApiUrl = process.env.NUXT_DATA_API_URL
   || process.env.NUXT_PUBLIC_DATA_API_URL
   || 'http://127.0.0.1:55321'
+const portalPublicAssetBaseUrl = process.env.NUXT_PORTAL_PUBLIC_ASSET_BASE_URL
+  || 'https://www.openexpert.app'
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
   || process.env.DATABASE_URL
   || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
@@ -47,6 +49,9 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    portalAssets: {
+      publicBaseUrl: portalPublicAssetBaseUrl,
+    },
     demo: {
       enabled: demoServerEnabled,
       passwordHash: process.env.NUXT_DEMO_PASSWORD_HASH || '',

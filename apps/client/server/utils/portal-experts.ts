@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import type { PortalExpertDetails } from '../../shared/types/portal-dashboard.ts'
+import { resolvePortalAvatarUrl } from '../../shared/utils/portal-avatar.ts'
 import { serverDataBackend } from './data-api'
 import { throwPortalDbError } from './portal-auth'
 import { chunkPortalQueryValues, runPortalQueryChunks } from './portal-query'
@@ -18,19 +19,6 @@ function scopeKey(organizationId: string, userId: string): string {
 function optionalText(value: unknown): string | null {
   const normalized = typeof value === 'string' ? value.trim() : ''
   return normalized || null
-}
-
-function publicAvatarUrl(value: unknown): string | null {
-  const normalized = optionalText(value)
-  if (!normalized) return null
-
-  try {
-    return new URL(normalized).protocol === 'https:' ? normalized : null
-  }
-  catch {
-    // Relative CRM asset paths are not served by the standalone client app.
-    return null
-  }
 }
 
 async function loadExpertRowsByUserIds(
@@ -73,6 +61,9 @@ export async function loadPublicPortalExperts(
   const userIds = [...new Set(
     [...uniqueReferences.values()].map(reference => reference.userId),
   )]
+  const publicAssetBaseUrl = String(
+    useRuntimeConfig(event).portalAssets.publicBaseUrl || '',
+  )
   const backend = serverDataBackend(event) as any
   const [userRows, membershipRows, brandProfileRows] = await Promise.all([
     loadExpertRowsByUserIds(
@@ -140,7 +131,7 @@ export async function loadPublicPortalExperts(
       name: optionalText(brandProfile?.expert_name)
         ?? optionalText(user.full_name)
         ?? 'Twój ekspert',
-      avatarUrl: publicAvatarUrl(user.avatar_url),
+      avatarUrl: resolvePortalAvatarUrl(user.avatar_url, publicAssetBaseUrl),
       role,
       professionalTitle: optionalText(brandProfile?.professional_title),
       contact: email || phone ? { email, phone } : null,

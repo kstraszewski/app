@@ -5,6 +5,7 @@ definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Dashboard — OpenExpert CRM' })
 
 const { organizationSlug, crmApiPath, orgApiPath, orgPath } = useOrganizationContext()
+const authenticatedUser = useAuthUser()
 const requestFetch = useRequestFetch()
 const scheduleFallback = {
   data: [] as Appointment[],
@@ -44,21 +45,16 @@ const fallbackDashboard: DashboardPayload = {
   metrics: [],
 }
 
-const { data: dashboard, error, refresh } = await useFetch<DashboardPayload>(() => crmApiPath('/dashboard'), {
+const dashboardRequest = useFetch<DashboardPayload>(() => crmApiPath('/dashboard'), {
   default: () => fallbackDashboard,
 })
 
-const {
-  data: schedule,
-  status: scheduleStatus,
-  error: scheduleError,
-  refresh: refreshSchedule,
-} = await useAsyncData<DashboardSchedulePayload>(
-  `dashboard-schedule-${organizationSlug.value}`,
+const scheduleRequest = useAsyncData<DashboardSchedulePayload>(
+  `dashboard-schedule-${organizationSlug.value}-${authenticatedUser.value?.id || 'session'}`,
   async () => {
     const generatedAt = new Date()
     const endsAt = new Date(generatedAt.getTime() + 7 * 24 * 60 * 60 * 1_000)
-    const expertUserId = dashboard.value.currentUserId
+    const expertUserId = authenticatedUser.value?.id
     if (!expertUserId) {
       return {
         data: [],
@@ -99,6 +95,16 @@ const {
     default: (): DashboardSchedulePayload => ({ ...scheduleFallback }),
   },
 )
+
+const [
+  { data: dashboard, error, refresh },
+  {
+    data: schedule,
+    status: scheduleStatus,
+    error: scheduleError,
+    refresh: refreshSchedule,
+  },
+] = await Promise.all([dashboardRequest, scheduleRequest])
 
 const scheduleAppointments = computed(() => schedule.value.data)
 const scheduleTimeZone = computed(() => (

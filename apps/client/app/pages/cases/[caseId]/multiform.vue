@@ -5,7 +5,13 @@ import type {
   PortalMultiformDraft,
   PortalMultiformPayload,
   PortalPayload,
+  PortalUser,
 } from '~/types/portal'
+import {
+  clientCaseDataKey,
+  clientMultiformDataKey,
+  clientPortalDataKey,
+} from '~/utils/client-portal-cache'
 
 definePageMeta({
   middleware: 'client-auth',
@@ -14,28 +20,47 @@ definePageMeta({
 
 const route = useRoute()
 const caseId = computed(() => String(route.params.caseId || ''))
+const authenticatedUser = useAuthUser()
+const userId = authenticatedUser.value?.id
+const portalCache = useNuxtData<{ data: PortalPayload }>(clientPortalDataKey(userId))
+const cachedCase = computed(() => portalCache.data.value?.data.cases.find(item => item.id === caseId.value))
+const caseKey = clientCaseDataKey(userId, caseId.value)
+const multiformKey = clientMultiformDataKey(userId, caseId.value)
 
-const [caseRequest, multiformRequest, portalRequest] = await Promise.all([
-  useFetch<{ data: PortalCase }>(
-    () => `/api/client/cases/${encodeURIComponent(caseId.value)}`,
-    { key: `client-multiform-case:${caseId.value}` },
-  ),
-  useFetch<{ data: PortalMultiformPayload }>(
-    () => `/api/client/cases/${encodeURIComponent(caseId.value)}/multiform`,
-    { key: `client-multiform:${caseId.value}` },
-  ),
-  useFetch<{ data: PortalPayload }>('/api/client/portal', {
-    key: 'client-portal:multiform-user',
-  }),
-])
+const caseRequest = useFetch<{ data: PortalCase }>(
+  () => `/api/client/cases/${encodeURIComponent(caseId.value)}`,
+  {
+    key: caseKey,
+    dedupe: 'defer',
+    lazy: true,
+  },
+)
+if (!caseRequest.data.value && cachedCase.value) {
+  caseRequest.data.value = { data: cachedCase.value }
+}
+const multiformRequest = useFetch<{ data: PortalMultiformPayload }>(
+  () => `/api/client/cases/${encodeURIComponent(caseId.value)}/multiform`,
+  {
+    key: multiformKey,
+    dedupe: 'defer',
+    lazy: true,
+  },
+)
 
-const user = computed(() => portalRequest.data.value?.data.user || {
-  id: useAuthUser().value?.id || '',
-  name: useAuthUser().value?.name || 'Klient OpenExpert',
-  email: useAuthUser().value?.email || '',
+const caseData = computed(() => {
+  const requestedCase = caseRequest.data.value?.data
+  if (requestedCase?.id === caseId.value) return requestedCase
+  return cachedCase.value?.id === caseId.value ? cachedCase.value : undefined
 })
-const pending = computed(() => caseRequest.status.value === 'pending'
-  || multiformRequest.status.value === 'pending')
+const user = computed<PortalUser>(() => ({
+  id: authenticatedUser.value?.id || '',
+  name: authenticatedUser.value?.name || 'Klient OpenExpert',
+  email: authenticatedUser.value?.email || '',
+}))
+const pending = computed(() => (
+  (!caseData.value && caseRequest.status.value === 'pending')
+  || multiformRequest.status.value === 'pending'
+))
 const failed = computed(() => caseRequest.error.value || multiformRequest.error.value)
 
 async function save(body: {
@@ -44,11 +69,10 @@ async function save(body: {
   revision: number
   completed?: boolean
 }): Promise<PortalMultiformDraft> {
-  const loadedCaseId = caseRequest.data.value?.data.id
+  const loadedCaseId = caseData.value?.id
   if (
     !loadedCaseId
     || loadedCaseId !== caseId.value
-    || caseRequest.status.value !== 'success'
     || multiformRequest.status.value !== 'success'
   ) {
     throw new Error('Sprawa formularza zmieniła się. Otwórz formularz ponownie.')
@@ -60,10 +84,14 @@ async function save(body: {
   if (!response.data.draft) throw new Error('Missing updated multiform draft')
   if (
     caseId.value === loadedCaseId
-    && caseRequest.data.value?.data.id === loadedCaseId
+    && caseData.value?.id === loadedCaseId
     && multiformRequest.data.value?.data
   ) {
     multiformRequest.data.value.data.draft = response.data.draft
+  }
+  if (body.completed) {
+    clearNuxtData(clientPortalDataKey(authenticatedUser.value?.id))
+    void refreshNuxtData(clientCaseDataKey(authenticatedUser.value?.id, loadedCaseId))
   }
   return response.data.draft
 }
@@ -75,13 +103,12 @@ useHead({ title: 'Formularz Multiwniosku — OpenExpert' })
   <PortalMultiformScreen
     v-if="
       !pending
-        && caseRequest.status.value === 'success'
         && multiformRequest.status.value === 'success'
-        && caseRequest.data.value?.data.id === caseId
+        && caseData?.id === caseId
         && multiformRequest.data.value?.data
     "
     :key="caseId"
-    :case-data="caseRequest.data.value.data"
+    :case-data="caseData"
     :user="user"
     :payload="multiformRequest.data.value.data"
     :save="save"

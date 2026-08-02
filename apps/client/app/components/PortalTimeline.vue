@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PortalCase, PortalCaseAction, PortalTimelineItem } from '~/types/portal'
+import { clientCaseDataKey, clientPortalDataKey } from '~/utils/client-portal-cache'
 import { PORTAL_TIME_ZONE } from '~/utils/portal-date'
 
 const props = withDefaults(defineProps<{
@@ -10,12 +11,18 @@ const props = withDefaults(defineProps<{
 })
 
 const toast = useToast()
+const authenticatedUser = useAuthUser()
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadedFileName = ref('')
 const contactOpen = ref(false)
 const contactMessage = ref('')
 const sendingMessage = ref(false)
+
+function refreshMutatedCase() {
+  clearNuxtData(clientPortalDataKey(authenticatedUser.value?.id))
+  void refreshNuxtData(clientCaseDataKey(authenticatedUser.value?.id, props.caseData.id))
+}
 
 const action = computed<PortalCaseAction>(() => {
   if (props.caseData.action) return props.caseData.action
@@ -97,6 +104,7 @@ async function uploadDocument(event: Event) {
         method: 'POST',
         body,
       })
+      refreshMutatedCase()
     }
     uploadedFileName.value = file.name
     toast.add({
@@ -130,6 +138,7 @@ async function sendMessage() {
         method: 'POST',
         body: { message },
       })
+      refreshMutatedCase()
     }
     contactOpen.value = false
     contactMessage.value = ''

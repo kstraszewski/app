@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PortalPayload } from '~/types/portal'
+import { clientPortalDataKey, getClientSessionCachedData } from '~/utils/client-portal-cache'
 
 definePageMeta({ middleware: 'client-auth' })
 
@@ -9,8 +10,11 @@ const {
   status,
   error,
   refresh,
-} = await useFetch<{ data: PortalPayload }>('/api/client/portal', {
-  key: `client-meeting-preparation:${authenticatedUser.value?.id || 'session'}`,
+} = useFetch<{ data: PortalPayload }>('/api/client/portal', {
+  key: clientPortalDataKey(authenticatedUser.value?.id),
+  dedupe: 'defer',
+  getCachedData: getClientSessionCachedData,
+  lazy: true,
 })
 
 const payload = computed(() => response.value?.data)

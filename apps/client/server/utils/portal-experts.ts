@@ -20,6 +20,19 @@ function optionalText(value: unknown): string | null {
   return normalized || null
 }
 
+function publicAvatarUrl(value: unknown): string | null {
+  const normalized = optionalText(value)
+  if (!normalized) return null
+
+  try {
+    return new URL(normalized).protocol === 'https:' ? normalized : null
+  }
+  catch {
+    // Relative CRM asset paths are not served by the standalone client app.
+    return null
+  }
+}
+
 async function loadExpertRowsByUserIds(
   backend: any,
   table: string,
@@ -127,7 +140,7 @@ export async function loadPublicPortalExperts(
       name: optionalText(brandProfile?.expert_name)
         ?? optionalText(user.full_name)
         ?? 'Twój ekspert',
-      avatarUrl: optionalText(user.avatar_url),
+      avatarUrl: publicAvatarUrl(user.avatar_url),
       role,
       professionalTitle: optionalText(brandProfile?.professional_title),
       contact: email || phone ? { email, phone } : null,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { PortalCase, PortalPayload } from '~/types/portal'
+import type { PortalCase, PortalPayload, PortalUser } from '~/types/portal'
+import { clientCaseDataKey, clientPortalDataKey } from '~/utils/client-portal-cache'
 
 // Keep the detail page as this directory's index so /multiform remains a
 // sibling route instead of a child that would require a nested <NuxtPage>.
@@ -10,40 +11,54 @@ definePageMeta({
 
 const route = useRoute()
 const caseId = computed(() => String(route.params.caseId || ''))
-const { data: caseResponse, status, error, refresh } = await useFetch<{ data: PortalCase }>(
+const authenticatedUser = useAuthUser()
+const userId = authenticatedUser.value?.id
+const portalCache = useNuxtData<{ data: PortalPayload }>(clientPortalDataKey(userId))
+const cachedCase = computed(() => portalCache.data.value?.data.cases.find(item => item.id === caseId.value))
+const caseKey = clientCaseDataKey(userId, caseId.value)
+
+const { data: caseResponse, status, error, refresh } = useFetch<{ data: PortalCase }>(
   () => `/api/client/cases/${encodeURIComponent(caseId.value)}`,
-  { key: `client-case:${caseId.value}` },
+  {
+    key: caseKey,
+    dedupe: 'defer',
+    lazy: true,
+  },
 )
-const { data: portalResponse } = await useFetch<{ data: PortalPayload }>('/api/client/portal', {
-  key: 'client-portal:case-user',
+if (!caseResponse.value && cachedCase.value) {
+  caseResponse.value = { data: cachedCase.value }
+}
+const caseData = computed(() => {
+  const requestedCase = caseResponse.value?.data
+  if (requestedCase?.id === caseId.value) return requestedCase
+  return cachedCase.value?.id === caseId.value ? cachedCase.value : undefined
 })
 
-const fallbackUser = useAuthUser()
-const user = computed(() => portalResponse.value?.data.user || {
-  id: fallbackUser.value?.id || '',
-  name: fallbackUser.value?.name || 'Klient OpenExpert',
-  email: fallbackUser.value?.email || '',
-})
+const user = computed<PortalUser>(() => ({
+  id: authenticatedUser.value?.id || '',
+  name: authenticatedUser.value?.name || 'Klient OpenExpert',
+  email: authenticatedUser.value?.email || '',
+}))
 
 useHead(() => ({
-  title: caseResponse.value?.data.title
-    ? `${caseResponse.value.data.title} — OpenExpert`
+  title: caseData.value?.title
+    ? `${caseData.value.title} — OpenExpert`
     : 'Sprawa — OpenExpert',
 }))
 </script>
 
 <template>
   <PortalCaseScreen
-    v-if="status === 'success' && caseResponse?.data?.id === caseId"
+    v-if="caseData?.id === caseId"
     :key="caseId"
-    :case-data="caseResponse.data"
+    :case-data="caseData"
     :user="user"
   />
 
   <div v-else class="case-route-state">
     <PortalHeader :user-name="user.name" :user-email="user.email" />
     <main>
-      <template v-if="status === 'pending'">
+      <template v-if="status === 'pending' && !caseData">
         <USkeleton class="h-10 w-80 max-w-full" />
         <USkeleton class="mt-8 h-80 w-full" />
       </template>

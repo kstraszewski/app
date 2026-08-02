@@ -99,6 +99,9 @@ export default defineNuxtConfig({
       },
     },
   },
+  routeRules: {
+    '/login': { prerender: true },
+  },
   css: ['~/assets/css/main.css'],
   ui: {
     fonts: false,

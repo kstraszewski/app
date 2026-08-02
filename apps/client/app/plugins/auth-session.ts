@@ -3,7 +3,17 @@ export default defineNuxtPlugin(async () => {
   if (route.path === '/demo' || route.path.startsWith('/preview')) return
 
   const user = useAuthUser()
-  await refreshAuthUser()
+  const sessionChecked = useState<boolean>(
+    'openexpert-client-auth-session-checked',
+    () => false,
+  )
+  if (import.meta.prerender) {
+    sessionChecked.value = false
+  }
+  else if (!sessionChecked.value) {
+    await refreshAuthUser()
+    sessionChecked.value = true
+  }
 
   if (import.meta.client) {
     const session = useAuthClient().useSession()

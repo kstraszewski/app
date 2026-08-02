@@ -144,6 +144,7 @@ export default defineNuxtConfig({
     },
   },
   routeRules: {
+    '/login': { prerender: true },
     '/preview/**': { ssr: false },
   },
   app: {

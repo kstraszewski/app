@@ -119,6 +119,7 @@ export const previewPortal: PortalPayload = {
     endsAt: '2026-08-04T13:15:00.000Z',
     timezone: 'Europe/Warsaw',
     meetingMode: 'online',
+    relationship: 'follow-up',
     service: { id: 'service-mortgage-review', name: 'Omówienie dokumentów i kolejnych kroków' },
     expert: { id: previewCase.expert.id, name: previewCase.expert.name },
   }],
@@ -129,6 +130,7 @@ export const previewPortal: PortalPayload = {
     endsAt: '2026-08-04T13:15:00.000Z',
     timezone: 'Europe/Warsaw',
     meetingMode: 'online',
+    relationship: 'follow-up',
     service: { id: 'service-mortgage-review', name: 'Omówienie dokumentów i kolejnych kroków' },
     expert: { id: previewCase.expert.id, name: previewCase.expert.name },
   },
@@ -140,6 +142,67 @@ export const previewPortal: PortalPayload = {
     caseId: previewCase.id,
     label: 'Przejdź do dokumentów',
     to: `/preview/cases/${previewCase.id}`,
+  },
+}
+
+const firstMeetingPreviewCase: PortalCase = {
+  ...previewCase,
+  id: 'case-preview-first-meeting',
+  title: 'Pierwsza konsultacja hipoteczna',
+  subtitle: 'Rozpoznanie potrzeb i możliwych scenariuszy finansowania.',
+  statusCode: 'analysis',
+  caseNumber: 'OE/2026/08/0301',
+  progressPercent: 8,
+  steps: [
+    { id: 'analysis', label: 'Analiza potrzeb', status: 'current' },
+    { id: 'documents', label: 'Kompletowanie dokumentów', status: 'waiting' },
+    { id: 'banks', label: 'Analiza banków', status: 'waiting' },
+    { id: 'applications', label: 'Złożenie wniosków', status: 'waiting' },
+    { id: 'decision', label: 'Decyzja', status: 'waiting' },
+  ],
+  documents: { total: 0, uploaded: 0, pending: 0 },
+  action: {
+    kind: 'wait',
+    title: 'Spotkanie jest już umówione',
+    description: 'Do rozmowy nie musisz jeszcze przesyłać dokumentów.',
+  },
+  timeline: [],
+}
+
+const firstMeetingPreviewAppointment = {
+  id: 'appointment-preview-first-consultation',
+  status: 'confirmed',
+  startsAt: '2026-08-04T12:30:00.000Z',
+  endsAt: '2026-08-04T13:15:00.000Z',
+  timezone: 'Europe/Warsaw',
+  meetingMode: 'online',
+  relationship: 'first' as const,
+  service: {
+    id: 'service-first-mortgage-consultation',
+    name: 'Pierwsza konsultacja kredytowa',
+    durationMinutes: 45,
+  },
+  expert: {
+    ...previewCase.expert,
+    professionalTitle: 'Ekspertka kredytów hipotecznych',
+  },
+}
+
+export const firstMeetingPreviewPortal: PortalPayload = {
+  user: previewPortal.user,
+  linked: true,
+  cases: [firstMeetingPreviewCase],
+  activeCaseId: firstMeetingPreviewCase.id,
+  appointments: [firstMeetingPreviewAppointment],
+  nextAppointment: firstMeetingPreviewAppointment,
+  nextStep: {
+    kind: 'prepare_appointment',
+    responsibility: 'client',
+    title: 'Teraz przygotuj się do pierwszego spotkania',
+    description: 'W kilka minut uporządkujesz swoją sytuację, poznasz najważniejsze pojęcia i wybierzesz pytania do eksperta.',
+    appointmentId: firstMeetingPreviewAppointment.id,
+    label: 'Przygotuj się do spotkania',
+    to: '/prepare',
   },
 }
 

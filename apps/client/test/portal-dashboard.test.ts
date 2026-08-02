@@ -182,14 +182,71 @@ describe('client portal dashboard next step', () => {
       startsAt: '2026-08-02T09:00:00Z',
       endsAt: '2026-08-02T10:00:00Z',
     }
-    assert.equal(
-      buildPortalDashboardNextStep([], appointment, now).kind,
-      'prepare_appointment',
-    )
+    const preparation = buildPortalDashboardNextStep([], appointment, now)
+    assert.equal(preparation.kind, 'prepare_appointment')
+    assert.equal(preparation.label, 'Przygotuj się do spotkania')
+    assert.equal(preparation.to, '/prepare')
     assert.match(
       buildPortalDashboardNextStep([], null, now).title,
       /udostępnienie sprawy/,
     )
+  })
+
+  it('prepares for an explicitly first meeting even when its case already exists', () => {
+    const nextStep = buildPortalDashboardNextStep([{
+      id: 'first-meeting-case',
+      action: {
+        kind: 'wait',
+        title: 'Sprawa jest po stronie eksperta',
+        description: 'Spotkanie jest umówione',
+        label: null,
+        to: null,
+      },
+    }], {
+      id: 'first-meeting',
+      status: 'confirmed',
+      startsAt: '2026-08-03T09:00:00Z',
+      endsAt: '2026-08-03T10:00:00Z',
+      relationship: 'first',
+    }, now)
+
+    assert.equal(nextStep.kind, 'prepare_appointment')
+    assert.match(nextStep.title, /pierwszego spotkania/)
+  })
+
+  it('keeps required client work ahead of first-meeting preparation', () => {
+    const nextStep = buildPortalDashboardNextStep([{
+      id: 'document-case',
+      action: {
+        kind: 'upload_document',
+        title: 'Dokumenty',
+        description: 'Brakuje dokumentu',
+        label: 'Dodaj',
+        to: '/cases/document-case',
+      },
+    }], {
+      id: 'first-meeting',
+      status: 'confirmed',
+      startsAt: '2026-08-03T09:00:00Z',
+      endsAt: '2026-08-03T10:00:00Z',
+      relationship: 'first',
+    }, now)
+
+    assert.equal(nextStep.kind, 'upload_document')
+    assert.equal(nextStep.caseId, 'document-case')
+  })
+
+  it('does not call an explicit follow-up the first meeting', () => {
+    const nextStep = buildPortalDashboardNextStep([], {
+      id: 'follow-up',
+      status: 'confirmed',
+      startsAt: '2026-08-03T09:00:00Z',
+      endsAt: '2026-08-03T10:00:00Z',
+      relationship: 'follow-up',
+    }, now)
+
+    assert.equal(nextStep.kind, 'wait')
+    assert.doesNotMatch(nextStep.title, /pierwszego spotkania/)
   })
 
   it('prefers an active waiting case over a more recent completed case', () => {

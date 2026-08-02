@@ -108,6 +108,7 @@ export interface PortalAppointment {
   timezone: string
   meetingMode: string
   meetingUrl?: string | null
+  relationship?: 'first' | 'follow-up' | null
   facility?: {
     id?: string
     name?: string

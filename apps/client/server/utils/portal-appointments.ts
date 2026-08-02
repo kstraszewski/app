@@ -28,6 +28,18 @@ function presentIds(rows: Row[], column: string): string[] {
   }))]
 }
 
+function portalAppointmentRelationship(
+  bookingContext: unknown,
+): 'first' | 'follow-up' | null {
+  if (!bookingContext || typeof bookingContext !== 'object' || Array.isArray(bookingContext)) {
+    return null
+  }
+  const meeting = (bookingContext as Record<string, unknown>).crmMeeting
+  if (!meeting || typeof meeting !== 'object' || Array.isArray(meeting)) return null
+  const relationship = (meeting as Record<string, unknown>).relationship
+  return relationship === 'first' || relationship === 'follow-up' ? relationship : null
+}
+
 async function loadLookupRows(
   backend: any,
   table: string,
@@ -84,6 +96,7 @@ export async function loadPortalAppointments(
             status,
             hold_expires_at,
             meeting_mode,
+            booking_context,
             customer_email
           `)
           .in('client_person_id', personIds)
@@ -170,6 +183,7 @@ export async function loadPortalAppointments(
       endsAt: String(row.ends_at),
       timezone: String(row.timezone),
       meetingMode: row.meeting_mode === 'online' ? 'online' : 'office',
+      relationship: portalAppointmentRelationship(row.booking_context),
       // Join URLs may contain provider-specific access tokens. The dashboard
       // only needs the meeting time and mode, so keep those URLs server-side.
       meetingUrl: null,

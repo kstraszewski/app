@@ -30,6 +30,7 @@ export interface PortalDashboardAppointmentCandidate {
   status: string
   startsAt: string
   endsAt: string
+  relationship?: 'first' | 'follow-up' | null
 }
 
 export interface PortalDocumentVisibilityInput {
@@ -172,23 +173,24 @@ export function buildPortalDashboardNextStep(
     }
   }
 
-  if (!cases.length && nextAppointment) {
+  const isFirstAppointment = nextAppointment?.relationship === 'first'
+    || (nextAppointment?.relationship == null && !cases.length)
+
+  if (nextAppointment && isFirstAppointment) {
     const startsAt = Date.parse(nextAppointment.startsAt)
     const startsWithinTwoDays = Number.isFinite(startsAt)
       && startsAt - now <= 48 * 60 * 60 * 1000
     return {
       kind: 'prepare_appointment',
       responsibility: 'client',
-      title: startsWithinTwoDays
-        ? 'Teraz przygotuj się do konsultacji'
-        : 'Teraz czekasz na konsultację',
+      title: 'Teraz przygotuj się do pierwszego spotkania',
       description: startsWithinTwoDays
-        ? 'Przygotuj pytania i aktualne informacje o swojej sytuacji. Szczegóły spotkania znajdziesz w panelu.'
-        : 'Spotkanie jest umówione. Do tego czasu nie musisz wykonywać dodatkowych działań.',
+        ? 'Spotkanie już niedługo. W kilka minut uporządkujesz swoją sytuację i wybierzesz pytania do eksperta.'
+        : 'W kilka minut uporządkujesz swoją sytuację, poznasz najważniejsze pojęcia i wybierzesz pytania do eksperta.',
       caseId: null,
       appointmentId: nextAppointment.id,
-      label: null,
-      to: null,
+      label: 'Przygotuj się do spotkania',
+      to: '/prepare',
     }
   }
 

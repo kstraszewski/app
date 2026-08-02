@@ -5,6 +5,10 @@ import type {
   PortalNextStep,
   PortalPayload,
 } from '~/types/portal'
+import {
+  meetingPreparationStorageKey,
+  parseMeetingPreparationState,
+} from '~/utils/meeting-preparation'
 
 const props = withDefaults(defineProps<{
   payload: PortalPayload
@@ -43,11 +47,11 @@ const nextStep = computed<PortalNextStep>(() => {
     return {
       kind: 'prepare_appointment',
       responsibility: 'client',
-      title: 'Teraz przygotuj się do najbliższego spotkania',
-      description: 'Termin jest zapisany poniżej. Jeśli masz pytania, zanotuj je przed rozmową z ekspertem.',
+      title: 'Teraz przygotuj się do pierwszego spotkania',
+      description: 'W kilka minut uporządkujesz swoją sytuację, poznasz najważniejsze pojęcia i wybierzesz pytania do eksperta.',
       appointmentId: nextAppointment.value.id,
-      label: 'Zobacz termin spotkania',
-      to: '#najblizsze-spotkanie',
+      label: 'Przygotuj się do spotkania',
+      to: '/prepare',
     }
   }
   return {
@@ -67,20 +71,60 @@ const expert = computed(() => actionCase.value?.expert
   || nextAppointment.value?.expert
   || null)
 const dashboardCases = computed(() => props.payload.cases)
+const preparationCompleted = ref(false)
+const isFirstAppointment = computed(() => Boolean(
+  nextAppointment.value
+  && (
+    nextAppointment.value.relationship === 'first'
+    || (nextAppointment.value.relationship == null && !props.payload.cases.length)
+  ),
+))
+const preparationTo = computed(() => props.preview ? '/preview/prepare' : '/prepare')
+
+onMounted(() => {
+  if (!nextAppointment.value) return
+  const key = meetingPreparationStorageKey(
+    props.payload.user.id,
+    nextAppointment.value.id,
+  )
+  preparationCompleted.value = Boolean(
+    parseMeetingPreparationState(window.localStorage.getItem(key)).completedAt,
+  )
+})
 
 const actionIcon = computed(() => {
+  if (nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value) {
+    return 'i-lucide-circle-check-big'
+  }
   if (nextStep.value.kind === 'upload_document') return 'i-lucide-file-up'
   if (nextStep.value.kind === 'complete_multiform') return 'i-lucide-clipboard-list'
   if (nextStep.value.kind === 'prepare_appointment') return 'i-lucide-calendar-clock'
   return 'i-lucide-hourglass'
 })
 
-const actionEyebrow = computed(() => nextStep.value.responsibility === 'client'
-  ? 'CZEKA NA CIEBIE'
-  : 'PO STRONIE EKSPERTA')
+const actionEyebrow = computed(() => {
+  if (nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value) {
+    return 'JESTEŚ PRZYGOTOWANY/A'
+  }
+  return nextStep.value.responsibility === 'client'
+    ? 'CZEKA NA CIEBIE'
+    : 'PO STRONIE EKSPERTA'
+})
+
+const actionTitle = computed(() => (
+  nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value
+    ? 'Masz gotowy plan na pierwsze spotkanie'
+    : nextStep.value.title
+))
+
+const actionDescription = computed(() => (
+  nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value
+    ? 'Twój punkt startu i pytania czekają w zapisanym briefie. Możesz mieć go otwarte podczas rozmowy.'
+    : nextStep.value.description
+))
 
 const actionTo = computed(() => {
-  if (nextStep.value.kind === 'prepare_appointment' && !nextStep.value.caseId) return '#najblizsze-spotkanie'
+  if (nextStep.value.kind === 'prepare_appointment') return preparationTo.value
   if (props.preview) {
     if (nextStep.value.kind === 'complete_multiform') return '/preview/multiform'
     if (actionCase.value) return `/preview/cases/${encodeURIComponent(actionCase.value.id)}`
@@ -91,8 +135,17 @@ const actionTo = computed(() => {
   return '/'
 })
 
-const actionLabel = computed(() => nextStep.value.label
-  || (nextStep.value.responsibility === 'client' ? 'Przejdź do zadania' : 'Zobacz sprawę'))
+const actionLabel = computed(() => {
+  if (nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value) {
+    return 'Zobacz swoje przygotowanie'
+  }
+  return nextStep.value.label
+    || (nextStep.value.responsibility === 'client' ? 'Przejdź do zadania' : 'Zobacz sprawę')
+})
+
+const preparationActionLabel = computed(() => preparationCompleted.value
+  ? 'Przygotowanie gotowe'
+  : 'Przygotuj się do spotkania')
 
 const contactTo = computed(() => {
   if (!expert.value || !actionCase.value) return null
@@ -187,8 +240,8 @@ const meetingModeLabel = computed(() => {
               {{ actionEyebrow }}
             </p>
             <p v-if="actionCase" class="now-card__case">{{ actionCase.title }}</p>
-            <h2>{{ nextStep.title }}</h2>
-            <p>{{ nextStep.description }}</p>
+            <h2>{{ actionTitle }}</h2>
+            <p>{{ actionDescription }}</p>
           </div>
           <div class="now-card__footer">
             <UButton
@@ -203,6 +256,12 @@ const meetingModeLabel = computed(() => {
             </UButton>
             <span v-if="nextStep.responsibility === 'expert'">
               Powiadomimy Cię, gdy pojawi się nowy krok.
+            </span>
+            <span v-else-if="nextStep.kind === 'prepare_appointment' && preparationCompleted">
+              Możesz wrócić do swojego briefu i pytań w każdej chwili.
+            </span>
+            <span v-else-if="nextStep.kind === 'prepare_appointment'">
+              Postęp zapisze się tylko w tej przeglądarce.
             </span>
             <span v-else>Bezpiecznie zapisujemy każdy wykonany krok.</span>
           </div>
@@ -231,6 +290,16 @@ const meetingModeLabel = computed(() => {
                 {{ nextAppointment.status === 'confirmed' ? 'Potwierdzone' : 'Do potwierdzenia' }}
               </UBadge>
             </div>
+            <UButton
+              v-if="isFirstAppointment && nextStep.kind !== 'prepare_appointment'"
+              :to="preparationTo"
+              color="neutral"
+              variant="outline"
+              :icon="preparationCompleted ? 'i-lucide-circle-check-big' : 'i-lucide-notebook-pen'"
+              block
+            >
+              {{ preparationActionLabel }}
+            </UButton>
           </template>
           <div v-else class="context-card__empty">
             <h2>Brak zaplanowanych spotkań</h2>

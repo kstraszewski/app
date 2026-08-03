@@ -1,6 +1,8 @@
 import { useRuntimeConfig } from '#imports'
 import { getQuery } from 'h3'
 import {
+  mortgageBankFileEmbeddingDimensions,
+  mortgageBankFileEmbeddingModel,
   mortgageBankFileOptionalUuid,
   mortgageBankFileQueryEmbedding,
   requireMortgageBankFileAdmin,
@@ -159,17 +161,27 @@ export default defineEventHandler(async (event) => {
   })
 
   const runtimeConfig = useRuntimeConfig(event)
+  const googleApiKey = String(runtimeConfig.googleGenerativeAiApiKey || '').trim()
+  const gatewayAvailable = Boolean(
+    runtimeConfig.aiGatewayApiKey
+    || process.env.AI_GATEWAY_API_KEY
+    || process.env.VERCEL_OIDC_TOKEN,
+  )
+  const embeddingAvailable = Boolean(googleApiKey || gatewayAvailable)
+  let usedQueryEmbedding = false
   const matchByFile = new Map<string, DatabaseRecord[]>()
   if (searchText) {
     let queryEmbedding: number[] | null = null
     try {
       queryEmbedding = await mortgageBankFileQueryEmbedding(
-        String(runtimeConfig.googleGenerativeAiApiKey || ''),
+        googleApiKey,
         searchText,
+        AbortSignal.timeout(1_500),
       )
     } catch {
       queryEmbedding = null
     }
+    usedQueryEmbedding = Boolean(queryEmbedding)
 
     const searchResult = await backendData.rpc('search_mortgage_bank_file_chunks', {
       query_text: searchText,
@@ -339,14 +351,14 @@ export default defineEventHandler(async (event) => {
     },
     search: {
       mode: searchText
-        ? String(runtimeConfig.googleGenerativeAiApiKey || '').trim()
+        ? usedQueryEmbedding
           ? 'hybrid'
           : 'full_text'
         : 'none',
-      embeddingModel: String(runtimeConfig.googleGenerativeAiApiKey || '').trim()
-        ? 'gemini-embedding-2'
+      embeddingModel: embeddingAvailable
+        ? mortgageBankFileEmbeddingModel
         : null,
-      embeddingDimensions: String(runtimeConfig.googleGenerativeAiApiKey || '').trim() ? 768 : null,
+      embeddingDimensions: embeddingAvailable ? mortgageBankFileEmbeddingDimensions : null,
       organizationId: session.organizationId,
     },
   }

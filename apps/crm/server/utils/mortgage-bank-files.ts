@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { gateway } from '@ai-sdk/gateway'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { embed, embedMany } from 'ai'
 import { createError, type H3Event } from 'h3'
@@ -11,6 +12,7 @@ import {
 
 export const mortgageBankFileBucket = 'mortgage-bank-files'
 export const mortgageBankFileEmbeddingModel = 'gemini-embedding-2'
+export const mortgageBankFileGatewayEmbeddingModel = `google/${mortgageBankFileEmbeddingModel}` as const
 export const mortgageBankFileEmbeddingDimensions = 768
 export const mortgageBankFileMaximumBytes = 50 * 1024 * 1024
 
@@ -219,14 +221,20 @@ export async function extractMortgageBankPdf(bytes: Uint8Array): Promise<{
   }
 }
 
+export function mortgageBankFileEmbeddingProvider(apiKey: string | null | undefined) {
+  const normalizedApiKey = apiKey?.trim()
+  return normalizedApiKey
+    ? createGoogleGenerativeAI({ apiKey: normalizedApiKey }).embedding(mortgageBankFileEmbeddingModel)
+    : gateway.embedding(mortgageBankFileGatewayEmbeddingModel)
+}
+
 async function generateMortgageBankFileEmbeddings(
-  apiKey: string,
+  apiKey: string | null | undefined,
   title: string,
   chunks: MortgageBankFileChunkInput[],
 ) {
   if (!chunks.length) return []
-  const provider = createGoogleGenerativeAI({ apiKey })
-  const model = provider.embedding(mortgageBankFileEmbeddingModel)
+  const model = mortgageBankFileEmbeddingProvider(apiKey)
   const values = chunks.map(chunk => `title: ${title} | text: ${chunk.content}`)
   const result: number[][] = []
 
@@ -241,6 +249,12 @@ async function generateMortgageBankFileEmbeddings(
         },
       },
     })
+    if (response.embeddings.length !== batch.length) {
+      throw new Error('Gemini returned an unexpected number of bank file embeddings')
+    }
+    if (response.embeddings.some(value => value.length !== mortgageBankFileEmbeddingDimensions)) {
+      throw new Error('Gemini returned an unexpected bank file embedding dimensionality')
+    }
     result.push(...response.embeddings)
   }
 
@@ -250,21 +264,25 @@ async function generateMortgageBankFileEmbeddings(
 export async function mortgageBankFileQueryEmbedding(
   apiKey: string | null | undefined,
   query: string,
+  abortSignal?: AbortSignal,
 ): Promise<number[] | null> {
   const normalizedApiKey = apiKey?.trim()
   const normalizedQuery = query.trim()
-  if (!normalizedApiKey || !normalizedQuery) return null
+  if (!normalizedQuery) return null
 
-  const provider = createGoogleGenerativeAI({ apiKey: normalizedApiKey })
   const response = await embed({
-    model: provider.embedding(mortgageBankFileEmbeddingModel),
+    model: mortgageBankFileEmbeddingProvider(normalizedApiKey),
     value: `task: search result | query: ${normalizedQuery}`,
+    abortSignal,
     providerOptions: {
       google: {
         outputDimensionality: mortgageBankFileEmbeddingDimensions,
       },
     },
   })
+  if (response.embedding.length !== mortgageBankFileEmbeddingDimensions) {
+    throw new Error('Gemini returned an unexpected bank file query embedding dimensionality')
+  }
   return response.embedding
 }
 
@@ -480,53 +498,51 @@ export async function ingestMortgageBankFile(
         if (chunksResult.error) throw chunksResult.error
 
         const googleApiKey = input.googleApiKey?.trim()
-        if (googleApiKey) {
-          try {
-            const embeddings = await generateMortgageBankFileEmbeddings(googleApiKey, title, chunks)
-            const chunkRows = (chunksResult.data ?? []) as DatabaseRecord[]
-            const sourceChunkByIndex = new Map(chunks.map(chunk => [chunk.chunkIndex, chunk]))
-            const embeddingRows = chunkRows.flatMap((chunkRow) => {
-              const chunkIndex = Number(chunkRow.chunk_index)
-              const embedding = embeddings[chunkIndex]
-              const sourceChunk = sourceChunkByIndex.get(chunkIndex)
-              if (!embedding || !sourceChunk) return []
-              return [{
-                chunk_id: chunkRow.id,
-                embedding_kind: 'content',
-                model: mortgageBankFileEmbeddingModel,
-                dimensions: mortgageBankFileEmbeddingDimensions,
-                recipe_version: 'search-result-v1',
-                source_sha256: createHash('sha256')
-                  .update(`title: ${title} | text: ${sourceChunk.content}`)
-                  .digest('hex'),
-                embedding,
-              }]
-            })
-            if (embeddingRows.length) {
-              const embeddingsResult = await backendData
-                .from('mortgage_bank_file_embeddings')
-                .insert(embeddingRows)
-              if (embeddingsResult.error) throw embeddingsResult.error
-            }
-            await backendData
-              .from('mortgage_bank_file_processing_jobs')
-              .update({ status: 'completed', finished_at: new Date().toISOString() })
-              .eq('version_id', versionId)
-              .eq('job_type', 'embed')
-            embeddingStatus = 'completed'
-          } catch (embeddingError) {
-            await backendData
-              .from('mortgage_bank_file_processing_jobs')
-              .update({
-                status: 'failed',
-                attempts: 1,
-                finished_at: new Date().toISOString(),
-                last_error: embeddingError instanceof Error ? embeddingError.message.slice(0, 10_000) : 'Embedding failed',
-              })
-              .eq('version_id', versionId)
-              .eq('job_type', 'embed')
-            embeddingStatus = 'failed'
+        try {
+          const embeddings = await generateMortgageBankFileEmbeddings(googleApiKey, title, chunks)
+          const chunkRows = (chunksResult.data ?? []) as DatabaseRecord[]
+          const sourceChunkByIndex = new Map(chunks.map(chunk => [chunk.chunkIndex, chunk]))
+          const embeddingRows = chunkRows.flatMap((chunkRow) => {
+            const chunkIndex = Number(chunkRow.chunk_index)
+            const embedding = embeddings[chunkIndex]
+            const sourceChunk = sourceChunkByIndex.get(chunkIndex)
+            if (!embedding || !sourceChunk) return []
+            return [{
+              chunk_id: chunkRow.id,
+              embedding_kind: 'content',
+              model: mortgageBankFileEmbeddingModel,
+              dimensions: mortgageBankFileEmbeddingDimensions,
+              recipe_version: 'search-result-v1',
+              source_sha256: createHash('sha256')
+                .update(`title: ${title} | text: ${sourceChunk.content}`)
+                .digest('hex'),
+              embedding,
+            }]
+          })
+          if (embeddingRows.length) {
+            const embeddingsResult = await backendData
+              .from('mortgage_bank_file_embeddings')
+              .insert(embeddingRows)
+            if (embeddingsResult.error) throw embeddingsResult.error
           }
+          await backendData
+            .from('mortgage_bank_file_processing_jobs')
+            .update({ status: 'completed', finished_at: new Date().toISOString() })
+            .eq('version_id', versionId)
+            .eq('job_type', 'embed')
+          embeddingStatus = 'completed'
+        } catch (embeddingError) {
+          await backendData
+            .from('mortgage_bank_file_processing_jobs')
+            .update({
+              status: 'failed',
+              attempts: 1,
+              finished_at: new Date().toISOString(),
+              last_error: embeddingError instanceof Error ? embeddingError.message.slice(0, 10_000) : 'Embedding failed',
+            })
+            .eq('version_id', versionId)
+            .eq('job_type', 'embed')
+          embeddingStatus = 'failed'
         }
       }
     }

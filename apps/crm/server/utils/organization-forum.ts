@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { gateway } from '@ai-sdk/gateway'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { embed, embedMany } from 'ai'
 import { createError } from 'h3'
@@ -26,6 +27,7 @@ type DataApiClient = any
 type UnknownRecord = Record<string, unknown>
 
 export const organizationForumEmbeddingModel = 'gemini-embedding-2'
+export const organizationForumGatewayEmbeddingModel = `google/${organizationForumEmbeddingModel}` as const
 export const organizationForumEmbeddingDimensions = 768
 export const organizationForumEmbeddingRecipe = 'forum-search-v1'
 
@@ -87,7 +89,7 @@ export interface OrganizationForumEmbeddingJob {
 
 export interface OrganizationForumEmbeddingWorkerInput {
   backendData: DataApiClient
-  googleApiKey: string
+  googleApiKey?: string | null
   workerId: string
   limit?: number
   embedValues?: (values: string[]) => Promise<number[][]>
@@ -550,11 +552,10 @@ export async function organizationForumQueryEmbedding(
 ): Promise<number[] | null> {
   const normalizedApiKey = apiKey?.trim()
   const normalizedQuery = query.trim()
-  if (!normalizedApiKey || !normalizedQuery) return null
+  if (!normalizedQuery) return null
 
-  const provider = createGoogleGenerativeAI({ apiKey: normalizedApiKey })
   const response = await embed({
-    model: provider.embedding(organizationForumEmbeddingModel),
+    model: organizationForumEmbeddingProvider(normalizedApiKey),
     value: organizationForumQueryEmbeddingInput(normalizedQuery),
     abortSignal,
     providerOptions: {
@@ -570,16 +571,13 @@ export async function organizationForumQueryEmbedding(
 }
 
 export async function organizationForumDocumentEmbeddings(
-  apiKey: string,
+  apiKey: string | null | undefined,
   values: string[],
   abortSignal?: AbortSignal,
 ): Promise<number[][]> {
-  const normalizedApiKey = apiKey.trim()
-  if (!normalizedApiKey) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured')
   if (!values.length) return []
 
-  const provider = createGoogleGenerativeAI({ apiKey: normalizedApiKey })
-  const model = provider.embedding(organizationForumEmbeddingModel)
+  const model = organizationForumEmbeddingProvider(apiKey)
   const embeddings: number[][] = []
   for (let offset = 0; offset < values.length; offset += 40) {
     const batch = values.slice(offset, offset + 40)
@@ -602,6 +600,13 @@ export async function organizationForumDocumentEmbeddings(
     embeddings.push(...response.embeddings)
   }
   return embeddings
+}
+
+export function organizationForumEmbeddingProvider(apiKey: string | null | undefined) {
+  const normalizedApiKey = apiKey?.trim()
+  return normalizedApiKey
+    ? createGoogleGenerativeAI({ apiKey: normalizedApiKey }).embedding(organizationForumEmbeddingModel)
+    : gateway.embedding(organizationForumGatewayEmbeddingModel)
 }
 
 function forumDataOrThrow<T>(result: {
@@ -868,8 +873,7 @@ export async function processOrganizationForumEmbeddingJobs(
   failed: number
   outcomes: Array<{ jobId: string, status: 'completed' | 'failed', error?: string }>
 }> {
-  const apiKey = input.googleApiKey.trim()
-  if (!apiKey) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured')
+  const apiKey = input.googleApiKey?.trim()
   const limit = Math.min(40, Math.max(1, Math.trunc(input.limit ?? 20)))
   const jobs = await claimOrganizationForumEmbeddingJobs(
     input.backendData,

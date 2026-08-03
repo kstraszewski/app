@@ -14,6 +14,7 @@ import {
   throwProcessHandoffRpcError,
   withProcessHandoffProfiles,
 } from '~~/server/utils/process-handoff'
+import { nudgeNotificationOutbox } from '~~/server/utils/notifications'
 
 type Row = Record<string, any>
 
@@ -116,9 +117,11 @@ export default defineEventHandler(async (event) => {
     handoff.requested_by_user_id,
     handoff.resolved_by_user_id,
   ])
+  const changed = result.replayed !== true
+  if (changed) await nudgeNotificationOutbox(event)
 
   return {
     data: withProcessHandoffProfiles(handoff, profiles),
-    changed: result.replayed !== true,
+    changed,
   }
 })

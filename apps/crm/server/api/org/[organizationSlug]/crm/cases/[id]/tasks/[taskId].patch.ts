@@ -12,6 +12,7 @@ import {
   parseDelegatedTaskStatus,
   withTaskParticipants,
 } from '~~/server/utils/task-delegation'
+import { nudgeNotificationOutbox } from '~~/server/utils/notifications'
 
 type Row = Record<string, any> & {
   assignee_user_id: string | null
@@ -91,6 +92,7 @@ export default defineEventHandler(async (event) => {
     updated.delegator_user_id,
     updated.assignee_user_id,
   ])
+  if (data) await nudgeNotificationOutbox(event)
   return {
     data: withTaskParticipants(updated, profiles),
     changed: Boolean(data),

@@ -124,6 +124,14 @@ export default defineNuxtConfig({
       ablyApiKey: process.env.NUXT_ABLY_API_KEY || '',
       outboxSecret: process.env.NUXT_MESSAGING_OUTBOX_SECRET || '',
     },
+    notifications: {
+      ablyApiKey: process.env.NUXT_NOTIFICATIONS_ABLY_API_KEY
+        || process.env.NUXT_ABLY_API_KEY
+        || '',
+      outboxSecret: process.env.NUXT_NOTIFICATIONS_OUTBOX_SECRET
+        || process.env.NUXT_MESSAGING_OUTBOX_SECRET
+        || '',
+    },
     multiformServiceUrl,
     aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
     googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',

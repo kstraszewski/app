@@ -1,24 +1,34 @@
 import { createHash } from 'node:crypto'
+import { gateway } from '@ai-sdk/gateway'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { embedMany, generateText } from 'ai'
 import {
   mortgageBankFileEmbeddingDimensions,
   mortgageBankFileEmbeddingModel,
+  mortgageBankFileEmbeddingProvider,
 } from './mortgage-bank-files'
 
 type BackendDataClient = any
 type DatabaseRecord = Record<string, any>
 
 const descriptionModel = 'gemini-3.5-flash-lite'
+const gatewayDescriptionModel = `google/${descriptionModel}` as const
 const embeddingRecipe = 'search-result-v1'
 const maximumAttempts = 5
 
 interface ProcessMortgageBankFileAiJobsInput {
   backendData: BackendDataClient
-  googleApiKey: string
+  googleApiKey?: string | null
   actorUserId: string
   organizationId: string
   limit?: number
+}
+
+function mortgageBankFileDescriptionProvider(apiKey: string | null | undefined) {
+  const normalizedApiKey = apiKey?.trim()
+  return normalizedApiKey
+    ? createGoogleGenerativeAI({ apiKey: normalizedApiKey })(descriptionModel)
+    : gateway(gatewayDescriptionModel)
 }
 
 interface ClaimedJob extends DatabaseRecord {
@@ -185,7 +195,7 @@ async function versionWithFile(backendData: BackendDataClient, versionId: string
 async function processDescribeJob(
   backendData: BackendDataClient,
   job: ClaimedJob,
-  apiKey: string,
+  apiKey: string | null | undefined,
   actorUserId: string,
   organizationId: string,
 ) {
@@ -199,9 +209,8 @@ async function processDescribeJob(
   let description = String(version.generated_description ?? '').trim()
   let generated = false
   if (!description) {
-    const provider = createGoogleGenerativeAI({ apiKey })
     const result = await generateText({
-      model: provider(descriptionModel),
+      model: mortgageBankFileDescriptionProvider(apiKey),
       maxOutputTokens: 320,
       system: [
         'Tworzysz krótki opis oficjalnego dokumentu bankowego dla eksperta kredytowego.',
@@ -251,7 +260,7 @@ async function processDescribeJob(
 async function processEmbedJob(
   backendData: BackendDataClient,
   job: ClaimedJob,
-  apiKey: string,
+  apiKey: string | null | undefined,
   actorUserId: string,
   organizationId: string,
 ) {
@@ -307,8 +316,7 @@ async function processEmbedJob(
   if (versionProcessingResult.error) throw versionProcessingResult.error
 
   if (pending.length) {
-    const provider = createGoogleGenerativeAI({ apiKey })
-    const model = provider.embedding(mortgageBankFileEmbeddingModel)
+    const model = mortgageBankFileEmbeddingProvider(apiKey)
     for (let offset = 0; offset < pending.length; offset += 40) {
       const batch = pending.slice(offset, offset + 40)
       const response = await embedMany({
@@ -384,8 +392,7 @@ async function processEmbedJob(
 export async function processMortgageBankFileAiJobs(
   input: ProcessMortgageBankFileAiJobsInput,
 ) {
-  const apiKey = input.googleApiKey.trim()
-  if (!apiKey) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured')
+  const apiKey = input.googleApiKey?.trim()
   const limit = Math.min(10, Math.max(1, Math.trunc(input.limit ?? 5)))
   const now = new Date().toISOString()
   const jobsResult = await input.backendData

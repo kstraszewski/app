@@ -36,12 +36,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const googleApiKey = String(config.googleGenerativeAiApiKey || '').trim()
-  if (!googleApiKey) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'GOOGLE_GENERATIVE_AI_API_KEY is not configured',
-    })
-  }
 
   const body = asRecord(await readBody(event).catch(() => null))
   if (Object.keys(body).some(key => key !== 'limit')) {

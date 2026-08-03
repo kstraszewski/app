@@ -1,5 +1,5 @@
 import { useRuntimeConfig } from '#imports'
-import { createError, readBody } from 'h3'
+import { readBody } from 'h3'
 import { processMortgageBankFileAiJobs } from '~~/server/utils/mortgage-bank-files-ai'
 import { requireMortgageBankFileAdmin } from '~~/server/utils/mortgage-bank-files'
 
@@ -13,12 +13,6 @@ export default defineEventHandler(async (event) => {
   const { session, backendData } = await requireMortgageBankFileAdmin(event)
   const runtimeConfig = useRuntimeConfig(event)
   const googleApiKey = String(runtimeConfig.googleGenerativeAiApiKey || '').trim()
-  if (!googleApiKey) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'GOOGLE_GENERATIVE_AI_API_KEY is not configured',
-    })
-  }
 
   const body = await readBody(event).catch(() => null)
   return processMortgageBankFileAiJobs({

@@ -35,6 +35,7 @@ import {
   publishDirectMessagePush,
   type MessagingPublishResult,
 } from './messaging-ably'
+import { nudgeNotificationOutbox } from './notification-outbox'
 
 const conversationSelect = [
   'id',
@@ -661,6 +662,9 @@ export async function sendPortalConversationMessage(
     ? null
     : String(rawOutboxId)
   const created = payload.created === true
+  const notificationNudge = created
+    ? nudgeNotificationOutbox(event)
+    : Promise.resolve()
   if (await outboxNeedsDelivery(event, outboxId)) {
     const realtimeResult = await publishConversationEvent(event, {
       kind: 'message.created',
@@ -692,6 +696,8 @@ export async function sendPortalConversationMessage(
       combinePublishResults(deliveryResults),
     )
   }
+
+  await notificationNudge
 
   const refreshedConversation = await findConversation(event, context.access)
   return {

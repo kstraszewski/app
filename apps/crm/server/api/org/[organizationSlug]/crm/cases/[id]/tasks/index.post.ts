@@ -20,6 +20,7 @@ import {
   requireFacilityPermission,
   throwBookingError,
 } from '~~/server/utils/scheduling'
+import { nudgeNotificationOutbox } from '~~/server/utils/notifications'
 
 type Row = Record<string, any>
 
@@ -297,6 +298,7 @@ export default defineEventHandler(async (event) => {
   const appointment = appointmentResult.data as Row | null
   const created = result.created === true
   if (created) setResponseStatus(event, 201)
+  if (created) await nudgeNotificationOutbox(event)
   return {
     data: withTaskParticipants(task, profiles),
     appointment: appointment

@@ -11,6 +11,9 @@ import {
   mapOrganizationForumRealtimeSnapshot,
   organizationForumDocumentEmbeddingInput,
   organizationForumEmbeddingDimensions,
+  organizationForumEmbeddingModel,
+  organizationForumEmbeddingProvider,
+  organizationForumGatewayEmbeddingModel,
   organizationForumQueryEmbeddingInput,
   organizationForumSourceSha256,
   parseOrganizationForumCreateReplyInput,
@@ -224,6 +227,16 @@ test('builds stable asymmetric Gemini retrieval inputs and checksums', () => {
   assert.equal(organizationForumSourceSha256(document), organizationForumSourceSha256(document))
 })
 
+test('routes forum embeddings through direct Google or the Vercel AI Gateway fallback', () => {
+  const direct = organizationForumEmbeddingProvider('test-google-api-key')
+  assert.equal(direct.provider, 'google.generative-ai')
+  assert.equal(direct.modelId, organizationForumEmbeddingModel)
+
+  const fallback = organizationForumEmbeddingProvider('   ')
+  assert.equal(fallback.provider, 'gateway')
+  assert.equal(fallback.modelId, organizationForumGatewayEmbeddingModel)
+})
+
 test('calls the aggregate list RPC with tenant filters and the optional query vector', async () => {
   const calls: Array<{ name: string, args: Record<string, unknown> }> = []
   const dataApi = {
@@ -364,7 +377,6 @@ test('claims, embeds and completes a forum embedding job using the leased worker
 
   const result = await processOrganizationForumEmbeddingJobs({
     backendData: dataApi,
-    googleApiKey: 'test-api-key',
     workerId: 'forum:test-worker',
     limit: 1,
     async embedValues(values) {

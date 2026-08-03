@@ -496,6 +496,11 @@ async function signOut() {
             @click="openOmnisearch"
           />
 
+          <NotificationsCrmNotificationCenter
+            v-if="organizationSlug"
+            :organization-slug="organizationSlug"
+          />
+
           <UButton
             class="crm-nav__toggle"
             color="neutral"
@@ -1018,6 +1023,10 @@ async function signOut() {
   flex-direction: column;
 }
 
+.crm-shell--collapsed .crm-nav__head-actions {
+  flex-direction: column;
+}
+
 .crm-shell--collapsed .crm-brand {
   justify-content: center;
   width: 40px;
@@ -1198,6 +1207,10 @@ async function signOut() {
   }
 
   .crm-shell--collapsed .crm-nav__head {
+    flex-direction: row;
+  }
+
+  .crm-shell--collapsed .crm-nav__head-actions {
     flex-direction: row;
   }
 

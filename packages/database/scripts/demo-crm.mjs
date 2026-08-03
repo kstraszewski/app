@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { calculateMortgageCatalogVersion } from '../../mortgage/src/index.ts'
 
 const dayMs = 24 * 60 * 60 * 1000
-const demoNamespace = 'openexpert-local-demo'
+export const demoNamespace = 'openexpert-local-demo'
 
 const clientSeeds = [
   {
@@ -842,7 +842,7 @@ function asDate(value) {
   return date
 }
 
-function isoOffset(seedNow, days) {
+export function isoOffset(seedNow, days) {
   return new Date(seedNow.getTime() + days * dayMs).toISOString()
 }
 
@@ -850,7 +850,7 @@ function dateOffset(seedNow, days) {
   return isoOffset(seedNow, days).slice(0, 10)
 }
 
-function stableUuid(key) {
+export function stableUuid(key) {
   const bytes = Buffer.from(createHash('sha256').update(`${demoNamespace}:${key}`).digest().subarray(0, 16))
   bytes[6] = (bytes[6] & 0x0f) | 0x50
   bytes[8] = (bytes[8] & 0x3f) | 0x80
@@ -894,7 +894,7 @@ function assertResult(result, operation) {
   return result.data
 }
 
-function metadataFor(key, extra = {}) {
+export function metadataFor(key, extra = {}) {
   return {
     ...objectValue(extra),
     demo_seed_namespace: demoNamespace,
@@ -2610,7 +2610,7 @@ async function ensureActivities({
   return activityByKey
 }
 
-const forumCategorySeeds = [
+export const forumCategorySeeds = [
   {
     slug: 'kredyty-hipoteczne',
     name: 'Kredyty hipoteczne',
@@ -2648,7 +2648,7 @@ const forumCategorySeeds = [
   },
 ]
 
-const forumThreadSeeds = [
+export const forumThreadSeeds = [
   {
     key: 'forum-income-documentation',
     categorySlug: 'kredyty-hipoteczne',

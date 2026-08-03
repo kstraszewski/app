@@ -52,6 +52,12 @@ export default defineNuxtConfig({
     messaging: {
       ablyApiKey: process.env.NUXT_ABLY_API_KEY || '',
     },
+    notifications: {
+      outboxUrl: process.env.OPENEXPERT_NOTIFICATION_OUTBOX_URL || '',
+      outboxSecret: process.env.NUXT_NOTIFICATIONS_OUTBOX_SECRET
+        || process.env.NUXT_MESSAGING_OUTBOX_SECRET
+        || '',
+    },
     portalAssets: {
       publicBaseUrl: portalPublicAssetBaseUrl,
     },

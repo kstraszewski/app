@@ -514,7 +514,13 @@ onMounted(() => {
         <h2>{{ authUser?.email }}</h2>
         <small>Połączone metody prowadzą do tego samego konta i tych samych organizacji.</small>
       </div>
-      <UBadge :color="authUser?.emailVerified ? 'success' : 'warning'" variant="subtle">
+      <UBadge
+        :color="authUser?.emailVerified ? 'success' : 'warning'"
+        variant="solid"
+        size="lg"
+        :icon="authUser?.emailVerified ? 'i-lucide-badge-check' : 'i-lucide-circle-alert'"
+        class="identity-summary__status"
+      >
         {{ authUser?.emailVerified ? 'E-mail potwierdzony' : 'E-mail niepotwierdzony' }}
       </UBadge>
     </section>
@@ -996,6 +1002,11 @@ onMounted(() => {
   margin-top: 4px;
   color: var(--ui-text-muted);
   font-size: 11px;
+}
+
+.identity-summary__status {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .login-method-grid {

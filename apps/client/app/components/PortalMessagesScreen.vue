@@ -87,6 +87,9 @@ onBeforeUnmount(() => {
 const summariesByCase = computed(() => new Map(
   (inboxResponse.value?.data.conversations || []).map(summary => [summary.caseId, summary]),
 ))
+const isInitialInboxLoading = computed(() => (
+  inboxStatus.value === 'pending' && !inboxResponse.value
+))
 
 const threads = computed<MessageThread[]>(() => props.payload.cases
   .map(caseData => ({
@@ -188,7 +191,7 @@ function threadTime(summary: InboxConversationSummary | null) {
             <span v-if="totalUnread">{{ totalUnread }} nowe</span>
           </header>
 
-          <div v-if="inboxStatus === 'pending'" class="portal-inbox__loading">
+          <div v-if="isInitialInboxLoading" class="portal-inbox__loading">
             <USkeleton v-for="index in 3" :key="index" class="h-24 w-full" />
           </div>
 

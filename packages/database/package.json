@@ -19,6 +19,7 @@
     "db:seed-demo": "node ./scripts/local-postgres.mjs seed-demo",
     "db:seed-forum-demo": "node ./scripts/seed-forum-demo.mjs",
     "db:seed-official-bank-files": "node ./scripts/seed-official-bank-files.mjs",
+    "db:seed-production-showcase": "node ./scripts/seed-production-showcase.mjs",
     "db:setup": "node ./scripts/local-postgres.mjs setup",
     "db:start": "node ./scripts/local-postgres.mjs start",
     "db:status": "node ./scripts/local-postgres.mjs status",

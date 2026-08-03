@@ -11,6 +11,7 @@
     "db:migrate": "turbo run db:migrate --filter=@openexpert/database",
     "db:reset": "turbo run db:reset --filter=@openexpert/database",
     "db:seed-demo": "turbo run db:seed-demo --filter=@openexpert/database",
+    "db:seed-production-showcase": "pnpm --filter @openexpert/database db:seed-production-showcase",
     "db:setup": "turbo run db:setup --filter=@openexpert/database",
     "db:start": "turbo run db:start --filter=@openexpert/database",
     "db:status": "turbo run db:status --filter=@openexpert/database",

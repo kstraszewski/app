@@ -7,6 +7,7 @@
   },
   "scripts": {
     "build": "nuxt build",
+    "postbuild": "node ../../packages/database/scripts/run-production-seeds.mjs",
     "predev": "nuxt prepare",
     "dev": "nuxt dev --host 127.0.0.1 --port 3004",
     "generate": "nuxt generate",

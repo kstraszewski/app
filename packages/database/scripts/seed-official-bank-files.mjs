@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { Client } from 'pg'
 
@@ -13,15 +13,15 @@ const EMBEDDING_RECIPE = 'search-result-v1'
 const CONFIRMATION = 'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION'
 const SEED_LOCK = 'openexpert.seed.official-bank-files.v1'
 const VERCEL_PROJECT = 'openexpert-crm'
-const USER_AGENT = 'OpenExpertOfficialBankFileSeeder/1.0 (+https://openexpert.pl)'
-const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000]
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '../../..')
-const manifestPath = join(
+const mortgageDataDirectory = join(
   repositoryRoot,
-  'packages/database/data/mortgages/official-bank-files.json',
+  'packages/database/data/mortgages',
 )
+const manifestPath = join(mortgageDataDirectory, 'official-bank-files.json')
+const assetDirectory = join(mortgageDataDirectory, 'official-bank-file-assets')
 
 const crmRequire = createRequire(join(repositoryRoot, 'apps/crm/package.json'))
 const storageRequire = createRequire(join(repositoryRoot, 'packages/storage/package.json'))
@@ -60,10 +60,11 @@ Persistent writes are accepted only inside a Vercel production build and require
   NUXT_VERCEL_BLOB_PRIVATE_STORE_ID
   VERCEL_OIDC_TOKEN
 
-The apply mode downloads only HTTPS resources hosted on the official bank domains,
-extracts the PDFs, generates 768-dimensional Gemini embeddings through Vercel AI
-Gateway, uploads binaries to the private Vercel Blob store, and commits all database
-records in one transaction. It never creates users or changes roles.`
+The apply mode reads only bundled PDF snapshots whose SHA-256 checksums are pinned in
+the manifest. It preserves their official HTTPS source URLs as provenance, extracts
+the PDFs, generates 768-dimensional Gemini embeddings through Vercel AI Gateway,
+uploads binaries to the private Vercel Blob store, and commits all database records
+in one transaction. It never creates users or changes roles.`
 }
 
 function parseArguments(argv) {
@@ -234,6 +235,12 @@ function validateManifest(value) {
     if (entry.mimeType !== 'application/pdf' || !entry.fileName.endsWith('.pdf')) {
       throw new Error(`${label} must describe a PDF file`)
     }
+    if (basename(entry.fileName) !== entry.fileName) {
+      throw new Error(`${label}.fileName must not contain a directory path`)
+    }
+    if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(entry.sha256)) {
+      throw new Error(`${label}.sha256 must be a lowercase SHA-256 checksum`)
+    }
     assertOfficialUrl(entry.bankSlug, entry.downloadUrl, `${label}.downloadUrl`)
     assertOfficialUrl(entry.bankSlug, entry.sourcePageUrl, `${label}.sourcePageUrl`)
     assertOptionalDate(entry.effectiveFrom, `${label}.effectiveFrom`)
@@ -309,115 +316,26 @@ async function loadRuntimeDependencies() {
   return { blob, embedMany: ai.embedMany, gateway: gateway.gateway, pdfjs }
 }
 
-async function readResponseBytes(response, entry) {
-  const declaredLength = Number(response.headers.get('content-length') ?? 0)
-  if (Number.isFinite(declaredLength) && declaredLength > MAXIMUM_BYTES) {
-    throw new Error(`${entry.title}: Content-Length exceeds 50 MiB`)
+async function readBundledPdf(entry) {
+  const bytes = await readFile(join(assetDirectory, entry.fileName))
+  if (bytes.byteLength > MAXIMUM_BYTES) {
+    throw new Error(`${entry.title}: bundled file exceeds 50 MiB`)
   }
-  if (!response.body) throw new Error(`${entry.title}: response body is empty`)
-
-  const parts = []
-  let total = 0
-  for await (const part of response.body) {
-    const bytes = Buffer.from(part)
-    total += bytes.byteLength
-    if (total > MAXIMUM_BYTES) {
-      await response.body.cancel().catch(() => {})
-      throw new Error(`${entry.title}: downloaded file exceeds 50 MiB`)
-    }
-    parts.push(bytes)
-  }
-  const bytes = Buffer.concat(parts, total)
   if (bytes.byteLength < 5 || bytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
-    throw new Error(`${entry.title}: downloaded content is not a PDF`)
+    throw new Error(`${entry.title}: bundled content is not a PDF`)
   }
-  return bytes
-}
-
-function retryableDownloadStatus(status) {
-  return [408, 425, 429].includes(status) || status >= 500
-}
-
-function downloadErrorLabel(error) {
-  const causeCode = error?.cause?.code
-  if (typeof causeCode === 'string' && causeCode) return causeCode
-  if (error instanceof Error && error.name) return error.name
-  return 'network error'
-}
-
-async function fetchPdfResponse(url, entry) {
-  for (let attempt = 0; attempt <= DOWNLOAD_RETRY_DELAYS_MS.length; attempt += 1) {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        redirect: 'manual',
-        signal: AbortSignal.timeout(120_000),
-        headers: {
-          accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.1',
-          'user-agent': USER_AGENT,
-        },
-      })
-      if (
-        attempt < DOWNLOAD_RETRY_DELAYS_MS.length
-        && retryableDownloadStatus(response.status)
-      ) {
-        await response.body?.cancel().catch(() => {})
-        const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt]
-        process.stdout.write(
-          `Retrying ${entry.bankSlug} download after HTTP ${response.status} in ${delay} ms\n`,
-        )
-        await new Promise(resolvePromise => setTimeout(resolvePromise, delay))
-        continue
-      }
-      return response
-    } catch (error) {
-      if (attempt === DOWNLOAD_RETRY_DELAYS_MS.length) throw error
-      const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt]
-      process.stdout.write(
-        `Retrying ${entry.bankSlug} download after ${downloadErrorLabel(error)} in ${delay} ms\n`,
-      )
-      await new Promise(resolvePromise => setTimeout(resolvePromise, delay))
-    }
+  const checksum = sha256(bytes)
+  if (checksum !== entry.sha256) {
+    throw new Error(`${entry.title}: bundled PDF checksum does not match the manifest`)
   }
-  throw new Error(`${entry.title}: download retry limit exceeded`)
-}
-
-async function downloadPdf(entry) {
-  let currentUrl = new URL(entry.downloadUrl)
-  const visited = new Set()
-
-  for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-    assertOfficialUrl(entry.bankSlug, currentUrl.toString(), `${entry.title} download URL`)
-    if (visited.has(currentUrl.toString())) {
-      throw new Error(`${entry.title}: redirect loop detected`)
-    }
-    visited.add(currentUrl.toString())
-
-    const response = await fetchPdfResponse(currentUrl, entry)
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
-      if (redirectCount === 5) throw new Error(`${entry.title}: too many redirects`)
-      const location = response.headers.get('location')
-      if (!location) throw new Error(`${entry.title}: redirect has no Location header`)
-      const redirected = new URL(location, currentUrl)
-      assertOfficialUrl(entry.bankSlug, redirected.toString(), `${entry.title} redirect`)
-      currentUrl = redirected
-      continue
-    }
-    if (!response.ok) {
-      throw new Error(`${entry.title}: download failed with HTTP ${response.status}`)
-    }
-
-    const bytes = await readResponseBytes(response, entry)
-    return {
-      bytes,
-      checksum: sha256(bytes),
-      resolvedUrl: currentUrl.toString(),
-      etag: response.headers.get('etag'),
-      lastModified: response.headers.get('last-modified'),
-      responseContentType: response.headers.get('content-type'),
-    }
+  return {
+    bytes,
+    checksum,
+    resolvedUrl: entry.downloadUrl,
+    etag: null,
+    lastModified: null,
+    responseContentType: 'application/pdf',
   }
-  throw new Error(`${entry.title}: redirect limit exceeded`)
 }
 
 function ensurePdfJsGlobals() {
@@ -483,6 +401,11 @@ async function extractPdf(pdfjs, bytes, entry) {
 
   try {
     const document = await loadingTask.promise
+    if (document.numPages !== entry.pageCount) {
+      throw new Error(
+        `${entry.title}: bundled PDF has ${document.numPages} pages, expected ${entry.pageCount}`,
+      )
+    }
     const pages = []
     const chunks = []
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -1268,10 +1191,18 @@ async function main() {
 
   const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
   if (!arguments_.apply) {
+    ensurePdfJsGlobals()
+    const pdfjs = await importFrom(crmRequire, 'pdfjs-dist/legacy/build/pdf.mjs')
+    let chunkCount = 0
+    for (const entry of manifest) {
+      const bundled = await readBundledPdf(entry)
+      const extracted = await extractPdf(pdfjs, bundled.bytes, entry)
+      chunkCount += extracted.chunks.length
+    }
     const banks = new Map()
     for (const entry of manifest) banks.set(entry.bankSlug, (banks.get(entry.bankSlug) ?? 0) + 1)
     process.stdout.write(
-      `DRY RUN: validated ${manifest.length} official PDF entries across ${banks.size} banks.\n`,
+      `DRY RUN: validated ${manifest.length} official PDF entries, bundled checksums, page counts, and ${chunkCount} extractable chunks across ${banks.size} banks.\n`,
     )
     for (const [bank, count] of banks) process.stdout.write(`  ${bank}: ${count}\n`)
     process.stdout.write(
@@ -1301,8 +1232,8 @@ async function main() {
 
     const documents = []
     for (const [index, entry] of manifest.entries()) {
-      process.stdout.write(`[${index + 1}/${manifest.length}] Downloading ${entry.bankSlug}: ${entry.title}\n`)
-      const download = await downloadPdf(entry)
+      process.stdout.write(`[${index + 1}/${manifest.length}] Verifying ${entry.bankSlug}: ${entry.title}\n`)
+      const download = await readBundledPdf(entry)
       documents.push({ entry, download, extracted: null })
     }
 

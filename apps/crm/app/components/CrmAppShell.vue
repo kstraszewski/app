@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CrmMeetingListResponse } from '~/types/crm-meeting'
 import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
+import { CRM_CALCULATOR_PATHS, isCrmNavigationPathActive } from '~/utils/crm-navigation'
 
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
@@ -259,13 +260,7 @@ type NavigationGroup = {
 }
 
 function isNavigationActive(item: NavigationItem) {
-  const paths = item.activePaths ?? [item.to]
-
-  return paths.some(path => (
-    route.path === path
-    || route.path === `${path}/`
-    || (!item.exact && route.path.startsWith(`${path}/`))
-  ))
+  return isCrmNavigationPathActive(route.path, item)
 }
 
 const navGroups = computed<NavigationGroup[]>(() => {
@@ -281,8 +276,8 @@ const navGroups = computed<NavigationGroup[]>(() => {
     key: 'calculators',
     label: 'Kalkulatory',
     items: [
-      { label: 'Zdolność', to: `${organizationBase.value}/mortgages/capacity`, icon: 'i-lucide-calculator' },
-      { label: 'Hipoteki', to: `${organizationBase.value}/mortgages`, icon: 'i-lucide-house' },
+      { label: 'Zdolność', to: `${organizationBase.value}${CRM_CALCULATOR_PATHS.capacity}`, icon: 'i-lucide-calculator' },
+      { label: 'Hipoteki', to: `${organizationBase.value}${CRM_CALCULATOR_PATHS.mortgages}`, icon: 'i-lucide-house' },
     ],
   }, {
     key: 'expert',
@@ -291,6 +286,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
       { label: 'Sprawy', to: `${organizationBase.value}/cases`, icon: 'i-lucide-briefcase-business' },
       { label: 'Klienci', to: `${organizationBase.value}/clients`, icon: 'i-lucide-users' },
       { label: 'Kalendarz', to: `${organizationBase.value}/calendar`, icon: 'i-lucide-calendar-days' },
+      { label: 'Wiadomości', to: `${organizationBase.value}/messages`, icon: 'i-lucide-message-square-text' },
       { label: 'Poczta', to: `${organizationBase.value}/mail`, icon: 'i-lucide-mail' },
       { label: 'Widgety', to: `${organizationBase.value}/widgets`, icon: 'i-lucide-code-xml' },
       { label: 'Moja sprzedaż', to: `${organizationBase.value}/sales`, icon: 'i-lucide-chart-no-axes-combined' },

@@ -169,6 +169,14 @@ const selectedRecipient = computed(() => recipients.value.find(
   recipient => recipient.clientPersonId === selectedClientPersonId.value,
 ) ?? null)
 
+const requestedClientPersonId = computed(() => {
+  const raw = Array.isArray(route.query.person) ? route.query.person[0] : route.query.person
+  if (typeof raw !== 'string') return ''
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(raw)
+    ? raw
+    : ''
+})
+
 const unreadByClientPerson = computed(() => new Map(
   conversationEntries.value.map(entry => [entry.clientPersonId, entry.unreadCount]),
 ))
@@ -340,7 +348,9 @@ async function selectRecipientConversation() {
   loadingConversation.value = true
   conversationLoadError.value = false
   try {
-    const response = await $fetch<ConversationBootstrapResponse>(conversationApiPath(entry.id))
+    const response = await $fetch<ConversationBootstrapResponse>(
+      conversationApiPath(entry.id, '/messages'),
+    )
     if (revision !== selectionRevision) return
     applyBootstrap(response.data)
   }
@@ -377,10 +387,14 @@ watch(indexResponse, (response) => {
     recipient => recipient.clientPersonId === selectedClientPersonId.value,
   )
   if (!selectedStillExists) {
-    const unreadEntry = conversationEntries.value.find(item => item.unreadCount > 0)
-    const preferredRecipient = recipients.value.find(recipient => (
-      recipient.clientPersonId === unreadEntry?.clientPersonId
+    const requestedRecipient = recipients.value.find(recipient => (
+      recipient.clientPersonId === requestedClientPersonId.value
     ))
+    const unreadEntry = conversationEntries.value.find(item => item.unreadCount > 0)
+    const preferredRecipient = requestedRecipient
+      ?? recipients.value.find(recipient => (
+      recipient.clientPersonId === unreadEntry?.clientPersonId
+      ))
       ?? recipients.value.find(recipient => recipient.role === 'primary')
       ?? recipients.value[0]
     selectedClientPersonId.value = preferredRecipient?.clientPersonId ?? ''
@@ -398,6 +412,14 @@ watch(indexResponse, (response) => {
     scheduleRecipientSelection()
   }
 }, { immediate: true })
+
+watch(requestedClientPersonId, (requested) => {
+  if (!requested || requested === selectedClientPersonId.value) return
+  const requestedRecipientExists = recipients.value.some(recipient => (
+    recipient.clientPersonId === requested
+  ))
+  if (requestedRecipientExists) selectedClientPersonId.value = requested
+})
 
 watch(selectedClientPersonId, (selected, previous) => {
   if (previous) composerDrafts.set(previous, composer.value)
@@ -529,7 +551,7 @@ async function syncMissingMessages() {
       syncRequested = false
       const previousSequence = latestSequence.value
       const response = await $fetch<ConversationBootstrapResponse>(
-        conversationApiPath(conversationId),
+        conversationApiPath(conversationId, '/messages'),
         { query: { afterSequence: previousSequence } },
       )
       if (
@@ -572,7 +594,7 @@ async function loadOlderMessages() {
   loadingOlder.value = true
   try {
     const response = await $fetch<ConversationBootstrapResponse>(
-      conversationApiPath(conversationId),
+      conversationApiPath(conversationId, '/messages'),
       { query: { beforeSequence: firstSequence } },
     )
     if (conversation.value?.id !== conversationId) return

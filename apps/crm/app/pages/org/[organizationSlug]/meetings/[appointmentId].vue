@@ -561,7 +561,7 @@ async function minimizeToCase() {
               </span>
               <UButton
                 :to="{
-                  path: orgPath('/mortgages'),
+                  path: orgPath('/calculator/mortgages'),
                   query: {
                     caseId: meeting.caseId,
                     returnTo: orgPath(`/meetings/${meeting.id}`),
@@ -627,7 +627,7 @@ async function minimizeToCase() {
               <p>Przejdź do porównywarki, policz realny scenariusz i zapisz wybrane produkty w tej sprawie.</p>
               <UButton
                 :to="{
-                  path: orgPath('/mortgages'),
+                  path: orgPath('/calculator/mortgages'),
                   query: {
                     caseId: meeting.caseId,
                     returnTo: orgPath(`/meetings/${meeting.id}`),

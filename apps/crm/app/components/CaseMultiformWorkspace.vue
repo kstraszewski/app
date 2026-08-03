@@ -1109,7 +1109,7 @@ onBeforeUnmount(() => {
             v-else
             :to="caseData.offers.length
               ? { path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-bank-applications' }
-              : { path: orgPath('/mortgages'), query: { caseId: caseData.id } }"
+              : { path: orgPath('/calculator/mortgages'), query: { caseId: caseData.id } }"
             color="neutral"
             variant="soft"
             size="sm"

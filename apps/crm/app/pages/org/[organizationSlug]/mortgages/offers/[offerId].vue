@@ -81,7 +81,7 @@ const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const offerId = computed(() => String(route.params.offerId ?? ''))
 const listPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
-const calculatorPath = computed(() => `/org/${organizationSlug.value}/mortgages`)
+const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
 const endpoint = computed(() => `/api/backoffice/mortgages/offers/${encodeURIComponent(offerId.value)}`)
 const organizationSettingsEndpoint = computed(() => (
   `/api/org/${organizationSlug.value}/mortgages/products/${encodeURIComponent(offerId.value)}`

@@ -411,7 +411,7 @@ async function signContract() {
       </small>
       <UButton
         v-if="!candidateItems.length"
-        :to="{ path: orgPath('/mortgages'), query: { caseId: caseData.id } }"
+        :to="{ path: orgPath('/calculator/mortgages'), query: { caseId: caseData.id } }"
         color="neutral"
         variant="outline"
         icon="i-lucide-bookmark-plus"

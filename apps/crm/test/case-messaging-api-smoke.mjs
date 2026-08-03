@@ -268,6 +268,8 @@ try {
 
   const conversationsPath = `/api/org/${encodeURIComponent(organizationSlug)}`
     + `/crm/cases/${caseId}/conversations`
+  const inboxPath = `/api/org/${encodeURIComponent(organizationSlug)}`
+    + '/crm/conversations'
   const messagesPath = `${conversationsPath}/${conversationId}/messages`
   const expertReceiptPath = `${conversationsPath}/${conversationId}/receipt`
 
@@ -277,6 +279,10 @@ try {
     clientCookie,
   )
   assert.equal(clientOnCrm.response.status, 401)
+  const anonymousInbox = await api(crmBaseUrl, inboxPath)
+  assert.equal(anonymousInbox.response.status, 401)
+  const clientOnInbox = await api(crmBaseUrl, inboxPath, clientCookie)
+  assert.equal(clientOnInbox.response.status, 401)
   const expertOnPortal = await api(
     clientBaseUrl,
     clientConversationPath,
@@ -330,6 +336,22 @@ try {
   assert.equal(clientSend.message.clientMessageId, clientMessageId)
   assert.equal(clientSend.message.sequence, baselineSequence + 1)
   const clientSequence = clientSend.message.sequence
+
+  const unreadInboxResult = await api(crmBaseUrl, inboxPath, expertCookie)
+  const unreadInbox = assertOk(
+    unreadInboxResult,
+    'Listing the global message inbox after a client message',
+  ).data
+  const unreadInboxItem = unreadInbox.conversations.find(
+    conversation => conversation.conversationId === conversationId,
+  )
+  assert.ok(unreadInboxItem, 'The client conversation is missing from the global inbox')
+  assert.equal(unreadInboxItem.caseId, caseId)
+  assert.equal(unreadInboxItem.clientPersonId, clientPersonId)
+  assert.equal(unreadInboxItem.lastMessageSequence, clientSequence)
+  assert.equal(unreadInboxItem.lastMessageSenderKind, 'client')
+  assert.equal(unreadInboxItem.lastMessagePreview, clientMessageBody)
+  assert.ok(unreadInboxItem.unreadCount >= 1)
 
   const clientReplayResult = await api(
     clientBaseUrl,
@@ -404,6 +426,18 @@ try {
   assert.equal(expertRead.changed, true)
   assert.equal(expertRead.receipt.deliveredThroughSequence, clientSequence)
   assert.equal(expertRead.receipt.readThroughSequence, clientSequence)
+
+  const readInboxResult = await api(crmBaseUrl, inboxPath, expertCookie)
+  const readInbox = assertOk(
+    readInboxResult,
+    'Listing the global message inbox after the receipt update',
+  ).data
+  const readInboxItem = readInbox.conversations.find(
+    conversation => conversation.conversationId === conversationId,
+  )
+  assert.ok(readInboxItem)
+  assert.equal(readInboxItem.readThroughSequence, clientSequence)
+  assert.equal(readInboxItem.unreadCount, 0)
 
   const regressedReceiptResult = await api(
     crmBaseUrl,

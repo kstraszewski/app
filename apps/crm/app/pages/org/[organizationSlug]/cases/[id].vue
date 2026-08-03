@@ -455,7 +455,7 @@ const headerMenuItems = computed(() => [[
   { label: 'Zmień nazwę', icon: 'i-lucide-pencil', onSelect: openRename },
   { label: 'Zarządzaj klientami', icon: 'i-lucide-users-round', onSelect: openClients },
   { label: 'Dodaj nieruchomość', icon: 'i-lucide-house-plus', onSelect: addProperty },
-  { label: 'Dodaj ofertę bankową', icon: 'i-lucide-bookmark-plus', to: { path: orgPath('/mortgages'), query: { caseId: caseId.value } } },
+  { label: 'Dodaj ofertę bankową', icon: 'i-lucide-bookmark-plus', to: { path: orgPath('/calculator/mortgages'), query: { caseId: caseId.value } } },
 ]])
 
 const workflowSteps = computed(() => [
@@ -819,7 +819,7 @@ async function openNextStep(): Promise<void> {
     return
   }
   if (!data.value.data.offers.length) {
-    await router.push({ path: orgPath('/mortgages'), query: { caseId: caseId.value } })
+    await router.push({ path: orgPath('/calculator/mortgages'), query: { caseId: caseId.value } })
     return
   }
   if (!data.value.data.bank_applications.length) {
@@ -834,7 +834,7 @@ async function openNextStep(): Promise<void> {
 }
 
 const commandActions = {
-  addOffer: () => router.push({ path: orgPath('/mortgages'), query: { caseId: caseId.value } }),
+  addOffer: () => router.push({ path: orgPath('/calculator/mortgages'), query: { caseId: caseId.value } }),
   goDocuments: () => goToView('documents', '#case-documents'),
   goMultiform: () => goToView('documents', '#case-applications'),
   openRenovation,
@@ -1354,7 +1354,7 @@ watch(
           <h3>Nie zapisano jeszcze żadnej oferty</h3>
           <p>Otwórz porównywarkę, ustaw scenariusz i zachowaj najlepsze propozycje w tej sprawie.</p>
           <UButton
-            :to="{ path: orgPath('/mortgages'), query: { caseId } }"
+            :to="{ path: orgPath('/calculator/mortgages'), query: { caseId } }"
             icon="i-lucide-arrow-right"
             trailing
           >
@@ -1379,7 +1379,7 @@ watch(
         </div>
         <UButton
           v-if="data.data.offers.length"
-          :to="{ path: orgPath('/mortgages'), query: { caseId } }"
+          :to="{ path: orgPath('/calculator/mortgages'), query: { caseId } }"
           color="neutral"
           variant="outline"
           icon="i-lucide-bookmark-plus"
@@ -1446,7 +1446,7 @@ watch(
             </div>
           </div>
           <UButton
-            :to="{ path: orgPath('/mortgages'), query: { caseId } }"
+            :to="{ path: orgPath('/calculator/mortgages'), query: { caseId } }"
             icon="i-lucide-arrow-right"
             trailing
           >

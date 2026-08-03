@@ -35,7 +35,7 @@ export function useAuthFlow() {
   async function resolvePostAuthPath(value?: unknown) {
     const requested = safeRedirect(value, '')
 
-    const legacyOrganizationPath = /^\/(dashboard|clients|cases|facilities|mortgages|settings|teams)(\/|$)/.test(requested)
+    const legacyOrganizationPath = /^\/(calculator|dashboard|clients|cases|facilities|mortgages|settings|teams)(\/|$)/.test(requested)
     if (requested && !legacyOrganizationPath) return requested
 
     const contexts = await requestFetch<AccountContexts>('/api/me/contexts')

@@ -49,7 +49,7 @@ const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
 const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
-const mortgagesPath = computed(() => `/org/${organizationSlug.value}/mortgages`)
+const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
 const apiBase = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks`)
 
 const search = ref('')
@@ -178,7 +178,7 @@ function clearFilters() {
   >
     <template #actions>
       <UButton
-        :to="mortgagesPath"
+        :to="calculatorPath"
         color="neutral"
         variant="outline"
         icon="i-lucide-calculator"

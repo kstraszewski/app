@@ -12,7 +12,7 @@ const organizationSlug = computed(() => String(route.params.organizationSlug ?? 
 const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
 const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
 const repositoryPath = computed(() => `/org/${organizationSlug.value}/settings/institution-files`)
-const mortgagesPath = computed(() => `/org/${organizationSlug.value}/mortgages`)
+const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
 
 const tabs = computed(() => [
   { label: 'Instytucje', to: institutionsPath.value, icon: 'i-lucide-landmark' },
@@ -30,7 +30,7 @@ const tabs = computed(() => [
   >
     <template #actions>
       <UButton
-        :to="mortgagesPath"
+        :to="calculatorPath"
         color="neutral"
         variant="outline"
         icon="i-lucide-calculator"

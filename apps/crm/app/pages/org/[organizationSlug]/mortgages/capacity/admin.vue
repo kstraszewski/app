@@ -147,7 +147,7 @@ async function resetSettings() {
     title="Założenia kalkulatora zdolności"
     eyebrow="Ustawienia administracyjne"
     description="Polityka modelu, parametry obliczeń i historia zmian."
-    :back-to="`/org/${organizationSlug}/mortgages/capacity`"
+    :back-to="`/org/${organizationSlug}/calculator/capacity`"
     back-label="Wróć do kalkulatora"
   >
 

@@ -12,6 +12,7 @@ import {
   type SendMessageInput,
 } from '@openexpert/messaging'
 import { createError, type H3Event } from 'h3'
+import { truncateConversationPreview } from './case-conversation-inbox-summary.ts'
 import { caseUuidPattern } from './case-identifiers'
 import {
   asRecord,
@@ -483,11 +484,6 @@ async function listCasePeople(
   }))
 }
 
-function truncatePreview(value: string): string {
-  const compact = value.replace(/\s+/gu, ' ').trim()
-  return compact.length <= 160 ? compact : `${compact.slice(0, 157)}…`
-}
-
 export async function listCaseConversations(event: H3Event, caseIdInput: unknown) {
   const access = await requireCaseAccess(event, caseIdInput)
   const [recipients, conversationsResult] = await Promise.all([
@@ -535,7 +531,7 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
       clientPerson: recipientByPerson.get(conversation.clientPersonId) ?? null,
       unreadCount: Math.max(0, conversation.lastMessageSequence - readThroughSequence),
       lastMessagePreview: messageResult.data?.body
-        ? truncatePreview(String(messageResult.data.body))
+        ? truncateConversationPreview(String(messageResult.data.body))
         : null,
     }
   }))

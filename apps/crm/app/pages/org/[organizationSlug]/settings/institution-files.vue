@@ -9,6 +9,15 @@ useHead({ title: 'Pliki z banków — OpenExpert' })
 
 const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
+const initialFileId = computed(() => {
+  const value = Array.isArray(route.query.file) ? route.query.file[0] : route.query.file
+  return typeof value === 'string' && value ? value : null
+})
+const initialPage = computed(() => {
+  const value = Array.isArray(route.query.page) ? route.query.page[0] : route.query.page
+  const page = Number(value)
+  return Number.isSafeInteger(page) && page > 0 ? page : null
+})
 const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
 const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
 const repositoryPath = computed(() => `/org/${organizationSlug.value}/settings/institution-files`)
@@ -41,6 +50,8 @@ const tabs = computed(() => [
 
     <MortgagesBankFileRepository
       :organization-slug="organizationSlug"
+      :initial-file-id="initialFileId"
+      :initial-page="initialPage"
       title="Repozytorium dokumentów"
       description="Wyszukuj w nazwach i treści plików, filtruj po instytucji, produkcie i statusie oraz otwieraj podgląd bez opuszczania strony."
     />

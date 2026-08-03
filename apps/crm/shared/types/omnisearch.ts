@@ -1,5 +1,6 @@
 export type CrmOmnisearchKind =
   | 'forum_thread'
+  | 'bank_file'
   | 'case'
   | 'client'
   | 'appointment'
@@ -16,6 +17,7 @@ export function canAccessCrmOmnisearch(
 
 export type CrmOmnisearchGroupKey =
   | 'forum'
+  | 'bankFiles'
   | 'cases'
   | 'clients'
   | 'appointments'

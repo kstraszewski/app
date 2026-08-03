@@ -11,7 +11,7 @@ import type {
   MonthlyObligationChoice,
   OwnFundsChoice,
   PropertyBudgetChoice,
-} from '../../shared/types/meeting-preparation'
+} from '#shared/types/meeting-preparation'
 
 export type {
   CoBorrowerPlan,
@@ -26,7 +26,7 @@ export type {
   MonthlyObligationChoice,
   OwnFundsChoice,
   PropertyBudgetChoice,
-} from '../../shared/types/meeting-preparation'
+} from '#shared/types/meeting-preparation'
 
 export interface PreparationOption<T extends string> {
   value: T

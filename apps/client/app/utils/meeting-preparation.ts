@@ -19,7 +19,7 @@ import {
   emptyMeetingPreparationProfile,
   normalizeMeetingPreparationProfile,
   type MeetingPreparationAnswers,
-} from '../../shared/types/meeting-preparation.ts'
+} from '#shared/types/meeting-preparation'
 
 export type MeetingPreparationState = MeetingPreparationAnswers
 

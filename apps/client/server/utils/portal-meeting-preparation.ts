@@ -15,7 +15,7 @@ import {
   type MeetingPreparationAnswers,
   type PortalMeetingPreparation,
   type SaveMeetingPreparationBody,
-} from '../../shared/types/meeting-preparation'
+} from '#shared/types/meeting-preparation'
 import { serverDataBackend } from './data-api'
 import {
   loadClientPortalSession,

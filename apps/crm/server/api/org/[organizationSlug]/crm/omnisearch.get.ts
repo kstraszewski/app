@@ -1,6 +1,12 @@
 import { createError, getQuery, setHeader } from 'h3'
 import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
-import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { serverDataBackend } from '~~/server/utils/data-api'
+import {
+  hasSuperAdminRole,
+  requireCrmSession,
+  throwDbError,
+} from '~~/server/utils/crm'
+import { searchMortgageBankFilesForOmnisearch } from '~~/server/utils/mortgage-bank-file-omnisearch'
 import {
   mapCrmOmnisearchResponse,
   parseCrmOmnisearchInput,
@@ -40,19 +46,21 @@ export default defineEventHandler(async (event) => {
   }
 
   const runtimeConfig = useRuntimeConfig(event)
-  const forumPromise = (async () => {
-    let queryEmbedding: number[] | null = null
+  const queryEmbeddingPromise = (async () => {
     try {
-      queryEmbedding = await organizationForumQueryEmbedding(
+      return await organizationForumQueryEmbedding(
         String(runtimeConfig.googleGenerativeAiApiKey || ''),
         input.query,
         AbortSignal.timeout(1_500),
       )
     }
     catch (error) {
-      console.warn('[crm-omnisearch] Forum query embedding unavailable; using lexical search', error)
+      console.warn('[crm-omnisearch] Query embedding unavailable; using lexical search', error)
+      return null
     }
+  })()
 
+  const forumPromise = (async () => {
     try {
       return await listOrganizationForumThreads(session.dataApi, session.organizationId, {
         query: input.query,
@@ -60,7 +68,7 @@ export default defineEventHandler(async (event) => {
         status: null,
         type: null,
         limit: input.limit,
-      }, queryEmbedding)
+      }, await queryEmbeddingPromise)
     }
     catch (error) {
       console.warn('[crm-omnisearch] Forum search unavailable', error)
@@ -68,18 +76,35 @@ export default defineEventHandler(async (event) => {
     }
   })()
 
-  const [{ data, error }, forum] = await Promise.all([
+  const bankFilesPromise = (async () => {
+    try {
+      if (!await hasSuperAdminRole(session)) return []
+      return await searchMortgageBankFilesForOmnisearch(serverDataBackend(event), {
+        query: input.query,
+        limit: input.limit,
+        queryEmbedding: await queryEmbeddingPromise,
+      })
+    }
+    catch (error) {
+      console.warn('[crm-omnisearch] Bank-file search unavailable', error)
+      return []
+    }
+  })()
+
+  const [{ data, error }, forum, bankFiles] = await Promise.all([
     session.dataApi.rpc('search_crm_omnisearch', {
       p_organization_id: session.organizationId,
       p_query: input.query,
       p_limit: input.limit,
     }),
     forumPromise,
+    bankFilesPromise,
   ])
   throwDbError(error)
 
   const payload = {
     ...record(data),
+    bankFiles,
     forum: forum?.threads.map(thread => ({
       id: thread.id,
       title: thread.title,

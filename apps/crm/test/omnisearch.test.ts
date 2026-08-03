@@ -14,6 +14,7 @@ const taskId = '00000000-0000-4000-8000-000000000005'
 const documentId = '00000000-0000-4000-8000-000000000006'
 const submissionId = '00000000-0000-4000-8000-000000000007'
 const forumThreadId = '00000000-0000-4000-8000-000000000008'
+const bankFileId = '00000000-0000-4000-8000-000000000009'
 
 test('allows omnisearch only for supported CRM organization roles', () => {
   assert.equal(canAccessCrmOmnisearch('expert'), true)
@@ -46,6 +47,19 @@ test('maps a minimal grouped response to safe deep links', () => {
       matched_in: 'zweryfikowana odpowiedź',
       excerpt: 'Bank bierze pod uwagę dochód po odliczeniu kosztów.',
       body: 'full private post body must not leak',
+    }],
+    bankFiles: [{
+      file_id: bankFileId,
+      title: 'Instrukcja oceny dochodu przedsiębiorcy',
+      bank_name: 'ING Bank Śląski',
+      category_label: 'Informacje ogólne',
+      original_file_name: 'instrukcja-dochodu.pdf',
+      snippet: 'Dochód przedsiębiorcy jest liczony na podstawie dokumentów podatkowych.',
+      locator: 's. 4',
+      page_number: 4,
+      storage_path: 'private/bank-files/secret.pdf',
+      extracted_text: 'full extracted bank document must not leak',
+      download_url: 'https://private.example.test/secret.pdf',
     }],
     cases: [{
       id: caseId,
@@ -94,6 +108,18 @@ test('maps a minimal grouped response to safe deep links', () => {
   assert.deepEqual(response.groups.forum[0]?.to, {
     path: `/org/moja-organizacja/forum/threads/${forumThreadId}`,
   })
+  assert.deepEqual(response.groups.bankFiles[0], {
+    id: bankFileId,
+    kind: 'bank_file',
+    label: 'Instrukcja oceny dochodu przedsiębiorcy',
+    description: 'ING Bank Śląski · Informacje ogólne · Dochód przedsiębiorcy jest liczony na podstawie dokumentów podatkowych.',
+    suffix: 's. 4',
+    icon: 'i-lucide-file-search-2',
+    to: {
+      path: '/org/moja-organizacja/settings/institution-files',
+      query: { file: bankFileId, page: 4 },
+    },
+  })
   assert.equal(response.groups.cases[0]?.to, `/org/moja-organizacja/cases/${caseId}`)
   assert.deepEqual(response.groups.appointments[0]?.to, {
     path: '/org/moja-organizacja/calendar',
@@ -118,6 +144,9 @@ test('maps a minimal grouped response to safe deep links', () => {
   assert.equal(serialized.includes('secret.example.test'), false)
   assert.equal(serialized.includes('private/secret.pdf'), false)
   assert.equal(serialized.includes('full private post body must not leak'), false)
+  assert.equal(serialized.includes('full extracted bank document must not leak'), false)
+  assert.equal(serialized.includes('private/bank-files'), false)
+  assert.equal(serialized.includes('private.example.test'), false)
   assert.equal(serialized.includes('"metadata"'), false)
 })
 

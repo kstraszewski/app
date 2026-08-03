@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
   description?: string | null
   showHeading?: boolean
   autoSelectFirst?: boolean
+  initialFileId?: string | null
+  initialPage?: number | null
 }>(), {
   bankId: null,
   bankName: null,
@@ -28,6 +30,8 @@ const props = withDefaults(defineProps<{
   description: null,
   showHeading: true,
   autoSelectFirst: true,
+  initialFileId: null,
+  initialPage: null,
 })
 
 const emit = defineEmits<{
@@ -44,8 +48,9 @@ const selectedCategory = ref('all')
 const selectedMimeGroup = ref<'all' | MortgageBankFileMimeGroup>('all')
 const selectedProduct = ref('all')
 const selectedStatus = ref<'all' | MortgageBankFileStatus>('current')
-const selectedFileId = ref<string | null>(null)
-const previewPage = ref(1)
+const selectedFileId = ref<string | null>(props.initialFileId)
+const previewPage = ref(positivePage(props.initialPage) ?? 1)
+const requestedPreviewPage = ref<number | null>(positivePage(props.initialPage))
 const uploadExpanded = ref(false)
 const uploadFiles = ref<File[]>([])
 const uploading = ref(false)
@@ -203,13 +208,34 @@ watch(() => props.bankId, (value) => {
   selectedInstitution.value = value ?? 'all'
 })
 
+watch(
+  [() => props.initialFileId, () => props.initialPage],
+  ([fileId, page]) => {
+    const requestedPage = positivePage(page)
+    if (!fileId) {
+      if (requestedPage) previewPage.value = requestedPage
+      return
+    }
+
+    requestedPreviewPage.value = requestedPage
+    if (selectedFileId.value === fileId) {
+      previewPage.value = requestedPage ?? currentMatch.value?.page ?? 1
+      requestedPreviewPage.value = null
+      return
+    }
+    selectedFileId.value = fileId
+  },
+)
+
 watch(visibleFiles, (files) => {
+  if (selectedFileId.value && isLoading.value) return
   if (selectedFileId.value && files.some(file => file.id === selectedFileId.value)) return
   selectedFileId.value = props.autoSelectFirst ? (files[0]?.id ?? null) : null
 }, { immediate: true })
 
 watch(selectedFileId, () => {
-  previewPage.value = currentMatch.value?.page ?? 1
+  previewPage.value = requestedPreviewPage.value ?? currentMatch.value?.page ?? 1
+  requestedPreviewPage.value = null
   emit('selected', selectedFile.value)
 })
 
@@ -313,6 +339,11 @@ function formatDate(value: string | null) {
     month: '2-digit',
     year: 'numeric',
   }).format(date)
+}
+
+function positivePage(value: unknown) {
+  const page = Number(value)
+  return Number.isSafeInteger(page) && page > 0 ? page : null
 }
 
 function filePrimaryProduct(file: MortgageBankFileSummary) {

@@ -94,6 +94,12 @@ function uuid(value: unknown): string | undefined {
   return normalized && uuidPattern.test(normalized) ? normalized : undefined
 }
 
+function positiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' && typeof value !== 'string') return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
 function joinDetails(...values: unknown[]): string | undefined {
   const details = values.map(text).filter((value): value is string => Boolean(value))
   return details.length ? [...new Set(details)].join(' · ') : undefined
@@ -310,6 +316,36 @@ function mapForum(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
   })
 }
 
+function mapBankFiles(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
+  return rows.flatMap((row) => {
+    const id = uuid(row.file_id ?? row.id)
+    const label = text(row.title ?? row.label)
+    if (!id || !label) return []
+
+    const page = positiveInteger(row.page_number ?? row.page)
+    const locator = text(row.locator)
+    const fileName = text(row.original_file_name ?? row.file_name)
+    const target: CrmOmnisearchTarget = {
+      path: organizationPath(slug, '/settings/institution-files'),
+      query: {
+        file: id,
+        ...(page ? { page } : {}),
+      },
+    }
+
+    return [{
+      id,
+      kind: 'bank_file' as const,
+      label,
+      description: joinDetails(row.bank_name, row.category_label, row.snippet)
+        ?? 'Plik z banku',
+      suffix: locator ?? fileName,
+      icon: 'i-lucide-file-search-2',
+      to: target,
+    }]
+  })
+}
+
 export function mapCrmOmnisearchResponse(
   payload: unknown,
   organizationSlug: string,
@@ -321,6 +357,10 @@ export function mapCrmOmnisearchResponse(
     query,
     groups: {
       forum: mapForum(recordArray(groups.forum), organizationSlug),
+      bankFiles: mapBankFiles(
+        recordArray(groups.bankFiles ?? groups.bank_files),
+        organizationSlug,
+      ),
       cases: mapCases(recordArray(groups.cases), organizationSlug),
       clients: mapClients(recordArray(groups.clients), organizationSlug),
       appointments: mapAppointments(recordArray(groups.appointments), organizationSlug),

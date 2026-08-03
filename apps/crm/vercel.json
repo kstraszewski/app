@@ -34,18 +34,5 @@
         "service": "web"
       }
     }
-  ],
-  "experimentalServices": {
-    "web": {
-      "entrypoint": ".",
-      "framework": "nuxtjs",
-      "routePrefix": "/"
-    },
-    "eve": {
-      "buildCommand": "eve build",
-      "entrypoint": "agent",
-      "framework": "eve",
-      "routePrefix": "/_eve_internal/eve"
-    }
-  }
+  ]
 }

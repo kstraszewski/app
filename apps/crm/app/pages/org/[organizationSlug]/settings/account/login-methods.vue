@@ -3,6 +3,7 @@ import {
   maskOpenExpertPhone,
   normalizeOpenExpertPhone,
 } from '@openexpert/auth'
+import { passkeyDeviceName } from '~/utils/passkey-device-name'
 
 type AuthProvider = 'google' | 'apple'
 
@@ -34,6 +35,8 @@ const accounts = ref<AuthAccount[]>([])
 const passkeys = ref<UserPasskey[]>([])
 const loading = ref(true)
 const loadError = ref('')
+const passkeysLoading = ref(false)
+const passkeyLoadError = ref('')
 const linkingProvider = ref<AuthProvider | null>(null)
 const unlinkingProvider = ref<AuthProvider | null>(null)
 const pendingUnlinkProvider = ref<AuthProvider | null>(null)
@@ -242,6 +245,14 @@ function openPasskeyRegistration() {
   if (!passkeyEnabled.value || !passkeySupported.value) return
   passkeyName.value = ''
   addPasskeyModalOpen.value = true
+  void prefillPasskeyName()
+}
+
+async function prefillPasskeyName() {
+  const suggestedName = await passkeyDeviceName(navigator)
+  if (addPasskeyModalOpen.value && !passkeyName.value.trim()) {
+    passkeyName.value = suggestedName
+  }
 }
 
 function askToRenamePasskey(passkey: UserPasskey, index: number) {
@@ -257,6 +268,25 @@ async function refreshPasskeys() {
   const result = await authClient.passkey.listUserPasskeys()
   if (result.error) throw result.error
   passkeys.value = (result.data ?? []) as UserPasskey[]
+}
+
+async function loadPasskeys() {
+  if (!passkeyEnabled.value) {
+    passkeys.value = []
+    passkeyLoadError.value = ''
+    return
+  }
+  passkeysLoading.value = true
+  passkeyLoadError.value = ''
+  try {
+    await refreshPasskeys()
+  }
+  catch (error) {
+    passkeyLoadError.value = errorMessage(error as { message?: string, code?: string })
+  }
+  finally {
+    passkeysLoading.value = false
+  }
 }
 
 async function addPasskey() {
@@ -356,15 +386,11 @@ async function deletePasskey() {
 async function loadAccounts() {
   loading.value = true
   loadError.value = ''
+  const passkeysRequest = loadPasskeys()
   try {
-    const [accountResult, passkeyResult] = await Promise.all([
-      authClient.listAccounts(),
-      authClient.passkey.listUserPasskeys(),
-    ])
+    const accountResult = await authClient.listAccounts()
     if (accountResult.error) throw accountResult.error
-    if (passkeyResult.error) throw passkeyResult.error
     accounts.value = (accountResult.data ?? []) as AuthAccount[]
-    passkeys.value = (passkeyResult.data ?? []) as UserPasskey[]
 
     const linked = String(route.query.linked || '')
     if ((linked === 'google' || linked === 'apple') && providerLinked(linked)) {
@@ -391,6 +417,7 @@ async function loadAccounts() {
     loadError.value = errorMessage(error as { message?: string, code?: string })
   }
   finally {
+    await passkeysRequest
     loading.value = false
   }
 }
@@ -604,18 +631,31 @@ onMounted(() => {
         <div class="login-method-card__copy">
           <div>
             <h2>Klucze dostępu (passkeys)</h2>
-            <UBadge :color="passkeys.length ? 'success' : (passkeyEnabled ? 'neutral' : 'warning')" variant="subtle">
-              {{ passkeys.length ? `${passkeys.length} ${passkeys.length === 1 ? 'klucz' : 'klucze'}` : (passkeyEnabled ? 'Dostępne' : 'Nieskonfigurowane') }}
+            <UBadge :color="passkeyLoadError ? 'error' : (passkeys.length ? 'success' : (passkeyEnabled ? 'neutral' : 'warning'))" variant="subtle">
+              {{ passkeyLoadError ? 'Błąd' : (passkeys.length ? `${passkeys.length} ${passkeys.length === 1 ? 'klucz' : 'klucze'}` : (passkeyEnabled ? 'Dostępne' : 'Nieskonfigurowane')) }}
             </UBadge>
           </div>
-          <p v-if="passkeySupported">Loguj się odciskiem palca, Face ID, PIN-em urządzenia albo fizycznym kluczem bezpieczeństwa.</p>
+          <p v-if="passkeyLoadError">Nie udało się pobrać kluczy dostępu. Pozostałe metody logowania działają normalnie.</p>
+          <p v-else-if="passkeySupported">Loguj się odciskiem palca, Face ID, PIN-em urządzenia albo fizycznym kluczem bezpieczeństwa.</p>
           <p v-else-if="passkeyEnabled">Bieżąca przeglądarka lub połączenie nie obsługuje WebAuthn. Zarządzać istniejącymi kluczami nadal możesz poniżej.</p>
           <p v-else>Klucze dostępu nie są włączone w tym środowisku.</p>
         </div>
         <UButton
+          v-if="passkeyLoadError"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="passkeysLoading"
+          @click="loadPasskeys"
+        >
+          Ponów
+        </UButton>
+        <UButton
+          v-else
           color="neutral"
           variant="outline"
           icon="i-lucide-plus"
+          :loading="passkeysLoading"
           :disabled="!passkeyEnabled || !passkeySupported"
           @click="openPasskeyRegistration"
         >
@@ -1016,7 +1056,6 @@ onMounted(() => {
 }
 
 .login-method-card--passkeys {
-  grid-column: 1 / -1;
   align-items: start;
 }
 

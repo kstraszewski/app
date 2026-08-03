@@ -38,6 +38,40 @@ const revokingOthers = ref(false)
 
 const hasPassword = computed(() => accounts.value.some(account => account.providerId === 'credential'))
 const otherSessions = computed(() => sessions.value.filter(session => session.id !== currentSessionId.value))
+const newPasswordRequirements = computed(() => getPasswordRequirements(newPassword.value))
+const newPasswordChecks = computed(() => [
+  {
+    key: 'minimumLength',
+    label: 'Co najmniej 10 znaków',
+    met: newPasswordRequirements.value.minimumLength,
+  },
+  {
+    key: 'lowercase',
+    label: 'Mała litera',
+    met: newPasswordRequirements.value.lowercase,
+  },
+  {
+    key: 'uppercase',
+    label: 'Wielka litera',
+    met: newPasswordRequirements.value.uppercase,
+  },
+  {
+    key: 'number',
+    label: 'Cyfra',
+    met: newPasswordRequirements.value.number,
+  },
+])
+const newPasswordTooLong = computed(() => (
+  newPassword.value.length > 0 && !newPasswordRequirements.value.acceptableLength
+))
+const passwordsMatch = computed(() => (
+  newPasswordConfirmation.value.length > 0
+  && newPasswordConfirmation.value === newPassword.value
+))
+
+watch([currentPassword, newPassword, newPasswordConfirmation], () => {
+  passwordError.value = ''
+})
 
 useHead({ title: 'Bezpieczeństwo — Ustawienia konta — OpenExpert CRM' })
 
@@ -255,15 +289,20 @@ onMounted(loadSecurityData)
     <div class="security-layout">
       <section class="security-panel">
         <header class="security-panel__header">
-          <span><UIcon name="i-lucide-key-round" /></span>
+          <span class="security-panel__icon"><UIcon name="i-lucide-key-round" /></span>
           <div>
             <p>Hasło</p>
             <h2>{{ hasPassword ? 'Zmień hasło' : 'Ustaw hasło do konta' }}</h2>
             <small>{{ authUser?.email }}</small>
           </div>
-          <UBadge :color="hasPassword ? 'success' : 'neutral'" variant="subtle">
-            {{ hasPassword ? 'Aktywne' : 'Nieustawione' }}
-          </UBadge>
+          <UBadge
+            class="password-status"
+            :color="hasPassword ? 'success' : 'neutral'"
+            variant="soft"
+            size="sm"
+            :icon="hasPassword ? 'i-lucide-circle-check' : 'i-lucide-circle-minus'"
+            :label="hasPassword ? 'Aktywne' : 'Nieustawione'"
+          />
         </header>
 
         <div v-if="securityLoading" class="security-panel__loading">
@@ -286,7 +325,6 @@ onMounted(loadSecurityData)
           <UFormField
             label="Nowe hasło"
             name="newPassword"
-            hint="10–72 bajty, mała i wielka litera oraz cyfra"
             required
           >
             <UInput
@@ -294,9 +332,36 @@ onMounted(loadSecurityData)
               class="w-full"
               type="password"
               autocomplete="new-password"
+              aria-describedby="new-password-requirements"
               icon="i-lucide-key-round"
               required
             />
+            <ul
+              id="new-password-requirements"
+              class="password-requirements"
+              aria-label="Wymagania nowego hasła"
+            >
+              <li
+                v-for="requirement in newPasswordChecks"
+                :key="requirement.key"
+                :class="{ 'password-requirements__item--met': requirement.met }"
+              >
+                <UIcon
+                  class="password-validation__icon"
+                  :name="requirement.met ? 'i-lucide-circle-check' : 'i-lucide-circle'"
+                  aria-hidden="true"
+                />
+                {{ requirement.label }}
+              </li>
+            </ul>
+            <p
+              v-if="newPasswordTooLong"
+              class="password-feedback password-feedback--error"
+              role="status"
+            >
+              <UIcon class="password-validation__icon" name="i-lucide-circle-alert" aria-hidden="true" />
+              Hasło jest za długie — skróć je, szczególnie jeśli zawiera polskie znaki lub symbole.
+            </p>
           </UFormField>
           <UFormField label="Powtórz nowe hasło" name="newPasswordConfirmation" required>
             <UInput
@@ -307,6 +372,19 @@ onMounted(loadSecurityData)
               icon="i-lucide-key-round"
               required
             />
+            <p
+              v-if="newPasswordConfirmation"
+              class="password-feedback"
+              :class="passwordsMatch ? 'password-feedback--success' : 'password-feedback--error'"
+              aria-live="polite"
+            >
+              <UIcon
+                class="password-validation__icon"
+                :name="passwordsMatch ? 'i-lucide-circle-check' : 'i-lucide-circle-x'"
+                aria-hidden="true"
+              />
+              {{ passwordsMatch ? 'Hasła są takie same.' : 'Hasła nie są takie same.' }}
+            </p>
           </UFormField>
 
           <label class="revoke-switch">
@@ -377,7 +455,7 @@ onMounted(loadSecurityData)
 
       <section class="security-panel">
         <header class="security-panel__header">
-          <span><UIcon name="i-lucide-monitor-smartphone" /></span>
+          <span class="security-panel__icon"><UIcon name="i-lucide-monitor-smartphone" /></span>
           <div>
             <p>Aktywne sesje</p>
             <h2>Zalogowane urządzenia</h2>
@@ -430,11 +508,11 @@ onMounted(loadSecurityData)
             color="error"
             variant="soft"
             icon="i-lucide-log-out"
+            label="Wyloguj pozostałe urządzenia"
             :loading="revokingOthers"
+            :ui="{ base: 'shrink-0', label: 'whitespace-nowrap' }"
             @click="revokeAllOtherSessions"
-          >
-            Wyloguj pozostałe urządzenia
-          </UButton>
+          />
         </footer>
       </section>
     </div>
@@ -470,7 +548,7 @@ onMounted(loadSecurityData)
   border-bottom: 1px solid var(--ui-border-muted);
 }
 
-.security-panel__header > span,
+.security-panel__icon,
 .password-empty-state > span,
 .session-row__icon {
   display: grid;
@@ -510,6 +588,47 @@ onMounted(loadSecurityData)
   color: var(--ui-text-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.password-status {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.password-requirements {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.password-requirements li,
+.password-feedback {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.password-validation__icon {
+  flex: none;
+}
+
+.password-requirements__item--met,
+.password-feedback--success {
+  color: var(--ui-success);
+}
+
+.password-feedback {
+  margin: 8px 0 0;
+}
+
+.password-feedback--error {
+  color: var(--ui-error);
 }
 
 .security-panel__loading,

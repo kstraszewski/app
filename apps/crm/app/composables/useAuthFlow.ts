@@ -1,4 +1,5 @@
 import type { AccountContexts } from '~/types/account'
+import { getPasswordIssue } from '~/utils/password-validation'
 
 interface AuthErrorLike {
   message?: string
@@ -54,15 +55,7 @@ export function useAuthFlow() {
   }
 
   function passwordIssue(password: string) {
-    if (password.length < 10) return 'Hasło musi mieć co najmniej 10 znaków.'
-    if (password.length > 128) return 'Hasło może mieć maksymalnie 128 znaków.'
-    if (new TextEncoder().encode(password).length > 72) {
-      return 'Hasło może mieć maksymalnie 72 bajty (polskie znaki zajmują więcej miejsca).'
-    }
-    if (!/[a-z]/.test(password)) return 'Dodaj do hasła małą literę.'
-    if (!/[A-Z]/.test(password)) return 'Dodaj do hasła wielką literę.'
-    if (!/[0-9]/.test(password)) return 'Dodaj do hasła cyfrę.'
-    return null
+    return getPasswordIssue(password)
   }
 
   function errorMessage(error: AuthErrorLike | null | undefined) {

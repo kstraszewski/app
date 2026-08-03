@@ -14,6 +14,7 @@ const CONFIRMATION = 'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION'
 const SEED_LOCK = 'openexpert.seed.official-bank-files.v1'
 const VERCEL_PROJECT = 'openexpert-crm'
 const USER_AGENT = 'OpenExpertOfficialBankFileSeeder/1.0 (+https://openexpert.pl)'
+const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000]
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '../../..')
@@ -333,6 +334,54 @@ async function readResponseBytes(response, entry) {
   return bytes
 }
 
+function retryableDownloadStatus(status) {
+  return [408, 425, 429].includes(status) || status >= 500
+}
+
+function downloadErrorLabel(error) {
+  const causeCode = error?.cause?.code
+  if (typeof causeCode === 'string' && causeCode) return causeCode
+  if (error instanceof Error && error.name) return error.name
+  return 'network error'
+}
+
+async function fetchPdfResponse(url, entry) {
+  for (let attempt = 0; attempt <= DOWNLOAD_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+        headers: {
+          accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.1',
+          'user-agent': USER_AGENT,
+        },
+      })
+      if (
+        attempt < DOWNLOAD_RETRY_DELAYS_MS.length
+        && retryableDownloadStatus(response.status)
+      ) {
+        await response.body?.cancel().catch(() => {})
+        const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt]
+        process.stdout.write(
+          `Retrying ${entry.bankSlug} download after HTTP ${response.status} in ${delay} ms\n`,
+        )
+        await new Promise(resolvePromise => setTimeout(resolvePromise, delay))
+        continue
+      }
+      return response
+    } catch (error) {
+      if (attempt === DOWNLOAD_RETRY_DELAYS_MS.length) throw error
+      const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt]
+      process.stdout.write(
+        `Retrying ${entry.bankSlug} download after ${downloadErrorLabel(error)} in ${delay} ms\n`,
+      )
+      await new Promise(resolvePromise => setTimeout(resolvePromise, delay))
+    }
+  }
+  throw new Error(`${entry.title}: download retry limit exceeded`)
+}
+
 async function downloadPdf(entry) {
   let currentUrl = new URL(entry.downloadUrl)
   const visited = new Set()
@@ -344,15 +393,7 @@ async function downloadPdf(entry) {
     }
     visited.add(currentUrl.toString())
 
-    const response = await fetch(currentUrl, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(120_000),
-      headers: {
-        accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.1',
-        'user-agent': USER_AGENT,
-      },
-    })
+    const response = await fetchPdfResponse(currentUrl, entry)
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       if (redirectCount === 5) throw new Error(`${entry.title}: too many redirects`)
       const location = response.headers.get('location')

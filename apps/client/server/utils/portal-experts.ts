@@ -21,6 +21,24 @@ function optionalText(value: unknown): string | null {
   return normalized || null
 }
 
+function brandPortraitUrl(backend: any, value: unknown): string | null {
+  const path = optionalText(value)
+  if (!path) return null
+  const publicUrl = optionalText(
+    backend.storage.from('expert-brand-assets').getPublicUrl(path).data.publicUrl,
+  )
+  if (!publicUrl) return null
+  try {
+    const url = new URL(publicUrl)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+      ? url.toString()
+      : null
+  }
+  catch {
+    return null
+  }
+}
+
 async function loadExpertRowsByUserIds(
   backend: any,
   table: string,
@@ -91,7 +109,8 @@ export async function loadPublicPortalExperts(
         expert_name,
         professional_title,
         contact_email,
-        contact_phone
+        contact_phone,
+        portrait_path
       `,
       'user_id',
       userIds,
@@ -125,13 +144,15 @@ export async function loadPublicPortalExperts(
     const brandProfile = brandProfiles.get(key)
     const email = optionalText(brandProfile?.contact_email)
     const phone = optionalText(brandProfile?.contact_phone)
+    const portraitUrl = brandPortraitUrl(backend, brandProfile?.portrait_path)
     const role = membership.role === 'admin' ? 'admin' as const : 'expert' as const
     experts.set(key, {
       id: reference.userId,
       name: optionalText(brandProfile?.expert_name)
         ?? optionalText(user.full_name)
         ?? 'Twój ekspert',
-      avatarUrl: resolvePortalAvatarUrl(user.avatar_url, publicAssetBaseUrl),
+      avatarUrl: portraitUrl
+        ?? resolvePortalAvatarUrl(user.avatar_url, publicAssetBaseUrl),
       role,
       professionalTitle: optionalText(brandProfile?.professional_title),
       contact: email || phone ? { email, phone } : null,

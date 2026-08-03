@@ -1,5 +1,6 @@
-export default defineNuxtRouteMiddleware(async () => {
+export default defineNuxtRouteMiddleware(async (to) => {
   const user = useAuthUser()
+  if (to.path === '/reset-password' && typeof to.query.token === 'string') return
   if (user.value) {
     try {
       const { resolvePostAuthPath } = useAuthFlow()

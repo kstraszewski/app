@@ -35,6 +35,7 @@ const organizationSlug = computed(() => {
 })
 const organizationBase = computed(() => organizationSlug.value ? `/org/${organizationSlug.value}` : '')
 const meetingPath = computed(() => `${organizationBase.value}/meetings`)
+const accountSettingsPath = computed(() => `${organizationBase.value}/settings/account`)
 const activeMeetingPath = computed(() => (
   meetingPrototype.value.active && meetingPrototype.value.appointmentId
     ? `${meetingPath.value}/${meetingPrototype.value.appointmentId}`
@@ -610,10 +611,14 @@ async function signOut() {
           <span class="crm-nav__meeting-dot" aria-label="Spotkanie aktywne" />
         </UButton>
 
-        <div
+        <NuxtLink
           v-if="user?.email"
           class="crm-nav__account"
+          :class="{ 'crm-nav__account--active': route.path.startsWith(accountSettingsPath) }"
+          :to="accountSettingsPath"
+          :aria-current="route.path.startsWith(accountSettingsPath) ? 'page' : undefined"
           :title="user.email"
+          @click="closeMobileNavigation"
         >
           <span class="crm-nav__account-icon" aria-hidden="true">
             <UIcon name="i-lucide-user-round" />
@@ -622,7 +627,8 @@ async function signOut() {
             <span class="crm-nav__account-label">Zalogowano jako</span>
             <span class="crm-nav__account-email">{{ user.email }}</span>
           </span>
-        </div>
+          <UIcon class="crm-nav__account-chevron" name="i-lucide-chevron-right" aria-hidden="true" />
+        </NuxtLink>
 
         <div class="crm-color-mode">
           <label for="crm-color-mode" class="crm-color-mode__label">Motyw</label>
@@ -917,6 +923,21 @@ async function signOut() {
   border: 1px solid color-mix(in srgb, var(--ui-text-inverted) 14%, transparent);
   border-radius: var(--ui-radius);
   color: var(--ui-text-inverted);
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.crm-nav__account:hover,
+.crm-nav__account--active {
+  border-color: color-mix(in srgb, var(--ui-text-inverted) 28%, transparent);
+  background: color-mix(in srgb, var(--ui-text-inverted) 8%, transparent);
+}
+
+.crm-nav__account:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-text-inverted) 70%, transparent);
+  outline-offset: 2px;
 }
 
 .crm-nav__account-icon {
@@ -950,6 +971,14 @@ async function signOut() {
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.crm-nav__account-chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  color: color-mix(in srgb, var(--ui-text-inverted) 48%, transparent);
 }
 
 .crm-color-mode {
@@ -1086,6 +1115,10 @@ async function signOut() {
 }
 
 .crm-shell--collapsed .crm-nav__account-copy {
+  display: none;
+}
+
+.crm-shell--collapsed .crm-nav__account-chevron {
   display: none;
 }
 
@@ -1309,6 +1342,10 @@ async function signOut() {
 
   .crm-shell--collapsed .crm-nav__account-copy {
     display: grid;
+  }
+
+  .crm-shell--collapsed .crm-nav__account-chevron {
+    display: block;
   }
 
   .crm-shell--collapsed .crm-color-mode {

@@ -174,7 +174,6 @@ export function buildPortalDashboardNextStep(
   }
 
   const isFirstAppointment = nextAppointment?.relationship === 'first'
-    || (nextAppointment?.relationship == null && !cases.length)
 
   if (nextAppointment && isFirstAppointment) {
     const startsAt = Date.parse(nextAppointment.startsAt)
@@ -190,7 +189,7 @@ export function buildPortalDashboardNextStep(
       caseId: null,
       appointmentId: nextAppointment.id,
       label: 'Przygotuj się do spotkania',
-      to: '/prepare',
+      to: `/prepare?appointmentId=${encodeURIComponent(nextAppointment.id)}`,
     }
   }
 

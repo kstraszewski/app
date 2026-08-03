@@ -10,6 +10,11 @@ import {
   EmailDeliveryError,
 } from '@openexpert/email'
 import { getRequestHeaders, type H3Event } from 'h3'
+import {
+  resolveAuthSmsConfig,
+  sendAuthSms,
+  type AuthSmsRuntimeConfig,
+} from './auth-sms'
 
 interface PlatformAuthRuntimeConfig {
   baseUrl: string
@@ -37,6 +42,13 @@ interface PlatformAuthEmailConfig {
     user: string
     password: string
   }
+}
+
+interface PlatformAuthPasskeyConfig {
+  enabled: boolean
+  rpId: string
+  rpName: string
+  origin: string
 }
 
 export interface PlatformAuthClaims {
@@ -141,6 +153,8 @@ function createPlatformAuthRuntime(
     cookieDomain?: string
     trustedOrigins?: string[]
     portalOnly?: boolean
+    phone?: AuthSmsRuntimeConfig
+    passkey?: PlatformAuthPasskeyConfig
   },
 ): OpenExpertAuthRuntime {
   const sender = createTransactionalEmailSender({
@@ -216,6 +230,35 @@ function createPlatformAuthRuntime(
         }
       },
     },
+    ...(options.phone
+      ? {
+          phone: {
+            expiresIn: resolveAuthSmsConfig(options.phone, {
+              production: process.env.NODE_ENV === 'production',
+            }).ttlSeconds,
+            allowedAttempts: resolveAuthSmsConfig(options.phone, {
+              production: process.env.NODE_ENV === 'production',
+            }).maxOtpAttempts,
+            sender: {
+              async send(message) {
+                const config = resolveAuthSmsConfig(options.phone!, {
+                  production: process.env.NODE_ENV === 'production',
+                })
+                await sendAuthSms(config, message)
+              },
+            },
+          },
+        }
+      : {}),
+    ...(options.passkey?.enabled
+      ? {
+          passkey: {
+            rpID: options.passkey.rpId,
+            rpName: options.passkey.rpName,
+            origin: options.passkey.origin,
+          },
+        }
+      : {}),
   })
   return runtime
 }
@@ -224,12 +267,19 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
   const runtimeConfig = useRuntimeConfig(event)
   const auth = runtimeConfig.auth as PlatformAuthRuntimeConfig
   const email = runtimeConfig.authEmail as PlatformAuthEmailConfig
-  const fingerprint = JSON.stringify({ auth, email })
+  const phone = runtimeConfig.authSms as AuthSmsRuntimeConfig
+  const passkey = runtimeConfig.authPasskey as PlatformAuthPasskeyConfig
+  const phoneConfig = resolveAuthSmsConfig(phone, {
+    production: process.env.NODE_ENV === 'production',
+  })
+  const fingerprint = JSON.stringify({ auth, email, phone, passkey })
   if (cachedRuntime?.fingerprint === fingerprint) return cachedRuntime.runtime
 
   const runtime = createPlatformAuthRuntime(auth, email, {
     baseUrl: auth.baseUrl,
     cookieDomain: auth.cookieDomain || undefined,
+    ...(phoneConfig.enabled ? { phone } : {}),
+    ...(passkey.enabled ? { passkey } : {}),
   })
   cachedRuntime = { fingerprint, runtime }
   return runtime
@@ -274,6 +324,13 @@ export async function serverAuthClaims(event: H3Event): Promise<PlatformAuthClai
   const session = await serverAuthSession(event)
   if (!session) return null
   const fullName = String(session.user.name || '').trim()
+  const phoneUser = session.user as typeof session.user & {
+    phoneNumber?: unknown
+    phoneNumberVerified?: unknown
+  }
+  const phoneNumber = phoneUser.phoneNumberVerified === true
+    ? String(phoneUser.phoneNumber || '')
+    : ''
   return {
     id: session.user.id,
     sub: session.user.id,
@@ -283,7 +340,7 @@ export async function serverAuthClaims(event: H3Event): Promise<PlatformAuthClai
     email_confirmed_at: session.user.emailVerified
       ? new Date(session.user.updatedAt).toISOString()
       : null,
-    phone: '',
+    phone: phoneNumber,
     user_metadata: { full_name: fullName },
   }
 }
@@ -300,6 +357,19 @@ export async function serverAuthUserExistsByEmail(event: H3Event, email: string)
       where email = $1
       limit 1`,
     [email.trim().toLowerCase()],
+  )
+  return result.rowCount === 1
+}
+
+export async function serverAuthUserExistsByPhone(event: H3Event, phoneNumber: string): Promise<boolean> {
+  const runtime = serverAuth(event)
+  const result = await runtime.pool.query(
+    `select 1
+       from ${runtime.config.databaseSchema}.users
+      where phone_number = $1
+        and phone_number_verified = true
+      limit 1`,
+    [phoneNumber],
   )
   return result.rowCount === 1
 }

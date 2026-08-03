@@ -55,6 +55,10 @@ export function useAuthFlow() {
 
   function passwordIssue(password: string) {
     if (password.length < 10) return 'Hasło musi mieć co najmniej 10 znaków.'
+    if (password.length > 128) return 'Hasło może mieć maksymalnie 128 znaków.'
+    if (new TextEncoder().encode(password).length > 72) {
+      return 'Hasło może mieć maksymalnie 72 bajty (polskie znaki zajmują więcej miejsca).'
+    }
     if (!/[a-z]/.test(password)) return 'Dodaj do hasła małą literę.'
     if (!/[A-Z]/.test(password)) return 'Dodaj do hasła wielką literę.'
     if (!/[0-9]/.test(password)) return 'Dodaj do hasła cyfrę.'
@@ -76,11 +80,74 @@ export function useAuthFlow() {
       return 'Podaj poprawny adres email.'
     }
     if (
+      code === 'INVALID_PHONE_NUMBER'
+      || message.includes('invalid phone number')
+    ) {
+      return 'Podaj poprawny numer telefonu z kodem kraju.'
+    }
+    if (code === 'PHONE_NUMBER_EXIST') {
+      return 'Ten numer telefonu jest już połączony z innym kontem.'
+    }
+    if (
+      code === 'INVALID_OTP'
+      || message.includes('invalid otp')
+    ) {
+      return 'Kod jest nieprawidłowy. Sprawdź SMS i spróbuj ponownie.'
+    }
+    if (
+      code === 'OTP_EXPIRED'
+      || code === 'OTP_NOT_FOUND'
+      || message.includes('otp expired')
+      || message.includes('otp not found')
+    ) {
+      return 'Kod wygasł. Wyślij nowy kod i spróbuj ponownie.'
+    }
+    if (
+      code === 'TOO_MANY_ATTEMPTS'
+      || message.includes('too many attempts')
+    ) {
+      return 'Przekroczono limit prób. Wyślij nowy kod.'
+    }
+    if (
+      code === 'SEND_OTP_NOT_IMPLEMENTED'
+      || message.includes('phone authentication is not configured')
+    ) {
+      return 'Logowanie telefonem jest chwilowo niedostępne.'
+    }
+    if (
       code === 'EMAIL_NOT_VERIFIED'
       || message.includes('email not verified')
       || message.includes('email not confirmed')
     ) {
       return 'Najpierw potwierdź adres email.'
+    }
+    if (
+      code === 'SESSION_NOT_FRESH'
+      || message.includes('session is not fresh')
+    ) {
+      return 'Dla bezpieczeństwa zaloguj się ponownie, a następnie ponów operację.'
+    }
+    if (
+      code === 'AUTH_CANCELLED'
+      || code === 'REGISTRATION_CANCELLED'
+      || message.includes('the operation either timed out or was not allowed')
+      || message.includes('notallowederror')
+    ) {
+      return 'Operacja klucza dostępu została anulowana.'
+    }
+    if (code === 'PREVIOUSLY_REGISTERED') {
+      return 'Ten klucz dostępu jest już dodany do konta.'
+    }
+    if (
+      code === 'CHALLENGE_NOT_FOUND'
+      || code === 'AUTHENTICATION_FAILED'
+      || code === 'FAILED_TO_VERIFY_REGISTRATION'
+      || code === 'UNABLE_TO_CREATE_SESSION'
+    ) {
+      return 'Nie udało się zweryfikować klucza dostępu. Spróbuj ponownie.'
+    }
+    if (code === 'SESSION_REQUIRED') {
+      return 'Dla bezpieczeństwa zaloguj się ponownie przed dodaniem klucza dostępu.'
     }
     if (
       code === 'USER_ALREADY_EXISTS'

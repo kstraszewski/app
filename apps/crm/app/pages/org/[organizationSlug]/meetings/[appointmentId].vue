@@ -4,6 +4,7 @@ import type {
   SavedCaseOffer,
 } from '~/types/cases'
 import type {
+  CrmMeetingPreparation,
   CrmMeetingRecord,
   CrmMeetingSharedKind,
   CrmMeetingSharedState,
@@ -28,7 +29,6 @@ const {
   data: meetingPayload,
   pending,
   error,
-  refresh: refreshMeeting,
 } = await useAsyncData<{ data: CrmMeetingRecord }>(
   `crm-meeting:${organizationSlug.value}:${appointmentId.value}`,
   () => requestFetch<{ data: CrmMeetingRecord }>(
@@ -74,6 +74,8 @@ const mutationPending = ref(false)
 const copyDone = ref(false)
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
+let preparationPollTimer: ReturnType<typeof setInterval> | null = null
+let preparationPollPending = false
 
 watch(() => meeting.value?.shared, (shared) => {
   if (!shared) return
@@ -98,10 +100,14 @@ onMounted(() => {
   timer = setInterval(() => {
     now.value = Date.now()
   }, 1_000)
+  preparationPollTimer = setInterval(() => {
+    void pollPreparation()
+  }, 5_000)
 })
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  if (preparationPollTimer) clearInterval(preparationPollTimer)
 })
 
 onBeforeRouteLeave(() => {
@@ -166,6 +172,33 @@ function meetingDate(value: CrmMeetingRecord) {
     timeStyle: 'short',
     timeZone: value.timezone || 'Europe/Warsaw',
   }).format(new Date(value.startsAt))
+}
+
+async function pollPreparation() {
+  if (
+    preparationPollPending
+    || !meeting.value
+    || !import.meta.client
+    || document.visibilityState !== 'visible'
+  ) return
+
+  preparationPollPending = true
+  try {
+    const result = await requestFetch<{ data: CrmMeetingPreparation | null }>(
+      crmApiPath(`/meetings/${encodeURIComponent(meeting.value.id)}/preparation`),
+    )
+    if (!meetingPayload.value?.data) return
+    meetingPayload.value = {
+      data: {
+        ...meetingPayload.value.data,
+        preparation: result.data,
+      },
+    }
+  } catch {
+    // Keep the last successfully loaded brief. The next visible poll retries.
+  } finally {
+    preparationPollPending = false
+  }
 }
 
 function offerApr(offer: SavedCaseOffer) {
@@ -390,6 +423,8 @@ async function minimizeToCase() {
             uruchomimy wspólny widok materiałów.
           </p>
 
+          <CrmMeetingClientBrief :preparation="meeting.preparation" />
+
           <div class="prejoin__checklist">
             <article>
               <span><UIcon name="i-lucide-calendar-check-2" /></span>
@@ -495,6 +530,8 @@ async function minimizeToCase() {
               <span><small>Sprawa</small><strong>{{ meeting.caseTitle }}</strong></span>
             </span>
           </div>
+
+          <CrmMeetingClientBrief :preparation="meeting.preparation" compact />
 
           <UButton
             :to="orgPath(`/cases/${meeting.caseId}`)"

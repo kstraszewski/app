@@ -17,6 +17,23 @@ const authBaseUrl = process.env.BETTER_AUTH_URL
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
   || process.env.DATABASE_URL
   || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
+const authSmsProvider = process.env.NUXT_AUTH_SMS_PROVIDER
+  || process.env.NUXT_CONSENT_SMS_PROVIDER
+  || (process.env.NODE_ENV === 'production' ? 'http' : 'local')
+const authSmsGatewayUrl = process.env.NUXT_AUTH_SMS_GATEWAY_URL
+  || process.env.NUXT_CONSENT_SMS_GATEWAY_URL
+  || ''
+const authSmsGatewayToken = process.env.NUXT_AUTH_SMS_GATEWAY_TOKEN
+  || process.env.NUXT_CONSENT_SMS_GATEWAY_TOKEN
+  || ''
+const authPhoneEnabled = process.env.NUXT_AUTH_PHONE_ENABLED
+  ? process.env.NUXT_AUTH_PHONE_ENABLED === 'true'
+  : process.env.NODE_ENV !== 'production'
+    || Boolean(authSmsGatewayUrl && authSmsGatewayToken)
+const authPasskeyEnabled = process.env.NUXT_AUTH_PASSKEY_ENABLED !== 'false'
+const authPasskeyOrigin = authBaseUrl.replace(/\/$/u, '')
+const authPasskeyRpId = process.env.NUXT_AUTH_PASSKEY_RP_ID
+  || new URL(authPasskeyOrigin).hostname
 
 export default defineNuxtConfig({
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
@@ -198,6 +215,25 @@ export default defineNuxtConfig({
         password: process.env.NUXT_SMTP_PASSWORD || '',
       },
     },
+    authSms: {
+      enabled: authPhoneEnabled,
+      provider: authSmsProvider,
+      demoAutoFill: process.env.NODE_ENV !== 'production'
+        && authSmsProvider === 'local',
+      gatewayUrl: authSmsGatewayUrl,
+      gatewayToken: authSmsGatewayToken,
+      sender: process.env.NUXT_AUTH_SMS_SENDER
+        || process.env.NUXT_CONSENT_SMS_SENDER
+        || 'OpenExpert',
+      ttlSeconds: Number(process.env.NUXT_AUTH_PHONE_OTP_TTL_SECONDS || 300),
+      maxOtpAttempts: Number(process.env.NUXT_AUTH_PHONE_OTP_MAX_ATTEMPTS || 5),
+    },
+    authPasskey: {
+      enabled: authPasskeyEnabled,
+      rpId: authPasskeyRpId,
+      rpName: process.env.NUXT_AUTH_PASSKEY_RP_NAME || 'OpenExpert',
+      origin: authPasskeyOrigin,
+    },
     consentSms: {
       provider: process.env.NUXT_CONSENT_SMS_PROVIDER
         || (process.env.NODE_ENV === 'production' ? 'http' : 'local'),
@@ -279,6 +315,24 @@ export default defineNuxtConfig({
           || (process.env.NODE_ENV === 'production'
             ? 'https://client.openexpert.app'
             : 'http://127.0.0.1:3006'),
+        social: {
+          google: Boolean(
+            process.env.BETTER_AUTH_GOOGLE_CLIENT_ID
+            && process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET,
+          ),
+          apple: Boolean(
+            process.env.BETTER_AUTH_APPLE_CLIENT_ID
+            && process.env.BETTER_AUTH_APPLE_CLIENT_SECRET,
+          ),
+        },
+        phone: {
+          enabled: authPhoneEnabled,
+          demo: process.env.NODE_ENV !== 'production'
+            && authSmsProvider === 'local',
+        },
+        passkey: {
+          enabled: authPasskeyEnabled,
+        },
       },
     },
   },

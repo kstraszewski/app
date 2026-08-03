@@ -1,26 +1,34 @@
-export type MeetingGoal = 'purchase' | 'construction' | 'refinance' | 'exploring'
-export type MeetingStage = 'possibilities' | 'searching' | 'selected' | 'deadline'
-export type MeetingIncomeSource =
-  | 'employment'
-  | 'business'
-  | 'civil_contract'
-  | 'foreign'
-  | 'retirement'
-  | 'rental'
-  | 'other'
-export type CoBorrowerPlan = 'yes' | 'no' | 'unsure'
+import type {
+  CoBorrowerPlan,
+  ComfortablePaymentChoice,
+  LoanAmountChoice,
+  LoanTermChoice,
+  MeetingGoal,
+  MeetingIncomeSource,
+  MeetingPreparationProfile,
+  MeetingStage,
+  MonthlyNetIncomeChoice,
+  MonthlyObligationChoice,
+  OwnFundsChoice,
+  PropertyBudgetChoice,
+} from '../../shared/types/meeting-preparation'
 
-export interface MeetingPreparationProfile {
-  goal: MeetingGoal | null
-  stage: MeetingStage | null
-  incomeSources: MeetingIncomeSource[]
-  coBorrower: CoBorrowerPlan | null
-  propertyBudget: string
-  ownFunds: string
-  comfortablePayment: string
-}
+export type {
+  CoBorrowerPlan,
+  ComfortablePaymentChoice,
+  LoanAmountChoice,
+  LoanTermChoice,
+  MeetingGoal,
+  MeetingIncomeSource,
+  MeetingPreparationProfile,
+  MeetingStage,
+  MonthlyNetIncomeChoice,
+  MonthlyObligationChoice,
+  OwnFundsChoice,
+  PropertyBudgetChoice,
+} from '../../shared/types/meeting-preparation'
 
-interface PreparationOption<T extends string> {
+export interface PreparationOption<T extends string> {
   value: T
   label: string
   description: string
@@ -173,6 +181,72 @@ export const coBorrowerOptions: PreparationOption<CoBorrowerPlan>[] = [
     description: 'To może być jeden ze scenariuszy do porównania.',
     icon: 'i-lucide-help-circle',
   },
+]
+
+export const propertyBudgetOptions: PreparationOption<PropertyBudgetChoice>[] = [
+  { value: 'up_to_400k', label: 'Do 400 tys. zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: '400k_600k', label: '400–600 tys. zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: '600k_800k', label: '600–800 tys. zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: '800k_1m', label: '800 tys.–1 mln zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: '1m_1_5m', label: '1–1,5 mln zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: 'above_1_5m', label: 'Powyżej 1,5 mln zł', description: 'Orientacyjna wartość celu.', icon: 'i-lucide-house' },
+  { value: 'unknown', label: 'Jeszcze nie wiem', description: 'Ustalicie to wspólnie.', icon: 'i-lucide-help-circle' },
+]
+
+export const ownFundsOptions: PreparationOption<OwnFundsChoice>[] = [
+  { value: 'none', label: 'Brak', description: 'Na dziś nie mam środków własnych.', icon: 'i-lucide-circle-off' },
+  { value: 'up_to_50k', label: 'Do 50 tys. zł', description: 'Kwota dostępna na wkład i koszty.', icon: 'i-lucide-wallet-cards' },
+  { value: '50k_100k', label: '50–100 tys. zł', description: 'Kwota dostępna na wkład i koszty.', icon: 'i-lucide-wallet-cards' },
+  { value: '100k_200k', label: '100–200 tys. zł', description: 'Kwota dostępna na wkład i koszty.', icon: 'i-lucide-wallet-cards' },
+  { value: '200k_300k', label: '200–300 tys. zł', description: 'Kwota dostępna na wkład i koszty.', icon: 'i-lucide-wallet-cards' },
+  { value: 'above_300k', label: 'Powyżej 300 tys. zł', description: 'Kwota dostępna na wkład i koszty.', icon: 'i-lucide-wallet-cards' },
+  { value: 'unknown', label: 'Jeszcze nie wiem', description: 'Ustalicie to wspólnie.', icon: 'i-lucide-help-circle' },
+]
+
+export const loanAmountOptions: PreparationOption<LoanAmountChoice>[] = [
+  { value: 'up_to_300k', label: 'Do 300 tys. zł', description: 'Potrzebna kwota kredytu.', icon: 'i-lucide-landmark' },
+  { value: '300k_500k', label: '300–500 tys. zł', description: 'Potrzebna kwota kredytu.', icon: 'i-lucide-landmark' },
+  { value: '500k_700k', label: '500–700 tys. zł', description: 'Potrzebna kwota kredytu.', icon: 'i-lucide-landmark' },
+  { value: '700k_1m', label: '700 tys.–1 mln zł', description: 'Potrzebna kwota kredytu.', icon: 'i-lucide-landmark' },
+  { value: 'above_1m', label: 'Powyżej 1 mln zł', description: 'Potrzebna kwota kredytu.', icon: 'i-lucide-landmark' },
+  { value: 'unknown', label: 'Jeszcze nie wiem', description: 'Ekspert pomoże ją oszacować.', icon: 'i-lucide-help-circle' },
+]
+
+export const loanTermOptions: PreparationOption<LoanTermChoice>[] = [
+  { value: '15', label: '15 lat', description: 'Wyższa rata, krótsza spłata.', icon: 'i-lucide-calendar-range' },
+  { value: '20', label: '20 lat', description: 'Krótszy okres finansowania.', icon: 'i-lucide-calendar-range' },
+  { value: '25', label: '25 lat', description: 'Częsty punkt porównania ofert.', icon: 'i-lucide-calendar-range' },
+  { value: '30', label: '30 lat', description: 'Niższa rata, dłuższa spłata.', icon: 'i-lucide-calendar-range' },
+  { value: '35', label: '35 lat', description: 'Jeśli bank i sytuacja na to pozwolą.', icon: 'i-lucide-calendar-range' },
+  { value: 'unknown', label: 'Do porównania', description: 'Ekspert pokaże kilka wariantów.', icon: 'i-lucide-scale' },
+]
+
+export const monthlyNetIncomeOptions: PreparationOption<MonthlyNetIncomeChoice>[] = [
+  { value: 'up_to_6k', label: 'Do 6 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: '6k_10k', label: '6–10 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: '10k_15k', label: '10–15 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: '15k_20k', label: '15–20 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: '20k_30k', label: '20–30 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: 'above_30k', label: 'Powyżej 30 tys. zł', description: 'Łączny miesięczny dochód netto.', icon: 'i-lucide-banknote' },
+  { value: 'prefer_meeting', label: 'Omówię na spotkaniu', description: 'Ekspert zaznaczy brak do uzupełnienia.', icon: 'i-lucide-message-circle' },
+]
+
+export const monthlyObligationOptions: PreparationOption<MonthlyObligationChoice>[] = [
+  { value: 'none', label: 'Brak', description: 'Nie mam rat ani innych stałych zobowiązań.', icon: 'i-lucide-circle-check-big' },
+  { value: 'up_to_1k', label: 'Do 1 tys. zł', description: 'Łącznie miesięcznie.', icon: 'i-lucide-receipt' },
+  { value: '1k_2_5k', label: '1–2,5 tys. zł', description: 'Łącznie miesięcznie.', icon: 'i-lucide-receipt' },
+  { value: '2_5k_5k', label: '2,5–5 tys. zł', description: 'Łącznie miesięcznie.', icon: 'i-lucide-receipt' },
+  { value: 'above_5k', label: 'Powyżej 5 tys. zł', description: 'Łącznie miesięcznie.', icon: 'i-lucide-receipt' },
+  { value: 'prefer_meeting', label: 'Omówię na spotkaniu', description: 'Uwzględnij także limity kart i kont.', icon: 'i-lucide-message-circle' },
+]
+
+export const comfortablePaymentOptions: PreparationOption<ComfortablePaymentChoice>[] = [
+  { value: 'up_to_2500', label: 'Do 2 500 zł', description: 'Rata, która zostawia bezpieczny bufor.', icon: 'i-lucide-gauge' },
+  { value: '2500_3500', label: '2 500–3 500 zł', description: 'Rata, która zostawia bezpieczny bufor.', icon: 'i-lucide-gauge' },
+  { value: '3500_4500', label: '3 500–4 500 zł', description: 'Rata, która zostawia bezpieczny bufor.', icon: 'i-lucide-gauge' },
+  { value: '4500_6000', label: '4 500–6 000 zł', description: 'Rata, która zostawia bezpieczny bufor.', icon: 'i-lucide-gauge' },
+  { value: 'above_6000', label: 'Powyżej 6 000 zł', description: 'Rata, która zostawia bezpieczny bufor.', icon: 'i-lucide-gauge' },
+  { value: 'unknown', label: 'Chcę to policzyć', description: 'Ekspert porówna kilka bezpiecznych wariantów.', icon: 'i-lucide-scale' },
 ]
 
 export const meetingConcepts: MeetingConcept[] = [
@@ -455,6 +529,41 @@ export function incomeSourceLabels(values: MeetingIncomeSource[]): string[] {
 
 export function coBorrowerLabel(value: CoBorrowerPlan | null): string {
   return coBorrowerOptions.find(option => option.value === value)?.label || 'Nie wybrano'
+}
+
+function optionLabel<T extends string>(
+  options: PreparationOption<T>[],
+  value: T | null,
+): string {
+  return options.find(option => option.value === value)?.label || 'Nie wybrano'
+}
+
+export function propertyBudgetLabel(value: PropertyBudgetChoice | null): string {
+  return optionLabel(propertyBudgetOptions, value)
+}
+
+export function ownFundsLabel(value: OwnFundsChoice | null): string {
+  return optionLabel(ownFundsOptions, value)
+}
+
+export function loanAmountLabel(value: LoanAmountChoice | null): string {
+  return optionLabel(loanAmountOptions, value)
+}
+
+export function loanTermLabel(value: LoanTermChoice | null): string {
+  return optionLabel(loanTermOptions, value)
+}
+
+export function monthlyNetIncomeLabel(value: MonthlyNetIncomeChoice | null): string {
+  return optionLabel(monthlyNetIncomeOptions, value)
+}
+
+export function monthlyObligationsLabel(value: MonthlyObligationChoice | null): string {
+  return optionLabel(monthlyObligationOptions, value)
+}
+
+export function comfortablePaymentLabel(value: ComfortablePaymentChoice | null): string {
+  return optionLabel(comfortablePaymentOptions, value)
 }
 
 export function visibleChecklistItems(

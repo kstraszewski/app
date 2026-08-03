@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import type { PortalPayload } from '~/types/portal'
 import { clientPortalDataKey, getClientSessionCachedData } from '~/utils/client-portal-cache'
+import type {
+  MeetingPreparationAnswers,
+  PortalMeetingPreparation,
+} from '#shared/types/meeting-preparation'
 
 definePageMeta({ middleware: 'client-auth' })
 
+const route = useRoute()
 const authenticatedUser = useAuthUser()
 const {
   data: response,
-  status,
-  error,
-  refresh,
+  status: portalStatus,
+  error: portalError,
+  refresh: refreshPortal,
 } = useFetch<{ data: PortalPayload }>('/api/client/portal', {
   key: clientPortalDataKey(authenticatedUser.value?.id),
   dedupe: 'defer',
@@ -18,12 +23,103 @@ const {
 })
 
 const payload = computed(() => response.value?.data)
+const requestedAppointmentId = computed(() => {
+  const value = Array.isArray(route.query.appointmentId)
+    ? route.query.appointmentId[0]
+    : route.query.appointmentId
+  return typeof value === 'string' ? value.trim() : ''
+})
+const preferredAppointmentId = computed(() => (
+  requestedAppointmentId.value
+  || (payload.value?.nextStep?.kind === 'prepare_appointment'
+    ? payload.value.nextStep.appointmentId || ''
+    : '')
+))
+const appointmentId = computed(() => {
+  const id = preferredAppointmentId.value
+  if (!id || !payload.value) return ''
+  return payload.value.appointments?.some(appointment => appointment.id === id) ? id : ''
+})
+
+const preparationRequest = useFetch<{ data: PortalMeetingPreparation }>(
+  () => `/api/client/appointments/${encodeURIComponent(appointmentId.value || 'missing')}/preparation`,
+  {
+    key: `client-meeting-preparation:${authenticatedUser.value?.id || 'session'}`,
+    dedupe: 'defer',
+    immediate: false,
+    watch: false,
+  },
+)
+
+watch(appointmentId, (next, previous) => {
+  if (!next) {
+    if (previous) preparationRequest.clear()
+    return
+  }
+  preparationRequest.clear()
+  void preparationRequest.execute()
+}, { immediate: true })
+
+const preparation = computed(() => {
+  const current = preparationRequest.data.value?.data
+  return current?.appointmentId === appointmentId.value ? current : undefined
+})
+const pending = computed(() => (
+  portalStatus.value === 'pending'
+  || Boolean(appointmentId.value && (
+    preparationRequest.status.value === 'idle'
+    || preparationRequest.status.value === 'pending'
+  ))
+))
+const unavailable = computed(() => Boolean(
+  payload.value
+  && portalStatus.value === 'success'
+  && !appointmentId.value,
+))
+
+async function savePreparation(body: {
+  answers: MeetingPreparationAnswers
+  revision: number
+  completed?: boolean
+}): Promise<PortalMeetingPreparation> {
+  const targetAppointmentId = appointmentId.value
+  if (
+    !targetAppointmentId
+    || preparation.value?.appointmentId !== targetAppointmentId
+  ) {
+    throw new Error('Termin przygotowania zmienił się. Otwórz przygotowanie ponownie.')
+  }
+
+  const saved = await $fetch<{ data: PortalMeetingPreparation }>(
+    `/api/client/appointments/${encodeURIComponent(targetAppointmentId)}/preparation`,
+    { method: 'PUT', body },
+  )
+  if (appointmentId.value === targetAppointmentId) {
+    preparationRequest.data.value = saved
+  }
+  return saved.data
+}
+
+function retry() {
+  if (portalError.value) {
+    void refreshPortal()
+    return
+  }
+  if (appointmentId.value) void preparationRequest.execute()
+}
 
 useHead({ title: 'Przygotuj się do spotkania — OpenExpert' })
 </script>
 
 <template>
-  <PortalMeetingPreparationScreen v-if="payload" :payload="payload" />
+  <PortalMeetingPreparationScreen
+    v-if="payload && appointmentId && preparation"
+    :key="appointmentId"
+    :payload="payload"
+    :appointment-id="appointmentId"
+    :preparation="preparation"
+    :save="savePreparation"
+  />
 
   <div v-else class="preparation-route-state">
     <PortalHeader
@@ -31,7 +127,7 @@ useHead({ title: 'Przygotuj się do spotkania — OpenExpert' })
       :user-email="authenticatedUser?.email"
     />
     <main>
-      <template v-if="status === 'pending'">
+      <template v-if="pending">
         <USkeleton class="h-5 w-40 max-w-full" />
         <USkeleton class="mt-6 h-96 w-full" />
         <div class="preparation-route-state__grid">
@@ -40,16 +136,27 @@ useHead({ title: 'Przygotuj się do spotkania — OpenExpert' })
         </div>
       </template>
       <UAlert
-        v-else-if="error"
+        v-else
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
-        title="Nie udało się otworzyć przygotowania"
-        description="Twoje zapisane odpowiedzi pozostają na tym urządzeniu. Spróbuj ponownie."
+        :title="unavailable ? 'Nie znaleźliśmy tego spotkania' : 'Nie udało się otworzyć przygotowania'"
+        :description="unavailable
+          ? 'Otwórz przygotowanie z kafla najbliższego spotkania albo wróć do panelu.'
+          : 'Nie pobraliśmy zapisanych odpowiedzi. Spróbuj ponownie — nie nadpiszemy ich pustym formularzem.'"
       >
         <template #actions>
-          <UButton color="error" variant="outline" icon="i-lucide-refresh-cw" @click="refresh()">
-            Spróbuj ponownie
+          <UButton
+            v-if="!unavailable"
+            color="error"
+            variant="outline"
+            icon="i-lucide-refresh-cw"
+            @click="retry"
+          >
+            Pobierz ponownie
+          </UButton>
+          <UButton v-else to="/" color="error" variant="outline" icon="i-lucide-arrow-left">
+            Wróć do panelu
           </UButton>
         </template>
       </UAlert>

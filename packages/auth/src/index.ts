@@ -15,11 +15,20 @@ export {
 } from './password-strategy.ts'
 export { createDefaultBcryptPasswordStrategy } from './password.ts'
 export {
+  maskOpenExpertPhone,
+  normalizeOpenExpertPhone,
+} from './phone.ts'
+export {
   OPENEXPERT_AUTHENTICATED_ROLE,
   type OpenExpertAuthClaims,
   type OpenExpertAuthConfig,
   type OpenExpertAuthEmail,
   type OpenExpertAuthEmailSender,
+  type OpenExpertAuthPhoneMessage,
+  type OpenExpertAuthPhoneMessageKind,
+  type OpenExpertAuthPhoneOptions,
+  type OpenExpertAuthPhoneSender,
+  type OpenExpertAuthPasskeyOptions,
   type OpenExpertAuthSocialProviderConfig,
   type OpenExpertAuthSocialProvidersConfig,
   type OpenExpertAuthUser,

@@ -1,41 +1,94 @@
 <script setup lang="ts">
 import {
   coBorrowerOptions,
+  comfortablePaymentLabel,
+  comfortablePaymentOptions,
   expertQuestions,
   incomeSourceLabels,
+  loanAmountLabel,
+  loanAmountOptions,
+  loanTermLabel,
+  loanTermOptions,
   meetingConcepts,
   meetingGoalOptions,
   meetingIncomeSourceOptions,
   meetingStageOptions,
+  monthlyNetIncomeLabel,
+  monthlyNetIncomeOptions,
+  monthlyObligationOptions,
+  monthlyObligationsLabel,
+  ownFundsLabel,
+  ownFundsOptions,
   preparationSources,
+  propertyBudgetLabel,
+  propertyBudgetOptions,
   recommendedQuestionIds,
   visibleChecklistItems,
   type CoBorrowerPlan,
+  type ComfortablePaymentChoice,
   type ExpertQuestion,
+  type LoanAmountChoice,
+  type LoanTermChoice,
   type MeetingGoal,
   type MeetingIncomeSource,
   type MeetingStage,
+  type MonthlyNetIncomeChoice,
+  type MonthlyObligationChoice,
+  type OwnFundsChoice,
+  type PropertyBudgetChoice,
 } from '~/data/meeting-preparation'
 import type { PortalAppointment, PortalPayload } from '~/types/portal'
 import {
   buildMeetingPreparationSummary,
   createMeetingPreparationState,
   meetingPreparationProgress,
-  meetingPreparationStorageKey,
   parseMeetingPreparationState,
   profileIsReady,
 } from '~/utils/meeting-preparation'
+import type {
+  PortalMeetingPreparation,
+  SaveMeetingPreparationBody,
+} from '#shared/types/meeting-preparation'
 
 const props = withDefaults(defineProps<{
   payload: PortalPayload
+  appointmentId?: string
+  preparation?: PortalMeetingPreparation | null
   preview?: boolean
+  save?: (body: SaveMeetingPreparationBody) => Promise<PortalMeetingPreparation>
 }>(), {
+  appointmentId: '',
+  preparation: null,
   preview: false,
 })
 
 const toast = useToast()
-const state = reactive(createMeetingPreparationState())
-const hydrated = ref(false)
+const state = reactive(parseMeetingPreparationState(
+  props.preparation?.answers ?? createMeetingPreparationState(),
+))
+const previewAppointmentId = props.appointmentId
+  || props.payload.nextAppointment?.id
+  || props.payload.appointments?.[0]?.id
+  || 'none'
+const previewCompletedAt = useState<string | null>(
+  `client-preview-meeting-preparation:${props.payload.user.id}:${previewAppointmentId}`,
+  () => null,
+)
+const revision = ref(props.preparation?.revision ?? 0)
+const updatedAt = ref(props.preparation?.updatedAt ?? null)
+const completedAt = ref(
+  props.preparation?.completedAt
+  ?? (props.preview ? previewCompletedAt.value : null),
+)
+const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>(
+  props.preview || !updatedAt.value ? 'idle' : 'saved',
+)
+const saveError = ref('')
+const saveConflict = ref(false)
+const completing = ref(false)
+let answersDirty = false
+let completionRequested = false
+let saveTask: Promise<boolean> | null = null
 
 const steps = [
   { label: 'Punkt startu', caption: 'Twój cel i sytuacja', icon: 'i-lucide-compass' },
@@ -46,10 +99,13 @@ const steps = [
 ]
 
 const nextAppointment = computed<PortalAppointment | null>(() => (
-  props.payload.nextAppointment
-  || [...(props.payload.appointments || [])]
-    .filter(item => item.status !== 'cancelled' && new Date(item.endsAt).getTime() >= Date.now())
-    .sort((left, right) => left.startsAt.localeCompare(right.startsAt))[0]
+  props.payload.appointments?.find(item => item.id === props.appointmentId)
+  || (props.preview
+    ? props.payload.nextAppointment
+      || [...(props.payload.appointments || [])]
+        .filter(item => item.status !== 'cancelled' && new Date(item.endsAt).getTime() >= Date.now())
+        .sort((left, right) => left.startsAt.localeCompare(right.startsAt))[0]
+    : null)
   || null
 ))
 const expert = computed(() => (
@@ -78,10 +134,6 @@ function handleExpertAvatarError() {
   failedExpertAvatarUrl.value = expert.value?.avatarUrl || ''
 }
 const dashboardTo = computed(() => props.preview ? '/preview?scenario=first-meeting' : '/')
-const storageKey = computed(() => meetingPreparationStorageKey(
-  props.payload.user.id,
-  nextAppointment.value?.id,
-))
 const progress = computed(() => meetingPreparationProgress(state))
 const profileReady = computed(() => profileIsReady(state.profile))
 const checklistItems = computed(() => visibleChecklistItems(state.profile))
@@ -139,24 +191,116 @@ const meetingModeLabel = computed(() => {
   return nextAppointment.value.facility?.name || 'Spotkanie w placówce'
 })
 
-onMounted(() => {
-  const saved = parseMeetingPreparationState(window.localStorage.getItem(storageKey.value))
-  Object.assign(state, saved)
-  hydrated.value = true
-})
+function saveErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null
+  const value = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  }
+  const status = Number(value.statusCode ?? value.status ?? value.response?.status)
+  return Number.isFinite(status) ? status : null
+}
+
+async function runSaveLoop(): Promise<boolean> {
+  if (props.preview || !props.save) return true
+
+  while (answersDirty || completionRequested) {
+    const shouldComplete = completionRequested
+    const answers = parseMeetingPreparationState(state)
+    answersDirty = false
+    completionRequested = false
+    saveStatus.value = 'saving'
+    saveError.value = ''
+
+    try {
+      const saved = await props.save({
+        answers,
+        revision: revision.value,
+        ...(shouldComplete ? { completed: true } : {}),
+      })
+      revision.value = saved.revision
+      updatedAt.value = saved.updatedAt
+      completedAt.value = saved.completedAt
+      saveConflict.value = false
+    }
+    catch (error) {
+      answersDirty = true
+      if (shouldComplete) completionRequested = true
+      saveConflict.value = saveErrorStatus(error) === 409
+      saveError.value = saveConflict.value
+        ? 'Brief został zmieniony w innym oknie. Odśwież stronę, aby pobrać najnowszą wersję.'
+        : 'Nie udało się zapisać odpowiedzi. Zachowaliśmy je na ekranie — spróbuj ponownie.'
+      saveStatus.value = 'error'
+      return false
+    }
+  }
+
+  saveStatus.value = 'saved'
+  return true
+}
+
+function flushSave(): Promise<boolean> {
+  if (props.preview || !props.save) return Promise.resolve(true)
+  if (saveTask) return saveTask
+
+  saveTask = runSaveLoop().finally(() => {
+    saveTask = null
+  })
+  return saveTask
+}
 
 watch(state, () => {
-  if (!hydrated.value) return
+  if (props.preview || !props.save) return
+  answersDirty = true
+  if (saveConflict.value) return
+  saveStatus.value = 'saving'
+  void flushSave()
+}, { deep: true, flush: 'post' })
+
+function retrySave() {
+  if (saveConflict.value) {
+    window.location.reload()
+    return
+  }
+
+  saveStatus.value = 'saving'
+  void flushSave()
+}
+
+const saveStatusLabel = computed(() => {
+  if (props.preview) return 'Tryb podglądu'
+  if (saveStatus.value === 'saving') return 'Zapisywanie…'
+  if (saveStatus.value === 'error') return 'Nie zapisano zmian'
+  if (saveStatus.value === 'saved') return 'Zapisano w sprawie'
+  return 'Zapis automatyczny'
+})
+
+const saveStatusDescription = computed(() => {
+  if (props.preview) return 'Odpowiedzi pozostają tylko w tym podglądzie.'
+  if (saveStatus.value === 'saving') return 'Aktualizujemy brief eksperta.'
+  if (saveStatus.value === 'error') return saveError.value
+  if (!updatedAt.value) return 'Odpowiedzi zapiszą się po każdym wyborze.'
+
   try {
-    window.localStorage.setItem(storageKey.value, JSON.stringify({
-      ...state,
-      updatedAt: new Date().toISOString(),
-    }))
+    const date = new Date(updatedAt.value)
+    return `Ostatnia zmiana: ${new Intl.DateTimeFormat('pl-PL', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)}`
   }
   catch {
-    // The flow remains fully usable when browser storage is unavailable.
+    return 'Odpowiedzi są dostępne dla eksperta przy tej sprawie.'
   }
-}, { deep: true, flush: 'post' })
+})
+
+const saveStatusIcon = computed(() => {
+  if (props.preview) return 'i-lucide-monitor'
+  if (saveStatus.value === 'saving') return 'i-lucide-loader-circle'
+  if (saveStatus.value === 'error') return 'i-lucide-cloud-alert'
+  if (saveStatus.value === 'saved') return 'i-lucide-cloud-check'
+  return 'i-lucide-cloud-upload'
+})
 
 function scrollToFlow() {
   document.getElementById('preparation-flow')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -185,6 +329,34 @@ function chooseStage(value: MeetingStage) {
 
 function chooseCoBorrower(value: CoBorrowerPlan) {
   state.profile.coBorrower = value
+}
+
+function choosePropertyBudget(value: PropertyBudgetChoice) {
+  state.profile.propertyBudget = value
+}
+
+function chooseOwnFunds(value: OwnFundsChoice) {
+  state.profile.ownFunds = value
+}
+
+function chooseLoanAmount(value: LoanAmountChoice) {
+  state.profile.loanAmount = value
+}
+
+function chooseLoanTerm(value: LoanTermChoice) {
+  state.profile.loanTerm = value
+}
+
+function chooseMonthlyNetIncome(value: MonthlyNetIncomeChoice) {
+  state.profile.monthlyNetIncome = value
+}
+
+function chooseMonthlyObligations(value: MonthlyObligationChoice) {
+  state.profile.monthlyObligations = value
+}
+
+function chooseComfortablePayment(value: ComfortablePaymentChoice) {
+  state.profile.comfortablePayment = value
 }
 
 function toggleIncomeSource(value: MeetingIncomeSource) {
@@ -263,14 +435,35 @@ function printSummary() {
 }
 
 async function completePreparation() {
-  state.completedAt = new Date().toISOString()
-  toast.add({
-    title: 'Jesteś przygotowany/a do spotkania',
-    description: 'Twój brief pozostanie zapisany w tej przeglądarce.',
-    color: 'success',
-    icon: 'i-lucide-circle-check-big',
-  })
-  await navigateTo(dashboardTo.value)
+  if (completing.value) return
+  completing.value = true
+
+  try {
+    if (props.preview) {
+      completedAt.value = new Date().toISOString()
+      previewCompletedAt.value = completedAt.value
+    }
+    else {
+      answersDirty = true
+      completionRequested = true
+      saveStatus.value = 'saving'
+      const saved = await flushSave()
+      if (!saved) return
+    }
+
+    toast.add({
+      title: 'Jesteś przygotowany/a do spotkania',
+      description: props.preview
+        ? 'To podgląd — odpowiedzi nie zostały wysłane.'
+        : 'Twój brief jest zapisany przy sprawie i dostępny dla eksperta.',
+      color: 'success',
+      icon: 'i-lucide-circle-check-big',
+    })
+    await navigateTo(dashboardTo.value)
+  }
+  finally {
+    completing.value = false
+  }
 }
 </script>
 
@@ -318,19 +511,22 @@ async function completePreparation() {
             <UButton
               color="neutral"
               variant="solid"
-              :icon="state.completedAt ? 'i-lucide-notebook-tabs' : 'i-lucide-arrow-down'"
+              :icon="completedAt ? 'i-lucide-notebook-tabs' : 'i-lucide-arrow-down'"
               @click="scrollToFlow"
             >
-              {{ state.completedAt ? 'Otwórz swój brief' : progress ? 'Kontynuuj przygotowanie' : 'Zacznij przygotowanie' }}
+              {{ completedAt ? 'Otwórz swój brief' : progress ? 'Kontynuuj przygotowanie' : 'Zacznij przygotowanie' }}
             </UButton>
-            <span><UIcon name="i-lucide-lock-keyhole" /> Odpowiedzi zostają na tym urządzeniu.</span>
+            <span>
+              <UIcon :name="preview ? 'i-lucide-monitor' : 'i-lucide-cloud-check'" />
+              {{ preview ? 'W podglądzie odpowiedzi nie są wysyłane.' : 'Każdy wybór zapisujemy automatycznie w sprawie.' }}
+            </span>
           </div>
         </div>
 
         <aside class="preparation-meeting-card" aria-label="Najbliższe spotkanie">
           <div class="preparation-meeting-card__top">
             <p>TWÓJ TERMIN</p>
-            <UBadge v-if="state.completedAt" color="success" variant="subtle">
+            <UBadge v-if="completedAt" color="success" variant="subtle">
               Przygotowanie gotowe
             </UBadge>
             <UIcon v-else name="i-lucide-calendar-days" />
@@ -393,13 +589,13 @@ async function completePreparation() {
                 type="button"
                 :class="{
                   'is-active': state.activeStep === index,
-                  'is-complete': state.activeStep > index || Boolean(state.completedAt),
+                  'is-complete': state.activeStep > index || Boolean(completedAt),
                 }"
                 :aria-current="state.activeStep === index ? 'step' : undefined"
                 @click="goToStep(index)"
               >
                 <span class="preparation-steps__index">
-                  <UIcon v-if="state.activeStep > index || state.completedAt" name="i-lucide-check" />
+                  <UIcon v-if="state.activeStep > index || completedAt" name="i-lucide-check" />
                   <UIcon v-else :name="step.icon" />
                 </span>
                 <span>
@@ -410,12 +606,42 @@ async function completePreparation() {
             </li>
           </ol>
           <div class="preparation-steps__privacy">
-            <UIcon name="i-lucide-shield-check" />
-            <p>Nic nie jest automatycznie wysyłane ekspertowi.</p>
+            <UIcon :name="preview ? 'i-lucide-monitor' : 'i-lucide-cloud-check'" />
+            <p>{{ preview ? 'To bezpieczny podgląd bez zapisu.' : 'Ekspert widzi zapisany brief przy tej sprawie.' }}</p>
           </div>
         </aside>
 
         <section class="preparation-card">
+          <div
+            class="preparation-save-state preparation-save-state--sticky"
+            :class="{
+              'is-saving': !preview && saveStatus === 'saving',
+              'is-saved': !preview && saveStatus === 'saved',
+              'is-error': !preview && saveStatus === 'error',
+            }"
+            role="status"
+            aria-live="polite"
+          >
+            <UIcon
+              :name="saveStatusIcon"
+              :class="{ 'is-spinning': !preview && saveStatus === 'saving' }"
+            />
+            <span>
+              <strong>{{ saveStatusLabel }}</strong>
+              <small>{{ saveStatusDescription }}</small>
+            </span>
+            <UButton
+              v-if="!preview && saveStatus === 'error'"
+              color="error"
+              variant="ghost"
+              size="xs"
+              :icon="saveConflict ? 'i-lucide-refresh-cw' : 'i-lucide-rotate-ccw'"
+              @click="retrySave"
+            >
+              {{ saveConflict ? 'Odśwież' : 'Spróbuj ponownie' }}
+            </UButton>
+          </div>
+
           <template v-if="state.activeStep === 0">
             <header class="preparation-card__header">
               <p>KROK 1 · TWÓJ PUNKT STARTU</p>
@@ -531,41 +757,195 @@ async function completePreparation() {
               </div>
             </div>
 
-            <div class="preparation-section preparation-section--amounts">
+            <div class="preparation-section">
               <div class="preparation-section__heading">
                 <span>05</span>
                 <div>
-                  <h3>Trzy orientacyjne kwoty</h3>
-                  <p>Opcjonalne — wpisz tylko to, co już wiesz.</p>
+                  <h3>Jaki jest orientacyjny budżet lub wartość celu?</h3>
+                  <p>Wybierz przedział. Dokładną kwotę potwierdzicie na spotkaniu.</p>
                 </div>
               </div>
-              <div class="preparation-amounts">
-                <UFormField label="Budżet lub wartość celu" hint="opcjonalne">
-                  <UInput
-                    v-model="state.profile.propertyBudget"
-                    inputmode="numeric"
-                    placeholder="np. 750 000 zł"
-                    icon="i-lucide-house"
-                  />
-                </UFormField>
-                <UFormField label="Dostępne środki własne" hint="opcjonalne">
-                  <UInput
-                    v-model="state.profile.ownFunds"
-                    inputmode="numeric"
-                    placeholder="np. 150 000 zł"
-                    icon="i-lucide-wallet-cards"
-                  />
-                </UFormField>
-                <UFormField label="Komfortowa miesięczna rata" hint="opcjonalne">
-                  <UInput
-                    v-model="state.profile.comfortablePayment"
-                    inputmode="numeric"
-                    placeholder="np. do 4 000 zł"
-                    icon="i-lucide-gauge"
-                  />
-                </UFormField>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in propertyBudgetOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.propertyBudget === option.value }"
+                  :aria-pressed="state.profile.propertyBudget === option.value"
+                  @click="choosePropertyBudget(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.propertyBudget === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>06</span>
+                <div>
+                  <h3>Ile środków własnych możesz przeznaczyć?</h3>
+                  <p>Uwzględnij wkład własny i środki przeznaczone na koszty transakcji.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in ownFundsOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.ownFunds === option.value }"
+                  :aria-pressed="state.profile.ownFunds === option.value"
+                  @click="chooseOwnFunds(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.ownFunds === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>07</span>
+                <div>
+                  <h3>Jakiej kwoty kredytu potrzebujesz?</h3>
+                  <p>Wybierz najbardziej prawdopodobny przedział.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in loanAmountOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.loanAmount === option.value }"
+                  :aria-pressed="state.profile.loanAmount === option.value"
+                  @click="chooseLoanAmount(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.loanAmount === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>08</span>
+                <div>
+                  <h3>Jaki okres spłaty bierzesz pod uwagę?</h3>
+                  <p>To punkt startu do porównania wysokości raty i całkowitego kosztu.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--three">
+                <button
+                  v-for="option in loanTermOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.loanTerm === option.value }"
+                  :aria-pressed="state.profile.loanTerm === option.value"
+                  @click="chooseLoanTerm(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.loanTerm === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>09</span>
+                <div>
+                  <h3>Jaki jest łączny miesięczny dochód netto?</h3>
+                  <p>Podaj przedział dla wszystkich osób, które mają przystąpić do kredytu.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in monthlyNetIncomeOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.monthlyNetIncome === option.value }"
+                  :aria-pressed="state.profile.monthlyNetIncome === option.value"
+                  @click="chooseMonthlyNetIncome(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.monthlyNetIncome === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>10</span>
+                <div>
+                  <h3>Ile wynoszą Twoje miesięczne zobowiązania?</h3>
+                  <p>Uwzględnij raty, limity kart i inne stałe zobowiązania kredytowe.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in monthlyObligationOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.monthlyObligations === option.value }"
+                  :aria-pressed="state.profile.monthlyObligations === option.value"
+                  @click="chooseMonthlyObligations(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.monthlyObligations === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
+              </div>
+            </div>
+
+            <div class="preparation-section">
+              <div class="preparation-section__heading">
+                <span>11</span>
+                <div>
+                  <h3>Jaka miesięczna rata byłaby dla Ciebie komfortowa?</h3>
+                  <p>Wybierz ratę, która zostawia bezpieczny bufor w domowym budżecie.</p>
+                </div>
+              </div>
+              <div class="preparation-options preparation-options--two">
+                <button
+                  v-for="option in comfortablePaymentOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-selected': state.profile.comfortablePayment === option.value }"
+                  :aria-pressed="state.profile.comfortablePayment === option.value"
+                  @click="chooseComfortablePayment(option.value)"
+                >
+                  <UIcon :name="option.icon" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                  <UIcon class="preparation-option__check" :name="state.profile.comfortablePayment === option.value ? 'i-lucide-circle-check-big' : 'i-lucide-circle'" />
+                </button>
               </div>
               <UAlert
+                class="preparation-profile-alert"
                 :color="profileReady ? 'success' : 'neutral'"
                 variant="subtle"
                 :icon="profileReady ? 'i-lucide-circle-check-big' : 'i-lucide-info'"
@@ -627,7 +1007,7 @@ async function completePreparation() {
               variant="subtle"
               icon="i-lucide-shield-check"
               title="Nie przesyłaj tu dokumentów ani numerów identyfikacyjnych"
-              description="Ta checklista jest prywatną pomocą. Zaznacz tylko, co masz już pod ręką lub potrafisz omówić."
+              description="Zaznaczenia zapisujemy w sprawie, ale nie prosimy o pliki ani dane dokumentów. Wybierz tylko, co masz pod ręką lub potrafisz omówić."
             />
 
             <div class="preparation-checklist-progress">
@@ -711,20 +1091,6 @@ async function completePreparation() {
               </section>
             </div>
 
-            <UFormField
-              label="Twoje własne pytanie"
-              description="Opcjonalnie — dopisz temat, którego nie ma na liście."
-            >
-              <UTextarea
-                v-model="state.customQuestion"
-                autoresize
-                :rows="3"
-                :maxrows="6"
-                maxlength="600"
-                placeholder="Np. czy moja sytuacja zawodowa wymaga dodatkowych dokumentów?"
-                class="w-full"
-              />
-            </UFormField>
           </template>
 
           <template v-else>
@@ -768,19 +1134,41 @@ async function completePreparation() {
                     <dt>Współkredytobiorca</dt>
                     <dd>{{ coBorrowerOptions.find(option => option.value === state.profile.coBorrower)?.label || 'Do omówienia' }}</dd>
                   </div>
+                  <div>
+                    <dt>Budżet celu</dt>
+                    <dd>{{ propertyBudgetLabel(state.profile.propertyBudget) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Środki własne</dt>
+                    <dd>{{ ownFundsLabel(state.profile.ownFunds) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Kwota kredytu</dt>
+                    <dd>{{ loanAmountLabel(state.profile.loanAmount) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Okres spłaty</dt>
+                    <dd>{{ loanTermLabel(state.profile.loanTerm) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Dochód netto</dt>
+                    <dd>{{ monthlyNetIncomeLabel(state.profile.monthlyNetIncome) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Zobowiązania</dt>
+                    <dd>{{ monthlyObligationsLabel(state.profile.monthlyObligations) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Komfortowa rata</dt>
+                    <dd>{{ comfortablePaymentLabel(state.profile.comfortablePayment) }}</dd>
+                  </div>
                 </dl>
-                <div v-if="state.profile.propertyBudget || state.profile.ownFunds || state.profile.comfortablePayment" class="preparation-summary__amounts">
-                  <span v-if="state.profile.propertyBudget">Budżet: <strong>{{ state.profile.propertyBudget }}</strong></span>
-                  <span v-if="state.profile.ownFunds">Środki własne: <strong>{{ state.profile.ownFunds }}</strong></span>
-                  <span v-if="state.profile.comfortablePayment">Komfortowa rata: <strong>{{ state.profile.comfortablePayment }}</strong></span>
-                </div>
               </section>
 
               <section>
                 <p>PYTANIA NA SPOTKANIE · {{ selectedQuestions.length }}</p>
                 <ol v-if="selectedQuestions.length">
                   <li v-for="question in selectedQuestions" :key="question.id">{{ question.text }}</li>
-                  <li v-if="state.customQuestion.trim()">{{ state.customQuestion.trim() }}</li>
                 </ol>
                 <div v-else class="preparation-summary__empty">
                   <UIcon name="i-lucide-message-circle-question" />
@@ -810,9 +1198,11 @@ async function completePreparation() {
             <UAlert
               color="neutral"
               variant="subtle"
-              icon="i-lucide-lock-keyhole"
-              title="Ten brief jest tylko dla Ciebie"
-              description="Nie wysyłamy go ekspertowi automatycznie. Jeśli chcesz, możesz skopiować podsumowanie i samodzielnie wykorzystać je w rozmowie."
+              :icon="preview ? 'i-lucide-monitor' : 'i-lucide-cloud-check'"
+              :title="preview ? 'To jest tryb podglądu' : 'Brief jest zapisany przy sprawie'"
+              :description="preview
+                ? 'Zmiany nie są wysyłane. W panelu klienta każdy wybór zapisuje się automatycznie.'
+                : 'Ekspert widzi te odpowiedzi przed rozmową. Na spotkaniu wspólnie potwierdzicie wszystkie orientacyjne informacje.'"
             />
           </template>
 
@@ -828,7 +1218,7 @@ async function completePreparation() {
             </UButton>
             <span v-else />
 
-            <div>
+            <div class="preparation-card__actions">
               <UButton
                 v-if="state.activeStep < steps.length - 1"
                 color="neutral"
@@ -845,9 +1235,10 @@ async function completePreparation() {
                 variant="solid"
                 trailing
                 icon="i-lucide-arrow-right"
+                :loading="completing"
                 @click="completePreparation"
               >
-                {{ state.completedAt ? 'Wróć do „Co teraz”' : 'Gotowe — wróć do „Co teraz”' }}
+                {{ completedAt ? 'Wróć do „Co teraz”' : 'Gotowe — wróć do „Co teraz”' }}
               </UButton>
             </div>
           </footer>
@@ -1253,8 +1644,7 @@ async function completePreparation() {
 .preparation-options button.is-selected small { color: rgb(255 255 255 / 55%); }
 .preparation-option__check { width: 18px; height: 18px; color: var(--ui-text-muted); }
 .preparation-options button.is-selected .preparation-option__check { color: #fff; }
-
-.preparation-amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 15px; }
+.preparation-profile-alert { margin-top: 15px; }
 
 .preparation-concepts { display: grid; gap: 10px; }
 .preparation-concepts details { border: 1px solid var(--ui-border); border-radius: 15px; background: var(--ui-bg); }
@@ -1329,8 +1719,6 @@ async function completePreparation() {
 .preparation-summary dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--ui-border-muted); }
 .preparation-summary dt { color: var(--ui-text-muted); font-size: 10px; }
 .preparation-summary dd { margin: 0; color: var(--ui-text-highlighted); font-size: 11px; font-weight: 600; }
-.preparation-summary__amounts { display: grid; gap: 4px; margin-top: 12px; color: var(--ui-text-muted); font-size: 10px; }
-.preparation-summary__amounts strong { color: var(--ui-text-highlighted); }
 .preparation-summary ol { display: grid; gap: 9px; margin: 0; padding-left: 20px; }
 .preparation-summary li { padding-left: 4px; color: var(--ui-text-toned); font-size: 10px; line-height: 1.45; }
 .preparation-summary__empty { display: flex; align-items: center; gap: 10px; color: var(--ui-text-muted); }
@@ -1348,6 +1736,50 @@ async function completePreparation() {
 .preparation-summary-actions { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0 12px; }
 
 .preparation-card__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--portal-line); }
+.preparation-card__actions { flex: 0 0 auto; }
+
+.preparation-save-state {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--ui-text-muted);
+}
+
+.preparation-save-state--sticky {
+  position: sticky;
+  z-index: 5;
+  top: 12px;
+  width: min(100%, 520px);
+  margin: -8px 0 20px auto;
+  padding: 9px 12px;
+  justify-content: flex-start;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ui-bg) 94%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-text) 8%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.preparation-save-state--sticky.is-error {
+  border-color: color-mix(in srgb, var(--ui-color-error-500) 35%, var(--ui-border));
+}
+
+.preparation-save-state > svg { flex: 0 0 auto; width: 18px; height: 18px; }
+.preparation-save-state > span { min-width: 0; }
+.preparation-save-state strong, .preparation-save-state small { display: block; }
+.preparation-save-state strong { color: var(--ui-text-toned); font-size: 10px; font-weight: 650; }
+.preparation-save-state small { margin-top: 2px; font-size: 9px; line-height: 1.35; }
+.preparation-save-state.is-saved > svg { color: var(--ui-color-success-600); }
+.preparation-save-state.is-error { color: var(--ui-color-error-600); }
+.preparation-save-state.is-error strong { color: var(--ui-color-error-700); }
+.preparation-save-state .is-spinning { animation: preparation-spin 900ms linear infinite; }
+
+@keyframes preparation-spin {
+  to { transform: rotate(360deg); }
+}
 
 .preparation-sources { margin-top: 20px; border-radius: 16px; }
 .preparation-sources summary { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 17px 20px; list-style: none; color: var(--ui-text-toned); font-size: 11px; font-weight: 600; cursor: pointer; }
@@ -1364,7 +1796,7 @@ async function completePreparation() {
   .preparation-hero { grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr); padding: 30px; }
   .preparation-workspace { grid-template-columns: 220px minmax(0, 1fr); }
   .preparation-card { padding: 28px; }
-  .preparation-options--three, .preparation-amounts { grid-template-columns: 1fr; }
+  .preparation-options--three { grid-template-columns: 1fr; }
   .preparation-summary { grid-template-columns: 1fr; }
 }
 
@@ -1405,8 +1837,14 @@ async function completePreparation() {
   .preparation-ready > strong { grid-column: 2; }
   .preparation-summary dl > div { grid-template-columns: 1fr; gap: 2px; }
   .preparation-card__footer { align-items: stretch; flex-direction: column-reverse; }
+  .preparation-save-state { flex-basis: auto; justify-content: flex-start; }
+  .preparation-save-state--sticky { width: 100%; margin-inline: 0; }
   .preparation-card__footer > div :deep(button), .preparation-card__footer > :deep(button) { width: 100%; }
   .preparation-summary-actions { display: grid; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preparation-save-state .is-spinning { animation-duration: 1800ms; }
 }
 
 @media print {
@@ -1415,6 +1853,7 @@ async function completePreparation() {
   .preparation-back,
   .preparation-hero,
   .preparation-steps,
+  .preparation-save-state,
   .preparation-card__footer,
   .preparation-summary-actions,
   .preparation-sources { display: none !important; }

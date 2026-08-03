@@ -21,6 +21,99 @@ export interface CrmMeetingSharedState {
   updatedAt: string | null
 }
 
+const crmMeetingPreparationGoals = ['purchase', 'construction', 'refinance', 'exploring'] as const
+const crmMeetingPreparationStages = ['possibilities', 'searching', 'selected', 'deadline'] as const
+const crmMeetingPreparationIncomeSources = [
+  'employment',
+  'business',
+  'civil_contract',
+  'foreign',
+  'retirement',
+  'rental',
+  'other',
+] as const
+const crmMeetingPreparationCoBorrowers = ['yes', 'no', 'unsure'] as const
+const crmMeetingPreparationPropertyBudgets = [
+  'up_to_400k',
+  '400k_600k',
+  '600k_800k',
+  '800k_1m',
+  '1m_1_5m',
+  'above_1_5m',
+  'unknown',
+] as const
+const crmMeetingPreparationOwnFunds = [
+  'none',
+  'up_to_50k',
+  '50k_100k',
+  '100k_200k',
+  '200k_300k',
+  'above_300k',
+  'unknown',
+] as const
+const crmMeetingPreparationLoanAmounts = [
+  'up_to_300k',
+  '300k_500k',
+  '500k_700k',
+  '700k_1m',
+  'above_1m',
+  'unknown',
+] as const
+const crmMeetingPreparationLoanTerms = ['15', '20', '25', '30', '35', 'unknown'] as const
+const crmMeetingPreparationMonthlyNetIncomes = [
+  'up_to_6k',
+  '6k_10k',
+  '10k_15k',
+  '15k_20k',
+  '20k_30k',
+  'above_30k',
+  'prefer_meeting',
+] as const
+const crmMeetingPreparationMonthlyObligations = [
+  'none',
+  'up_to_1k',
+  '1k_2_5k',
+  '2_5k_5k',
+  'above_5k',
+  'prefer_meeting',
+] as const
+const crmMeetingPreparationComfortablePayments = [
+  'up_to_2500',
+  '2500_3500',
+  '3500_4500',
+  '4500_6000',
+  'above_6000',
+  'unknown',
+] as const
+
+export interface CrmMeetingPreparation {
+  caseId: string
+  appointmentId: string
+  answers: {
+    version: 2
+    activeStep: 0 | 1 | 2 | 3 | 4
+    profile: {
+      goal: typeof crmMeetingPreparationGoals[number] | null
+      stage: typeof crmMeetingPreparationStages[number] | null
+      incomeSources: Array<typeof crmMeetingPreparationIncomeSources[number]>
+      coBorrower: typeof crmMeetingPreparationCoBorrowers[number] | null
+      propertyBudget: typeof crmMeetingPreparationPropertyBudgets[number] | null
+      ownFunds: typeof crmMeetingPreparationOwnFunds[number] | null
+      loanAmount: typeof crmMeetingPreparationLoanAmounts[number] | null
+      loanTerm: typeof crmMeetingPreparationLoanTerms[number] | null
+      monthlyNetIncome: typeof crmMeetingPreparationMonthlyNetIncomes[number] | null
+      monthlyObligations: typeof crmMeetingPreparationMonthlyObligations[number] | null
+      comfortablePayment: typeof crmMeetingPreparationComfortablePayments[number] | null
+    }
+    readConceptIds: string[]
+    checkedItemIds: string[]
+    selectedQuestionIds: string[]
+  }
+  revision: number
+  updatedAt: string
+  completedAt: string | null
+}
+
 export interface CrmMeetingContext {
   version: 1
   caseId: string
@@ -52,6 +145,7 @@ export interface CrmMeetingRecord {
   startedAt: string | null
   endedAt: string | null
   shared: CrmMeetingSharedState
+  preparation: CrmMeetingPreparation | null
 }
 
 export interface ClientMeetingSharedOffer {
@@ -116,6 +210,40 @@ function recordValue(value: unknown): Record<string, any> {
   return value as Record<string, any>
 }
 
+function nullablePreparationChoice<const T extends readonly string[]>(
+  value: unknown,
+  choices: T,
+): T[number] | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' && (choices as readonly string[]).includes(value)
+    ? value as T[number]
+    : undefined
+}
+
+function preparationChoiceArray<const T extends readonly string[]>(
+  value: unknown,
+  choices: T,
+): Array<T[number]> | null {
+  if (!Array.isArray(value) || value.length > choices.length) return null
+  if (value.some(item => (
+    typeof item !== 'string'
+    || !(choices as readonly string[]).includes(item)
+  ))) return null
+  if (new Set(value).size !== value.length) return null
+  return value as Array<T[number]>
+}
+
+function preparationIdArray(value: unknown, maximumItems: number): string[] | null {
+  if (!Array.isArray(value) || value.length > maximumItems) return null
+  if (value.some(item => (
+    typeof item !== 'string'
+    || !item.trim()
+    || item.length > 100
+  ))) return null
+  if (new Set(value).size !== value.length) return null
+  return value as string[]
+}
+
 function nullableIsoDate(value: unknown): string | null | undefined {
   if (value === null) return null
   if (typeof value !== 'string' || !value.trim()) return undefined
@@ -131,6 +259,107 @@ function nullableUuid(value: unknown): string | null | undefined {
 
 export function isCrmMeetingUuid(value: unknown): value is string {
   return typeof value === 'string' && uuidPattern.test(value)
+}
+
+export function normalizeCrmMeetingPreparation(
+  rowInput: unknown,
+): CrmMeetingPreparation | null {
+  const row = recordValue(rowInput)
+  const answers = recordValue(row.answers)
+  const profile = recordValue(answers.profile)
+  const goal = nullablePreparationChoice(profile.goal, crmMeetingPreparationGoals)
+  const stage = nullablePreparationChoice(profile.stage, crmMeetingPreparationStages)
+  const incomeSources = preparationChoiceArray(
+    profile.incomeSources,
+    crmMeetingPreparationIncomeSources,
+  )
+  const coBorrower = nullablePreparationChoice(
+    profile.coBorrower,
+    crmMeetingPreparationCoBorrowers,
+  )
+  const propertyBudget = nullablePreparationChoice(
+    profile.propertyBudget,
+    crmMeetingPreparationPropertyBudgets,
+  )
+  const ownFunds = nullablePreparationChoice(profile.ownFunds, crmMeetingPreparationOwnFunds)
+  const loanAmount = nullablePreparationChoice(
+    profile.loanAmount,
+    crmMeetingPreparationLoanAmounts,
+  )
+  const loanTerm = nullablePreparationChoice(profile.loanTerm, crmMeetingPreparationLoanTerms)
+  const monthlyNetIncome = nullablePreparationChoice(
+    profile.monthlyNetIncome,
+    crmMeetingPreparationMonthlyNetIncomes,
+  )
+  const monthlyObligations = nullablePreparationChoice(
+    profile.monthlyObligations,
+    crmMeetingPreparationMonthlyObligations,
+  )
+  const comfortablePayment = nullablePreparationChoice(
+    profile.comfortablePayment,
+    crmMeetingPreparationComfortablePayments,
+  )
+  const readConceptIds = preparationIdArray(answers.readConceptIds, 20)
+  const checkedItemIds = preparationIdArray(answers.checkedItemIds, 50)
+  const selectedQuestionIds = preparationIdArray(answers.selectedQuestionIds, 50)
+  const revision = Number(row.revision)
+  const updatedAt = nullableIsoDate(row.updated_at)
+  const completedAt = nullableIsoDate(row.completed_at)
+
+  if (
+    !isCrmMeetingUuid(row.case_id)
+    || !isCrmMeetingUuid(row.appointment_id)
+    || answers.version !== 2
+    || !Number.isInteger(answers.activeStep)
+    || Number(answers.activeStep) < 0
+    || Number(answers.activeStep) > 4
+    || goal === undefined
+    || stage === undefined
+    || incomeSources === null
+    || coBorrower === undefined
+    || propertyBudget === undefined
+    || ownFunds === undefined
+    || loanAmount === undefined
+    || loanTerm === undefined
+    || monthlyNetIncome === undefined
+    || monthlyObligations === undefined
+    || comfortablePayment === undefined
+    || readConceptIds === null
+    || checkedItemIds === null
+    || selectedQuestionIds === null
+    || !Number.isSafeInteger(revision)
+    || revision < 1
+    || !updatedAt
+    || completedAt === undefined
+  ) return null
+
+  return {
+    caseId: row.case_id,
+    appointmentId: row.appointment_id,
+    answers: {
+      version: 2,
+      activeStep: Number(answers.activeStep) as 0 | 1 | 2 | 3 | 4,
+      profile: {
+        goal,
+        stage,
+        incomeSources,
+        coBorrower,
+        propertyBudget,
+        ownFunds,
+        loanAmount,
+        loanTerm,
+        monthlyNetIncome,
+        monthlyObligations,
+        comfortablePayment,
+      },
+      readConceptIds,
+      checkedItemIds,
+      selectedQuestionIds,
+    },
+    revision,
+    updatedAt,
+    completedAt,
+  }
 }
 
 export function parseExpertMeetingPreviewOrganizationSlug(
@@ -310,6 +539,7 @@ export async function normalizeCrmMeetingRecords(
   if (!parsedRows.length) return []
 
   const caseIds = [...new Set(parsedRows.map(item => item.context.caseId))]
+  const appointmentIds = [...new Set(parsedRows.map(item => String(item.row.id)))]
   const clientIds = [...new Set(parsedRows.map(item => String(item.row.client_id)))]
   const facilityIds = [...new Set(parsedRows.map(item => String(item.row.facility_id)))]
   const serviceIds = [...new Set(parsedRows.map(item => String(item.row.service_id)))]
@@ -321,6 +551,7 @@ export async function normalizeCrmMeetingRecords(
     facilitiesResult,
     servicesResult,
     expertsResult,
+    preparationsResult,
   ] = await Promise.all([
     backendData
       .from('crm_cases')
@@ -346,18 +577,34 @@ export async function normalizeCrmMeetingRecords(
       .from('users')
       .select('id, full_name, email')
       .in('id', expertIds),
+    backendData
+      .from('crm_case_meeting_preparations')
+      .select('case_id, appointment_id, answers, revision, completed_at, updated_at')
+      .eq('organization_id', organizationId)
+      .in('case_id', caseIds)
+      .in('appointment_id', appointmentIds),
   ])
   throwQueryError(casesResult.error)
   throwQueryError(clientsResult.error)
   throwQueryError(facilitiesResult.error)
   throwQueryError(servicesResult.error)
   throwQueryError(expertsResult.error)
+  throwQueryError(preparationsResult.error)
 
   const cases = new Map((casesResult.data ?? []).map((row: any) => [String(row.id), row]))
   const clients = new Map((clientsResult.data ?? []).map((row: any) => [String(row.id), row]))
   const facilities = new Map((facilitiesResult.data ?? []).map((row: any) => [String(row.id), row]))
   const services = new Map((servicesResult.data ?? []).map((row: any) => [String(row.id), row]))
   const experts = new Map((expertsResult.data ?? []).map((row: any) => [String(row.id), row]))
+  const preparations = new Map<string, CrmMeetingPreparation>()
+  for (const row of preparationsResult.data ?? []) {
+    const preparation = normalizeCrmMeetingPreparation(row)
+    if (!preparation) continue
+    preparations.set(
+      JSON.stringify([preparation.caseId, preparation.appointmentId]),
+      preparation,
+    )
+  }
 
   return parsedRows.map(({ row, context }) => {
     const caseRow = cases.get(context.caseId) as Record<string, any> | undefined
@@ -390,6 +637,7 @@ export async function normalizeCrmMeetingRecords(
         ? String(row.cancelled_at)
         : null),
       shared: context.shared,
+      preparation: preparations.get(JSON.stringify([context.caseId, String(row.id)])) ?? null,
     }
   })
 }

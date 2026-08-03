@@ -1,14 +1,23 @@
-import { betterAuth, type BetterAuthOptions } from 'better-auth'
-import { jwt, magicLink } from 'better-auth/plugins'
+import { passkey } from '@better-auth/passkey'
+import {
+  betterAuth,
+  type BetterAuthOptions,
+  type BetterAuthPlugin,
+} from 'better-auth'
+import { freshSessionMiddleware } from 'better-auth/api'
+import { jwt, magicLink, phoneNumber } from 'better-auth/plugins'
 import { Pool, type PoolConfig } from 'pg'
 
 import { getBearerToken } from './headers.ts'
 import { createDefaultBcryptPasswordStrategy } from './password.ts'
+import { normalizeOpenExpertPhone } from './phone.ts'
 import {
   OPENEXPERT_AUTHENTICATED_ROLE,
   type OpenExpertAuthClaims,
   type OpenExpertAuthConfig,
   type OpenExpertAuthEmailSender,
+  type OpenExpertAuthPasskeyOptions,
+  type OpenExpertAuthPhoneOptions,
   type OpenExpertAuthUser,
 } from './types.ts'
 
@@ -17,9 +26,35 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]*$/
 
+const sensitiveAuthMethodPlugin = {
+  id: 'openexpert-sensitive-auth-methods',
+  hooks: {
+    before: [{
+      matcher(context) {
+        const body = context.body as Record<string, unknown> | undefined
+        return context.path === '/link-social'
+          || context.path === '/passkey/delete-passkey'
+          || context.path === '/passkey/update-passkey'
+          || (
+            context.path === '/update-user'
+            && body != null
+            && Object.hasOwn(body, 'phoneNumber')
+          )
+          || (
+            context.path === '/phone-number/verify'
+            && body?.updatePhoneNumber === true
+          )
+      },
+      handler: freshSessionMiddleware,
+    }],
+  },
+} satisfies BetterAuthPlugin
+
 export interface CreateOpenExpertAuthOptions {
   config: OpenExpertAuthConfig
   emailSender: OpenExpertAuthEmailSender
+  phone?: OpenExpertAuthPhoneOptions
+  passkey?: OpenExpertAuthPasskeyOptions
   pool?: Pool
   poolOptions?: Omit<PoolConfig, 'connectionString'>
   scheduleBackgroundTask?: (promise: Promise<unknown>) => void
@@ -107,6 +142,75 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
   const { pool, ownsPool } = createPool(config, options)
   const send = options.emailSender.send.bind(options.emailSender)
   const configuredSocialProviders = socialProviders(config)
+  const phoneExpiresIn = options.phone?.expiresIn ?? 5 * 60
+  const phoneAllowedAttempts = options.phone?.allowedAttempts ?? 5
+  if (!Number.isInteger(phoneExpiresIn) || phoneExpiresIn < 60 || phoneExpiresIn > 60 * 60) {
+    throw new TypeError('Phone OTP expiry must be between 60 and 3600 seconds')
+  }
+  if (!Number.isInteger(phoneAllowedAttempts) || phoneAllowedAttempts < 1 || phoneAllowedAttempts > 10) {
+    throw new TypeError('Phone OTP allowed attempts must be between 1 and 10')
+  }
+
+  const phonePlugin = options.phone
+    ? phoneNumber({
+        otpLength: 6,
+        expiresIn: phoneExpiresIn,
+        allowedAttempts: phoneAllowedAttempts,
+        requireVerification: true,
+        phoneNumberValidator: phoneNumber => (
+          normalizeOpenExpertPhone(phoneNumber) === phoneNumber
+        ),
+        sendOTP: ({ phoneNumber, code }, context) => options.phone!.sender.send({
+          kind: 'phone-verification',
+          to: phoneNumber,
+          code,
+          request: context?.request,
+        }),
+        sendPasswordResetOTP: ({ phoneNumber, code }, context) => options.phone!.sender.send({
+          kind: 'phone-password-reset',
+          to: phoneNumber,
+          code,
+          request: context?.request,
+        }),
+        schema: {
+          user: {
+            modelName: 'users',
+            fields: {
+              phoneNumber: 'phone_number',
+              phoneNumberVerified: 'phone_number_verified',
+            },
+          },
+        },
+      })
+    : null
+
+  const passkeyPlugin = options.passkey
+    ? passkey({
+        rpID: options.passkey.rpID,
+        rpName: options.passkey.rpName ?? config.appName,
+        origin: options.passkey.origin,
+        authenticatorSelection: {
+          residentKey: 'required',
+          userVerification: 'required',
+        },
+        advanced: {
+          webAuthnChallengeCookie: 'passkey_challenge',
+        },
+        schema: {
+          passkey: {
+            modelName: 'passkeys',
+            fields: {
+              publicKey: 'public_key',
+              userId: 'user_id',
+              credentialID: 'credential_id',
+              deviceType: 'device_type',
+              backedUp: 'backed_up',
+              createdAt: 'created_at',
+            },
+          },
+        },
+      })
+    : null
 
   const coreOptions = {
     appName: config.appName,
@@ -239,6 +343,7 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
   const auth = betterAuth({
     ...coreOptions,
     plugins: [
+      sensitiveAuthMethodPlugin,
       magicLink({
         expiresIn: config.magicLinkExpiresIn,
         disableSignUp: config.magicLinkDisableSignUp,
@@ -253,6 +358,8 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
             request: context?.request,
           }),
       }),
+      ...(phonePlugin ? [phonePlugin] : []),
+      ...(passkeyPlugin ? [passkeyPlugin] : []),
       jwt({
         schema: {
           jwks: {
@@ -342,6 +449,8 @@ export async function getOpenExpertUserById(
   const schema = runtime.config.databaseSchema
   const result = await runtime.pool.query<OpenExpertAuthUser>(
     `select id, name, email, email_verified as "emailVerified", image,
+            phone_number as "phoneNumber",
+            phone_number_verified as "phoneNumberVerified",
             created_at as "createdAt", updated_at as "updatedAt"
        from ${schema}.users
       where id = $1

@@ -6,6 +6,8 @@ export interface AuthenticatedUser {
   name: string
   email: string
   emailVerified: boolean
+  phoneNumber: string | null
+  phoneNumberVerified: boolean
   user_metadata: {
     full_name: string
   }
@@ -17,6 +19,8 @@ export interface BetterAuthSessionResponse {
     name?: string
     email?: string
     emailVerified?: boolean
+    phoneNumber?: string | null
+    phoneNumberVerified?: boolean
   }
 }
 
@@ -43,6 +47,8 @@ export function authenticatedUserFromSession(
     name,
     email: source.email,
     emailVerified: source.emailVerified === true,
+    phoneNumber: typeof source.phoneNumber === 'string' ? source.phoneNumber : null,
+    phoneNumberVerified: source.phoneNumberVerified === true,
     user_metadata: { full_name: name },
   }
 }

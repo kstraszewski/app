@@ -4,12 +4,14 @@ import {
   bookingContextWithCrmMeeting,
   createCrmMeetingContext,
   normalizeClientMeetingOffer,
+  normalizeCrmMeetingPreparation,
   parseExpertMeetingPreviewOrganizationSlug,
   parseCrmMeetingContext,
 } from '../server/utils/crm-meetings.ts'
 
 const caseId = '11111111-1111-4111-8111-111111111111'
 const offerId = '22222222-2222-4222-8222-222222222222'
+const appointmentId = '33333333-3333-4333-8333-333333333333'
 
 test('accepts expert preview only with a valid organization slug', () => {
   assert.equal(
@@ -118,4 +120,50 @@ test('treats a missing or unexpected calculation status as incomplete', () => {
   })
 
   assert.equal(normalized.calculationStatus, 'partial')
+})
+
+test('normalizes a versioned client preparation saved for the meeting case', () => {
+  const row = {
+    case_id: caseId,
+    appointment_id: appointmentId,
+    answers: {
+      version: 2,
+      activeStep: 3,
+      profile: {
+        goal: 'purchase',
+        stage: 'selected',
+        incomeSources: ['employment', 'rental'],
+        coBorrower: 'yes',
+        propertyBudget: '600k_800k',
+        ownFunds: '100k_200k',
+        loanAmount: '500k_700k',
+        loanTerm: '25',
+        monthlyNetIncome: '15k_20k',
+        monthlyObligations: 'up_to_1k',
+        comfortablePayment: '3500_4500',
+      },
+      readConceptIds: ['fixed-rate'],
+      checkedItemIds: ['id-card'],
+      selectedQuestionIds: ['early-repayment'],
+    },
+    revision: 7,
+    completed_at: null,
+    updated_at: '2026-08-03T12:00:00.000Z',
+  }
+
+  assert.deepEqual(normalizeCrmMeetingPreparation(row), {
+    caseId,
+    appointmentId,
+    answers: row.answers,
+    revision: 7,
+    completedAt: null,
+    updatedAt: '2026-08-03T12:00:00.000Z',
+  })
+  assert.equal(normalizeCrmMeetingPreparation({
+    ...row,
+    answers: {
+      ...row.answers,
+      profile: { ...row.answers.profile, goal: 'unsupported' },
+    },
+  }), null)
 })

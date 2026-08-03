@@ -181,15 +181,29 @@ describe('client portal dashboard next step', () => {
       status: 'confirmed',
       startsAt: '2026-08-02T09:00:00Z',
       endsAt: '2026-08-02T10:00:00Z',
+      relationship: 'first' as const,
     }
     const preparation = buildPortalDashboardNextStep([], appointment, now)
     assert.equal(preparation.kind, 'prepare_appointment')
     assert.equal(preparation.label, 'Przygotuj się do spotkania')
-    assert.equal(preparation.to, '/prepare')
+    assert.equal(preparation.to, '/prepare?appointmentId=appointment-1')
     assert.match(
       buildPortalDashboardNextStep([], null, now).title,
       /udostępnienie sprawy/,
     )
+  })
+
+  it('waits for a case link instead of preparing an unscoped appointment', () => {
+    const nextStep = buildPortalDashboardNextStep([], {
+      id: 'unscoped-appointment',
+      status: 'confirmed',
+      startsAt: '2026-08-02T09:00:00Z',
+      endsAt: '2026-08-02T10:00:00Z',
+      relationship: null,
+    }, now)
+
+    assert.equal(nextStep.kind, 'wait')
+    assert.match(nextStep.title, /udostępnienie sprawy/)
   })
 
   it('prepares for an explicitly first meeting even when its case already exists', () => {
@@ -212,6 +226,7 @@ describe('client portal dashboard next step', () => {
 
     assert.equal(nextStep.kind, 'prepare_appointment')
     assert.match(nextStep.title, /pierwszego spotkania/)
+    assert.equal(nextStep.to, '/prepare?appointmentId=first-meeting')
   })
 
   it('keeps required client work ahead of first-meeting preparation', () => {

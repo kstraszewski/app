@@ -5,10 +5,7 @@ import type {
   PortalNextStep,
   PortalPayload,
 } from '~/types/portal'
-import {
-  meetingPreparationStorageKey,
-  parseMeetingPreparationState,
-} from '~/utils/meeting-preparation'
+import type { PortalMeetingPreparation } from '#shared/types/meeting-preparation'
 
 const props = withDefaults(defineProps<{
   payload: PortalPayload
@@ -43,7 +40,7 @@ const nextStep = computed<PortalNextStep>(() => {
       to: caseData.action.to,
     }
   }
-  if (nextAppointment.value) {
+  if (nextAppointment.value?.relationship === 'first') {
     return {
       kind: 'prepare_appointment',
       responsibility: 'client',
@@ -51,7 +48,7 @@ const nextStep = computed<PortalNextStep>(() => {
       description: 'W kilka minut uporządkujesz swoją sytuację, poznasz najważniejsze pojęcia i wybierzesz pytania do eksperta.',
       appointmentId: nextAppointment.value.id,
       label: 'Przygotuj się do spotkania',
-      to: '/prepare',
+      to: `/prepare?appointmentId=${encodeURIComponent(nextAppointment.value.id)}`,
     }
   }
   return {
@@ -71,26 +68,54 @@ const expert = computed(() => actionCase.value?.expert
   || nextAppointment.value?.expert
   || null)
 const dashboardCases = computed(() => props.payload.cases)
-const preparationCompleted = ref(false)
 const isFirstAppointment = computed(() => Boolean(
   nextAppointment.value
-  && (
-    nextAppointment.value.relationship === 'first'
-    || (nextAppointment.value.relationship == null && !props.payload.cases.length)
-  ),
+  && nextAppointment.value.relationship === 'first',
 ))
-const preparationTo = computed(() => props.preview ? '/preview/prepare' : '/prepare')
+const preparationStatusAppointmentId = computed(() => (
+  isFirstAppointment.value ? nextAppointment.value?.id || '' : ''
+))
+const previewPreparationCompletedAt = useState<string | null>(
+  `client-preview-meeting-preparation:${props.payload.user.id}:${nextAppointment.value?.id || 'none'}`,
+  () => null,
+)
+const preparationStatusRequest = useFetch<{ data: PortalMeetingPreparation }>(
+  () => `/api/client/appointments/${encodeURIComponent(preparationStatusAppointmentId.value || 'missing')}/preparation`,
+  {
+    key: `client-dashboard-meeting-preparation:${props.payload.user.id}:${nextAppointment.value?.id || 'none'}`,
+    immediate: false,
+    watch: false,
+    server: false,
+  },
+)
 
-onMounted(() => {
-  if (!nextAppointment.value) return
-  const key = meetingPreparationStorageKey(
-    props.payload.user.id,
-    nextAppointment.value.id,
-  )
-  preparationCompleted.value = Boolean(
-    parseMeetingPreparationState(window.localStorage.getItem(key)).completedAt,
+function loadPreparationStatus() {
+  if (props.preview) return
+  preparationStatusRequest.clear()
+  if (preparationStatusAppointmentId.value) void preparationStatusRequest.execute()
+}
+
+onMounted(loadPreparationStatus)
+watch(preparationStatusAppointmentId, loadPreparationStatus)
+
+const preparationCompleted = computed(() => {
+  if (props.preview) return Boolean(previewPreparationCompletedAt.value)
+  const preparation = preparationStatusRequest.data.value?.data
+  return Boolean(
+    preparation
+    && preparation.appointmentId === preparationStatusAppointmentId.value
+    && preparation.completedAt,
   )
 })
+
+function preparationPath(appointmentId?: string | null): string {
+  const base = props.preview ? '/preview/prepare' : '/prepare'
+  return appointmentId
+    ? `${base}?appointmentId=${encodeURIComponent(appointmentId)}`
+    : base
+}
+
+const preparationTo = computed(() => preparationPath(nextAppointment.value?.id))
 
 const actionIcon = computed(() => {
   if (nextStep.value.kind === 'prepare_appointment' && preparationCompleted.value) {
@@ -124,7 +149,9 @@ const actionDescription = computed(() => (
 ))
 
 const actionTo = computed(() => {
-  if (nextStep.value.kind === 'prepare_appointment') return preparationTo.value
+  if (nextStep.value.kind === 'prepare_appointment') {
+    return preparationPath(nextStep.value.appointmentId || nextAppointment.value?.id)
+  }
   if (props.preview) {
     if (nextStep.value.kind === 'complete_multiform') return '/preview/multiform'
     if (actionCase.value) return `/preview/cases/${encodeURIComponent(actionCase.value.id)}`
@@ -268,7 +295,7 @@ const meetingModeLabel = computed(() => {
               Możesz wrócić do swojego briefu i pytań w każdej chwili.
             </span>
             <span v-else-if="nextStep.kind === 'prepare_appointment'">
-              Postęp zapisze się tylko w tej przeglądarce.
+              Każdy wybór zapiszemy automatycznie w sprawie.
             </span>
             <span v-else>Bezpiecznie zapisujemy każdy wykonany krok.</span>
           </div>

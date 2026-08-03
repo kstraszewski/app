@@ -6,8 +6,39 @@ export interface OpenExpertAuthUser {
   email: string
   emailVerified: boolean
   image: string | null
+  phoneNumber: string | null
+  phoneNumberVerified: boolean
   createdAt: Date
   updatedAt: Date
+}
+
+export type OpenExpertAuthPhoneMessageKind =
+  | 'phone-verification'
+  | 'phone-password-reset'
+
+export interface OpenExpertAuthPhoneMessage {
+  kind: OpenExpertAuthPhoneMessageKind
+  to: string
+  code: string
+  request?: Request
+}
+
+export interface OpenExpertAuthPhoneSender {
+  send(message: OpenExpertAuthPhoneMessage): Promise<void>
+}
+
+export interface OpenExpertAuthPhoneOptions {
+  sender: OpenExpertAuthPhoneSender
+  expiresIn?: number
+  allowedAttempts?: number
+}
+
+export interface OpenExpertAuthPasskeyOptions {
+  /** Effective WebAuthn relying-party domain, without scheme or port. */
+  rpID: string
+  /** Exact browser origin or origins allowed to complete a WebAuthn ceremony. */
+  origin: string | string[]
+  rpName?: string
 }
 
 export interface OpenExpertAuthClaims {

@@ -14,6 +14,7 @@
     "test:conversation-inbox": "node --test --experimental-strip-types test/portal-conversation-inbox.test.ts",
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
     "test:demo": "node --test --experimental-strip-types test/demo-session.test.ts",
+    "test:meeting-preparation": "node --test --experimental-strip-types test/meeting-preparation.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {

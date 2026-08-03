@@ -5,7 +5,7 @@ import {
   type BetterAuthPlugin,
 } from 'better-auth'
 import { freshSessionMiddleware } from 'better-auth/api'
-import { jwt, magicLink, phoneNumber } from 'better-auth/plugins'
+import { jwt, magicLink, phoneNumber, twoFactor } from 'better-auth/plugins'
 import { Pool, type PoolConfig } from 'pg'
 
 import { getBearerToken } from './headers.ts'
@@ -360,6 +360,25 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
       }),
       ...(phonePlugin ? [phonePlugin] : []),
       ...(passkeyPlugin ? [passkeyPlugin] : []),
+      twoFactor({
+        issuer: config.appName,
+        twoFactorTable: 'two_factors',
+        schema: {
+          user: {
+            fields: {
+              twoFactorEnabled: 'two_factor_enabled',
+            },
+          },
+          twoFactor: {
+            fields: {
+              userId: 'user_id',
+              backupCodes: 'backup_codes',
+              failedVerificationCount: 'failed_verification_count',
+              lockedUntil: 'locked_until',
+            },
+          },
+        },
+      }),
       jwt({
         schema: {
           jwks: {
@@ -451,6 +470,7 @@ export async function getOpenExpertUserById(
     `select id, name, email, email_verified as "emailVerified", image,
             phone_number as "phoneNumber",
             phone_number_verified as "phoneNumberVerified",
+            two_factor_enabled as "twoFactorEnabled",
             created_at as "createdAt", updated_at as "updatedAt"
        from ${schema}.users
       where id = $1

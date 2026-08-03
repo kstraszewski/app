@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
@@ -18,9 +20,27 @@ export default defineNuxtConfig({
   ui: {
     fonts: false,
     theme: {
-      colors: ['primary', 'success', 'warning', 'error'],
+      colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error'],
       transitions: true,
+      defaultVariants: {
+        color: 'neutral',
+        size: 'sm',
+      },
     },
+  },
+  nitro: {
+    publicAssets: [
+      {
+        dir: fileURLToPath(new URL('../crm/public/fonts', import.meta.url)),
+        baseURL: '/fonts',
+        maxAge: 31_536_000,
+      },
+      {
+        dir: fileURLToPath(new URL('../crm/public/assets', import.meta.url)),
+        baseURL: '/assets',
+        maxAge: 31_536_000,
+      },
+    ],
   },
   icon: {
     provider: 'none',
@@ -29,11 +49,15 @@ export default defineNuxtConfig({
       sizeLimitKb: 256,
       icons: [
         'lucide:arrow-right',
+        'lucide:briefcase-business',
         'lucide:camera',
         'lucide:check',
         'lucide:chevron-left',
         'lucide:circle-alert',
+        'lucide:columns-2',
         'lucide:copy',
+        'lucide:hourglass',
+        'lucide:info',
         'lucide:layout-grid',
         'lucide:link',
         'lucide:lock-keyhole',
@@ -43,8 +67,10 @@ export default defineNuxtConfig({
         'lucide:minimize',
         'lucide:monitor-up',
         'lucide:phone-off',
+        'lucide:picture-in-picture-2',
         'lucide:shield-check',
-        'lucide:sparkles',
+        'lucide:user-round',
+        'lucide:user-round-plus',
         'lucide:users',
         'lucide:video',
         'lucide:video-off',
@@ -72,7 +98,7 @@ export default defineNuxtConfig({
           name: 'description',
           content: 'Testowa aplikacja do spotkań online oparta na LiveKit.',
         },
-        { name: 'theme-color', content: '#0b0c10' },
+        { name: 'theme-color', content: '#ffffff' },
       ],
     },
   },

@@ -1,6 +1,12 @@
 const ROOM_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/u
 const CONTROL_CHARACTER_PATTERN = /[\p{Cc}\p{Cf}]/u
 
+export const MEETING_ROLES = ['expert', 'client'] as const
+export type MeetingRole = typeof MEETING_ROLES[number]
+
+export const MEETING_LAYOUT_MODES = ['split', 'focus'] as const
+export type MeetingLayoutMode = typeof MEETING_LAYOUT_MODES[number]
+
 const POLISH_LETTERS: Record<string, string> = {
   ł: 'l',
   Ł: 'L',
@@ -44,4 +50,12 @@ export function normalizeParticipantName(value: unknown): string | null {
   }
 
   return normalized
+}
+
+export function normalizeMeetingRole(value: unknown): MeetingRole {
+  return value === 'expert' ? 'expert' : 'client'
+}
+
+export function normalizeMeetingLayoutMode(value: unknown): MeetingLayoutMode {
+  return value === 'focus' ? 'focus' : 'split'
 }

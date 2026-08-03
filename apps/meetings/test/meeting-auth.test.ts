@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TokenVerifier } from 'livekit-server-sdk'
 import {
+  normalizeMeetingLayoutMode,
+  normalizeMeetingRole,
   normalizeParticipantName,
   normalizeRoomName,
   toRoomSlug,
@@ -27,6 +29,20 @@ test('normalizuje nazwę uczestnika i odrzuca znaki sterujące', () => {
   assert.equal(normalizeParticipantName(''), null)
   assert.equal(normalizeParticipantName(`Anna\u0000Kowalska`), null)
   assert.equal(normalizeParticipantName('A'.repeat(61)), null)
+})
+
+test('ogranicza testowy wariant interfejsu do eksperta lub klienta', () => {
+  assert.equal(normalizeMeetingRole('expert'), 'expert')
+  assert.equal(normalizeMeetingRole('client'), 'client')
+  assert.equal(normalizeMeetingRole('admin'), 'client')
+  assert.equal(normalizeMeetingRole(undefined), 'client')
+})
+
+test('ogranicza zapamiętany układ spotkania do obsługiwanych wariantów', () => {
+  assert.equal(normalizeMeetingLayoutMode('split'), 'split')
+  assert.equal(normalizeMeetingLayoutMode('focus'), 'focus')
+  assert.equal(normalizeMeetingLayoutMode('gallery'), 'split')
+  assert.equal(normalizeMeetingLayoutMode(undefined), 'split')
 })
 
 test('porównuje kod dostępu i ogranicza demo do jednego pokoju', () => {

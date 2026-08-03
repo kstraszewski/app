@@ -99,14 +99,20 @@ async function signInWithPassword() {
   if (!authClient) return
   loading.value = 'password'
   try {
-    const { error: signInError } = await authClient.signIn.email({
+    if (intendedDestination.value) redirectCookie.set(intendedDestination.value)
+    const result = await authClient.signIn.email({
       email: email.value.trim().toLowerCase(),
       password: password.value,
     })
-    if (signInError) {
-      error.value = errorMessage(signInError)
+    if (result.error) {
+      error.value = errorMessage(result.error)
       return
     }
+    if (
+      result.data
+      && 'twoFactorRedirect' in result.data
+      && result.data.twoFactorRedirect === true
+    ) return
     await finishLogin()
   }
   catch (sessionError) {

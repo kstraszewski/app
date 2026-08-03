@@ -56,3 +56,106 @@ Stan: ciemny motyw OpenExpert, organizacja `openexpert-local`, administrator org
 ## Final result
 
 `passed`
+
+---
+
+# Design QA — bezpieczeństwo konta
+
+## Wynik
+
+`passed`
+
+Status hasła jest kompaktowy, a akcja wylogowania pozostałych urządzeń nie łamie tekstu. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał porównawczy
+
+- Źródło wizualne: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-60e3df44-42e6-45fe-b758-e920ee241993.png`, 2504 × 1148 px, jasny motyw, dwie sesje.
+- Implementacja desktop — górna część: `/private/tmp/openexpert-security-light-wide-final.jpg`, 1966 × 937 px; CSS viewport 2048 × 937, DPR 1.
+- Implementacja desktop — stopka sesji: `/private/tmp/openexpert-security-footer-final.jpg`, 1966 × 937 px; CSS viewport 2048 × 937, DPR 1.
+- Implementacja mobile — status: `/private/tmp/openexpert-security-mobile-top-final.jpg`, 390 × 844 px; CSS viewport 390 × 844, DPR 1.
+- Implementacja mobile — stopka sesji: `/private/tmp/openexpert-security-mobile-footer-final.jpg`, 390 × 844 px; CSS viewport 390 × 844, DPR 1.
+- Porównanie pełnego widoku: `/private/tmp/openexpert-security-design-qa-full.jpg`, 2400 × 600 px; źródło po lewej, implementacja po prawej, oba widoki dopasowane proporcjonalnie do pola 1200 × 600 px.
+- Porównanie detali: `/private/tmp/openexpert-security-design-qa-focus.jpg`, 2300 × 440 px; źródło po lewej i implementacja po prawej, status w pierwszym rzędzie i stopka sesji w drugim.
+
+Stan implementacji: jasny motyw OpenExpert, organizacja `openexpert-local`, konto z aktywnym hasłem, dziewięć lokalnych sesji. Źródło ma dwie sesje i inny adres e-mail, dlatego liczba wierszy oraz treść danych są oczekiwaną różnicą stanu; porównanie ocenia nagłówek i stopkę w odpowiadających sobie stanach wizualnych.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Typografia:** zachowano istniejącą rodzinę, rozmiary, wagi i mono-eyebrow ekranu. Status ma 10 px i 20 px wysokości; etykieta akcji zachowuje jeden wiersz na desktopie i mobile.
+- **Spacing i rytm:** status nie dziedziczy już kwadratu 40 × 40 przeznaczonego dla ikon nagłówka. Ma 69,7 × 20 px w stanie „Aktywne”, jest wyrównany do prawej i nie zmienia wysokości nagłówka. Stopka zachowuje istniejący padding oraz odstęp między opisem i akcją.
+- **Kolory i tokeny:** użyto semantycznego `success` w wariancie `soft` i istniejącego `error` w wariancie `soft`; nie dodano surowych kolorów ani nowej palety.
+- **Ikony i zasoby:** status używa `i-lucide-circle-check`, stan nieaktywny `i-lucide-circle-minus`, a akcja zachowuje `i-lucide-log-out`. Ekran nie wymaga obrazów ani ilustracji; nie dodano własnych SVG, placeholderów ani CSS-art.
+- **Copy i treść:** pozostawiono zgodne znaczeniowo etykiety „Aktywne” i „Wyloguj pozostałe urządzenia”. Akcja nadal jednoznacznie wyklucza bieżącą sesję.
+- **Responsywność:** przy 2048 px przycisk ma 264,8 px szerokości, etykieta 218,8 px i `white-space: nowrap`. Przy 390 px przycisk ma pełne 316 px, etykieta nadal 218,8 px i jeden wiersz. Brak poziomego overflow w obu viewportach.
+- **Dostępność i zachowanie:** status zachowuje czytelny tekst i ikonę, a przycisk ma poprawną nazwę dostępną oraz pozostaje aktywny. Nie wykonywano destrukcyjnego wylogowania sesji podczas QA.
+
+## Historia porównań i poprawek
+
+- **P2 — status wyglądał jak wysoki kafelek:** ogólny selektor `.security-panel__header > span` obejmował również korzeń `UBadge` i wymuszał 40 × 40 px. Pierwszy wariant ze zmniejszonym `UBadge` nadal dziedziczył ten kwadrat. Nadano klasę wyłącznie wrapperom ikon (`.security-panel__icon`) i zawężono selektor. W finalnym porównaniu status ma 69,7 × 20 px, ikonę potwierdzenia i subtelne tło.
+- **P2 — tekst akcji łamał się na dwa wiersze:** przycisk mógł kurczyć się w stopce flex. Ustawiono `shrink-0`, przekazano tekst przez `label` i ustawiono slot etykiety na `whitespace-nowrap`. Finalne porównanie desktop oraz mobile pokazuje pełny tekst w jednym wierszu.
+
+## Walidacja techniczna i przeglądarkowa
+
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `git diff --check` — bez błędów.
+- Przeglądarka: desktop 2048 × 937 i mobile 390 × 844, jasny motyw, brak poziomego overflow.
+- Konsola przeglądarki: brak błędów.
+- Sprawdzono stan po załadowaniu danych, dostępność przycisku, geometrię statusu i etykiety oraz oba punkty widoku. Nie klikano akcji wylogowania, aby nie kończyć istniejących sesji.
+
+## Final result
+
+`passed`
+
+---
+
+# Design QA — walidacja hasła w czasie rzeczywistym
+
+## Wynik
+
+`passed`
+
+Techniczny limit bajtów nie jest już eksponowany użytkownikowi. Formularz pokazuje cztery zrozumiałe wymagania i aktualizuje ich stan podczas pisania; osobno potwierdza zgodność obu haseł. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał porównawczy
+
+- Źródło wizualne: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-2993f6b2-f976-4ae7-8c59-62b823769a27.png`, 742 × 160 px. Źródło pokazuje techniczny opis „10–72 bajty” nad polem hasła.
+- Implementacja desktop: `/private/tmp/openexpert-password-realtime-desktop-final.jpg`, 1440 × 1000 px; CSS viewport 1440 × 1000, DPR 1.
+- Implementacja mobile: `/private/tmp/openexpert-password-realtime-mobile-final.jpg`, 390 × 844 px; CSS viewport 390 × 844, DPR 1.
+- Wspólny obraz porównawczy: `/private/tmp/openexpert-password-realtime-comparison.png`, 1420 × 220 px; źródło po lewej, wdrożona lista wymagań po prawej.
+
+Stan implementacji: jasny motyw OpenExpert, organizacja `openexpert-local`, aktywne hasło. Widok desktop pokazuje kompletne hasło i zgodne potwierdzenie, a widok mobile hasło spełniające trzy z czterech reguł, aby uwidocznić aktualizację stanu w czasie rzeczywistym.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Typografia i copy:** opis bajtów zastąpiono krótkimi zasadami: co najmniej 10 znaków, mała litera, wielka litera i cyfra. Dłuższe hasło otrzymuje komunikat napisany prostym językiem, bez ujawniania technicznej jednostki.
+- **Spacing i rytm:** wymagania tworzą zwartą siatkę dwóch kolumn bez zwiększania szerokości formularza. Odstęp 9 px od pola i 6 px pomiędzy wierszami zachowują hierarchię istniejącego formularza.
+- **Kolory i tokeny:** niespełnione zasady korzystają z koloru tekstu pomocniczego, spełnione z semantycznego `--ui-success`, a błędy z `--ui-error`.
+- **Ikony i zasoby:** użyto istniejących ikon Lucide `circle`, `circle-check`, `circle-x` i `circle-alert`. Nie dodano własnych SVG, atrap ani CSS-art.
+- **Responsywność:** lista pozostaje dwukolumnowa na 390 px, mieści się w 316 px szerokości karty i nie powoduje poziomego overflow. Na desktopie formularz zachowuje dotychczasowe proporcje.
+- **Dostępność:** lista ma nazwę dostępną, pole hasła wskazuje ją przez `aria-describedby`, a informacja o zgodności potwierdzenia używa `aria-live="polite"`. Stan każdej reguły jest przekazywany także tekstem i kolorem, nie samą ikoną.
+
+## Interakcje sprawdzone w przeglądarce
+
+- `abc` spełniało wyłącznie regułę małej litery.
+- `Bezpieczne1` spełniało wszystkie cztery reguły.
+- `InneHaslo1` w polu potwierdzenia pokazywało „Hasła nie są takie same.”, a `Bezpieczne1` — „Hasła są takie same.”.
+- Bardzo długie hasło z polskimi znakami pokazywało prosty komunikat „Hasło jest za długie…” bez słowa „bajt”.
+- Na viewportach 1440 × 1000 i 390 × 844 nie wystąpił poziomy overflow. Konsola przeglądarki nie zawierała błędów.
+- Nie wysyłano formularza i nie zmieniano hasła podczas QA.
+
+## Historia porównań i poprawek
+
+- **P2 — niezrozumiała jednostka „bajty”:** techniczny limit pozostaje respektowany we wspólnej walidacji, ale komunikat został przepisany na zrozumiały język użytkownika.
+- **P2 — brak informacji podczas pisania:** dodano cztery niezależne stany wymagań i natychmiastową informację o zgodności potwierdzenia.
+- **P2 — ryzyko rozjechania na mobile:** siatkę zmierzono na 390 px; ma 316 px szerokości, dwie kolumny po 152 px i nie poszerza dokumentu.
+
+## Walidacja techniczna
+
+- `node --test --experimental-strip-types test/password-validation.test.ts` — 3/3 testy zakończone powodzeniem.
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `git diff --check` — bez błędów.
+- Kontrola przeglądarkowa desktop 1440 × 1000 i mobile 390 × 844; brak błędów konsoli.
+
+## Final result
+
+`passed`

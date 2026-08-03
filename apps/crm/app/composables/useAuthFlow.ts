@@ -87,6 +87,24 @@ export function useAuthFlow() {
     ) {
       return 'Kod jest nieprawidłowy. Sprawdź SMS i spróbuj ponownie.'
     }
+    if (code === 'INVALID_CODE') {
+      return 'Kod z aplikacji jest nieprawidłowy albo wygasł.'
+    }
+    if (code === 'INVALID_BACKUP_CODE') {
+      return 'Kod zapasowy jest nieprawidłowy albo został już użyty.'
+    }
+    if (code === 'INVALID_TWO_FACTOR_COOKIE') {
+      return 'Sesja weryfikacji wygasła. Zaloguj się ponownie.'
+    }
+    if (code === 'ACCOUNT_TEMPORARILY_LOCKED') {
+      return 'Konto zostało tymczasowo zablokowane po wielu błędnych kodach. Spróbuj ponownie za 15 minut.'
+    }
+    if (code === 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE') {
+      return 'Przekroczono limit prób. Zaloguj się ponownie, aby rozpocząć nową weryfikację.'
+    }
+    if (code === 'TOTP_NOT_ENABLED' || code === 'TWO_FACTOR_NOT_ENABLED') {
+      return 'Weryfikacja dwuetapowa nie jest aktywna na tym koncie.'
+    }
     if (
       code === 'OTP_EXPIRED'
       || code === 'OTP_NOT_FOUND'
@@ -151,9 +169,14 @@ export function useAuthFlow() {
       return 'Konto z tym adresem już istnieje.'
     }
     if (
+      code === 'INVALID_PASSWORD'
+      || message === 'invalid password'
+    ) {
+      return 'Podane hasło jest nieprawidłowe.'
+    }
+    if (
       code === 'PASSWORD_TOO_SHORT'
       || code === 'PASSWORD_TOO_LONG'
-      || code === 'INVALID_PASSWORD'
       || message.includes('password')
     ) {
       return 'Hasło nie spełnia wymagań bezpieczeństwa.'

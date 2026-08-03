@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { MeetingRole } from '#shared/utils/meeting'
+
 interface TokenResponse {
   server_url: string
   participant_token: string
@@ -18,6 +20,9 @@ const isJoining = ref(false)
 const joinError = ref('')
 const credentials = shallowRef<TokenResponse | null>(null)
 const isEmbedded = computed(() => route.query.embed === '1')
+const meetingRole = computed<MeetingRole>(() => normalizeMeetingRole(route.query.role))
+const isUiPreview = computed(() => route.query.preview === '1')
+const isRoleTesting = computed(() => route.query.test === '1')
 const toast = useToast()
 
 useHead(() => ({
@@ -27,9 +32,31 @@ useHead(() => ({
 }))
 
 onMounted(() => {
-  participantName.value = sessionStorage.getItem('openexpert-meetings-name') || ''
+  participantName.value = sessionStorage.getItem(participantStorageKey(meetingRole.value))
+    || sessionStorage.getItem('openexpert-meetings-name')
+    || ''
   accessCode.value = sessionStorage.getItem('openexpert-meetings-access-code') || ''
 })
+
+function participantStorageKey(role: MeetingRole): string {
+  return `openexpert-meetings-name-${role}`
+}
+
+async function setMeetingRole(role: MeetingRole): Promise<void> {
+  const normalizedName = normalizeParticipantName(participantName.value)
+  if (normalizedName) {
+    sessionStorage.setItem(participantStorageKey(meetingRole.value), normalizedName)
+  }
+
+  await navigateTo({
+    path: route.path,
+    query: { ...route.query, role },
+  }, { replace: true })
+
+  if (!credentials.value) {
+    participantName.value = sessionStorage.getItem(participantStorageKey(role)) || ''
+  }
+}
 
 function tokenErrorMessage(error: unknown): string {
   if (typeof error !== 'object' || error === null) {
@@ -66,6 +93,7 @@ async function joinMeeting(): Promise<void> {
 
   isJoining.value = true
   sessionStorage.setItem('openexpert-meetings-name', normalizedName)
+  sessionStorage.setItem(participantStorageKey(meetingRole.value), normalizedName)
   sessionStorage.setItem('openexpert-meetings-access-code', accessCode.value)
 
   try {
@@ -92,6 +120,7 @@ async function joinMeeting(): Promise<void> {
 async function copyRoomLink(): Promise<void> {
   try {
     const url = new URL(route.path, window.location.origin)
+    url.searchParams.set('role', 'client')
     await navigator.clipboard.writeText(url.toString())
     toast.add({ title: 'Link skopiowany', icon: 'i-lucide-check', color: 'success' })
   } catch {
@@ -99,19 +128,27 @@ async function copyRoomLink(): Promise<void> {
   }
 }
 
-function returnToLobby(): void {
+async function returnToLobby(): Promise<void> {
   credentials.value = null
+  if (isUiPreview.value) {
+    const query = { ...route.query }
+    delete query.preview
+    await navigateTo({ path: route.path, query }, { replace: true })
+  }
 }
 </script>
 
 <template>
   <MeetingRoom
-    v-if="credentials && roomName"
-    :server-url="credentials.server_url"
-    :participant-token="credentials.participant_token"
+    v-if="(credentials || isUiPreview) && roomName"
+    :server-url="credentials?.server_url || ''"
+    :participant-token="credentials?.participant_token || ''"
     :room-name="roomName"
+    :role="meetingRole"
     :initial-audio="startWithAudio"
     :initial-video="startWithVideo"
+    :preview="isUiPreview"
+    @role-change="setMeetingRole"
     @leave="returnToLobby"
   />
 
@@ -119,7 +156,7 @@ function returnToLobby(): void {
     <nav v-if="!isEmbedded" class="prejoin-nav">
       <NuxtLink to="/" class="landing-brand">
         <span class="brand-mark">
-          <UIcon name="i-lucide-sparkles" />
+          <img src="/assets/logo-light.svg" alt="">
         </span>
         <span>
           <strong>OpenExpert</strong>
@@ -127,10 +164,30 @@ function returnToLobby(): void {
         </span>
       </NuxtLink>
 
-      <NuxtLink to="/" class="prejoin-nav__back">
-        <UIcon name="i-lucide-chevron-left" />
-        Zmień pokój
-      </NuxtLink>
+      <div class="prejoin-nav__actions">
+        <div v-if="isRoleTesting" class="view-switch" aria-label="Testowany widok">
+          <span>Podgląd</span>
+          <button
+            type="button"
+            :class="{ 'is-active': meetingRole === 'expert' }"
+            @click="setMeetingRole('expert')"
+          >
+            Ekspert
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-active': meetingRole === 'client' }"
+            @click="setMeetingRole('client')"
+          >
+            Klient
+          </button>
+        </div>
+
+        <NuxtLink to="/" class="prejoin-nav__back">
+          <UIcon name="i-lucide-chevron-left" />
+          Zmień pokój
+        </NuxtLink>
+      </div>
     </nav>
 
     <section v-if="roomName" class="prejoin-content">
@@ -169,8 +226,18 @@ function returnToLobby(): void {
       </div>
 
       <form class="prejoin-panel" @submit.prevent="joinMeeting">
-        <span class="eyebrow">Poczekalnia</span>
-        <h1>Gotowy na spotkanie?</h1>
+        <span class="role-eyebrow" :class="`role-eyebrow--${meetingRole}`">
+          <UIcon :name="meetingRole === 'expert' ? 'i-lucide-briefcase-business' : 'i-lucide-user-round'" />
+          {{ meetingRole === 'expert' ? 'Widok eksperta' : 'Widok klienta' }}
+        </span>
+        <h1>
+          {{ meetingRole === 'expert' ? 'Rozpocznij konsultację' : 'Dołącz do konsultacji' }}
+        </h1>
+        <p class="prejoin-panel__intro">
+          {{ meetingRole === 'expert'
+            ? 'Po wejściu otrzymasz panel prowadzącego, listę uczestników i szybkie zaproszenie klienta.'
+            : 'Po wejściu zobaczysz prosty widok rozmowy, bez narzędzi przeznaczonych dla prowadzącego.' }}
+        </p>
         <p class="prejoin-panel__room">
           Pokój <strong>{{ roomName }}</strong>
           <button type="button" title="Kopiuj link" @click="copyRoomLink">
@@ -185,7 +252,7 @@ function returnToLobby(): void {
               class="w-full"
               autocomplete="name"
               icon="i-lucide-users"
-              placeholder="np. Konrad"
+              :placeholder="meetingRole === 'expert' ? 'np. Anna — ekspert' : 'np. Konrad'"
               required
             />
           </UFormField>
@@ -213,12 +280,13 @@ function returnToLobby(): void {
         <UButton
           type="submit"
           color="primary"
+          variant="solid"
           size="lg"
           block
           icon="i-lucide-video"
           :loading="isJoining"
         >
-          Dołącz teraz
+          {{ meetingRole === 'expert' ? 'Rozpocznij spotkanie' : 'Dołącz do spotkania' }}
         </UButton>
 
         <p class="prejoin-panel__note">
@@ -231,7 +299,7 @@ function returnToLobby(): void {
       <span><UIcon name="i-lucide-circle-alert" /></span>
       <h1>Ten link jest nieprawidłowy</h1>
       <p>Nazwa pokoju może zawierać małe litery, cyfry i myślniki.</p>
-      <UButton to="/" color="primary" icon="i-lucide-chevron-left">
+      <UButton to="/" color="primary" variant="solid" icon="i-lucide-chevron-left">
         Wróć na stronę główną
       </UButton>
     </section>

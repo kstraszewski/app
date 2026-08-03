@@ -4,12 +4,14 @@ import {
   jwtClient,
   magicLinkClient,
   phoneNumberClient,
+  twoFactorClient,
 } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
 
 export interface OpenExpertAuthClientOptions {
   baseURL?: string
   basePath?: string
+  twoFactorPage?: string
 }
 
 export interface OpenExpertPasskey {
@@ -47,10 +49,16 @@ function createOpenExpertBaseAuthClient(
   // the runtime client-plugin contract.
   const openExpertJwtClient = jwtClient() as ReturnType<typeof jwtClient> &
     BetterAuthClientPlugin
+  const { twoFactorPage, ...clientOptions } = options
 
   return createAuthClient({
-    ...options,
-    plugins: [magicLinkClient(), phoneNumberClient(), openExpertJwtClient],
+    ...clientOptions,
+    plugins: [
+      magicLinkClient(),
+      phoneNumberClient(),
+      twoFactorClient(twoFactorPage ? { twoFactorPage } : undefined),
+      openExpertJwtClient,
+    ],
   })
 }
 
@@ -79,12 +87,14 @@ export function createOpenExpertAuthClient(
 ): OpenExpertPasskeyClient {
   const openExpertJwtClient = jwtClient() as ReturnType<typeof jwtClient> &
     BetterAuthClientPlugin
+  const { twoFactorPage, ...clientOptions } = options
 
   const client = createAuthClient({
-    ...options,
+    ...clientOptions,
     plugins: [
       magicLinkClient(),
       phoneNumberClient(),
+      twoFactorClient(twoFactorPage ? { twoFactorPage } : undefined),
       passkeyClient(),
       openExpertJwtClient,
     ],

@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
   emailVerified: boolean
   phoneNumber: string | null
   phoneNumberVerified: boolean
+  twoFactorEnabled: boolean
   user_metadata: {
     full_name: string
   }
@@ -21,10 +22,11 @@ export interface BetterAuthSessionResponse {
     emailVerified?: boolean
     phoneNumber?: string | null
     phoneNumberVerified?: boolean
+    twoFactorEnabled?: boolean
   }
 }
 
-const authClient = createOpenExpertAuthClient()
+const authClient = createOpenExpertAuthClient({ twoFactorPage: '/two-factor' })
 
 export function useAuthClient() {
   return authClient
@@ -49,6 +51,7 @@ export function authenticatedUserFromSession(
     emailVerified: source.emailVerified === true,
     phoneNumber: typeof source.phoneNumber === 'string' ? source.phoneNumber : null,
     phoneNumberVerified: source.phoneNumberVerified === true,
+    twoFactorEnabled: source.twoFactorEnabled === true,
     user_metadata: { full_name: name },
   }
 }

@@ -1,8 +1,35 @@
 <script setup lang="ts">
+import type { MeetingRole } from '#shared/utils/meeting'
+
 const roomName = ref('demo-room')
 const participantName = ref('')
 const accessCode = ref('')
 const formError = ref('')
+const participantRole = ref<MeetingRole>('expert')
+
+const roleOptions: Array<{
+  value: MeetingRole
+  title: string
+  description: string
+  icon: string
+}> = [
+  {
+    value: 'expert',
+    title: 'Ekspert',
+    description: 'Prowadzenie i narzędzia konsultacji',
+    icon: 'i-lucide-briefcase-business',
+  },
+  {
+    value: 'client',
+    title: 'Klient',
+    description: 'Prosty widok skupiony na rozmowie',
+    icon: 'i-lucide-user-round',
+  },
+]
+
+function participantStorageKey(role: MeetingRole): string {
+  return `openexpert-meetings-name-${role}`
+}
 
 useSeoMeta({
   title: 'OpenExpert Meet — spotkania po swojemu',
@@ -10,11 +37,22 @@ useSeoMeta({
 })
 
 onMounted(() => {
-  participantName.value = sessionStorage.getItem('openexpert-meetings-name') || ''
+  participantName.value = sessionStorage.getItem(participantStorageKey(participantRole.value))
+    || sessionStorage.getItem('openexpert-meetings-name')
+    || ''
   accessCode.value = sessionStorage.getItem('openexpert-meetings-access-code') || ''
 })
 
-async function openRoom(): Promise<void> {
+function selectRole(role: MeetingRole): void {
+  const normalizedName = normalizeParticipantName(participantName.value)
+  if (normalizedName) {
+    sessionStorage.setItem(participantStorageKey(participantRole.value), normalizedName)
+  }
+  participantRole.value = role
+  participantName.value = sessionStorage.getItem(participantStorageKey(role)) || ''
+}
+
+async function openRoom(role: MeetingRole = participantRole.value): Promise<void> {
   formError.value = ''
   const slug = toRoomSlug(roomName.value)
   const name = normalizeParticipantName(participantName.value)
@@ -29,8 +67,30 @@ async function openRoom(): Promise<void> {
   }
 
   sessionStorage.setItem('openexpert-meetings-name', name)
+  sessionStorage.setItem(participantStorageKey(role), name)
   sessionStorage.setItem('openexpert-meetings-access-code', accessCode.value)
-  await navigateTo(`/room/${encodeURIComponent(slug)}`)
+  await navigateTo({
+    path: `/room/${encodeURIComponent(slug)}`,
+    query: { role, test: '1' },
+  })
+}
+
+async function submitRoom(): Promise<void> {
+  await openRoom(participantRole.value)
+}
+
+async function openPreview(role: MeetingRole): Promise<void> {
+  formError.value = ''
+  const slug = toRoomSlug(roomName.value)
+  if (!slug) {
+    formError.value = 'Nazwa pokoju powinna mieć od 3 do 48 znaków.'
+    return
+  }
+
+  await navigateTo({
+    path: `/room/${encodeURIComponent(slug)}`,
+    query: { role, preview: '1' },
+  })
 }
 </script>
 
@@ -39,7 +99,7 @@ async function openRoom(): Promise<void> {
     <nav class="landing-nav">
       <NuxtLink to="/" class="landing-brand" aria-label="OpenExpert Meet">
         <span class="brand-mark">
-          <UIcon name="i-lucide-sparkles" />
+          <img src="/assets/logo-light.svg" alt="">
         </span>
         <span>
           <strong>OpenExpert</strong>
@@ -84,7 +144,7 @@ async function openRoom(): Promise<void> {
         </div>
       </div>
 
-      <form class="join-card" @submit.prevent="openRoom">
+      <form class="join-card" @submit.prevent="submitRoom">
         <div class="join-card__heading">
           <span class="join-card__icon">
             <UIcon name="i-lucide-camera" />
@@ -96,6 +156,24 @@ async function openRoom(): Promise<void> {
         </div>
 
         <div class="join-card__fields">
+          <UFormField label="Testowany widok">
+            <div class="role-picker" role="radiogroup" aria-label="Wybierz widok spotkania">
+              <button
+                v-for="option in roleOptions"
+                :key="option.value"
+                type="button"
+                role="radio"
+                :aria-checked="participantRole === option.value"
+                :class="{ 'is-selected': participantRole === option.value }"
+                @click="selectRole(option.value)"
+              >
+                <span><UIcon :name="option.icon" /></span>
+                <strong>{{ option.title }}</strong>
+                <small>{{ option.description }}</small>
+              </button>
+            </div>
+          </UFormField>
+
           <UFormField label="Nazwa pokoju" hint="Musi odpowiadać konfiguracji serwera">
             <UInput
               v-model="roomName"
@@ -141,12 +219,21 @@ async function openRoom(): Promise<void> {
         <UButton
           type="submit"
           color="primary"
+          variant="solid"
           size="lg"
           block
           trailing-icon="i-lucide-arrow-right"
         >
-          Przejdź do poczekalni
+          Testuj widok: {{ participantRole === 'expert' ? 'ekspert' : 'klient' }}
         </UButton>
+
+        <div class="join-card__view-shortcuts" aria-label="Szybki wybór widoku">
+          <span>Podgląd UI działa bez połączenia z LiveKit i kodu dostępu.</span>
+          <div>
+            <button type="button" @click="openPreview('expert')">Demo eksperta</button>
+            <button type="button" @click="openPreview('client')">Demo klienta</button>
+          </div>
+        </div>
 
         <p class="join-card__privacy">
           <UIcon name="i-lucide-shield-check" />

@@ -8,6 +8,7 @@ export interface OpenExpertAuthUser {
   image: string | null
   phoneNumber: string | null
   phoneNumberVerified: boolean
+  twoFactorEnabled: boolean
   createdAt: Date
   updatedAt: Date
 }

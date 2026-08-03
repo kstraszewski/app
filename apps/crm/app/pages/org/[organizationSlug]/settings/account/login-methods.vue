@@ -3,6 +3,7 @@ import {
   maskOpenExpertPhone,
   normalizeOpenExpertPhone,
 } from '@openexpert/auth'
+import QRCode from 'qrcode'
 import { passkeyDeviceName } from '~/utils/passkey-device-name'
 
 type AuthProvider = 'google' | 'apple'
@@ -55,6 +56,16 @@ const passkeyName = ref('')
 const passkeyAction = ref<'add' | 'rename' | 'delete' | null>(null)
 const pendingRenamePasskey = ref<UserPasskey | null>(null)
 const pendingDeletePasskey = ref<UserPasskey | null>(null)
+const twoFactorModalOpen = ref(false)
+const disableTwoFactorModalOpen = ref(false)
+const twoFactorStep = ref<'password' | 'authenticator' | 'recovery'>('password')
+const twoFactorPassword = ref('')
+const twoFactorCode = ref<number[]>([])
+const twoFactorUri = ref('')
+const twoFactorQrCode = ref('')
+const twoFactorRecoveryCodes = ref<string[]>([])
+const twoFactorError = ref('')
+const twoFactorAction = ref<'enable' | 'verify' | 'disable' | null>(null)
 const renamePasskeyModalOpen = computed({
   get: () => pendingRenamePasskey.value !== null,
   set: (open: boolean) => {
@@ -81,6 +92,21 @@ const phoneLinked = computed(() => (
   && Boolean(authUser.value.phoneNumber)
 ))
 const passkeyEnabled = computed(() => runtimeConfig.public.openexpert.passkey?.enabled === true)
+const twoFactorEnabled = computed(() => authUser.value?.twoFactorEnabled === true)
+const twoFactorSecret = computed(() => {
+  if (!twoFactorUri.value) return ''
+  try {
+    return new URL(twoFactorUri.value).searchParams.get('secret') || ''
+  }
+  catch {
+    return ''
+  }
+})
+const twoFactorModalTitle = computed(() => {
+  if (twoFactorStep.value === 'authenticator') return 'Połącz aplikację uwierzytelniającą'
+  if (twoFactorStep.value === 'recovery') return 'Zapisz kody zapasowe'
+  return 'Włącz weryfikację dwuetapową'
+})
 
 useHead({ title: 'Metody logowania — Ustawienia konta — OpenExpert CRM' })
 
@@ -114,6 +140,156 @@ function passkeyDate(value: string | Date): string {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function resetTwoFactorSetup() {
+  twoFactorStep.value = 'password'
+  twoFactorPassword.value = ''
+  twoFactorCode.value = []
+  twoFactorUri.value = ''
+  twoFactorQrCode.value = ''
+  twoFactorRecoveryCodes.value = []
+  twoFactorError.value = ''
+}
+
+function openTwoFactorSetup() {
+  if (!hasPassword.value || twoFactorEnabled.value) return
+  resetTwoFactorSetup()
+  twoFactorModalOpen.value = true
+}
+
+function openTwoFactorDisable() {
+  if (!twoFactorEnabled.value) return
+  twoFactorPassword.value = ''
+  twoFactorError.value = ''
+  disableTwoFactorModalOpen.value = true
+}
+
+async function enableTwoFactor() {
+  twoFactorError.value = ''
+  if (twoFactorAction.value) return
+  if (!twoFactorPassword.value) {
+    twoFactorError.value = 'Wpisz aktualne hasło.'
+    return
+  }
+
+  twoFactorAction.value = 'enable'
+  try {
+    const result = await authClient.twoFactor.enable({
+      password: twoFactorPassword.value,
+      issuer: 'OpenExpert',
+    })
+    if (result.error) throw result.error
+    twoFactorUri.value = result.data.totpURI
+    twoFactorRecoveryCodes.value = result.data.backupCodes
+    twoFactorPassword.value = ''
+    twoFactorQrCode.value = await QRCode.toDataURL(result.data.totpURI, {
+      width: 224,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#111827', light: '#ffffff' },
+    })
+    twoFactorStep.value = 'authenticator'
+  }
+  catch (error) {
+    twoFactorError.value = errorMessage(error as { message?: string, code?: string })
+  }
+  finally {
+    twoFactorAction.value = null
+  }
+}
+
+async function verifyTwoFactorSetup() {
+  twoFactorError.value = ''
+  if (twoFactorAction.value) return
+  const code = twoFactorCode.value.join('')
+  if (!/^\d{6}$/.test(code)) {
+    twoFactorError.value = 'Wpisz pełny sześciocyfrowy kod z aplikacji.'
+    return
+  }
+
+  twoFactorAction.value = 'verify'
+  try {
+    const result = await authClient.twoFactor.verifyTotp({ code })
+    if (result.error) throw result.error
+    await refreshAuthUser()
+    twoFactorStep.value = 'recovery'
+    toast.add({
+      title: 'Weryfikacja dwuetapowa jest aktywna',
+      description: 'Przy następnym logowaniu hasłem poprosimy także o kod z aplikacji.',
+      color: 'success',
+      icon: 'i-lucide-shield-check',
+    })
+  }
+  catch (error) {
+    twoFactorCode.value = []
+    twoFactorError.value = errorMessage(error as { message?: string, code?: string })
+  }
+  finally {
+    twoFactorAction.value = null
+  }
+}
+
+async function disableTwoFactor() {
+  twoFactorError.value = ''
+  if (twoFactorAction.value) return
+  if (!twoFactorPassword.value) {
+    twoFactorError.value = 'Wpisz aktualne hasło.'
+    return
+  }
+
+  twoFactorAction.value = 'disable'
+  try {
+    const result = await authClient.twoFactor.disable({ password: twoFactorPassword.value })
+    if (result.error) throw result.error
+    await refreshAuthUser()
+    disableTwoFactorModalOpen.value = false
+    twoFactorPassword.value = ''
+    toast.add({
+      title: 'Weryfikacja dwuetapowa wyłączona',
+      description: 'Logowanie hasłem nie będzie już wymagało kodu z aplikacji.',
+      color: 'success',
+      icon: 'i-lucide-shield-off',
+    })
+  }
+  catch (error) {
+    twoFactorError.value = errorMessage(error as { message?: string, code?: string })
+  }
+  finally {
+    twoFactorAction.value = null
+  }
+}
+
+async function copyTwoFactorRecoveryCodes() {
+  try {
+    await navigator.clipboard.writeText(twoFactorRecoveryCodes.value.join('\n'))
+    toast.add({ title: 'Kody zapasowe skopiowane', color: 'success', icon: 'i-lucide-copy-check' })
+  }
+  catch {
+    toast.add({ title: 'Nie udało się skopiować kodów', color: 'error' })
+  }
+}
+
+function downloadTwoFactorRecoveryCodes() {
+  const contents = [
+    'OpenExpert — kody zapasowe weryfikacji dwuetapowej',
+    `Konto: ${authUser.value?.email || ''}`,
+    '',
+    ...twoFactorRecoveryCodes.value,
+    '',
+    'Każdy kod jest jednorazowy. Przechowuj ten plik w bezpiecznym miejscu.',
+  ].join('\n')
+  const url = URL.createObjectURL(new Blob([contents], { type: 'text/plain;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'openexpert-kody-zapasowe.txt'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function finishTwoFactorSetup() {
+  twoFactorModalOpen.value = false
+  resetTwoFactorSetup()
 }
 
 function openPhoneEditor() {
@@ -488,6 +664,12 @@ onMounted(() => {
   passkeySupported.value = window.isSecureContext && 'PublicKeyCredential' in window
   void loadAccounts()
 })
+
+watch(twoFactorModalOpen, (open) => {
+  if (!open && !twoFactorAction.value && twoFactorStep.value !== 'recovery') {
+    resetTwoFactorSetup()
+  }
+})
 </script>
 
 <template>
@@ -632,6 +814,48 @@ onMounted(() => {
         </UButton>
       </article>
 
+      <article class="login-method-card" :class="{ 'login-method-card--protected': twoFactorEnabled }">
+        <span class="login-method-card__icon"><UIcon name="i-lucide-shield-check" /></span>
+        <div class="login-method-card__copy">
+          <div>
+            <h2>Weryfikacja dwuetapowa</h2>
+            <UBadge :color="twoFactorEnabled ? 'success' : 'neutral'" variant="subtle">
+              {{ twoFactorEnabled ? 'Wymagana przy haśle' : 'Wyłączona' }}
+            </UBadge>
+          </div>
+          <p v-if="twoFactorEnabled">Po podaniu hasła potwierdzasz logowanie kodem z aplikacji uwierzytelniającej.</p>
+          <p v-else-if="hasPassword">Dodaj kod z aplikacji jako drugi krok logowania i zabezpiecz konto na wypadek przejęcia hasła.</p>
+          <p v-else>Najpierw ustaw hasło, aby móc włączyć dodatkowy kod przy logowaniu.</p>
+        </div>
+        <UButton
+          v-if="twoFactorEnabled"
+          color="error"
+          variant="ghost"
+          icon="i-lucide-shield-off"
+          @click="openTwoFactorDisable"
+        >
+          Wyłącz
+        </UButton>
+        <UButton
+          v-else-if="hasPassword"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-shield-plus"
+          @click="openTwoFactorSetup"
+        >
+          Włącz
+        </UButton>
+        <UButton
+          v-else
+          :to="orgPath('/settings/account/security')"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-key-round"
+        >
+          Ustaw hasło
+        </UButton>
+      </article>
+
       <article class="login-method-card login-method-card--passkeys">
         <span class="login-method-card__icon"><UIcon name="i-lucide-fingerprint" /></span>
         <div class="login-method-card__copy">
@@ -706,8 +930,136 @@ onMounted(() => {
       variant="subtle"
       icon="i-lucide-info"
       title="Łączenie kont jest celowo restrykcyjne"
-      description="Google i Apple muszą należeć do właściciela konta, numer telefonu trzeba potwierdzić kodem, a nowy passkey wymaga świeżej sesji i zgody urządzenia."
+      description="Google i Apple muszą należeć do właściciela konta, numer telefonu trzeba potwierdzić kodem, a 2FA i nowy passkey wymagają ponownego potwierdzenia tożsamości."
     />
+
+    <UModal
+      v-model:open="twoFactorModalOpen"
+      :title="twoFactorModalTitle"
+      description="Kod jest generowany lokalnie przez wybraną aplikację, np. Google Authenticator, Microsoft Authenticator albo 1Password."
+      :dismissible="!twoFactorAction && twoFactorStep !== 'recovery'"
+    >
+      <template #body>
+        <form v-if="twoFactorStep === 'password'" class="phone-method-form" @submit.prevent="enableTwoFactor">
+          <UAlert
+            color="info"
+            variant="subtle"
+            icon="i-lucide-smartphone-nfc"
+            title="Przygotuj aplikację uwierzytelniającą"
+            description="W kolejnym kroku zeskanujesz kod QR i potwierdzisz konfigurację pierwszym kodem."
+          />
+          <UFormField label="Aktualne hasło" required>
+            <UInput
+              v-model="twoFactorPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+              icon="i-lucide-key-round"
+              size="lg"
+              class="w-full"
+              autofocus
+            />
+          </UFormField>
+          <UAlert v-if="twoFactorError" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="twoFactorError" />
+          <UButton type="submit" block size="lg" icon="i-lucide-arrow-right" :loading="twoFactorAction === 'enable'">
+            Przejdź do konfiguracji
+          </UButton>
+        </form>
+
+        <form v-else-if="twoFactorStep === 'authenticator'" class="two-factor-setup" @submit.prevent="verifyTwoFactorSetup">
+          <div class="two-factor-setup__scan">
+            <img v-if="twoFactorQrCode" :src="twoFactorQrCode" alt="Kod QR konfiguracji weryfikacji dwuetapowej">
+            <div>
+              <strong>1. Zeskanuj kod QR</strong>
+              <p>Otwórz aplikację uwierzytelniającą i dodaj nowe konto.</p>
+              <details v-if="twoFactorSecret">
+                <summary>Nie możesz zeskanować kodu?</summary>
+                <code>{{ twoFactorSecret }}</code>
+              </details>
+            </div>
+          </div>
+          <UFormField label="2. Wpisz kod z aplikacji" description="Kod ma 6 cyfr i zmienia się co 30 sekund." required>
+            <UPinInput
+              v-model="twoFactorCode"
+              type="number"
+              otp
+              :length="6"
+              :separator="3"
+              size="xl"
+              class="justify-center"
+            />
+          </UFormField>
+          <UAlert v-if="twoFactorError" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="twoFactorError" />
+          <UButton type="submit" block size="lg" icon="i-lucide-badge-check" :loading="twoFactorAction === 'verify'">
+            Potwierdź i włącz 2FA
+          </UButton>
+        </form>
+
+        <div v-else class="two-factor-recovery">
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-key-square"
+            title="To jedyna chwila, gdy pokazujemy te kody"
+            description="Każdy kod działa tylko raz. Zapisz je poza tym urządzeniem — pozwolą zalogować się po utracie telefonu."
+          />
+          <div class="two-factor-recovery__codes" aria-label="Kody zapasowe">
+            <code v-for="code in twoFactorRecoveryCodes" :key="code">{{ code }}</code>
+          </div>
+          <div class="two-factor-recovery__actions">
+            <UButton color="neutral" variant="outline" icon="i-lucide-copy" @click="copyTwoFactorRecoveryCodes">
+              Skopiuj
+            </UButton>
+            <UButton color="neutral" variant="outline" icon="i-lucide-download" @click="downloadTwoFactorRecoveryCodes">
+              Pobierz plik
+            </UButton>
+          </div>
+          <UButton block size="lg" icon="i-lucide-check" @click="finishTwoFactorSetup">
+            Mam zapisane kody
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="disableTwoFactorModalOpen"
+      title="Wyłączyć weryfikację dwuetapową?"
+      description="Przy logowaniu hasłem nie będziemy już prosić o kod z aplikacji."
+      :dismissible="twoFactorAction !== 'disable'"
+    >
+      <template #body>
+        <form class="phone-method-form" @submit.prevent="disableTwoFactor">
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-shield-alert"
+            title="Konto będzie słabiej chronione"
+            description="Wyłączenie usunie także dotychczasowe kody zapasowe."
+          />
+          <UFormField label="Aktualne hasło" required>
+            <UInput
+              v-model="twoFactorPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+              icon="i-lucide-key-round"
+              size="lg"
+              class="w-full"
+              autofocus
+            />
+          </UFormField>
+          <UAlert v-if="twoFactorError" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="twoFactorError" />
+          <div class="two-factor-disable-actions">
+            <UButton type="button" color="neutral" variant="outline" :disabled="twoFactorAction === 'disable'" @click="disableTwoFactorModalOpen = false">
+              Anuluj
+            </UButton>
+            <UButton type="submit" color="error" icon="i-lucide-shield-off" :loading="twoFactorAction === 'disable'">
+              Wyłącz 2FA
+            </UButton>
+          </div>
+        </form>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="addPasskeyModalOpen"
@@ -959,6 +1311,11 @@ onMounted(() => {
   background: var(--ui-bg);
 }
 
+.login-method-card--protected {
+  border-color: color-mix(in srgb, var(--ui-color-success-500) 35%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-color-success-50) 24%, var(--ui-bg));
+}
+
 .identity-summary {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
@@ -1131,6 +1488,80 @@ onMounted(() => {
   gap: 16px;
 }
 
+.two-factor-setup,
+.two-factor-recovery {
+  display: grid;
+  gap: 16px;
+}
+
+.two-factor-setup__scan {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.two-factor-setup__scan img {
+  width: 176px;
+  height: 176px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: var(--ui-radius);
+  background: white;
+}
+
+.two-factor-setup__scan strong {
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+}
+
+.two-factor-setup__scan p {
+  margin: 5px 0 12px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.two-factor-setup__scan details {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.two-factor-setup__scan code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: calc(var(--ui-radius) - 2px);
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+  user-select: all;
+}
+
+.two-factor-recovery__codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-muted);
+}
+
+.two-factor-recovery__codes code {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  text-align: center;
+  user-select: all;
+}
+
+.two-factor-recovery__actions,
+.two-factor-disable-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .phone-method-intro {
   display: flex;
   gap: 12px;
@@ -1199,6 +1630,21 @@ onMounted(() => {
   .passkey-row {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     padding: 9px;
+  }
+
+  .two-factor-setup__scan {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+  }
+
+  .two-factor-recovery__codes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .two-factor-recovery__actions,
+  .two-factor-disable-actions {
+    flex-direction: column;
   }
 }
 </style>

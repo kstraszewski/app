@@ -25,6 +25,46 @@ NUXT_MEETINGS_EMBED_ORIGIN=http://127.0.0.1:3004
 Następnie otwórz `http://127.0.0.1:3005/room/demo-room` w dwóch różnych
 przeglądarkach albo w zwykłym i prywatnym oknie.
 
+## Testowanie widoków eksperta i klienta
+
+Na stronie startowej wybierz rolę przed przejściem do poczekalni. Wejście ze
+strony startowej dodaje tryb testowy, dzięki któremu można przełączyć widok
+**Ekspert / Klient** również w poczekalni. Wariant jest zapisany jawnie w
+adresie:
+
+```text
+http://127.0.0.1:3005/room/demo-room?role=expert&test=1
+http://127.0.0.1:3005/room/demo-room?role=client&test=1
+```
+
+Najwygodniejszy test rozmowy to otwarcie pierwszego adresu w zwykłym oknie,
+a drugiego w oknie prywatnym. Aplikacja zapamiętuje osobną nazwę uczestnika dla
+każdego wariantu. Link kopiowany z panelu eksperta zawsze prowadzi do widoku
+klienta i nie zawiera parametrów testowych. W trakcie spotkania przełącznik roli
+jest widoczny wyłącznie w trybie demo.
+
+Widok eksperta ma dodatkowy przełącznik układu **50/50 / Mini podgląd**. Drugi
+wariant powiększa obraz klienta i przenosi własny obraz eksperta do małego kafla.
+Wybrany układ jest zapamiętywany lokalnie w przeglądarce.
+
+Parametr `role` steruje obecnie wyłącznie układem interfejsu na potrzeby testów.
+Nie jest mechanizmem autoryzacji i nie przyznaje uprawnień administracyjnych.
+Docelowa rola eksperta powinna wynikać z uwierzytelnionej sesji CRM, a rola
+klienta — z podpisanego zaproszenia.
+
+Do samego testowania kompletnego UI, bez uruchamiania LiveKit i bez kodu
+dostępu, służą przyciski **Demo eksperta** i **Demo klienta** na stronie
+startowej. Odpowiadają im adresy:
+
+```text
+http://127.0.0.1:3005/room/demo-room?role=expert&preview=1
+http://127.0.0.1:3005/room/demo-room?role=client&preview=1
+```
+
+Tryb demo nie przechwytuje kamery, mikrofonu ani ekranu i nie łączy się z
+serwerem. Normalne spotkanie nadal zawsze przechodzi przez endpoint tokenu i
+LiveKit.
+
 Alternatywnie możesz od razu użyć LiveKit Cloud: skopiuj
 `apps/meetings/.env.example`, wpisz URL i klucze projektu, a następnie uruchom
 tę samą komendę aplikacji.

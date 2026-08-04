@@ -12,8 +12,6 @@ import type {
   StorageProvider,
 } from '../types.ts'
 
-const VERCEL_BLOB_MODULE: string = '@vercel/blob'
-
 export interface VercelBlobStoreConfig {
   token?: string
   storeId?: string
@@ -88,7 +86,7 @@ interface VercelBlobSdk {
 let vercelBlobSdkPromise: Promise<VercelBlobSdk> | undefined
 
 function loadVercelBlobSdk(): Promise<VercelBlobSdk> {
-  vercelBlobSdkPromise ??= import(VERCEL_BLOB_MODULE)
+  vercelBlobSdkPromise ??= import('@vercel/blob')
     .then(module => module as unknown as VercelBlobSdk)
   return vercelBlobSdkPromise
 }

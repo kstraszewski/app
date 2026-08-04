@@ -24,7 +24,6 @@ interface PlatformStorageConfig {
     publicBaseUrl: string
     privateToken: string
     privateStoreId: string
-    oidcToken: string
   }
 }
 
@@ -52,17 +51,18 @@ export function serverStorage(event: H3Event): StorageBucketAdapter {
 
   const provider = config.provider === 'vercel-blob'
     ? createVercelBlobStorageProvider({
+        // @vercel/blob resolves the request-scoped, auto-rotating Vercel OIDC
+        // token itself. Passing VERCEL_OIDC_TOKEN from Nuxt runtimeConfig would
+        // pin the short-lived build token until the next deployment.
         stores: {
           public: {
             token: optional(config.vercelBlob.publicToken),
             storeId: optional(config.vercelBlob.publicStoreId),
             publicBaseUrl: optional(config.vercelBlob.publicBaseUrl),
-            oidcToken: optional(config.vercelBlob.oidcToken),
           },
           private: {
             token: optional(config.vercelBlob.privateToken),
             storeId: optional(config.vercelBlob.privateStoreId),
-            oidcToken: optional(config.vercelBlob.oidcToken),
           },
         },
       })

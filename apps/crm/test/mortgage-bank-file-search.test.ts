@@ -96,7 +96,12 @@ const omnisearchSource = {
     status: 'current',
   }],
   banks: [
-    { id: ingBankId, name: 'ING Bank Śląski' },
+    {
+      id: ingBankId,
+      name: 'ING Bank Śląski',
+      logo_url: 'https://www.ing.pl/logo.svg',
+      logo_background_color: '#FF6200',
+    },
     { id: mbankBankId, name: 'mBank' },
   ],
   categories: [{ id: categoryId, label: 'Informacje ogólne' }],
@@ -132,6 +137,8 @@ test('deduplicates vector chunks and ranks a lexical bank-file hit first', () =>
   assert.equal(results[0]?.file_id, ingFileId)
   assert.equal(results[0]?.snippet, 'najlepszy fragment o dochodzie')
   assert.equal(results[0]?.page_number, 4)
+  assert.equal(results[0]?.bank_logo_url, 'https://www.ing.pl/logo.svg')
+  assert.equal(results[0]?.bank_logo_background_color, '#FF6200')
   assert.equal(JSON.stringify(results).includes('must-not-leak'), false)
 })
 

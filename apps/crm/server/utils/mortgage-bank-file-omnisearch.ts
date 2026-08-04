@@ -25,6 +25,8 @@ export interface MortgageBankFileOmnisearchResult {
   bank_id: string
   title: string
   bank_name: string
+  bank_logo_url?: string
+  bank_logo_background_color?: string
   category_label?: string
   original_file_name: string
   status: string
@@ -116,6 +118,8 @@ export function rankMortgageBankFileOmnisearchResults(
     }
 
     const bankName = text(bank?.name) ?? 'Instytucja'
+    const bankLogoUrl = text(bank?.logo_url)
+    const bankLogoBackgroundColor = text(bank?.logo_background_color)
     const categoryLabel = text(category?.label)
     const titleMatch = mortgageBankFileSearchMatch(query, [title, fileName])
     const metadataMatch = titleMatch || mortgageBankFileSearchMatch(query, [
@@ -137,6 +141,8 @@ export function rankMortgageBankFileOmnisearchResults(
       bank_id: bankId,
       title,
       bank_name: bankName,
+      ...(bankLogoUrl ? { bank_logo_url: bankLogoUrl } : {}),
+      ...(bankLogoBackgroundColor ? { bank_logo_background_color: bankLogoBackgroundColor } : {}),
       ...(categoryLabel ? { category_label: categoryLabel } : {}),
       original_file_name: fileName,
       status: versionStatus,
@@ -203,7 +209,7 @@ export async function searchMortgageBankFilesForOmnisearch(
     bankIds.length
       ? backendData
           .from('mortgage_banks')
-          .select('id, name')
+          .select('id, name, logo_url, logo_background_color')
           .in('id', bankIds)
       : Promise.resolve({ data: [], error: null }),
     categoryIds.length

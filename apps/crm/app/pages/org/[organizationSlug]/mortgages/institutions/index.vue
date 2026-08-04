@@ -4,6 +4,7 @@ import {
   type InstitutionSearchAlias,
   type InstitutionSearchMatch,
 } from '~/utils/mortgage-institution-search'
+import { createMortgageAdminTabs } from '~/utils/crm-navigation'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
@@ -48,7 +49,6 @@ type Payload = {
 const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
-const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
 const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
 const apiBase = computed(() => `/api/org/${organizationSlug.value}/mortgages/banks`)
 
@@ -68,10 +68,7 @@ const sourceItems = [
   { label: 'Dane źródłowe', value: 'source' },
 ]
 
-const tabs = computed(() => [
-  { label: 'Instytucje', to: institutionsPath.value, icon: 'i-lucide-landmark' },
-  { label: 'Produkty', to: productsPath.value, icon: 'i-lucide-package-search' },
-])
+const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
 
 const { data, status, error, refresh } = await useFetch<Payload>(apiBase, {
   default: () => ({ banks: [], role: 'expert' as const, superAdmin: false }),

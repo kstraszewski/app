@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { createMortgageAdminTabs } from '~/utils/crm-navigation'
+
 definePageMeta({
   middleware: ['auth', 'organization'],
   path: 'settings/institution-files',
@@ -18,16 +20,8 @@ const initialPage = computed(() => {
   const page = Number(value)
   return Number.isSafeInteger(page) && page > 0 ? page : null
 })
-const institutionsPath = computed(() => `/org/${organizationSlug.value}/settings/institutions`)
-const productsPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
-const repositoryPath = computed(() => `/org/${organizationSlug.value}/settings/institution-files`)
 const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
-
-const tabs = computed(() => [
-  { label: 'Instytucje', to: institutionsPath.value, icon: 'i-lucide-landmark' },
-  { label: 'Produkty', to: productsPath.value, icon: 'i-lucide-package-search' },
-  { label: 'Pliki z banków', to: repositoryPath.value, icon: 'i-lucide-folder-search-2' },
-])
+const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
 </script>
 
 <template>

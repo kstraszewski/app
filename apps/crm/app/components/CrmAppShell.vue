@@ -343,7 +343,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
           ],
         },
         {
-          label: 'Pliki banków',
+          label: 'Pliki z banków',
           to: `${organizationBase.value}/settings/institution-files`,
           icon: 'i-lucide-folder-search-2',
         },

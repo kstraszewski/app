@@ -105,6 +105,19 @@ function joinDetails(...values: unknown[]): string | undefined {
   return details.length ? [...new Set(details)].join(' · ') : undefined
 }
 
+function avatarText(value: string): string {
+  const words = value
+    .replace(/([a-ząćęłńóśźż])([A-ZĄĆĘŁŃÓŚŹŻ])/gu, '$1 $2')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+  const first = words[0] ?? ''
+  if (/^[A-Z0-9]{2,4}$/u.test(first)) return first.slice(0, 2)
+  const fallback = words.length > 1
+    ? `${first.charAt(0)}${words[1]?.charAt(0) ?? ''}`
+    : first.slice(0, 2)
+  return fallback.toLocaleUpperCase('pl-PL')
+}
+
 function statusLabel(value: unknown): string | undefined {
   const status = text(value)
   if (!status) return undefined
@@ -325,6 +338,9 @@ function mapBankFiles(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
     const page = positiveInteger(row.page_number ?? row.page)
     const locator = text(row.locator)
     const fileName = text(row.original_file_name ?? row.file_name)
+    const bankName = text(row.bank_name) ?? 'Bank'
+    const bankLogoUrl = text(row.bank_logo_url)
+    const bankLogoBackgroundColor = text(row.bank_logo_background_color)
     const target: CrmOmnisearchTarget = {
       path: organizationPath(slug, '/settings/institution-files'),
       query: {
@@ -337,10 +353,17 @@ function mapBankFiles(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
       id,
       kind: 'bank_file' as const,
       label,
-      description: joinDetails(row.bank_name, row.category_label, row.snippet)
+      description: joinDetails(bankName, row.category_label, row.snippet)
         ?? 'Plik z banku',
       suffix: locator ?? fileName,
-      icon: 'i-lucide-file-search-2',
+      avatar: {
+        ...(bankLogoUrl ? { src: bankLogoUrl } : {}),
+        alt: `Logo ${bankName}`,
+        text: avatarText(bankName),
+        ...(bankLogoBackgroundColor
+          ? { style: { backgroundColor: bankLogoBackgroundColor } }
+          : {}),
+      },
       to: target,
     }]
   })

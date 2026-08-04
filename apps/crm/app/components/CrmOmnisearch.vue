@@ -104,6 +104,15 @@ onBeforeUnmount(clearScheduledSearch)
 function remoteItems(group: CrmOmnisearchGroupKey): CommandPaletteItem[] {
   return (response.value?.groups[group] ?? []).map(hit => ({
     ...hit,
+    ...(hit.kind === 'bank_file' && hit.avatar
+      ? {
+          avatar: {
+            ...hit.avatar,
+            class: 'rounded-md border border-muted bg-default',
+            ui: { image: 'object-contain p-0.5' },
+          },
+        }
+      : {}),
     to: hit.to as CommandPaletteItem['to'],
   }))
 }

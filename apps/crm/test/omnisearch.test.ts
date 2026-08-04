@@ -52,6 +52,8 @@ test('maps a minimal grouped response to safe deep links', () => {
       file_id: bankFileId,
       title: 'Instrukcja oceny dochodu przedsiębiorcy',
       bank_name: 'ING Bank Śląski',
+      bank_logo_url: 'https://www.ing.pl/logo.svg',
+      bank_logo_background_color: '#FF6200',
       category_label: 'Informacje ogólne',
       original_file_name: 'instrukcja-dochodu.pdf',
       snippet: 'Dochód przedsiębiorcy jest liczony na podstawie dokumentów podatkowych.',
@@ -114,7 +116,12 @@ test('maps a minimal grouped response to safe deep links', () => {
     label: 'Instrukcja oceny dochodu przedsiębiorcy',
     description: 'ING Bank Śląski · Informacje ogólne · Dochód przedsiębiorcy jest liczony na podstawie dokumentów podatkowych.',
     suffix: 's. 4',
-    icon: 'i-lucide-file-search-2',
+    avatar: {
+      src: 'https://www.ing.pl/logo.svg',
+      alt: 'Logo ING Bank Śląski',
+      text: 'IN',
+      style: { backgroundColor: '#FF6200' },
+    },
     to: {
       path: '/org/moja-organizacja/settings/institution-files',
       query: { file: bankFileId, page: 4 },

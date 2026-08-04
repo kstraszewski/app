@@ -37,13 +37,23 @@ export type CrmOmnisearchTarget =
       query?: Record<string, CrmOmnisearchRouteQueryValue>
     }
 
+export interface CrmOmnisearchAvatar {
+  src?: string
+  alt?: string
+  text?: string
+  style?: {
+    backgroundColor?: string
+  }
+}
+
 export interface CrmOmnisearchHit {
   id: string
   kind: CrmOmnisearchKind
   label: string
   description?: string
   suffix?: string
-  icon: string
+  icon?: string
+  avatar?: CrmOmnisearchAvatar
   to: CrmOmnisearchTarget
 }
 

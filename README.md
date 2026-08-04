@@ -180,13 +180,32 @@ przez SMTP do Mailpit. Produkcyjnie ustaw:
 
 ```text
 NUXT_RESEND_API_KEY=re_...
-NUXT_AUTH_EMAIL_FROM=OpenExpert <no-reply@auth.openexpert.app>
+NUXT_AUTH_RESEND_API_KEY=re_...
+NUXT_AUTH_EMAIL_FROM=OpenExpert <security@auth.openexpert.app>
+NUXT_AUTH_EMAIL_REPLY_TO=hello@openexpert.app
 NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
 NUXT_RESEND_REPLY_TO=hello@openexpert.app
 ```
 
 Zweryfikuj w Resend osobne subdomeny nadawcze dla auth i komunikacji
-produktowej. `NUXT_RESEND_API_KEY` jest wyłącznie serwerowy.
+produktowej. Dla każdej z nich skonfiguruj SPF, DKIM i DMARC oraz wyłącz
+śledzenie kliknięć i otwarć dla wiadomości uwierzytelniających. Używaj kluczy
+typu `sending_access` ograniczonych do właściwej domeny. W produkcji osobne
+`NUXT_AUTH_RESEND_API_KEY`, `NUXT_AUTH_EMAIL_FROM` i
+`NUXT_AUTH_EMAIL_REPLY_TO` są wymagane i nie fallbackują do konfiguracji
+maili produktowych; zgodność z `NUXT_RESEND_*` pozostaje wyłącznie lokalnie.
+Wszystkie klucze są serwerowe, a `Reply-To` musi wskazywać rzeczywiście
+monitorowaną skrzynkę.
+
+Transport Resend waliduje nadawcę, odbiorców i nagłówki, wymaga wersji HTML
+oraz plain text, a każde żądanie ma 10-sekundowy timeout. Błędy `429` i `5xx`
+są ponawiane maksymalnie dwa razy z wykładniczym backoffem i jitterem. Wszystkie
+próby tego samego zdarzenia używają identycznego klucza idempotency, więc retry
+nie generuje duplikatów. Ponawiane są także timeouty i błędy sieciowe bez
+statusu HTTP; błędy `4xx` (poza `429`) nie są ponawiane.
+Lokalny fallback SMTP ma te same limity czasu i wyłączony dostęp do plików oraz
+zdalnych URL-i; nie należy konfigurować go jako produkcyjnego fallbacku dla
+Resend.
 
 ### Pozostałe moduły
 

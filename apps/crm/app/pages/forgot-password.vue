@@ -72,11 +72,13 @@ async function requestEmailReset() {
   if (!authClient) return
   loading.value = 'email'
   try {
-    const { error: resetError } = await authClient.requestPasswordReset({
-      email: email.value.trim().toLowerCase(),
-      redirectTo: '/reset-password',
+    await $fetch('/api/auth/password-reset', {
+      method: 'POST',
+      body: {
+        email: email.value.trim().toLowerCase(),
+        redirectTo: '/reset-password',
+      },
     })
-    if (resetError) throw resetError
     sent.value = true
   }
   catch (resetError) {
@@ -98,10 +100,10 @@ async function requestPhoneReset() {
 
   loading.value = 'phone-send'
   try {
-    const result = await authClient.phoneNumber.requestPasswordReset({
-      phoneNumber: normalized,
+    await $fetch('/api/auth/phone-password-reset', {
+      method: 'POST',
+      body: { phoneNumber: normalized },
     })
-    if (result.error) throw result.error
 
     verifiedPhone.value = normalized
     phone.value = normalized

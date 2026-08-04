@@ -13,8 +13,12 @@ const authBaseUrl = process.env.BETTER_AUTH_URL
   || process.env.NUXT_AUTH_BASE_URL
   || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004')
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
-  || process.env.DATABASE_URL
-  || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
+  || (isProduction
+    ? ''
+    : process.env.DATABASE_URL
+      || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert')
+const authIpAddressHeaders = process.env.BETTER_AUTH_IP_ADDRESS_HEADERS
+  || (process.env.VERCEL ? 'x-vercel-forwarded-for' : '')
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -132,22 +136,26 @@ export default defineNuxtConfig({
       basePath: process.env.BETTER_AUTH_BASE_PATH || '/api/auth',
       databaseUrl: authDatabaseUrl,
       databaseSchema: process.env.BETTER_AUTH_DATABASE_SCHEMA || 'identity',
+      ipAddressHeaders: authIpAddressHeaders,
       secret: process.env.BETTER_AUTH_SECRET
         || process.env.NUXT_AUTH_SECRET
         || (isProduction ? '' : 'openexpert-local-auth-secret-change-me-000000000000'),
       cookiePrefix: process.env.BETTER_AUTH_COOKIE_PREFIX
         || (isProduction ? 'openexpert' : 'openexpert-local'),
       cookieDomain: process.env.NUXT_AUTH_COOKIE_DOMAIN || '',
+      sessionFreshAge: Number(process.env.BETTER_AUTH_SESSION_FRESH_AGE || 600),
       trustedOrigins: process.env.NUXT_AUTH_TRUSTED_ORIGINS
         || 'http://127.0.0.1:3003,http://127.0.0.1:3004',
     },
     authEmail: {
-      apiKey: process.env.NUXT_RESEND_API_KEY || '',
+      apiKey: process.env.NUXT_AUTH_RESEND_API_KEY
+        || (isProduction ? '' : process.env.NUXT_RESEND_API_KEY)
+        || '',
       from: process.env.NUXT_AUTH_EMAIL_FROM
-        || process.env.NUXT_RESEND_FROM
-        || 'OpenExpert <no-reply@openexpert.local>',
+        || (isProduction ? '' : process.env.NUXT_RESEND_FROM)
+        || (isProduction ? '' : 'OpenExpert <security@auth.openexpert.local>'),
       replyTo: process.env.NUXT_AUTH_EMAIL_REPLY_TO
-        || process.env.NUXT_RESEND_REPLY_TO
+        || (isProduction ? '' : process.env.NUXT_RESEND_REPLY_TO)
         || '',
       smtp: {
         host: process.env.NUXT_SMTP_HOST || (isProduction ? '' : '127.0.0.1'),
@@ -179,9 +187,17 @@ export default defineNuxtConfig({
       },
     },
     resend: {
-      apiKey: '',
-      from: '',
-      replyTo: '',
+      apiKey: process.env.NUXT_RESEND_API_KEY || '',
+      from: process.env.NUXT_RESEND_FROM
+        || (isProduction ? '' : 'OpenExpert <hello@updates.openexpert.local>'),
+      replyTo: process.env.NUXT_RESEND_REPLY_TO || '',
+      smtp: {
+        host: process.env.NUXT_SMTP_HOST || (isProduction ? '' : '127.0.0.1'),
+        port: Number(process.env.NUXT_SMTP_PORT || 55325),
+        secure: process.env.NUXT_SMTP_SECURE === 'true',
+        user: process.env.NUXT_SMTP_USER || '',
+        password: process.env.NUXT_SMTP_PASSWORD || '',
+      },
     },
     public: {
       openexpert: {
@@ -189,7 +205,8 @@ export default defineNuxtConfig({
           || Boolean(process.env.BETTER_AUTH_SECRET || process.env.NUXT_AUTH_SECRET),
         crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL
           || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004'),
-        siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://www.openexpert.app',
+        siteUrl: process.env.NUXT_PUBLIC_SITE_URL
+          || (isProduction ? 'https://www.openexpert.app' : 'http://127.0.0.1:3003'),
         mapboxAccessToken: process.env.NUXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
       },
     },

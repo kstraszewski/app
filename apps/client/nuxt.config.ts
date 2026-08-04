@@ -1,3 +1,4 @@
+const isProduction = process.env.NODE_ENV === 'production'
 const portalBaseUrl = process.env.NUXT_PUBLIC_CLIENT_BASE_URL
   || (process.env.NODE_ENV === 'production'
     ? 'https://client.openexpert.app'
@@ -10,8 +11,12 @@ const dataApiUrl = process.env.NUXT_DATA_API_URL
 const portalPublicAssetBaseUrl = process.env.NUXT_PORTAL_PUBLIC_ASSET_BASE_URL
   || 'https://www.openexpert.app'
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
-  || process.env.DATABASE_URL
-  || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert'
+  || (isProduction
+    ? ''
+    : process.env.DATABASE_URL
+      || 'postgresql://openexpert_auth:openexpert-auth-local@127.0.0.1:55322/openexpert')
+const authIpAddressHeaders = process.env.BETTER_AUTH_IP_ADDRESS_HEADERS
+  || (process.env.VERCEL ? 'x-vercel-forwarded-for' : '')
 const googleClientId = process.env.BETTER_AUTH_GOOGLE_CLIENT_ID || ''
 const googleClientSecret = process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET || ''
 const appleClientId = process.env.BETTER_AUTH_APPLE_CLIENT_ID || ''
@@ -82,6 +87,8 @@ export default defineNuxtConfig({
       basePath: process.env.BETTER_AUTH_BASE_PATH || '/api/auth',
       databaseUrl: authDatabaseUrl,
       databaseSchema: process.env.BETTER_AUTH_DATABASE_SCHEMA || 'identity',
+      ipAddressHeaders: authIpAddressHeaders,
+      sessionFreshAge: Number(process.env.BETTER_AUTH_SESSION_FRESH_AGE || 600),
       secret: process.env.BETTER_AUTH_SECRET
         || process.env.NUXT_AUTH_SECRET
         || (process.env.NODE_ENV === 'production'
@@ -105,12 +112,14 @@ export default defineNuxtConfig({
       },
     },
     authEmail: {
-      apiKey: process.env.NUXT_RESEND_API_KEY || '',
+      apiKey: process.env.NUXT_AUTH_RESEND_API_KEY
+        || (isProduction ? '' : process.env.NUXT_RESEND_API_KEY)
+        || '',
       from: process.env.NUXT_AUTH_EMAIL_FROM
-        || process.env.NUXT_RESEND_FROM
-        || 'OpenExpert <no-reply@openexpert.local>',
+        || (isProduction ? '' : process.env.NUXT_RESEND_FROM)
+        || (isProduction ? '' : 'OpenExpert <security@auth.openexpert.local>'),
       replyTo: process.env.NUXT_AUTH_EMAIL_REPLY_TO
-        || process.env.NUXT_RESEND_REPLY_TO
+        || (isProduction ? '' : process.env.NUXT_RESEND_REPLY_TO)
         || '',
       smtp: {
         host: process.env.NUXT_SMTP_HOST || (process.env.NODE_ENV === 'production'

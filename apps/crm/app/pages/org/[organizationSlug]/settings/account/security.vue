@@ -193,11 +193,13 @@ async function sendPasswordReset() {
   passwordError.value = ''
   try {
     const redirectTo = new URL('/reset-password', window.location.origin).toString()
-    const result = await authClient.requestPasswordReset({
-      email: authUser.value.email,
-      redirectTo,
+    await $fetch('/api/auth/password-reset', {
+      method: 'POST',
+      body: {
+        email: authUser.value.email,
+        redirectTo,
+      },
     })
-    if (result.error) throw result.error
     toast.add({
       title: 'Link wysłany',
       description: `Sprawdź skrzynkę ${authUser.value.email}.`,

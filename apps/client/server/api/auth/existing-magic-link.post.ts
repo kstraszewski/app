@@ -1,4 +1,3 @@
-import { normalizeOpenExpertPhone } from '@openexpert/auth'
 import {
   consumeOpenExpertAuthRateLimit,
   getOpenExpertTrustedClientIp,
@@ -10,85 +9,119 @@ import {
   readBody,
   setHeader,
 } from 'h3'
-import { latestDevelopmentPhoneOtp } from '~~/server/utils/auth-phone'
 import { serverAuth } from '~~/server/utils/platform-auth'
 
-const responseFloorMs = 600
+const RESPONSE_FLOOR_MS = 600
+const MAX_CALLBACK_LENGTH = 2_048
+
+interface ExistingMagicLinkBody {
+  email?: unknown
+  callbackURL?: unknown
+  errorCallbackURL?: unknown
+}
+
+function localCallback(
+  value: unknown,
+  baseURL: string,
+  fallbackPath: string,
+): string {
+  const base = new URL(baseURL)
+  const fallback = new URL(fallbackPath, base)
+  if (typeof value !== 'string' || value.length > MAX_CALLBACK_LENGTH) {
+    return fallback.href
+  }
+
+  try {
+    const callback = new URL(value, base)
+    if (
+      callback.origin !== base.origin
+      || callback.username
+      || callback.password
+    ) return fallback.href
+    return callback.href
+  }
+  catch {
+    return fallback.href
+  }
+}
 
 async function waitForResponseFloor(startedAt: number): Promise<void> {
-  const remaining = responseFloorMs - (Date.now() - startedAt)
+  const remaining = RESPONSE_FLOOR_MS - (Date.now() - startedAt)
   if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining))
 }
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now()
   setHeader(event, 'Cache-Control', 'private, no-store')
+
   try {
     const runtime = serverAuth(event)
     if (!isOpenExpertSameOriginJsonRequest(event.headers, runtime.config.baseURL)) {
       throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
     }
-    const body = await readBody<{ phoneNumber?: unknown }>(event)
-    const rawPhone = typeof body?.phoneNumber === 'string'
-      ? body.phoneNumber.slice(0, 50)
+    const body = await readBody<ExistingMagicLinkBody>(event)
+    const email = typeof body?.email === 'string'
+      ? body.email.trim().toLowerCase().slice(0, 320)
       : ''
-    const phoneNumber = normalizeOpenExpertPhone(rawPhone)
-
     const rateLimit = await consumeOpenExpertAuthRateLimit({
       pool: runtime.pool,
       databaseSchema: runtime.config.databaseSchema,
       keySecret: runtime.config.secret,
-      scope: 'crm:phone-otp',
+      scope: 'client:magic-link',
       ipAddress: getOpenExpertTrustedClientIp({
         headers: event.headers,
         directAddress: event.node.req.socket.remoteAddress,
         trustedHeaderNames: runtime.config.ipAddressHeaders,
       }),
-      identifier: phoneNumber || rawPhone,
+      identifier: email,
     })
+
     if (!rateLimit.allowed) {
       const retryAfter = String(rateLimit.retryAfterSeconds)
       setHeader(event, 'Retry-After', rateLimit.retryAfterSeconds)
       setHeader(event, 'X-Retry-After', retryAfter)
-      throw createError({ statusCode: 429, statusMessage: 'Too many phone-code requests' })
+      throw createError({
+        statusCode: 429,
+        statusMessage: 'Too many magic-link requests',
+      })
     }
 
     const requestHeaders = new Headers(event.headers)
-    const sendTask = (async (): Promise<string | null> => {
-      if (!phoneNumber) return null
+    const sendTask = (async () => {
+      if (!email) return
       const user = await runtime.pool.query(
         `select 1
            from ${runtime.config.databaseSchema}.users
-          where phone_number = $1
-            and phone_number_verified = true
+          where lower(email) = $1
           limit 1`,
-        [phoneNumber],
+        [email],
       )
       if (user.rowCount === 1) {
-        await runtime.auth.api.sendPhoneNumberOTP({
-          body: { phoneNumber },
+        await runtime.auth.api.signInMagicLink({
+          body: {
+            email,
+            callbackURL: localCallback(
+              body.callbackURL,
+              runtime.config.baseURL,
+              '/',
+            ),
+            errorCallbackURL: localCallback(
+              body.errorCallbackURL,
+              runtime.config.baseURL,
+              '/login',
+            ),
+          },
           headers: requestHeaders,
         })
-        return latestDevelopmentPhoneOtp(event, phoneNumber)
       }
-      return null
     })().catch((error) => {
-      console.error('[auth-phone] unable to send existing-user OTP', {
+      console.error('Unable to send a client existing-user magic link', {
         name: error instanceof Error ? error.name : 'UnknownError',
       })
-      return null
     })
+    scheduleOpenExpertBackgroundTask(sendTask, event.waitUntil.bind(event))
 
-    if (process.env.NODE_ENV === 'production') {
-      scheduleOpenExpertBackgroundTask(sendTask, event.waitUntil.bind(event))
-      return { status: true }
-    }
-    const devOtp = await sendTask
-
-    return {
-      status: true,
-      ...(devOtp ? { devOtp } : {}),
-    }
+    return { status: true }
   }
   finally {
     await waitForResponseFloor(startedAt)

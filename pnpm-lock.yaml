@@ -16,7 +16,7 @@ importers:
     dependencies:
       '@nuxt/ui':
         specifier: ^4.10.0
-        version: 4.10.0(4a48b45669980475eee6caa197532605)
+        version: 4.10.0(688a926cfb943647c566eec2704fa736)
       '@openexpert/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -40,7 +40,7 @@ importers:
         version: 1.15.11
       nuxt:
         specifier: ^4.5.1
-        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -77,7 +77,7 @@ importers:
         version: 2.3.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
       '@nuxt/ui':
         specifier: ^4.10.0
-        version: 4.10.0(4a48b45669980475eee6caa197532605)
+        version: 4.10.0(688a926cfb943647c566eec2704fa736)
       '@openexpert/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -110,13 +110,13 @@ importers:
         version: 7.0.34(zod@4.4.3)
       eve:
         specifier: 0.25.1
-        version: 0.25.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+        version: 0.25.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       h3:
         specifier: 1.15.11
         version: 1.15.11
       nuxt:
         specifier: ^4.5.1
-        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       nuxt-charts:
         specifier: 2.2.1
         version: 2.2.1(vue@3.5.40(typescript@6.0.3))
@@ -189,7 +189,7 @@ importers:
         version: 7.0.34(zod@4.4.3)
       eve:
         specifier: 0.27.1
-        version: 0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+        version: 0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -201,7 +201,7 @@ importers:
         version: 3.27.0
       nuxt:
         specifier: ^4.5.1
-        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -235,7 +235,7 @@ importers:
     dependencies:
       '@nuxt/ui':
         specifier: ^4.10.0
-        version: 4.10.0(4a48b45669980475eee6caa197532605)
+        version: 4.10.0(688a926cfb943647c566eec2704fa736)
       h3:
         specifier: 1.15.11
         version: 1.15.11
@@ -247,7 +247,7 @@ importers:
         version: 2.17.0
       nuxt:
         specifier: ^4.5.1
-        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+        version: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -278,7 +278,7 @@ importers:
         version: 7.0.34(zod@4.4.3)
       eve:
         specifier: 0.27.1
-        version: 0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.6.6)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+        version: 0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.6.6)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -298,6 +298,9 @@ importers:
       '@better-auth/passkey':
         specifier: 1.6.25
         version: 1.6.25(@better-auth/core@1.6.25(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.29.4)(nanostores@1.4.2))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.6.25(@opentelemetry/api@1.9.1)(pg@8.22.0)(vue@3.5.40(typescript@6.0.3)))(better-call@1.3.7(zod@4.4.3))(nanostores@1.4.2)
+      '@vercel/functions':
+        specifier: 3.7.7
+        version: 3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1)
       bcryptjs:
         specifier: 3.0.3
         version: 3.0.3
@@ -348,15 +351,15 @@ importers:
   packages/email:
     dependencies:
       nodemailer:
-        specifier: ^7.0.10
-        version: 7.0.13
+        specifier: ^9.0.4
+        version: 9.0.4
       resend:
-        specifier: ^6.17.2
-        version: 6.17.2
+        specifier: ^6.18.1
+        version: 6.18.1
     devDependencies:
       '@types/nodemailer':
-        specifier: ^7.0.9
-        version: 7.0.12
+        specifier: ^8.0.1
+        version: 8.0.1
 
   packages/messaging:
     dependencies:
@@ -3462,8 +3465,8 @@ packages:
   '@types/node@25.6.0':
     resolution: {integrity: sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==}
 
-  '@types/nodemailer@7.0.12':
-    resolution: {integrity: sha512-80vKwiIsVSyFA1rRovH59jNPLBOuc6dRZIHEu40gXTkBkZnQv8vog1xSGEb9j5q/tdMAs5ivvDR2pLTU0hGHXA==}
+  '@types/nodemailer@8.0.1':
+    resolution: {integrity: sha512-PxpaInm8V1JQDd4j0ds5HfvWQk8JupS1C0Picb96QJsrrRDjBH+DlK7L4ZdNSqNULhiZRQHc40nLVShaGxXAMw==}
 
   '@types/parse-json@4.0.2':
     resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
@@ -3634,9 +3637,28 @@ packages:
   '@vercel/cli-config@0.2.1':
     resolution: {integrity: sha512-RhfyXmRLHdbnry8RJqHDc+5rGxMZ0bu+fpysZjtv3bE+BubpuwxTancHOKiH5zKQREsdwFVr3mOI2kOvxlOyxA==}
 
+  '@vercel/cli-config@0.2.2':
+    resolution: {integrity: sha512-kAy35eymNzRBfmcqEViVQge0KJ59FYEKsPqGNCSJQ7M9HTuFGWd3qPcZos1A5cZpAWRBdiYe82Bcz9P7pIZvUQ==}
+
   '@vercel/cli-exec@1.0.0':
     resolution: {integrity: sha512-kQF8LGie/Hbdq9/psJxLE7owRTcqMQMhgybU04gCeR7cbQAr5t8OrjefDNColJv1QSSucFt4pLwRiARVmlOnug==}
     engines: {node: '>= 18'}
+
+  '@vercel/cli-exec@1.0.1':
+    resolution: {integrity: sha512-g9XerViJ/paZujufXYcu5XYI2vU2rtB4sgdpjUHde5RnOkdmpu0ngH46LCFGHoPXO/C+qDPSczIHIRN+8Q2YKQ==}
+    engines: {node: '>= 18'}
+
+  '@vercel/functions@3.7.7':
+    resolution: {integrity: sha512-oy0FzkuXmUIzyRR2pYastP4xH0m9VTK3yP2Vj77eRcxcbX+f4o6x3RMx4RuwJ4j4pjx9USd/h79R/pKbSZV80Q==}
+    engines: {node: '>= 20'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-web-identity': '*'
+      ws: '>=8'
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-web-identity':
+        optional: true
+      ws:
+        optional: true
 
   '@vercel/nft@1.5.0':
     resolution: {integrity: sha512-IWTDeIoWhQ7ZtRO/JRKH+jhmeQvZYhtGPmzw/QGDY+wDCQqfm25P9yIdoAFagu4fWsK4IwZXDFIjrmp5rRm/sA==}
@@ -3649,6 +3671,10 @@ packages:
 
   '@vercel/oidc@3.8.1':
     resolution: {integrity: sha512-ufdalm2MWOYksyj8KVpWjoOFPJO6zoYpuyvIggIQ2bB0CFCjTCiTkGXHqAKwG77GVRjOaN3/8S5ITlZpXWmqOw==}
+    engines: {node: '>= 20'}
+
+  '@vercel/oidc@3.8.2':
+    resolution: {integrity: sha512-nmVSeQ7tewCkqYBNB/MNL8aPB9sTvtjvqIE6+U17U4IuTyehuWVERDlWrSn0DVfiFAstRlRkGLHBlKHB2FyzbQ==}
     engines: {node: '>= 20'}
 
   '@vitejs/devtools-kit@0.4.8':
@@ -6124,8 +6150,8 @@ packages:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
 
-  nodemailer@7.0.13:
-    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
+  nodemailer@9.0.4:
+    resolution: {integrity: sha512-LmJNRVRtfSCULxcZpy0Cpg4WWenlUZ9+zbmTO+S7v9wD6XreYLjXRFtDjtV/4F0HT5p1GyZfA0Ux/myxHb18CQ==}
     engines: {node: '>=6.0.0'}
 
   nopt@8.1.0:
@@ -6453,8 +6479,8 @@ packages:
   point-in-polygon-hao@1.2.4:
     resolution: {integrity: sha512-x2pcvXeqhRHlNRdhLs/tgFapAbSSe86wa/eqmj1G6pWftbEs5aVRJhRGM6FYSUERKu0PjekJzMq0gsI2XyiclQ==}
 
-  postal-mime@2.7.4:
-    resolution: {integrity: sha512-0WdnFQYUrPGGTFu1uOqD2s7omwua8xaeYGdO6rb88oD5yJ/4pPHDA4sdWqfD8wQVfCny563n/HQS7zTFft+f/g==}
+  postal-mime@2.7.5:
+    resolution: {integrity: sha512-GNEXKvWFQnbgO5NlrGzVa0FmWzBZ24PersAWErttSg1Hjpf0ATxTwS5DOMGaOpTG6bUh5cTr7xi0jAD942wCJA==}
 
   postcss-calc@10.1.1:
     resolution: {integrity: sha512-NYEsLHh8DgG/PRH2+G9BTuUdtf9ViS+vdoQ0YA5OQdGsfN4ztiwtDWNtBl9EKeqNMFnIu8IKZ0cLxEQ5r5KVMw==}
@@ -6854,8 +6880,8 @@ packages:
   require-main-filename@2.0.0:
     resolution: {integrity: sha512-NKN5kMDylKuldxYLSUfrbo5Tuzh4hd+2E8NPPX02mZtn1VuREQToYe/ZdlJy+J3uCpfaiGF05e7B8W0iXbQHmg==}
 
-  resend@6.17.2:
-    resolution: {integrity: sha512-hbaXEORFIFfT2Bh03NsA/akTTTKkD1hiuJ88ke64c5dWVV6DyoLxzFve3OiZqVOQ+JKLJ5uVkPR6hlUslpJFoA==}
+  resend@6.18.1:
+    resolution: {integrity: sha512-XN8XIaDdKF+ziSQ3K23ndUcyhP7U3ze2gky6SPgYkuAOq54mH4Wdhwm7QylEQ3zlz0NzdX7/l1AgmJUZbdPI/Q==}
     engines: {node: '>=20'}
     peerDependencies:
       '@react-email/render': '*'
@@ -9632,7 +9658,7 @@ snapshots:
       pkg-types: 2.3.1
       semver: 7.8.5
 
-  '@nuxt/devtools@3.3.1(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)(magic-string@1.1.0)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))':
+  '@nuxt/devtools@3.3.1(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)(magic-string@1.1.0)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))':
     dependencies:
       '@nuxt/devtools-kit': 3.3.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       '@nuxt/devtools-wizard': 3.3.1
@@ -9662,7 +9688,7 @@ snapshots:
       sirv: 3.0.2
       structured-clone-es: 2.0.0
       tinyglobby: 0.2.17
-      unstorage: 1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)
+      unstorage: 1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)
       vite: 8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)
       vite-plugin-inspect: 11.3.3(@nuxt/kit@4.5.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       vite-plugin-vue-tracer: 1.3.0(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
@@ -9697,13 +9723,13 @@ snapshots:
       - utf-8-validate
       - vue
 
-  '@nuxt/fonts@0.14.0(@vercel/blob@2.6.1)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))':
+  '@nuxt/fonts@0.14.0(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))':
     dependencies:
       '@nuxt/devtools-kit': 3.3.1(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       '@nuxt/kit': 4.5.1(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
       consola: 3.4.2
       defu: 6.1.7
-      fontless: 0.2.1(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      fontless: 0.2.1(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       h3: 1.15.11
       magic-regexp: 0.10.0
       ofetch: 1.5.1
@@ -9713,7 +9739,7 @@ snapshots:
       ufo: 1.6.4
       unifont: 0.7.4
       unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
-      unstorage: 1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)
+      unstorage: 1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -9917,7 +9943,7 @@ snapshots:
       - rolldown
       - unplugin
 
-  '@nuxt/nitro-server@4.5.1(47ad0449fbe65d4974d496fc14c815ea)':
+  '@nuxt/nitro-server@4.5.1(44be37254662374b5e892e14d57f5e9d)':
     dependencies:
       '@nuxt/devalue': 2.0.2
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
@@ -9934,9 +9960,9 @@ snapshots:
       impound: 1.1.6(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       klona: 2.0.6
       mocked-exports: 0.1.1
-      nitropack: 2.13.4(@parcel/watcher@2.5.6)(@vercel/blob@2.6.1)(oxc-parser@0.140.0)(rolldown@1.2.0)(srvx@0.11.22)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      nitropack: 2.13.4(@parcel/watcher@2.5.6)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(oxc-parser@0.140.0)(rolldown@1.2.0)(srvx@0.11.22)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       nostics: 1.2.0
-      nuxt: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+      nuxt: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       nypm: 0.6.8
       ohash: 2.0.11
       pathe: 2.0.3
@@ -9944,7 +9970,7 @@ snapshots:
       std-env: 4.2.0
       ufo: 1.6.4
       unctx: 3.0.0(magic-string@1.1.0)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
-      unstorage: 1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)
+      unstorage: 1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)
       vue: 3.5.40(typescript@6.0.3)
       vue-bundle-renderer: 2.3.1
       vue-devtools-stub: 0.1.0
@@ -10021,11 +10047,11 @@ snapshots:
       rc9: 3.0.1
       std-env: 4.2.0
 
-  '@nuxt/ui@4.10.0(4a48b45669980475eee6caa197532605)':
+  '@nuxt/ui@4.10.0(688a926cfb943647c566eec2704fa736)':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@iconify/vue': 5.0.1(vue@3.5.40(typescript@6.0.3))
-      '@nuxt/fonts': 0.14.0(@vercel/blob@2.6.1)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      '@nuxt/fonts': 0.14.0(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       '@nuxt/icon': 2.3.1(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
       '@nuxt/kit': 4.5.1(magic-string@0.30.21)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
       '@nuxt/schema': 4.5.1
@@ -10142,7 +10168,7 @@ snapshots:
       - vue
       - webpack
 
-  '@nuxt/vite-builder@4.5.1(307afa8474d5f1945a1327d832af06e3)':
+  '@nuxt/vite-builder@4.5.1(849fbb9a5aa03d110f43f20c7bcdec69)':
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
       '@vitejs/plugin-vue': 6.0.8(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
@@ -10160,7 +10186,7 @@ snapshots:
       knitwork: 1.3.0
       mlly: 1.8.2
       mocked-exports: 0.1.1
-      nuxt: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
+      nuxt: 4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0)
       nypm: 0.6.8
       pathe: 2.0.3
       pkg-types: 2.3.1
@@ -11589,7 +11615,7 @@ snapshots:
     dependencies:
       undici-types: 7.19.2
 
-  '@types/nodemailer@7.0.12':
+  '@types/nodemailer@8.0.1':
     dependencies:
       '@types/node': 25.6.0
 
@@ -11846,9 +11872,25 @@ snapshots:
       xdg-app-paths: 5.5.1
       zod: 4.1.11
 
+  '@vercel/cli-config@0.2.2':
+    dependencies:
+      xdg-app-paths: 5.5.1
+      zod: 4.1.11
+
   '@vercel/cli-exec@1.0.0':
     dependencies:
       execa: 5.1.1
+
+  '@vercel/cli-exec@1.0.1':
+    dependencies:
+      execa: 5.1.1
+
+  '@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1)':
+    dependencies:
+      '@vercel/oidc': 3.8.2
+    optionalDependencies:
+      '@aws-sdk/credential-provider-web-identity': 3.972.70
+      ws: 8.21.1
 
   '@vercel/nft@1.5.0(rollup@4.60.2)':
     dependencies:
@@ -11875,6 +11917,12 @@ snapshots:
     dependencies:
       '@vercel/cli-config': 0.2.1
       '@vercel/cli-exec': 1.0.0
+      jose: 5.10.0
+
+  '@vercel/oidc@3.8.2':
+    dependencies:
+      '@vercel/cli-config': 0.2.2
+      '@vercel/cli-exec': 1.0.1
       jose: 5.10.0
 
   '@vitejs/devtools-kit@0.4.8(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(srvx@0.11.22)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))':
@@ -13265,10 +13313,10 @@ snapshots:
 
   etag@1.8.1: {}
 
-  eve@0.25.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  eve@0.25.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       ai: 7.0.34(zod@4.4.3)
-      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       just-bash: 3.1.0
@@ -13312,10 +13360,10 @@ snapshots:
       - xml2js
       - zephyr-agent
 
-  eve@0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.6.6)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  eve@0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.6.6)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       ai: 7.0.34(zod@4.4.3)
-      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       just-bash: 3.1.0
@@ -13360,10 +13408,10 @@ snapshots:
       - xml2js
       - zephyr-agent
 
-  eve@0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  eve@0.27.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.34(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       ai: 7.0.34(zod@4.4.3)
-      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      nitro: 3.0.260610-beta(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       just-bash: 3.1.0
@@ -13610,7 +13658,7 @@ snapshots:
     dependencies:
       tiny-inflate: 1.0.3
 
-  fontless@0.2.1(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  fontless@0.2.1(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       css-tree: 3.2.1
@@ -13624,7 +13672,7 @@ snapshots:
       pathe: 2.0.3
       ufo: 1.6.4
       unifont: 0.7.4
-      unstorage: 1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)
+      unstorage: 1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)
     optionalDependencies:
       vite: 8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -14495,7 +14543,7 @@ snapshots:
 
   nf3@0.3.22: {}
 
-  nitro@3.0.260610-beta(@vercel/blob@2.6.1)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  nitro@3.0.260610-beta(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(lru-cache@11.3.5)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.10(srvx@0.11.22)
@@ -14510,7 +14558,7 @@ snapshots:
       rolldown: 1.2.0
       srvx: 0.11.22
       unenv: 2.0.0-rc.24
-      unstorage: 2.0.0-alpha.7(@vercel/blob@2.6.1)(chokidar@5.0.0)(db0@0.3.4)(ioredis@5.10.1)(lru-cache@11.3.5)(ofetch@2.0.0-alpha.3)
+      unstorage: 2.0.0-alpha.7(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(db0@0.3.4)(ioredis@5.10.1)(lru-cache@11.3.5)(ofetch@2.0.0-alpha.3)
     optionalDependencies:
       dotenv: 17.4.2
       giget: 3.3.1
@@ -14549,7 +14597,7 @@ snapshots:
       - uploadthing
       - wrangler
 
-  nitropack@2.13.4(@parcel/watcher@2.5.6)(@vercel/blob@2.6.1)(oxc-parser@0.140.0)(rolldown@1.2.0)(srvx@0.11.22)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
+  nitropack@2.13.4(@parcel/watcher@2.5.6)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(oxc-parser@0.140.0)(rolldown@1.2.0)(srvx@0.11.22)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@rollup/plugin-alias': 6.0.0(rollup@4.60.2)
@@ -14616,7 +14664,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 6.3.1(esbuild@0.28.1)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       unplugin-utils: 0.3.2
-      unstorage: 1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)
+      unstorage: 1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.1
@@ -14692,7 +14740,7 @@ snapshots:
 
   node-releases@2.0.51: {}
 
-  nodemailer@7.0.13: {}
+  nodemailer@9.0.4: {}
 
   nopt@8.1.0:
     dependencies:
@@ -14729,16 +14777,16 @@ snapshots:
       - supports-color
       - vue
 
-  nuxt@4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0):
+  nuxt@4.5.1(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.0))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.0)(rollup@4.60.2))(rollup@4.60.2)(srvx@0.11.22)(terser@5.46.1)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue-tsc@3.3.8(typescript@6.0.3))(yaml@2.9.0):
     dependencies:
       '@dxup/nuxt': 0.5.4(esbuild@0.28.1)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
       '@nuxt/cli': 3.37.0(@nuxt/schema@4.5.1)(@parcel/watcher@2.5.6)(magicast@0.5.2)
-      '@nuxt/devtools': 3.3.1(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1)(magic-string@1.1.0)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
+      '@nuxt/devtools': 3.3.1(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1)(magic-string@1.1.0)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0)))
-      '@nuxt/nitro-server': 4.5.1(47ad0449fbe65d4974d496fc14c815ea)
+      '@nuxt/nitro-server': 4.5.1(44be37254662374b5e892e14d57f5e9d)
       '@nuxt/schema': 4.5.1
       '@nuxt/telemetry': 2.8.0(@nuxt/kit@4.5.1(magic-string@1.1.0)(magicast@0.5.2)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.60.2)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))))
-      '@nuxt/vite-builder': 4.5.1(307afa8474d5f1945a1327d832af06e3)
+      '@nuxt/vite-builder': 4.5.1(849fbb9a5aa03d110f43f20c7bcdec69)
       '@unhead/vue': 3.2.3(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(esbuild@0.28.1)(lightningcss@1.32.0)(rolldown@1.2.0)(rollup@4.60.2)(srvx@0.11.22)(typescript@6.0.3)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
       '@vue/shared': 3.5.40
       chokidar: 5.0.0
@@ -15153,7 +15201,7 @@ snapshots:
     dependencies:
       robust-predicates: 3.0.3
 
-  postal-mime@2.7.4: {}
+  postal-mime@2.7.5: {}
 
   postcss-calc@10.1.1(postcss@8.5.23):
     dependencies:
@@ -15598,9 +15646,9 @@ snapshots:
 
   require-main-filename@2.0.0: {}
 
-  resend@6.17.2:
+  resend@6.18.1:
     dependencies:
-      postal-mime: 2.7.4
+      postal-mime: 2.7.5
       standardwebhooks: 1.0.0
 
   resolve-alpn@1.2.1: {}
@@ -16557,7 +16605,7 @@ snapshots:
       escape-string-regexp: 5.0.0
       ufo: 1.6.4
 
-  unstorage@1.17.5(@vercel/blob@2.6.1)(db0@0.3.4)(ioredis@5.10.1):
+  unstorage@1.17.5(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(db0@0.3.4)(ioredis@5.10.1):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -16569,12 +16617,14 @@ snapshots:
       ufo: 1.6.4
     optionalDependencies:
       '@vercel/blob': 2.6.1
+      '@vercel/functions': 3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1)
       db0: 0.3.4
       ioredis: 5.10.1
 
-  unstorage@2.0.0-alpha.7(@vercel/blob@2.6.1)(chokidar@5.0.0)(db0@0.3.4)(ioredis@5.10.1)(lru-cache@11.3.5)(ofetch@2.0.0-alpha.3):
+  unstorage@2.0.0-alpha.7(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(chokidar@5.0.0)(db0@0.3.4)(ioredis@5.10.1)(lru-cache@11.3.5)(ofetch@2.0.0-alpha.3):
     optionalDependencies:
       '@vercel/blob': 2.6.1
+      '@vercel/functions': 3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1)
       chokidar: 5.0.0
       db0: 0.3.4
       ioredis: 5.10.1

@@ -10,19 +10,19 @@ import {
   readBody,
   setHeader,
 } from 'h3'
-import { latestDevelopmentPhoneOtp } from '~~/server/utils/auth-phone'
 import { serverAuth } from '~~/server/utils/platform-auth'
 
-const responseFloorMs = 600
+const RESPONSE_FLOOR_MS = 600
 
 async function waitForResponseFloor(startedAt: number): Promise<void> {
-  const remaining = responseFloorMs - (Date.now() - startedAt)
+  const remaining = RESPONSE_FLOOR_MS - (Date.now() - startedAt)
   if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining))
 }
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now()
   setHeader(event, 'Cache-Control', 'private, no-store')
+
   try {
     const runtime = serverAuth(event)
     if (!isOpenExpertSameOriginJsonRequest(event.headers, runtime.config.baseURL)) {
@@ -33,12 +33,11 @@ export default defineEventHandler(async (event) => {
       ? body.phoneNumber.slice(0, 50)
       : ''
     const phoneNumber = normalizeOpenExpertPhone(rawPhone)
-
     const rateLimit = await consumeOpenExpertAuthRateLimit({
       pool: runtime.pool,
       databaseSchema: runtime.config.databaseSchema,
       keySecret: runtime.config.secret,
-      scope: 'crm:phone-otp',
+      scope: 'crm:password-reset-phone',
       ipAddress: getOpenExpertTrustedClientIp({
         headers: event.headers,
         directAddress: event.node.req.socket.remoteAddress,
@@ -46,49 +45,31 @@ export default defineEventHandler(async (event) => {
       }),
       identifier: phoneNumber || rawPhone,
     })
+
     if (!rateLimit.allowed) {
-      const retryAfter = String(rateLimit.retryAfterSeconds)
       setHeader(event, 'Retry-After', rateLimit.retryAfterSeconds)
-      setHeader(event, 'X-Retry-After', retryAfter)
-      throw createError({ statusCode: 429, statusMessage: 'Too many phone-code requests' })
+      throw createError({
+        statusCode: 429,
+        statusMessage: 'Too many password-reset requests',
+      })
     }
 
     const requestHeaders = new Headers(event.headers)
-    const sendTask = (async (): Promise<string | null> => {
-      if (!phoneNumber) return null
-      const user = await runtime.pool.query(
-        `select 1
-           from ${runtime.config.databaseSchema}.users
-          where phone_number = $1
-            and phone_number_verified = true
-          limit 1`,
-        [phoneNumber],
-      )
-      if (user.rowCount === 1) {
-        await runtime.auth.api.sendPhoneNumberOTP({
+    const sendTask = (async () => {
+      if (phoneNumber) {
+        await runtime.auth.api.requestPasswordResetPhoneNumber({
           body: { phoneNumber },
           headers: requestHeaders,
         })
-        return latestDevelopmentPhoneOtp(event, phoneNumber)
       }
-      return null
     })().catch((error) => {
-      console.error('[auth-phone] unable to send existing-user OTP', {
+      console.error('Unable to process a phone password-reset request', {
         name: error instanceof Error ? error.name : 'UnknownError',
       })
-      return null
     })
+    scheduleOpenExpertBackgroundTask(sendTask, event.waitUntil.bind(event))
 
-    if (process.env.NODE_ENV === 'production') {
-      scheduleOpenExpertBackgroundTask(sendTask, event.waitUntil.bind(event))
-      return { status: true }
-    }
-    const devOtp = await sendTask
-
-    return {
-      status: true,
-      ...(devOtp ? { devOtp } : {}),
-    }
+    return { status: true }
   }
   finally {
     await waitForResponseFloor(startedAt)

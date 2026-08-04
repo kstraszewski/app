@@ -126,6 +126,12 @@ export function readOpenExpertAuthEnv(
     60 * 60 * 24 * 7,
     issues,
   )
+  const sessionFreshAge = integerValue(
+    env,
+    'BETTER_AUTH_SESSION_FRESH_AGE',
+    10 * 60,
+    issues,
+  )
   const jwtExpiresIn = integerValue(
     env,
     'BETTER_AUTH_JWT_EXPIRES_IN',
@@ -144,6 +150,10 @@ export function readOpenExpertAuthEnv(
     secret,
     databaseURL,
     databaseSchema: env.BETTER_AUTH_DATABASE_SCHEMA?.trim() || 'identity',
+    ipAddressHeaders: (env.BETTER_AUTH_IP_ADDRESS_HEADERS ?? '')
+      .split(',')
+      .map(header => header.trim().toLowerCase())
+      .filter(Boolean),
     trustedOrigins: (env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')
       .split(',')
       .map((origin) => origin.trim())
@@ -156,6 +166,7 @@ export function readOpenExpertAuthEnv(
     minPasswordLength,
     bcryptCost,
     sessionExpiresIn,
+    sessionFreshAge,
     jwtExpiresIn,
     socialProviders: google || apple ? { google, apple } : undefined,
   }

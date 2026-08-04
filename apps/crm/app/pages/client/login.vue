@@ -12,7 +12,6 @@ const {
   safeRedirect,
 } = useAuthFlow()
 
-const fullName = ref('')
 const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
 const loading = ref(false)
 const continuing = ref(false)
@@ -38,17 +37,14 @@ async function sendMagicLink() {
 
   loading.value = true
   try {
-    const { error: signInError } = await authClient.signIn.magicLink({
-      email: email.value.trim().toLowerCase(),
-      name: fullName.value.trim() || undefined,
-      callbackURL: callbackUrl('/confirm', intendedDestination.value),
-      newUserCallbackURL: callbackUrl('/confirm', intendedDestination.value),
-      errorCallbackURL: callbackUrl('/confirm', intendedDestination.value),
+    await $fetch('/api/auth/existing-magic-link', {
+      method: 'POST',
+      body: {
+        email: email.value.trim().toLowerCase(),
+        callbackURL: callbackUrl('/confirm', intendedDestination.value),
+        errorCallbackURL: callbackUrl('/confirm', intendedDestination.value),
+      },
     })
-    if (signInError) {
-      error.value = errorMessage(signInError)
-      return
-    }
     sent.value = true
   }
   catch (signInError) {
@@ -100,15 +96,6 @@ async function continueWithSession() {
       />
 
       <form v-else class="client-login-form" @submit.prevent="sendMagicLink">
-        <UFormField label="Imię i nazwisko" hint="Opcjonalnie — do wyświetlania na koncie">
-          <UInput
-            v-model="fullName"
-            autocomplete="name"
-            icon="i-lucide-user"
-            class="w-full"
-          />
-        </UFormField>
-
         <UFormField label="Email użyty przy rezerwacji" required>
           <UInput
             v-model="email"

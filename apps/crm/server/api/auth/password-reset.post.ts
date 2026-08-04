@@ -12,34 +12,38 @@ import {
 import { serverAuth } from '~~/server/utils/platform-auth'
 
 const RESPONSE_FLOOR_MS = 600
+const MAX_CALLBACK_LENGTH = 2_048
 
-interface ExistingMagicLinkBody {
+interface PasswordResetBody {
   email?: unknown
-  callbackURL?: unknown
-  errorCallbackURL?: unknown
+  redirectTo?: unknown
 }
 
-function confirmationCallback(value: unknown): string {
-  if (
-    typeof value !== 'string'
-    || !value.startsWith('/')
-    || value.startsWith('//')
-    || value.includes('\\')
-    || /%5c/iu.test(value)
-  ) return '/confirm'
-
-  const url = new URL(value, 'https://openexpert.invalid')
-  if (url.origin !== 'https://openexpert.invalid' || url.pathname !== '/confirm') {
-    return '/confirm'
+function resetCallback(value: unknown, baseURL: string): string {
+  const base = new URL(baseURL)
+  const fallback = new URL('/reset-password', base)
+  if (typeof value !== 'string' || value.length > MAX_CALLBACK_LENGTH) {
+    return fallback.href
   }
-  return `${url.pathname}${url.search}${url.hash}`
+
+  try {
+    const callback = new URL(value, base)
+    if (
+      callback.origin !== base.origin
+      || callback.pathname !== '/reset-password'
+      || callback.username
+      || callback.password
+    ) return fallback.href
+    return callback.href
+  }
+  catch {
+    return fallback.href
+  }
 }
 
 async function waitForResponseFloor(startedAt: number): Promise<void> {
   const remaining = RESPONSE_FLOOR_MS - (Date.now() - startedAt)
-  if (remaining > 0) {
-    await new Promise(resolve => setTimeout(resolve, remaining))
-  }
+  if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining))
 }
 
 export default defineEventHandler(async (event) => {
@@ -51,16 +55,15 @@ export default defineEventHandler(async (event) => {
     if (!isOpenExpertSameOriginJsonRequest(event.headers, runtime.config.baseURL)) {
       throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
     }
-    const body = await readBody<ExistingMagicLinkBody>(event)
+    const body = await readBody<PasswordResetBody>(event)
     const email = typeof body?.email === 'string'
       ? body.email.trim().toLowerCase().slice(0, 320)
       : ''
-
     const rateLimit = await consumeOpenExpertAuthRateLimit({
       pool: runtime.pool,
       databaseSchema: runtime.config.databaseSchema,
       keySecret: runtime.config.secret,
-      scope: 'crm:magic-link',
+      scope: 'crm:password-reset-email',
       ipAddress: getOpenExpertTrustedClientIp({
         headers: event.headers,
         directAddress: event.node.req.socket.remoteAddress,
@@ -68,40 +71,31 @@ export default defineEventHandler(async (event) => {
       }),
       identifier: email,
     })
+
     if (!rateLimit.allowed) {
-      const retryAfter = String(rateLimit.retryAfterSeconds)
       setHeader(event, 'Retry-After', rateLimit.retryAfterSeconds)
-      setHeader(event, 'X-Retry-After', retryAfter)
       throw createError({
         statusCode: 429,
-        statusMessage: 'Too many magic-link requests',
+        statusMessage: 'Too many password-reset requests',
       })
     }
 
-    const callbackURL = confirmationCallback(body.callbackURL)
-    const errorCallbackURL = confirmationCallback(body.errorCallbackURL)
+    const redirectTo = resetCallback(body.redirectTo, runtime.config.baseURL)
     const requestHeaders = new Headers(event.headers)
     const sendTask = (async () => {
-      if (!email) return
-      const user = await runtime.pool.query(
-        `select 1
-           from ${runtime.config.databaseSchema}.users
-          where email = $1
-          limit 1`,
-        [email],
-      )
-      if (user.rowCount === 1) {
-        await runtime.auth.api.signInMagicLink({
+      if (email) {
+        await runtime.auth.api.requestPasswordReset({
           body: {
             email,
-            callbackURL,
-            errorCallbackURL,
+            redirectTo,
           },
           headers: requestHeaders,
         })
       }
     })().catch((error) => {
-      console.error('Unable to send an existing-user magic link', {
+      // Never reveal whether an identity exists or whether the delivery
+      // provider accepted this specific address.
+      console.error('Unable to process a password-reset email request', {
         name: error instanceof Error ? error.name : 'UnknownError',
       })
     })

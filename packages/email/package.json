@@ -5,11 +5,14 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
   "dependencies": {
-    "nodemailer": "^7.0.10",
-    "resend": "^6.17.2"
+    "nodemailer": "^9.0.4",
+    "resend": "^6.18.1"
   },
   "devDependencies": {
-    "@types/nodemailer": "^7.0.9"
+    "@types/nodemailer": "^8.0.1"
   }
 }

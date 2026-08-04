@@ -8,9 +8,14 @@ import { freshSessionMiddleware } from 'better-auth/api'
 import { jwt, magicLink, phoneNumber, twoFactor } from 'better-auth/plugins'
 import { Pool, type PoolConfig } from 'pg'
 
-import { getBearerToken } from './headers.ts'
 import { createDefaultBcryptPasswordStrategy } from './password.ts'
 import { normalizeOpenExpertPhone } from './phone.ts'
+import { createOpenExpertBetterAuthRateLimitStorage } from './rate-limit.ts'
+import {
+  openExpertPasskeyOptionsPlugin,
+  openExpertPasswordPolicyPlugin,
+  requireOpenExpertPasskeyUserVerification,
+} from './security.ts'
 import {
   OPENEXPERT_AUTHENTICATED_ROLE,
   type OpenExpertAuthClaims,
@@ -25,6 +30,21 @@ const DEFAULT_SCHEMA = 'identity'
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]*$/
+const HEADER_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+export {
+  createOpenExpertBetterAuthRateLimitStorage,
+  consumeOpenExpertAuthRateLimit,
+  createOpenExpertAuthRateLimitBuckets,
+  type OpenExpertAuthRateLimitBucket,
+  type OpenExpertAuthRateLimitDecision,
+  type OpenExpertAuthRateLimitInput,
+} from './rate-limit.ts'
+export { scheduleOpenExpertBackgroundTask } from './background.ts'
+export {
+  getOpenExpertTrustedClientIp,
+  isOpenExpertSameOriginJsonRequest,
+} from './request-security.ts'
 
 const sensitiveAuthMethodPlugin = {
   id: 'openexpert-sensitive-auth-methods',
@@ -68,9 +88,35 @@ function normalizeConfig(config: OpenExpertAuthConfig) {
   if (config.secret.length < 32) {
     throw new TypeError('Better Auth secret must contain at least 32 characters')
   }
+  let databaseURL: URL
+  try {
+    databaseURL = new URL(config.databaseURL)
+  }
+  catch {
+    throw new TypeError('Better Auth database URL must be an absolute PostgreSQL URL')
+  }
+  if (!['postgres:', 'postgresql:'].includes(databaseURL.protocol)) {
+    throw new TypeError('Better Auth database URL must use postgres or postgresql')
+  }
+  const ipAddressHeaders = [...new Set((config.ipAddressHeaders ?? []).map(
+    header => header.trim().toLowerCase(),
+  ))]
+  if (ipAddressHeaders.some(header => !HEADER_NAME_PATTERN.test(header))) {
+    throw new TypeError('Better Auth IP address headers must be valid HTTP header names')
+  }
+  const sessionFreshAge = config.sessionFreshAge ?? 10 * 60
+  if (
+    !Number.isSafeInteger(sessionFreshAge)
+    || sessionFreshAge < 60
+    || sessionFreshAge > 60 * 60
+  ) {
+    throw new TypeError('Session fresh age must be between 60 and 3600 seconds')
+  }
 
   return {
     ...config,
+    databaseURL: databaseURL.href,
+    ipAddressHeaders,
     appName: config.appName ?? 'OpenExpert',
     basePath: config.basePath ?? '/api/auth',
     databaseSchema,
@@ -82,6 +128,7 @@ function normalizeConfig(config: OpenExpertAuthConfig) {
     bcryptCost: config.bcryptCost ?? 10,
     sessionExpiresIn: config.sessionExpiresIn ?? 60 * 60 * 24 * 7,
     sessionUpdateAge: config.sessionUpdateAge ?? 60 * 60 * 24,
+    sessionFreshAge,
     verificationExpiresIn: config.verificationExpiresIn ?? 60 * 60,
     resetPasswordExpiresIn: config.resetPasswordExpiresIn ?? 60 * 60,
     magicLinkExpiresIn: config.magicLinkExpiresIn ?? 60 * 60,
@@ -193,6 +240,24 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
           residentKey: 'required',
           userVerification: 'required',
         },
+        registration: {
+          afterVerification({ verification }) {
+            requireOpenExpertPasskeyUserVerification(
+              verification.verified
+                ? verification.registrationInfo?.userVerified
+                : false,
+            )
+          },
+        },
+        authentication: {
+          afterVerification({ verification }) {
+            requireOpenExpertPasskeyUserVerification(
+              verification.verified
+                ? verification.authenticationInfo.userVerified
+                : false,
+            )
+          },
+        },
         advanced: {
           webAuthnChallengeCookie: 'passkey_challenge',
         },
@@ -220,6 +285,22 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
     trustedOrigins: [config.baseURL, ...(config.trustedOrigins ?? [])],
     database: pool,
     socialProviders: configuredSocialProviders,
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 100,
+      storage: 'database',
+      customStorage: createOpenExpertBetterAuthRateLimitStorage({
+        pool,
+        databaseSchema: config.databaseSchema,
+      }),
+      modelName: 'rate_limits',
+      fields: {
+        key: 'key',
+        count: 'count',
+        lastRequest: 'last_request',
+      },
+    },
     user: {
       modelName: 'users',
       fields: {
@@ -244,6 +325,7 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
       },
       expiresIn: config.sessionExpiresIn,
       updateAge: config.sessionUpdateAge,
+      freshAge: config.sessionFreshAge,
     },
     account: {
       modelName: 'accounts',
@@ -333,6 +415,9 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
         sameSite: 'lax',
         secure: config.baseURL.startsWith('https://'),
       },
+      ipAddress: {
+        ipAddressHeaders: config.ipAddressHeaders,
+      },
       database: { generateId: 'uuid' as const },
       ...(options.scheduleBackgroundTask
         ? { backgroundTasks: { handler: options.scheduleBackgroundTask } }
@@ -343,6 +428,7 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
   const auth = betterAuth({
     ...coreOptions,
     plugins: [
+      openExpertPasswordPolicyPlugin,
       sensitiveAuthMethodPlugin,
       magicLink({
         expiresIn: config.magicLinkExpiresIn,
@@ -359,6 +445,7 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
           }),
       }),
       ...(phonePlugin ? [phonePlugin] : []),
+      ...(passkeyPlugin ? [openExpertPasskeyOptionsPlugin] : []),
       ...(passkeyPlugin ? [passkeyPlugin] : []),
       twoFactor({
         issuer: config.appName,
@@ -449,9 +536,9 @@ export async function getOpenExpertExternalJwt(
   runtime: OpenExpertAuthRuntime,
   headers: Headers,
 ): Promise<string> {
-  const bearer = getBearerToken(headers)
-  if (bearer) return bearer
-  return (await runtime.auth.api.getToken({ headers })).token
+  const sessionHeaders = new Headers(headers)
+  sessionHeaders.delete('authorization')
+  return (await runtime.auth.api.getToken({ headers: sessionHeaders })).token
 }
 
 /**
@@ -467,12 +554,15 @@ export async function getOpenExpertUserById(
   if (!UUID_PATTERN.test(userId)) throw new TypeError('userId must be a UUID')
   const schema = runtime.config.databaseSchema
   const result = await runtime.pool.query<OpenExpertAuthUser>(
-    `select id, name, email, email_verified as "emailVerified", image,
+    `select id, name, email, email_verified as "emailVerified",
+            (to_jsonb(auth_user)->>'email_verified_at')::timestamptz
+              as "emailVerifiedAt",
+            image,
             phone_number as "phoneNumber",
             phone_number_verified as "phoneNumberVerified",
             two_factor_enabled as "twoFactorEnabled",
             created_at as "createdAt", updated_at as "updatedAt"
-       from ${schema}.users
+       from ${schema}.users as auth_user
       where id = $1
       limit 1`,
     [userId],

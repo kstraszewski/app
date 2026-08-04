@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import {
   createOpenExpertAuth,
   getOpenExpertSession,
+  getOpenExpertUserById,
   type OpenExpertAuthRuntime,
 } from '@openexpert/auth/server'
 import {
@@ -15,6 +16,8 @@ interface PlatformAuthRuntimeConfig {
   basePath: string
   databaseUrl: string
   databaseSchema: string
+  ipAddressHeaders: string
+  sessionFreshAge: number
   secret: string
   cookiePrefix: string
   cookieDomain: string
@@ -117,6 +120,11 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
       secret: auth.secret,
       databaseURL: auth.databaseUrl,
       databaseSchema: auth.databaseSchema,
+      ipAddressHeaders: auth.ipAddressHeaders
+        .split(',')
+        .map(header => header.trim().toLowerCase())
+        .filter(Boolean),
+      sessionFreshAge: auth.sessionFreshAge,
       cookiePrefix: auth.cookiePrefix,
       cookieDomain: auth.cookieDomain || undefined,
       trustedOrigins: auth.trustedOrigins
@@ -152,6 +160,9 @@ export async function serverAuthSession(event: H3Event) {
 export async function serverAuthClaims(event: H3Event): Promise<PlatformAuthClaims | null> {
   const session = await serverAuthSession(event)
   if (!session) return null
+  const verifiedUser = session.user.emailVerified
+    ? await getOpenExpertUserById(serverAuth(event), session.user.id)
+    : null
   const fullName = String(session.user.name || '').trim()
   return {
     id: session.user.id,
@@ -159,8 +170,8 @@ export async function serverAuthClaims(event: H3Event): Promise<PlatformAuthClai
     role: 'authenticated',
     email: session.user.email,
     email_verified: session.user.emailVerified,
-    email_confirmed_at: session.user.emailVerified
-      ? new Date(session.user.updatedAt).toISOString()
+    email_confirmed_at: verifiedUser?.emailVerifiedAt
+      ? new Date(verifiedUser.emailVerifiedAt).toISOString()
       : null,
     phone: '',
     user_metadata: { full_name: fullName },

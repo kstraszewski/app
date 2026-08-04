@@ -15,6 +15,16 @@ export {
 } from './password-strategy.ts'
 export { createDefaultBcryptPasswordStrategy } from './password.ts'
 export {
+  assertOpenExpertPassword,
+  getOpenExpertPasswordIssue,
+  getOpenExpertPasswordRequirements,
+  OPENEXPERT_BCRYPT_MAX_BYTES,
+  OPENEXPERT_PASSWORD_MAX_CHARACTERS,
+  OPENEXPERT_PASSWORD_MIN_CHARACTERS,
+  OpenExpertPasswordPolicyError,
+  type OpenExpertPasswordRequirements,
+} from './password-policy.ts'
+export {
   maskOpenExpertPhone,
   normalizeOpenExpertPhone,
 } from './phone.ts'

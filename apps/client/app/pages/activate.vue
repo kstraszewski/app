@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { getOpenExpertPasswordIssue } from '@openexpert/auth'
+
 definePageMeta({ middleware: 'client-auth' })
 
 const route = useRoute()
@@ -27,10 +29,8 @@ const confirmedLinkedProvider = ref('')
 useHead({ title: 'Aktywacja panelu — OpenExpert' })
 
 function passwordIssue() {
-  if (password.value.length < 10) return 'Hasło musi mieć co najmniej 10 znaków.'
-  if (!/[a-z]/u.test(password.value)) return 'Dodaj co najmniej jedną małą literę.'
-  if (!/[A-Z]/u.test(password.value)) return 'Dodaj co najmniej jedną wielką literę.'
-  if (!/[0-9]/u.test(password.value)) return 'Dodaj co najmniej jedną cyfrę.'
+  const issue = getOpenExpertPasswordIssue(password.value)
+  if (issue) return issue
   if (password.value !== passwordRepeat.value) return 'Hasła nie są takie same.'
   return ''
 }

@@ -5,6 +5,7 @@ export interface OpenExpertAuthUser {
   name: string
   email: string
   emailVerified: boolean
+  emailVerifiedAt: Date | null
   image: string | null
   phoneNumber: string | null
   phoneNumberVerified: boolean
@@ -107,6 +108,8 @@ export interface OpenExpertAuthConfig {
   secret: string
   databaseURL: string
   databaseSchema?: string
+  /** Proxy headers that the deployment platform overwrites and therefore trusts. */
+  ipAddressHeaders?: string[]
   trustedOrigins?: string[]
   cookiePrefix?: string
   cookieDomain?: string
@@ -117,6 +120,8 @@ export interface OpenExpertAuthConfig {
   bcryptCost?: number
   sessionExpiresIn?: number
   sessionUpdateAge?: number
+  /** Maximum age accepted for security-sensitive account changes. */
+  sessionFreshAge?: number
   verificationExpiresIn?: number
   resetPasswordExpiresIn?: number
   magicLinkExpiresIn?: number

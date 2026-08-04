@@ -1,3 +1,4 @@
+import { getOpenExpertPasswordIssue } from '@openexpert/auth'
 import { createError, readBody, setHeader } from 'h3'
 import { serverAuth } from '~~/server/utils/platform-auth'
 import {
@@ -16,16 +17,12 @@ export default defineEventHandler(async (event) => {
   const session = await requireLinkedClientPortalSession(event)
   const body = asRecord(await readBody(event))
   const password = typeof body.password === 'string' ? body.password : ''
-  if (
-    password.length < 10
-    || password.length > 128
-    || !/[a-z]/u.test(password)
-    || !/[A-Z]/u.test(password)
-    || !/[0-9]/u.test(password)
-  ) {
+  const passwordIssue = getOpenExpertPasswordIssue(password)
+  if (passwordIssue) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Password must contain 10–128 characters, upper and lower case letters, and a number',
+      statusMessage: passwordIssue,
+      data: { code: 'PASSWORD_POLICY_VIOLATION' },
     })
   }
 

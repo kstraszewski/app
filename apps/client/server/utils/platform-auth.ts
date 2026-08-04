@@ -16,6 +16,8 @@ interface PlatformAuthRuntimeConfig {
   basePath: string
   databaseUrl: string
   databaseSchema: string
+  ipAddressHeaders: string
+  sessionFreshAge: number
   secret: string
   cookiePrefix: string
   cookieDomain: string
@@ -112,6 +114,11 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
       secret: auth.secret,
       databaseURL: auth.databaseUrl,
       databaseSchema: auth.databaseSchema,
+      ipAddressHeaders: auth.ipAddressHeaders
+        .split(',')
+        .map(header => header.trim().toLowerCase())
+        .filter(Boolean),
+      sessionFreshAge: auth.sessionFreshAge,
       cookiePrefix: auth.cookiePrefix,
       cookieDomain: auth.cookieDomain || undefined,
       disableSignUp: true,

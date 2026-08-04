@@ -30,13 +30,14 @@ async function sendMagicLink() {
   loading.value = 'magic'
   try {
     const callbackURL = absoluteCallback(redirectPath.value)
-    const result = await authClient.signIn.magicLink({
-      email: email.value.trim().toLowerCase(),
-      callbackURL,
-      newUserCallbackURL: callbackURL,
-      errorCallbackURL: absoluteCallback(`/login?email=${encodeURIComponent(email.value)}`),
+    await $fetch('/api/auth/existing-magic-link', {
+      method: 'POST',
+      body: {
+        email: email.value.trim().toLowerCase(),
+        callbackURL,
+        errorCallbackURL: absoluteCallback(`/login?email=${encodeURIComponent(email.value)}`),
+      },
     })
-    if (result.error) throw result.error
     sent.value = true
   }
   catch (signInError) {

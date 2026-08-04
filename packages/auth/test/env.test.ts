@@ -12,12 +12,15 @@ test('readOpenExpertAuthEnv returns secure project defaults', () => {
     BETTER_AUTH_SECRET: 'x'.repeat(32),
     DATABASE_URL: 'postgresql://user:pass@example.com/openexpert',
     BETTER_AUTH_COOKIE_DOMAIN: '.openexpert.app',
+    BETTER_AUTH_IP_ADDRESS_HEADERS: 'x-vercel-forwarded-for',
   })
 
   assert.equal(config.databaseSchema, 'identity')
   assert.equal(config.requireEmailVerification, true)
   assert.equal(config.minPasswordLength, 10)
+  assert.equal(config.sessionFreshAge, 10 * 60)
   assert.equal(config.cookieDomain, '.openexpert.app')
+  assert.deepEqual(config.ipAddressHeaders, ['x-vercel-forwarded-for'])
 })
 
 test('readOpenExpertAuthEnv rejects missing required values', () => {

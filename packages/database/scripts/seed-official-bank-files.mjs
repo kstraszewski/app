@@ -13,6 +13,7 @@ const EMBEDDING_RECIPE = 'search-result-v1'
 const CONFIRMATION = 'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION'
 const SEED_LOCK = 'openexpert.seed.official-bank-files.v1'
 const VERCEL_PROJECT = 'openexpert-crm'
+const BLOB_STORAGE_NAMESPACE = 'mortgage-bank-files'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '../../..')
@@ -683,13 +684,12 @@ async function createPlans(database, catalog, documents) {
   return plans
 }
 
-async function assertBlobForExistingVersion(blob, configuration, plan) {
-  const metadata = await blob.head(plan.storagePath, {
-    storeId: configuration.privateStoreId,
-    oidcToken: configuration.oidcToken,
-    abortSignal: AbortSignal.timeout(30_000),
-  })
-  if (metadata.pathname !== plan.storagePath) {
+function blobStoragePath(storagePath) {
+  return `${BLOB_STORAGE_NAMESPACE}/${storagePath}`
+}
+
+function assertBlobMetadata(metadata, plan, pathname) {
+  if (metadata.pathname !== pathname) {
     throw new Error(`Blob pathname mismatch for “${plan.document.entry.title}”`)
   }
   if (metadata.size !== plan.document.download.bytes.byteLength) {
@@ -697,30 +697,56 @@ async function assertBlobForExistingVersion(blob, configuration, plan) {
   }
 }
 
-async function uploadNewBlobs(blob, configuration, plans) {
+async function readBlobMetadata(blob, configuration, pathname) {
+  return blob.head(pathname, {
+    storeId: configuration.privateStoreId,
+    oidcToken: configuration.oidcToken,
+    abortSignal: AbortSignal.timeout(30_000),
+  })
+}
+
+async function putPlanBlob(blob, configuration, plan, pathname) {
+  const result = await blob.put(
+    pathname,
+    plan.document.download.bytes,
+    {
+      access: 'private',
+      storeId: configuration.privateStoreId,
+      oidcToken: configuration.oidcToken,
+      addRandomSuffix: false,
+      allowOverwrite: false,
+      contentType: 'application/pdf',
+      cacheControlMaxAge: 3_600,
+      maximumSizeInBytes: MAXIMUM_BYTES,
+      multipart: plan.document.download.bytes.byteLength > 5 * 1024 * 1024,
+      abortSignal: AbortSignal.timeout(180_000),
+    },
+  )
+  if (result.pathname !== pathname) {
+    throw new Error(`Uploaded Blob pathname mismatch for “${plan.document.entry.title}”`)
+  }
+}
+
+async function ensureBlobs(blob, configuration, plans) {
   const uploaded = []
   try {
-    for (const plan of plans.filter(item => item.mode === 'insert')) {
-      const result = await blob.put(
-        plan.storagePath,
-        plan.document.download.bytes,
-        {
-          access: 'private',
-          storeId: configuration.privateStoreId,
-          oidcToken: configuration.oidcToken,
-          addRandomSuffix: false,
-          allowOverwrite: false,
-          contentType: 'application/pdf',
-          cacheControlMaxAge: 3_600,
-          maximumSizeInBytes: MAXIMUM_BYTES,
-          multipart: plan.document.download.bytes.byteLength > 5 * 1024 * 1024,
-          abortSignal: AbortSignal.timeout(180_000),
-        },
-      )
-      if (result.pathname !== plan.storagePath) {
-        throw new Error(`Uploaded Blob pathname mismatch for “${plan.document.entry.title}”`)
+    for (const plan of plans) {
+      const pathname = blobStoragePath(plan.storagePath)
+      if (plan.mode !== 'insert') {
+        try {
+          const metadata = await readBlobMetadata(blob, configuration, pathname)
+          assertBlobMetadata(metadata, plan, pathname)
+          continue
+        } catch (error) {
+          if (!(error instanceof blob.BlobNotFoundError)) throw error
+          process.stdout.write(
+            `Restoring namespaced Blob object for “${plan.document.entry.title}”\n`,
+          )
+        }
       }
-      uploaded.push(plan.storagePath)
+
+      await putPlanBlob(blob, configuration, plan, pathname)
+      uploaded.push(pathname)
     }
     return uploaded
   } catch (error) {
@@ -1238,9 +1264,6 @@ async function main() {
     }
 
     const plans = await createPlans(database, catalog, documents)
-    for (const plan of plans.filter(item => item.mode !== 'insert')) {
-      await assertBlobForExistingVersion(runtime.blob, configuration, plan)
-    }
     const requiringProcessing = plans.filter(item => item.mode !== 'unchanged')
     for (const [index, plan] of requiringProcessing.entries()) {
       process.stdout.write(
@@ -1261,7 +1284,7 @@ async function main() {
       ))
     }
 
-    uploadedPaths = await uploadNewBlobs(runtime.blob, configuration, plans)
+    uploadedPaths = await ensureBlobs(runtime.blob, configuration, plans)
     await commitPlans(database, plans)
     committed = true
 

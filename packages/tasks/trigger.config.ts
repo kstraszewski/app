@@ -1,10 +1,11 @@
 import { defineConfig } from '@trigger.dev/sdk'
 
 const project = process.env.TRIGGER_PROJECT_REF?.trim()
+  || 'proj_wqbvdyoozgchuvesytka'
 
-if (!project || project === 'proj_your_project_ref') {
+if (project === 'proj_your_project_ref') {
   throw new Error(
-    'Set TRIGGER_PROJECT_REF in packages/tasks/.env.local before running Trigger.dev.',
+    'Replace the placeholder TRIGGER_PROJECT_REF before running Trigger.dev.',
   )
 }
 

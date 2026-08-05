@@ -6,8 +6,9 @@ Turborepo layout and keeps task implementations out of Nuxt server bundles.
 
 ## Local development
 
-Create a Trigger.dev project, then copy its development project reference and
-secret key into an ignored local file:
+The repository is connected to the `OpenExpert-CRM` Trigger.dev project. Copy
+the example file, then add that project's development secret key to the ignored
+local file:
 
 ```sh
 cp packages/tasks/.env.example packages/tasks/.env.local

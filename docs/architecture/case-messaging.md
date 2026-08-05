@@ -11,7 +11,9 @@ after the database transaction commits. That same transaction:
 
 1. allocates a monotonic sequence inside the conversation;
 2. inserts the message using a client-generated idempotency key;
-3. inserts an outbox event.
+3. atomically claims any completed attachment reservations in their requested
+   order;
+4. inserts an outbox event.
 
 The request then attempts a best-effort Ably publish. The realtime payload is
 only an invalidation event containing conversation, message and sequence IDs.
@@ -35,6 +37,35 @@ backwards.
 
 Typing indicators are ephemeral Ably events. They are never stored in Postgres
 and they do not change message status.
+
+## Attachments
+
+Message attachments use the private `crm-message-attachments` storage
+namespace. The browser first reserves an attachment through the authenticated
+conversation API. The API returns a short-lived, path-specific signed `PUT`,
+so the bytes travel directly from the browser to Vercel Blob in production or
+MinIO locally and never pass through the Nuxt request body.
+
+After upload, the browser calls the completion endpoint. The server checks the
+exact private object with `HEAD` and compares its path, content type and size
+with the database reservation. Only completed, unexpired reservations owned by
+the same conversation actor and `clientMessageId` can be claimed by the send
+transaction. A message may contain text, attachments, or both.
+
+The shared limits are 10 files, 25 MiB per file and 50 MiB per message; they
+are enforced before a signed upload is issued and again in the atomic send
+transaction. Per-actor rate and active-byte quotas bound abandoned uploads.
+The allowlist contains JPEG, PNG, WebP, PDF, DOC/DOCX, XLS/XLSX, TXT and CSV. Blob
+paths and provider URLs are never returned in message payloads or realtime
+events. Image/PDF previews and downloads begin at an authenticated conversation
+endpoint; downloads are streamed with a safe `Content-Disposition` filename.
+
+Removed drafts are discarded immediately. Unsent reservations expire after 24
+hours. Every metadata deletion, including a case/conversation cascade, writes
+the private path to a durable deletion queue in the same transaction. Cleanup
+waits beyond the maximum signed-upload lifetime, deletes the Blob, verifies it
+is absent and only then completes the queue job; failed and stale jobs remain
+retryable.
 
 ## Access
 
@@ -80,7 +111,12 @@ After deployment:
 4. interrupt Ably access, send a message, restore it and confirm outbox retry;
 5. revoke a portal grant and confirm history, send, receipt and token endpoints
    all return not found;
-6. confirm a non-owner organization member cannot access the conversation.
+6. upload an image and a document from both applications, then verify preview,
+   download filename and an attachment-only message;
+7. confirm an unsupported type, an oversized file and a mismatched upload are
+   rejected;
+8. confirm a non-owner organization member cannot access the conversation or
+   its attachment endpoints.
 
 Ably setup references:
 

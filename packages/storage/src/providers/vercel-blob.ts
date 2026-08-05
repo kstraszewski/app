@@ -8,6 +8,8 @@ import type {
   ProviderObjectInput,
   ProviderSignedUrl,
   ProviderSignedUrlInput,
+  ProviderSignedUploadUrl,
+  ProviderSignedUploadUrlInput,
   ProviderUploadInput,
   StorageProvider,
 } from '../types.ts'
@@ -44,6 +46,15 @@ interface VercelBlobGetResult {
   }
 }
 
+interface VercelBlobHeadResult {
+  url: string
+  pathname: string
+  contentType: string
+  size: number
+  uploadedAt: Date
+  etag: string
+}
+
 interface VercelBlobListResult {
   blobs: Array<{
     url: string
@@ -63,6 +74,7 @@ interface VercelIssuedSignedToken {
 }
 
 interface VercelBlobSdk {
+  BlobNotFoundError: new () => Error
   put(
     pathname: string,
     body: unknown,
@@ -72,6 +84,10 @@ interface VercelBlobSdk {
     pathname: string,
     options: Record<string, unknown>,
   ): Promise<VercelBlobGetResult | null>
+  head(
+    pathname: string,
+    options: Record<string, unknown>,
+  ): Promise<VercelBlobHeadResult>
   del(pathname: string, options: Record<string, unknown>): Promise<void>
   list(options: Record<string, unknown>): Promise<VercelBlobListResult>
   issueSignedToken(
@@ -81,7 +97,10 @@ interface VercelBlobSdk {
     token: VercelIssuedSignedToken,
     options: Record<string, unknown>,
   ): Promise<{ presignedUrl: string }>
+  parseStoreIdFromDelegationToken(delegationToken: string): string
 }
+
+const SIGNED_UPLOAD_CACHE_CONTROL_SECONDS = 60
 
 let vercelBlobSdkPromise: Promise<VercelBlobSdk> | undefined
 
@@ -184,6 +203,29 @@ export function createVercelBlobStorageProvider(
       }
     },
 
+    async head(input: ProviderObjectInput): Promise<ProviderObject | null> {
+      const sdk = await loadVercelBlobSdk()
+      try {
+        const result = await sdk.head(
+          input.key,
+          authOptions(options.stores[input.access]),
+        )
+        return {
+          access: input.access,
+          key: result.pathname,
+          size: result.size,
+          contentType: result.contentType,
+          etag: result.etag,
+          uploadedAt: result.uploadedAt,
+          url: result.url,
+        }
+      }
+      catch (error) {
+        if (error instanceof sdk.BlobNotFoundError) return null
+        throw error
+      }
+    },
+
     async download(input: ProviderObjectInput): Promise<ProviderDownload | null> {
       const sdk = await loadVercelBlobSdk()
       const result = await sdk.get(input.key, {
@@ -265,6 +307,45 @@ export function createVercelBlobStorageProvider(
       })
 
       return { url: result.presignedUrl }
+    },
+
+    async createSignedUploadUrl(
+      input: ProviderSignedUploadUrlInput,
+    ): Promise<ProviderSignedUploadUrl> {
+      const sdk = await loadVercelBlobSdk()
+      const auth = authOptions(options.stores[input.access])
+      const validUntil = input.expiresAt.getTime()
+      const allowedContentTypes = [input.contentType]
+      const token = await sdk.issueSignedToken({
+        ...auth,
+        pathname: input.key,
+        operations: ['put'],
+        validUntil,
+        allowedContentTypes,
+        maximumSizeInBytes: input.size,
+      })
+      const result = await sdk.presignUrl(token, {
+        pathname: input.key,
+        operation: 'put',
+        validUntil,
+        access: input.access,
+        allowedContentTypes,
+        maximumSizeInBytes: input.size,
+        addRandomSuffix: false,
+        allowOverwrite: false,
+        cacheControlMaxAge: SIGNED_UPLOAD_CACHE_CONTROL_SECONDS,
+      })
+
+      return {
+        url: result.presignedUrl,
+        headers: {
+          'x-content-type': input.contentType,
+          'x-vercel-blob-access': input.access,
+          'x-vercel-blob-store-id': sdk.parseStoreIdFromDelegationToken(
+            token.delegationToken,
+          ),
+        },
+      }
     },
 
     getPublicUrl(input: ProviderObjectInput): string {

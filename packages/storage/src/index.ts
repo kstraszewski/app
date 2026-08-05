@@ -9,6 +9,7 @@ export {
   StorageNamespaceError,
   StoragePathError,
   StorageProviderContractError,
+  StorageUnsupportedError,
   StorageValidationError,
 } from './errors.ts'
 export type { StorageErrorCode } from './errors.ts'
@@ -71,6 +72,8 @@ export type {
   ProviderObjectInput,
   ProviderSignedUrl,
   ProviderSignedUrlInput,
+  ProviderSignedUploadUrl,
+  ProviderSignedUploadUrlInput,
   ProviderUploadInput,
   StorageBody,
   StorageClient,
@@ -82,5 +85,7 @@ export type {
   StorageProvider,
   StorageSignedUrl,
   StorageSignedUrlInput,
+  StorageSignedUploadUrl,
+  StorageSignedUploadUrlInput,
   StorageUploadInput,
 } from './types.ts'

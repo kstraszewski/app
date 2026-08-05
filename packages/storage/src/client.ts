@@ -29,6 +29,8 @@ import type {
   StorageProvider,
   StorageSignedUrl,
   StorageSignedUrlInput,
+  StorageSignedUploadUrl,
+  StorageSignedUploadUrlInput,
   StorageUploadInput,
 } from './types.ts'
 
@@ -36,6 +38,9 @@ const DEFAULT_LIST_LIMIT = 100
 const MAX_LIST_LIMIT = 1000
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 15 * 60
 const MAX_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60
+const DEFAULT_SIGNED_UPLOAD_URL_TTL_SECONDS = 5 * 60
+const MAX_SIGNED_UPLOAD_URL_TTL_SECONDS = 15 * 60
+const HTTP_HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
 function assertPositiveInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -82,6 +87,57 @@ function resolveUploadSize(input: StorageUploadInput): number {
   }
 
   return inferredSize
+}
+
+function namespaceObjectConstraints(
+  namespace: StorageNamespace,
+  contentType: string,
+  size: number,
+) {
+  const definition = getStorageNamespaceDefinition(namespace)
+  const normalizedContentType = normalizeContentType(contentType)
+
+  if (
+    definition.allowedContentTypes
+    && !definition.allowedContentTypes.includes(normalizedContentType)
+  ) {
+    throw new StorageValidationError(
+      `Content type "${normalizedContentType}" is not allowed in "${namespace}"`,
+    )
+  }
+
+  if (size > definition.maxBytes) {
+    throw new StorageValidationError(
+      `Object exceeds the ${definition.maxBytes}-byte limit for "${namespace}"`,
+    )
+  }
+
+  return { definition, normalizedContentType }
+}
+
+function providerHeaders(
+  headers: Record<string, string>,
+): Record<string, string> {
+  if (typeof headers !== 'object' || headers === null || Array.isArray(headers)) {
+    throw new StorageProviderContractError(
+      'Provider returned invalid signed upload headers',
+    )
+  }
+
+  const result: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers)) {
+    if (
+      !HTTP_HEADER_NAME_PATTERN.test(name)
+      || typeof value !== 'string'
+      || /[\r\n]/.test(value)
+    ) {
+      throw new StorageProviderContractError(
+        'Provider returned invalid signed upload headers',
+      )
+    }
+    result[name] = value
+  }
+  return result
 }
 
 function mapProviderObject(
@@ -139,25 +195,13 @@ class DefaultStorageClient implements StorageClient {
   }
 
   async upload(input: StorageUploadInput): Promise<StorageObject> {
-    const definition = getStorageNamespaceDefinition(input.namespace)
     const key = toProviderKey(input.namespace, input.path)
     const size = resolveUploadSize(input)
-    const normalizedContentType = normalizeContentType(input.contentType)
-
-    if (
-      definition.allowedContentTypes
-      && !definition.allowedContentTypes.includes(normalizedContentType)
-    ) {
-      throw new StorageValidationError(
-        `Content type "${normalizedContentType}" is not allowed in "${input.namespace}"`,
-      )
-    }
-
-    if (size > definition.maxBytes) {
-      throw new StorageValidationError(
-        `Object exceeds the ${definition.maxBytes}-byte limit for "${input.namespace}"`,
-      )
-    }
+    const { definition, normalizedContentType } = namespaceObjectConstraints(
+      input.namespace,
+      input.contentType,
+      size,
+    )
 
     if (input.cacheControlMaxAge !== undefined) {
       assertPositiveInteger(input.cacheControlMaxAge, 'cacheControlMaxAge')
@@ -179,6 +223,19 @@ class DefaultStorageClient implements StorageClient {
     })
 
     return mapProviderObject(input.namespace, definition.access, object, key)
+  }
+
+  async head(input: StorageObjectInput): Promise<StorageObject | null> {
+    const definition = getStorageNamespaceDefinition(input.namespace)
+    const key = toProviderKey(input.namespace, input.path)
+    const object = await this.#provider.head({
+      access: definition.access,
+      key,
+    })
+
+    return object === null
+      ? null
+      : mapProviderObject(input.namespace, definition.access, object, key)
   }
 
   async download(input: StorageObjectInput): Promise<StorageDownload | null> {
@@ -284,6 +341,59 @@ class DefaultStorageClient implements StorageClient {
     }
   }
 
+  async createSignedUploadUrl(
+    input: StorageSignedUploadUrlInput,
+  ): Promise<StorageSignedUploadUrl> {
+    assertNonNegativeInteger(input.size, 'size')
+    const { definition, normalizedContentType } = namespaceObjectConstraints(
+      input.namespace,
+      input.contentType,
+      input.size,
+    )
+    const expiresInSeconds = input.expiresInSeconds
+      ?? DEFAULT_SIGNED_UPLOAD_URL_TTL_SECONDS
+
+    assertPositiveInteger(expiresInSeconds, 'expiresInSeconds')
+    if (expiresInSeconds > MAX_SIGNED_UPLOAD_URL_TTL_SECONDS) {
+      throw new StorageValidationError(
+        `expiresInSeconds cannot exceed ${MAX_SIGNED_UPLOAD_URL_TTL_SECONDS}`,
+      )
+    }
+
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000)
+    const result = await this.#provider.createSignedUploadUrl({
+      access: definition.access,
+      key: toProviderKey(input.namespace, input.path),
+      contentType: normalizedContentType,
+      size: input.size,
+      expiresInSeconds,
+      expiresAt,
+    })
+
+    let url: URL
+    try {
+      url = new URL(result.url)
+    }
+    catch (error) {
+      throw new StorageProviderContractError(
+        'Provider returned an invalid signed upload URL',
+        { cause: error },
+      )
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new StorageProviderContractError(
+        'Provider returned a signed upload URL with an unsupported protocol',
+      )
+    }
+
+    return {
+      url: url.toString(),
+      method: 'PUT',
+      headers: providerHeaders(result.headers),
+      expiresAt,
+    }
+  }
+
   getPublicUrl(input: StorageObjectInput): string {
     const definition = getStorageNamespaceDefinition(input.namespace)
     if (definition.access !== 'public') {
@@ -314,10 +424,12 @@ export function createStorageClient(provider: StorageProvider): StorageClient {
     typeof provider !== 'object'
     || provider === null
     || typeof provider.upload !== 'function'
+    || typeof provider.head !== 'function'
     || typeof provider.download !== 'function'
     || typeof provider.delete !== 'function'
     || typeof provider.list !== 'function'
     || typeof provider.createSignedUrl !== 'function'
+    || typeof provider.createSignedUploadUrl !== 'function'
     || typeof provider.getPublicUrl !== 'function'
   ) {
     throw new StorageValidationError('A complete storage provider is required')

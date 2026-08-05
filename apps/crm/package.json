@@ -35,6 +35,7 @@
     "@openexpert/data-api": "workspace:*",
     "@openexpert/email": "workspace:*",
     "@openexpert/messaging": "workspace:*",
+    "@openexpert/messaging-ui": "workspace:*",
     "@openexpert/mortgage": "workspace:*",
     "@openexpert/multiform": "workspace:*",
     "@openexpert/storage": "workspace:*",

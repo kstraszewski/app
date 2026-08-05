@@ -23,9 +23,17 @@ export interface Message {
   senderClientPersonId: string | null
   senderAuthUserId: string | null
   body: string
+  attachments: MessageAttachment[]
   createdAt: string
   editedAt: string | null
   deletedAt: string | null
+}
+
+export interface MessageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  sizeBytes: number
 }
 
 export interface Receipt {

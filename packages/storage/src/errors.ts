@@ -4,6 +4,7 @@ export type StorageErrorCode =
   | 'namespace_invalid'
   | 'path_invalid'
   | 'provider_contract'
+  | 'unsupported'
   | 'validation'
 
 export class StorageError extends Error {
@@ -48,6 +49,13 @@ export class StorageProviderContractError extends StorageError {
   constructor(message: string, options?: ErrorOptions) {
     super('provider_contract', message, options)
     this.name = 'StorageProviderContractError'
+  }
+}
+
+export class StorageUnsupportedError extends StorageError {
+  constructor(message: string, options?: ErrorOptions) {
+    super('unsupported', message, options)
+    this.name = 'StorageUnsupportedError'
   }
 }
 

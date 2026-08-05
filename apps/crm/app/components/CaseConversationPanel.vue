@@ -2,8 +2,18 @@
 import type {
   Conversation,
   Message,
+  MessageAttachment,
   Receipt,
 } from '@openexpert/messaging'
+import { buildMessagePreview } from '@openexpert/messaging'
+import {
+  classifyMessageAttachmentCompletionFailure,
+  MessageAttachmentComposer,
+  MessageAttachments,
+  useMessageAttachmentDrafts,
+  type MessageAttachmentDraftAdapter,
+  type MessageAttachmentUploadReservation,
+} from '@openexpert/messaging-ui'
 
 interface ConversationRecipient {
   clientId: string
@@ -89,6 +99,30 @@ interface TokenResponse {
 interface RetryableSend {
   body: string
   clientMessageId: string
+  attachmentIds: string[]
+}
+
+interface CompleteAttachmentResponse {
+  data: {
+    attachment: MessageAttachment
+  }
+}
+
+interface ReserveAttachmentResponse {
+  data: MessageAttachmentUploadReservation
+}
+
+function requestErrorCode(error: unknown): string {
+  const candidate = error && typeof error === 'object'
+    ? error as Record<string, any>
+    : {}
+  return String(
+    candidate.data?.data?.code
+    ?? candidate.data?.code
+    ?? candidate.response?._data?.data?.code
+    ?? candidate.response?._data?.code
+    ?? '',
+  )
 }
 
 const props = defineProps<{
@@ -131,7 +165,10 @@ const realtimeConfiguration = ref<RealtimeConfiguration>({
 const composer = ref('')
 const composerDrafts = new Map<string, string>()
 const retryableSends = new Map<string, RetryableSend>()
+const draftClientMessageId = ref('')
 const pendingBody = ref('')
+const pendingAttachments = ref<MessageAttachment[]>([])
+const pendingConversationId = ref('')
 const pendingRecipientId = ref('')
 const sending = ref(false)
 const loadingConversation = ref(false)
@@ -164,10 +201,72 @@ let selectionScheduled = false
 let disposed = false
 let conversationRevision = 0
 let syncRequested = false
+const attachmentApiPaths = new Map<string, string>()
+const pendingAttachmentPreviewUrls = new Map<string, string>()
+
+const attachmentDraftAdapter: MessageAttachmentDraftAdapter = {
+  async reserve(input) {
+    const activeConversation = await ensureConversation()
+    const attachmentApiPath = conversationApiPath(activeConversation.id, '/attachments')
+    const response = await $fetch<ReserveAttachmentResponse>(attachmentApiPath, {
+      method: 'POST',
+      body: input,
+    })
+    attachmentApiPaths.set(response.data.attachment.id, attachmentApiPath)
+    return response.data
+  },
+  async complete(id) {
+    const attachmentApiPath = attachmentApiPaths.get(id)
+    if (!attachmentApiPath) throw new Error('Nie znaleziono przygotowanego załącznika.')
+    const response = await $fetch<CompleteAttachmentResponse>(
+      `${attachmentApiPath}/${encodeURIComponent(id)}/complete`,
+      { method: 'POST' },
+    )
+    return response.data.attachment
+  },
+  async discard(id) {
+    const attachmentApiPath = attachmentApiPaths.get(id)
+    if (!attachmentApiPath) return
+    try {
+      await $fetch(`${attachmentApiPath}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+    }
+    finally {
+      attachmentApiPaths.delete(id)
+    }
+  },
+  completionFailureMode: classifyMessageAttachmentCompletionFailure,
+}
+
+const attachmentDrafts = useMessageAttachmentDrafts(attachmentDraftAdapter)
 
 const selectedRecipient = computed(() => recipients.value.find(
   recipient => recipient.clientPersonId === selectedClientPersonId.value,
 ) ?? null)
+const hasAttachmentDrafts = computed(() => attachmentDrafts.drafts.value.length > 0)
+const hasPendingMessage = computed(() => (
+  Boolean(pendingRecipientId.value)
+  && pendingRecipientId.value === selectedClientPersonId.value
+))
+const recipientSelectionModel = computed({
+  get: () => selectedClientPersonId.value,
+  set: (clientPersonId: string) => {
+    if (
+      clientPersonId !== selectedClientPersonId.value
+      && hasAttachmentDrafts.value
+    ) {
+      toast.add({
+        title: 'Najpierw zakończ szkic wiadomości',
+        description: 'Wyślij wiadomość albo usuń załączniki, aby zmienić odbiorcę.',
+        color: 'warning',
+        icon: 'i-lucide-paperclip',
+      })
+      return
+    }
+    selectedClientPersonId.value = clientPersonId
+  },
+})
 
 const requestedClientPersonId = computed(() => {
   const raw = Array.isArray(route.query.person) ? route.query.person[0] : route.query.person
@@ -213,11 +312,22 @@ const canSend = computed(() => {
   const body = composer.value.trim()
   return Boolean(
     selectedRecipient.value?.portalEnabled
-    && body.length >= 1
     && body.length <= 4_000
+    && (body.length >= 1 || attachmentDrafts.readyAttachments.value.length > 0)
     && !sending.value
-    && !conversationLoadError.value,
+    && !conversationLoadError.value
+    && !attachmentDrafts.isBusy.value
+    && !attachmentDrafts.hasFailed.value
   )
+})
+
+const attachmentDisabledReason = computed(() => {
+  if (!draftClientMessageId.value) return 'Przygotowywanie bezpiecznego przesyłania…'
+  if (!selectedRecipient.value?.portalEnabled) return 'Najpierw udostępnij panel klienta.'
+  if (conversationLoadError.value) return 'Najpierw odśwież historię rozmowy.'
+  if (loadingConversation.value) return 'Poczekaj na otwarcie rozmowy.'
+  if (sending.value) return 'Poczekaj na wysłanie bieżącej wiadomości.'
+  return undefined
 })
 
 const connectionLabel = computed(() => {
@@ -242,6 +352,51 @@ const portalSettingsLocation = computed(() => ({
 
 function conversationApiPath(conversationId: string, suffix = '') {
   return `${indexApiPath.value}/${encodeURIComponent(conversationId)}${suffix}`
+}
+
+function rotateDraftClientMessageId() {
+  if (!import.meta.client) return
+  draftClientMessageId.value = crypto.randomUUID()
+}
+
+function messageAttachmentUrl(
+  conversationId: string,
+  attachmentId: string,
+  download: boolean,
+) {
+  const base = conversationApiPath(
+    conversationId,
+    `/attachments/${encodeURIComponent(attachmentId)}`,
+  )
+  return download ? `${base}?download=1` : base
+}
+
+function messageAttachmentUrlFor(conversationId: string) {
+  return (attachment: MessageAttachment, download: boolean) => (
+    messageAttachmentUrl(conversationId, attachment.id, download)
+  )
+}
+
+function pendingAttachmentUrl(attachment: MessageAttachment, download: boolean) {
+  if (!download) {
+    const previewUrl = pendingAttachmentPreviewUrls.get(attachment.id)
+    if (previewUrl) return previewUrl
+  }
+  return messageAttachmentUrl(pendingConversationId.value, attachment.id, download)
+}
+
+function clearPendingMessage() {
+  pendingBody.value = ''
+  pendingAttachments.value = []
+  pendingConversationId.value = ''
+  pendingRecipientId.value = ''
+  pendingAttachmentPreviewUrls.clear()
+}
+
+function abandonAttachmentDrafts(discard = true) {
+  const clearing = attachmentDrafts.clear({ discard })
+  rotateDraftClientMessageId()
+  void clearing
 }
 
 function mergeMessages(incoming: Message[]) {
@@ -295,7 +450,12 @@ function applyBootstrap(
 
   updateConversationEntry(bootstrap.conversation, {
     clientPerson: bootstrap.clientPerson,
-    lastMessagePreview: messages.value.at(-1)?.body ?? null,
+    lastMessagePreview: messages.value.at(-1)
+      ? buildMessagePreview(
+          messages.value.at(-1)!.body,
+          messages.value.at(-1)!.attachments,
+        )
+      : null,
   })
 
   if (shouldFollowMessages) {
@@ -312,6 +472,7 @@ function applyBootstrap(
 }
 
 function resetConversationState() {
+  abandonAttachmentDrafts()
   conversationRevision += 1
   syncRequested = false
   disconnectRealtime()
@@ -387,6 +548,7 @@ watch(indexResponse, (response) => {
     recipient => recipient.clientPersonId === selectedClientPersonId.value,
   )
   if (!selectedStillExists) {
+    if (hasAttachmentDrafts.value) return
     const requestedRecipient = recipients.value.find(recipient => (
       recipient.clientPersonId === requestedClientPersonId.value
     ))
@@ -409,12 +571,14 @@ watch(indexResponse, (response) => {
     (selectedEntry && conversation.value?.id !== selectedEntry.id)
     || (!selectedEntry && conversation.value)
   ) {
+    if (hasAttachmentDrafts.value) return
     scheduleRecipientSelection()
   }
 }, { immediate: true })
 
 watch(requestedClientPersonId, (requested) => {
   if (!requested || requested === selectedClientPersonId.value) return
+  if (hasAttachmentDrafts.value) return
   const requestedRecipientExists = recipients.value.some(recipient => (
     recipient.clientPersonId === requested
   ))
@@ -424,7 +588,31 @@ watch(requestedClientPersonId, (requested) => {
 watch(selectedClientPersonId, (selected, previous) => {
   if (previous) composerDrafts.set(previous, composer.value)
   composer.value = composerDrafts.get(selected) ?? ''
+  if (import.meta.client) {
+    draftClientMessageId.value = retryableSends.get(selected)?.clientMessageId
+      ?? crypto.randomUUID()
+  }
   scheduleRecipientSelection()
+})
+
+watch(() => props.caseId, () => {
+  abandonAttachmentDrafts(!sending.value)
+  composerDrafts.clear()
+  retryableSends.clear()
+  composer.value = ''
+  clearPendingMessage()
+  selectionRevision += 1
+  conversationRevision += 1
+  disconnectRealtime()
+  recipients.value = []
+  conversationEntries.value = []
+  selectedClientPersonId.value = ''
+  conversation.value = null
+  messages.value = []
+  ownReceipt.value = null
+  peerReceipt.value = null
+  hasOlderMessages.value = false
+  connectionState.value = 'idle'
 })
 
 function formatMessageTime(value: string) {
@@ -466,34 +654,74 @@ async function ensureConversation() {
   if (conversation.value) return conversation.value
   if (!selectedRecipient.value) throw new Error('Brak wybranego odbiorcy')
 
+  const requestedCaseId = props.caseId
   const response = await $fetch<ConversationBootstrapResponse>(indexApiPath.value, {
     method: 'POST',
     body: { clientPersonId: selectedRecipient.value.clientPersonId },
   })
+  if (props.caseId !== requestedCaseId) {
+    throw new Error('Kontekst sprawy zmienił się podczas otwierania rozmowy.')
+  }
   applyBootstrap(response.data)
   return response.data.conversation
 }
 
 async function sendMessage() {
+  const draftBody = composer.value
   const body = composer.value.trim()
-  if (!body || !canSend.value) return
+  if (!canSend.value) return
 
+  const sendingCaseId = props.caseId
   const recipientId = selectedClientPersonId.value
+  const readyAttachments = [...attachmentDrafts.readyAttachments.value]
+  const attachmentIds = readyAttachments.map(attachment => attachment.id)
   const previousAttempt = retryableSends.get(recipientId)
-  const attempt = previousAttempt?.body === body
+  const matchesPreviousAttempt = previousAttempt?.body === body
+    && previousAttempt.attachmentIds.length === attachmentIds.length
+    && previousAttempt.attachmentIds.every((id, index) => id === attachmentIds[index])
+  if (previousAttempt && !matchesPreviousAttempt) {
+    const nextClientMessageId = crypto.randomUUID()
+    retryableSends.delete(recipientId)
+    draftClientMessageId.value = nextClientMessageId
+    if (attachmentDrafts.drafts.value.length) {
+      await attachmentDrafts.restartForClientMessageId(nextClientMessageId)
+      toast.add({
+        title: 'Aktualizujemy załączniki',
+        description: 'Szkic się zmienił, dlatego pliki są bezpiecznie przesyłane ponownie.',
+        color: 'info',
+        icon: 'i-lucide-refresh-cw',
+      })
+      return
+    }
+  }
+  const attempt = matchesPreviousAttempt && previousAttempt
     ? previousAttempt
-    : { body, clientMessageId: crypto.randomUUID() }
+    : {
+        body,
+        clientMessageId: draftClientMessageId.value || crypto.randomUUID(),
+        attachmentIds,
+      }
+  draftClientMessageId.value = attempt.clientMessageId
   retryableSends.set(recipientId, attempt)
 
   sending.value = true
   pendingBody.value = body
+  pendingAttachments.value = readyAttachments
+  pendingConversationId.value = conversation.value?.id ?? ''
   pendingRecipientId.value = recipientId
+  pendingAttachmentPreviewUrls.clear()
+  for (const draft of attachmentDrafts.drafts.value) {
+    if (draft.attachment && draft.previewUrl) {
+      pendingAttachmentPreviewUrls.set(draft.attachment.id, draft.previewUrl)
+    }
+  }
   composer.value = ''
   stopTyping()
 
   try {
     const activeConversation = await ensureConversation()
     const activeConversationId = activeConversation.id
+    pendingConversationId.value = activeConversationId
     const response = await $fetch<SendMessageResponse>(
       conversationApiPath(activeConversationId, '/messages'),
       {
@@ -501,6 +729,7 @@ async function sendMessage() {
         body: {
           body,
           clientMessageId: attempt.clientMessageId,
+          attachmentIds: attempt.attachmentIds,
         },
       },
     )
@@ -508,10 +737,18 @@ async function sendMessage() {
     retryableSends.delete(recipientId)
     composerDrafts.delete(recipientId)
     if (pendingRecipientId.value === recipientId) {
-      pendingBody.value = ''
-      pendingRecipientId.value = ''
+      clearPendingMessage()
     }
-    updateConversationEntry(response.data.conversation, { lastMessagePreview: body })
+    await attachmentDrafts.clear({ discard: false })
+    for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
+    if (selectedClientPersonId.value === recipientId) rotateDraftClientMessageId()
+    if (props.caseId !== sendingCaseId) return
+    updateConversationEntry(response.data.conversation, {
+      lastMessagePreview: buildMessagePreview(
+        response.data.message.body,
+        response.data.message.attachments,
+      ),
+    })
     if (!stillSelected) return
     conversation.value = response.data.conversation
     mergeMessages([response.data.message])
@@ -519,11 +756,21 @@ async function sendMessage() {
     void nextTick(() => scrollToEnd())
   }
   catch (caught: any) {
-    if (selectedClientPersonId.value === recipientId) composer.value = body
-    else composerDrafts.set(recipientId, body)
+    if (props.caseId !== sendingCaseId) {
+      for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
+      return
+    }
+    if (requestErrorCode(caught) === 'case_message_attachment_unavailable') {
+      attachmentDrafts.invalidateReadyAttachments(
+        attachmentIds,
+        'Załącznik wygasł. Kliknij „Ponów”, aby przesłać go ponownie.',
+      )
+      retryableSends.delete(recipientId)
+    }
+    if (selectedClientPersonId.value === recipientId) composer.value = draftBody
+    else composerDrafts.set(recipientId, draftBody)
     if (pendingRecipientId.value === recipientId) {
-      pendingBody.value = ''
-      pendingRecipientId.value = ''
+      clearPendingMessage()
     }
     toast.add({
       title: 'Nie udało się wysłać wiadomości',
@@ -836,10 +1083,6 @@ function publishTyping(active: boolean) {
 }
 
 function onComposerInput() {
-  const retryable = retryableSends.get(selectedClientPersonId.value)
-  if (retryable && composer.value.trim() !== retryable.body) {
-    retryableSends.delete(selectedClientPersonId.value)
-  }
   publishTyping(true)
   if (typingTimer) clearTimeout(typingTimer)
   typingTimer = setTimeout(stopTyping, 3_000)
@@ -896,6 +1139,7 @@ watch(readSentinelElement, (current, previous) => {
 })
 
 onMounted(() => {
+  if (!draftClientMessageId.value) rotateDraftClientMessageId()
   notificationsState.value = (
     'Notification' in window
     && 'serviceWorker' in navigator
@@ -919,6 +1163,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposed = true
   selectionRevision += 1
+  void attachmentDrafts.clear({ discard: !sending.value })
   stopTyping()
   if (peerTypingTimer) clearTimeout(peerTypingTimer)
   if (receiptTimer) clearTimeout(receiptTimer)
@@ -999,14 +1244,17 @@ onBeforeUnmount(() => {
           class="case-conversation__recipient-field"
           label="Rozmowa z"
           name="conversation-recipient"
+          :description="hasAttachmentDrafts
+            ? 'Wyślij wiadomość albo usuń załączniki, aby zmienić odbiorcę.'
+            : undefined"
         >
           <USelectMenu
-            v-model="selectedClientPersonId"
+            v-model="recipientSelectionModel"
             class="w-full"
             :items="recipientItems"
             value-key="value"
             label-key="label"
-            :disabled="sending"
+            :disabled="sending || hasAttachmentDrafts"
             placeholder="Wybierz klienta"
             aria-label="Wybierz klienta do rozmowy"
           />
@@ -1136,7 +1384,7 @@ onBeforeUnmount(() => {
 
           <div
             v-else-if="!messages.length
-              && !(pendingBody && pendingRecipientId === selectedClientPersonId)"
+              && !hasPendingMessage"
             class="case-conversation__empty"
           >
             <span><UIcon name="i-lucide-message-circle-more" /></span>
@@ -1153,7 +1401,11 @@ onBeforeUnmount(() => {
             ]"
           >
             <div>
-              <p>{{ message.body }}</p>
+              <p v-if="message.body">{{ message.body }}</p>
+              <MessageAttachments
+                :attachments="message.attachments"
+                :url-for="messageAttachmentUrlFor(message.conversationId)"
+              />
               <footer>
                 <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
                 <span v-if="message.senderKind === 'staff'">
@@ -1169,11 +1421,16 @@ onBeforeUnmount(() => {
           </article>
 
           <article
-            v-if="pendingBody && pendingRecipientId === selectedClientPersonId"
+            v-if="hasPendingMessage"
             class="case-message case-message--mine is-pending"
           >
             <div>
-              <p>{{ pendingBody }}</p>
+              <p v-if="pendingBody">{{ pendingBody }}</p>
+              <MessageAttachments
+                :attachments="pendingAttachments"
+                :url-for="pendingAttachmentUrl"
+                :interactive="false"
+              />
               <footer><span>Wysyłanie…</span></footer>
             </div>
           </article>
@@ -1190,31 +1447,43 @@ onBeforeUnmount(() => {
           class="case-conversation__composer"
           @submit.prevent="sendMessage"
         >
-          <UTextarea
-            v-model="composer"
-            class="w-full"
-            autoresize
-            :rows="1"
-            :maxrows="7"
-            :maxlength="4000"
-            :disabled="sending || !selectedRecipient?.portalEnabled"
-            :placeholder="selectedRecipient?.portalEnabled
-              ? `Napisz do ${selectedRecipient.displayName}…`
-              : 'Najpierw udostępnij panel klienta'"
-            aria-label="Treść wiadomości"
-            @input="onComposerInput"
-            @blur="stopTyping"
-            @keydown.enter.exact.prevent="sendMessage"
-          />
-          <UButton
-            type="submit"
-            color="primary"
-            variant="solid"
-            icon="i-lucide-arrow-up"
-            :loading="sending"
-            :disabled="!canSend"
-            aria-label="Wyślij wiadomość"
-          />
+          <MessageAttachmentComposer
+            :controller="attachmentDrafts"
+            :client-message-id="draftClientMessageId"
+            :disabled="Boolean(attachmentDisabledReason)"
+            :disabled-reason="attachmentDisabledReason"
+          >
+            <template #input>
+              <UTextarea
+                v-model="composer"
+                class="w-full"
+                autoresize
+                :rows="1"
+                :maxrows="7"
+                :maxlength="4000"
+                :disabled="sending || !selectedRecipient?.portalEnabled"
+                :placeholder="selectedRecipient?.portalEnabled
+                  ? `Napisz do ${selectedRecipient.displayName}…`
+                  : 'Najpierw udostępnij panel klienta'"
+                aria-label="Treść wiadomości"
+                @input="onComposerInput"
+                @blur="stopTyping"
+                @keydown.enter.exact.prevent="sendMessage"
+              />
+            </template>
+            <template #submit>
+              <UButton
+                class="case-conversation__send"
+                type="submit"
+                color="primary"
+                variant="solid"
+                icon="i-lucide-arrow-up"
+                :loading="sending"
+                :disabled="!canSend"
+                aria-label="Wyślij wiadomość"
+              />
+            </template>
+          </MessageAttachmentComposer>
         </form>
         <p v-if="!conversationLoadError" class="case-conversation__hint">
           Enter wysyła · Shift+Enter dodaje nową linię
@@ -1237,7 +1506,6 @@ onBeforeUnmount(() => {
 .case-conversation__heading,
 .case-conversation__actions,
 .case-conversation__recipient,
-.case-conversation__composer,
 .case-message footer,
 .case-message footer span,
 .case-conversation__typing {
@@ -1447,6 +1715,18 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
 }
 
+.case-message p + :deep(.oe-message-attachments) {
+  margin-top: 7px;
+}
+
+.case-message--mine :deep(.oe-message-attachments) {
+  --oe-message-attachment-bg: color-mix(in srgb, currentColor 12%, transparent);
+  --oe-message-attachment-border: color-mix(in srgb, currentColor 22%, transparent);
+  --oe-message-attachment-hover: color-mix(in srgb, currentColor 18%, transparent);
+  --oe-message-attachment-text: currentColor;
+  --oe-message-attachment-muted: color-mix(in srgb, currentColor 78%, transparent);
+}
+
 .case-message footer {
   justify-content: flex-end;
   gap: 8px;
@@ -1496,12 +1776,11 @@ onBeforeUnmount(() => {
 }
 
 .case-conversation__composer {
-  gap: 9px;
   padding-top: 14px;
   border-top: 1px solid var(--ui-border-muted);
 }
 
-.case-conversation__composer > :last-child {
+.case-conversation__send {
   align-self: flex-end;
   width: 38px;
   height: 38px;

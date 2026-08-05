@@ -54,6 +54,7 @@ const message: Message = {
   senderClientPersonId: null,
   senderAuthUserId: null,
   body: `  Proszę\nuzupełnić ${'dokumenty '.repeat(30)}  `,
+  attachments: [],
   createdAt: '2026-08-02T10:01:00.000Z',
   editedAt: null,
   deletedAt: null,
@@ -106,7 +107,7 @@ describe('client portal conversation inbox summary', () => {
     assert.equal(summary.lastMessageSenderKind, 'staff')
     assert.equal(summary.lastMessageCreatedAt, message.createdAt)
     assert.equal(summary.lastMessagePreview?.includes('\n'), false)
-    assert.equal(summary.lastMessagePreview?.length, 158)
+    assert.equal(summary.lastMessagePreview?.length, 160)
     assert.equal(summary.lastMessagePreview?.endsWith('…'), true)
   })
 
@@ -121,5 +122,23 @@ describe('client portal conversation inbox summary', () => {
     assert.equal(summary.lastMessagePreview, null)
     assert.equal(summary.lastMessageSenderKind, null)
     assert.equal(summary.lastMessageCreatedAt, null)
+  })
+
+  it('shows a useful preview for an attachment-only message', () => {
+    const summary = buildPortalConversationSummary(
+      conversation,
+      receipt,
+      {
+        ...message,
+        body: '',
+        attachments: [{
+          id: '56f4f22d-47db-4b4a-a188-18b9ae0dcf64',
+          name: 'zdjecie.webp',
+          mimeType: 'image/webp',
+          sizeBytes: 2_048,
+        }],
+      },
+    )
+    assert.equal(summary.lastMessagePreview, 'Zdjęcie: zdjecie.webp')
   })
 })

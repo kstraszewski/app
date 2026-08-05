@@ -1,4 +1,9 @@
-import type { Conversation, Message, Receipt } from '@openexpert/messaging'
+import {
+  buildMessagePreview,
+  type Conversation,
+  type Message,
+  type Receipt,
+} from '@openexpert/messaging'
 
 export interface PortalConversationGrantedScope {
   grant: {
@@ -94,7 +99,7 @@ export function buildPortalConversationSummary(
       conversation.lastMessageSequence - readThroughSequence,
     ),
     lastMessagePreview: lastMessage
-      ? truncatePortalConversationPreview(lastMessage.body)
+      ? buildMessagePreview(lastMessage.body, lastMessage.attachments)
       : null,
     lastMessageSenderKind: lastMessage?.senderKind ?? null,
     lastMessageCreatedAt: lastMessage?.createdAt ?? null,

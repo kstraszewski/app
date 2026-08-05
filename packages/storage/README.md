@@ -18,6 +18,7 @@ turn a private namespace into a public upload.
 | `mortgage-source-documents` | private | 20 MiB |
 | `mortgage-bank-logos` | public | 2 MiB |
 | `crm-case-documents` | private | 25 MiB |
+| `crm-message-attachments` | private | 25 MiB |
 | `crm-property-images` | private | 8 MiB |
 | `facility-images` | private | 8 MiB |
 | `expert-brand-assets` | public | 5 MiB |
@@ -25,6 +26,10 @@ turn a private namespace into a public upload.
 
 Allowed MIME types live in the namespace registry and are validated before
 provider calls.
+
+`crm-message-attachments` accepts JPEG, PNG, WebP, PDF, DOC, DOCX, XLS, XLSX,
+plain-text and CSV objects. It intentionally excludes active browser content
+such as HTML and SVG.
 
 Objects use this physical layout:
 
@@ -36,6 +41,7 @@ public store/bucket
 private store/bucket
 ├── mortgage-source-documents/<existing storage_path>
 ├── crm-case-documents/<existing storage_path>
+├── crm-message-attachments/<existing storage_path>
 ├── crm-property-images/<existing storage_path>
 ├── facility-images/<existing storage_path>
 └── mortgage-bank-files/<existing storage_path>
@@ -77,6 +83,11 @@ const download = await storage.download({
   path: storagePath,
 })
 
+const metadata = await storage.head({
+  namespace: 'crm-case-documents',
+  path: storagePath,
+})
+
 const page = await storage.list({
   namespace: 'crm-case-documents',
   prefix: `${organizationId}/${caseId}/`,
@@ -89,11 +100,42 @@ const signed = await storage.createSignedUrl({
   expiresInSeconds: 15 * 60,
 })
 
+const signedUpload = await storage.createSignedUploadUrl({
+  namespace: 'crm-message-attachments',
+  path: `${organizationId}/${caseId}/${conversationId}/${attachmentId}.pdf`,
+  contentType: 'application/pdf',
+  size: file.size,
+  expiresInSeconds: 5 * 60,
+})
+
+await fetch(signedUpload.url, {
+  method: signedUpload.method,
+  headers: signedUpload.headers,
+  body: file,
+})
+
 await storage.delete({
   namespace: 'crm-case-documents',
   path: storagePath,
 })
 ```
+
+`head()` returns the same provider-neutral `StorageObject` metadata as other
+operations, without downloading the body, or `null` when the object does not
+exist.
+
+`createSignedUploadUrl()` validates the namespace path, exact MIME type and
+declared size before asking the provider for a URL. It returns an HTTP `PUT`
+URL plus the complete set of headers the browser must send with the raw file
+body. Upload URLs default to five minutes and cannot exceed fifteen minutes.
+Vercel Blob URLs are scoped to one exact pathname and one `put` operation, do
+not allow overwrites, and constrain both MIME type and maximum bytes. S3/MinIO
+URLs sign one exact `PutObject` request with `If-None-Match: *`.
+
+The in-memory provider supports `head()` but deliberately reports
+`StorageUnsupportedError` for signed uploads. The bucket compatibility adapter
+is unchanged; new server code should use `StorageClient` directly for these two
+operations.
 
 Vercel Blob access is fixed at store creation time, so production needs two
 stores. OIDC can use the same project token with two distinct store IDs.
@@ -180,7 +222,7 @@ encoded traversal/separators are rejected before a provider call.
 This package controls storage addressing, not application authorization.
 Server routes must still verify organization, case, facility, or admin access
 before calling it or issuing a signed URL. Signed URLs are limited to seven
-days by the common API.
+days for downloads and fifteen minutes for uploads by the common API.
 
 ## Workspace integration
 

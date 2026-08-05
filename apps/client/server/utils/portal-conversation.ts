@@ -61,6 +61,7 @@ const messageSelect = [
   'sender_auth_user_id',
   'body',
   'created_at',
+  'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
 
 const receiptSelect = [
@@ -494,6 +495,9 @@ function rpcMessage(input: unknown): Message {
     sender_auth_user_id:
       message.senderAuthUserId ?? message.sender_auth_user_id ?? null,
     body: message.body,
+    attachments: message.attachments
+      ?? message.crm_case_message_attachments
+      ?? [],
     created_at: message.createdAt ?? message.created_at,
   })
 }
@@ -645,14 +649,34 @@ export async function sendPortalConversationMessage(
 ) {
   await enforcePortalMessageRateLimit(event, context, input.clientMessageId)
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_client_case_message', {
+  const result = await backend.rpc('send_client_case_message_v2', {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
     p_auth_user_id: context.access.session.identity.userId,
     p_client_message_id: input.clientMessageId,
     p_body: input.body,
+    p_attachment_ids: input.attachmentIds,
   })
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_attachment_unavailable')
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'One or more attachments are no longer available. Add them again.',
+      data: { code: 'case_message_attachment_unavailable' },
+    })
+  }
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_attachments_too_large')
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'The combined attachment size exceeds 50 MiB.',
+    })
+  }
   throwPortalDbError(result.error, 'could not send case message')
 
   const payload = asRecord(result.data)

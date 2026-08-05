@@ -1,6 +1,8 @@
 import {
+  buildMessagePreview,
   DurableConversationEventSchema,
   mapConversationRow,
+  mapMessageAttachmentRows,
   mapMessageRow,
   mapReceiptRows,
   type Conversation,
@@ -12,7 +14,6 @@ import {
   type SendMessageInput,
 } from '@openexpert/messaging'
 import { createError, type H3Event } from 'h3'
-import { truncateConversationPreview } from './case-conversation-inbox-summary.ts'
 import { caseUuidPattern } from './case-identifiers'
 import {
   asRecord,
@@ -52,6 +53,7 @@ const messageSelect = [
   'sender_auth_user_id',
   'body',
   'created_at',
+  'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
 
 const receiptSelect = [
@@ -508,7 +510,7 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
     const [messageResult, receiptResult] = await Promise.all([
       access.session.dataApi
         .from('crm_case_messages')
-        .select('body, created_at')
+        .select('body, created_at, attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)')
         .eq('organization_id', access.session.organizationId)
         .eq('conversation_id', conversation.id)
         .order('sequence', { ascending: false })
@@ -530,8 +532,11 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
       ...conversation,
       clientPerson: recipientByPerson.get(conversation.clientPersonId) ?? null,
       unreadCount: Math.max(0, conversation.lastMessageSequence - readThroughSequence),
-      lastMessagePreview: messageResult.data?.body
-        ? truncateConversationPreview(String(messageResult.data.body))
+      lastMessagePreview: messageResult.data
+        ? buildMessagePreview(
+            String(messageResult.data.body ?? ''),
+            mapMessageAttachmentRows(messageResult.data.attachments ?? []),
+          ) || null
         : null,
     }
   }))
@@ -570,6 +575,9 @@ function rpcMessage(input: unknown): Message {
     sender_auth_user_id:
       message.senderAuthUserId ?? message.sender_auth_user_id ?? null,
     body: message.body,
+    attachments: message.attachments
+      ?? message.crm_case_message_attachments
+      ?? [],
     created_at: message.createdAt ?? message.created_at,
   })
 }
@@ -688,14 +696,34 @@ export async function sendStaffConversationMessage(
     })
   }
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_staff_case_message', {
+  const result = await backend.rpc('send_staff_case_message_v2', {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
     p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_client_message_id: input.clientMessageId,
     p_body: input.body,
+    p_attachment_ids: input.attachmentIds,
   })
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_attachment_unavailable')
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'One or more attachments are no longer available. Add them again.',
+      data: { code: 'case_message_attachment_unavailable' },
+    })
+  }
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_attachments_too_large')
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'The combined attachment size exceeds 50 MiB.',
+    })
+  }
   throwDbError(result.error)
 
   const payload = asRecord(result.data)

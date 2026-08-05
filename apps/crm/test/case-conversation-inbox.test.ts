@@ -46,6 +46,7 @@ function message(overrides: Partial<Message> = {}): Message {
     senderClientPersonId: null,
     senderAuthUserId: 'auth-user-1',
     body: '  Dzień dobry\n\tJak możemy pomóc?  ',
+    attachments: [],
     createdAt: '2026-08-03T10:07:00.000Z',
     editedAt: null,
     deletedAt: null,
@@ -126,6 +127,22 @@ test('compacts whitespace and truncates a long preview without exceeding the lim
   const preview = truncateConversationPreview(`  ${'x'.repeat(200)}  `)
   assert.equal(preview, `${'x'.repeat(157)}…`)
   assert.ok(preview.length <= 160)
+})
+
+test('uses an attachment fallback for a message without text', () => {
+  const item = build({
+    lastMessage: message({
+      body: '',
+      attachments: [{
+        id: 'attachment-1',
+        name: 'umowa.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1_024,
+      }],
+    }),
+  })
+
+  assert.equal(item?.lastMessagePreview, 'Załącznik: umowa.pdf')
 })
 
 test('clamps a receipt cursor to the conversation high-water mark', () => {

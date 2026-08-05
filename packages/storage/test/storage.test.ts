@@ -13,6 +13,7 @@ import {
   StorageConfigurationError,
   StorageConflictError,
   StoragePathError,
+  StorageUnsupportedError,
   StorageValidationError,
 } from '../src/index.ts'
 
@@ -37,11 +38,12 @@ async function readStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Arra
   return bytes
 }
 
-test('declares the seven existing buckets as access-controlled namespaces', () => {
+test('declares the storage buckets as access-controlled namespaces', () => {
   assert.deepEqual(STORAGE_NAMESPACES, [
     'mortgage-source-documents',
     'mortgage-bank-logos',
     'crm-case-documents',
+    'crm-message-attachments',
     'crm-property-images',
     'facility-images',
     'expert-brand-assets',
@@ -51,6 +53,25 @@ test('declares the seven existing buckets as access-controlled namespaces', () =
   assert.equal(getStorageNamespaceDefinition('mortgage-bank-logos').access, 'public')
   assert.equal(getStorageNamespaceDefinition('expert-brand-assets').access, 'public')
   assert.equal(getStorageNamespaceDefinition('crm-case-documents').access, 'private')
+  assert.deepEqual(
+    getStorageNamespaceDefinition('crm-message-attachments'),
+    {
+      access: 'private',
+      maxBytes: 25 * 1024 * 1024,
+      allowedContentTypes: [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain',
+        'text/csv',
+      ],
+    },
+  )
   assert.equal(getStorageNamespaceDefinition('mortgage-bank-files').maxBytes, 50 * 1024 * 1024)
 })
 
@@ -113,6 +134,16 @@ test('uploads, downloads, signs and deletes public and private objects offline',
   assert.equal(privateObject.size, 16)
   assert.deepEqual(privateObject.uploadedAt, fixedNow)
 
+  const metadata = await storage.head({
+    namespace: 'crm-case-documents',
+    path: 'organization/case/contract.pdf',
+  })
+  assert.deepEqual(metadata, privateObject)
+  assert.equal(await storage.head({
+    namespace: 'crm-case-documents',
+    path: 'organization/case/missing.pdf',
+  }), null)
+
   const downloaded = await storage.download({
     namespace: 'crm-case-documents',
     path: 'organization/case/contract.pdf',
@@ -158,6 +189,10 @@ test('uploads, downloads, signs and deletes public and private objects offline',
     path: 'organization/case/contract.pdf',
   })
   assert.equal(await storage.download({
+    namespace: 'crm-case-documents',
+    path: 'organization/case/contract.pdf',
+  }), null)
+  assert.equal(await storage.head({
     namespace: 'crm-case-documents',
     path: 'organization/case/contract.pdf',
   }), null)
@@ -280,6 +315,48 @@ test('enforces content type, size, cache and signed URL constraints before provi
     }),
     /cannot exceed/,
   )
+
+  await assert.rejects(
+    storage.createSignedUploadUrl({
+      namespace: 'crm-message-attachments',
+      path: 'case/attachment.svg',
+      contentType: 'image/svg+xml',
+      size: 1024,
+    }),
+    /is not allowed/,
+  )
+
+  await assert.rejects(
+    storage.createSignedUploadUrl({
+      namespace: 'crm-message-attachments',
+      path: 'case/attachment.pdf',
+      contentType: 'application/pdf',
+      size: 25 * 1024 * 1024 + 1,
+    }),
+    /Object exceeds/,
+  )
+
+  await assert.rejects(
+    storage.createSignedUploadUrl({
+      namespace: 'crm-message-attachments',
+      path: 'case/attachment.pdf',
+      contentType: 'application/pdf',
+      size: 1024,
+      expiresInSeconds: 15 * 60 + 1,
+    }),
+    /cannot exceed 900/,
+  )
+
+  await assert.rejects(
+    storage.createSignedUploadUrl({
+      namespace: 'crm-message-attachments',
+      path: 'case/attachment.txt',
+      contentType: 'text/plain; charset=utf-8',
+      size: 1024,
+      expiresInSeconds: 300,
+    }),
+    StorageUnsupportedError,
+  )
 })
 
 test('supports sized streaming uploads and overwrite control', async () => {
@@ -354,6 +431,47 @@ test('validates external provider topology without loading either network SDK', 
     }),
     StorageConfigurationError,
   )
+})
+
+test('creates a constrained browser PUT URL for S3-compatible storage', async () => {
+  const storage = createStorageClient(createMinioStorageProvider({
+    accessKeyId: 'openexpert',
+    secretAccessKey: 'local-secret',
+  }))
+  const startedAt = Date.now()
+  const upload = await storage.createSignedUploadUrl({
+    namespace: 'crm-message-attachments',
+    path: 'organization/case/conversation/attachment.pdf',
+    contentType: 'application/pdf; charset=binary',
+    size: 123,
+    expiresInSeconds: 300,
+  })
+
+  const url = new URL(upload.url)
+  assert.equal(upload.method, 'PUT')
+  assert.equal(
+    url.pathname,
+    '/openexpert-private/crm-message-attachments/organization/case/conversation/attachment.pdf',
+  )
+  assert.equal(url.searchParams.get('X-Amz-Expires'), '300')
+  assert.deepEqual(
+    new Set(url.searchParams.get('X-Amz-SignedHeaders')?.split(';')),
+    new Set([
+      'cache-control',
+      'content-length',
+      'content-type',
+      'host',
+      'if-none-match',
+    ]),
+  )
+  assert.equal(url.searchParams.has('x-amz-checksum-crc32'), false)
+  assert.deepEqual(upload.headers, {
+    'cache-control': 'private, max-age=60',
+    'content-type': 'application/pdf',
+    'if-none-match': '*',
+  })
+  assert.ok(upload.expiresAt.getTime() >= startedAt + 300_000)
+  assert.ok(upload.expiresAt.getTime() <= Date.now() + 300_000)
 })
 
 test('offers a provider-neutral from(bucket) adapter with data/error results', async () => {

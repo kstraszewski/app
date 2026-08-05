@@ -149,7 +149,6 @@ export default defineNuxtConfig({
         publicBaseUrl: process.env.NUXT_VERCEL_BLOB_PUBLIC_BASE_URL || '',
         privateToken: process.env.NUXT_VERCEL_BLOB_PRIVATE_TOKEN || '',
         privateStoreId: process.env.NUXT_VERCEL_BLOB_PRIVATE_STORE_ID || '',
-        oidcToken: process.env.VERCEL_OIDC_TOKEN || '',
       },
     },
     public: {

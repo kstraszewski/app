@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationParticipantKind,
   Message,
+  MessageAttachment,
   Receipt,
 } from './types.ts'
 
@@ -27,6 +28,33 @@ const timestampSchema = z.string()
 
 const nullableTimestampSchema = timestampSchema.nullable()
 
+const attachmentPositionSchema = numericSequenceSchema(1)
+
+export const DataApiMessageAttachmentRowSchema = z.object({
+  id: uuidSchema,
+  position: attachmentPositionSchema.optional(),
+  file_name: z.string().min(1).optional(),
+  content_type: z.string().min(1).optional(),
+  size_bytes: numericSequenceSchema(1).optional(),
+  name: z.string().min(1).optional(),
+  mimeType: z.string().min(1).optional(),
+  sizeBytes: numericSequenceSchema(1).optional(),
+}).passthrough().superRefine((row, context) => {
+  if (!(row.file_name ?? row.name)) {
+    context.addIssue({ code: 'custom', message: 'Attachment name is required' })
+  }
+  if (!(row.content_type ?? row.mimeType)) {
+    context.addIssue({ code: 'custom', message: 'Attachment MIME type is required' })
+  }
+  if ((row.size_bytes ?? row.sizeBytes) === undefined) {
+    context.addIssue({ code: 'custom', message: 'Attachment size is required' })
+  }
+})
+
+export type DataApiMessageAttachmentRow = z.input<
+  typeof DataApiMessageAttachmentRowSchema
+>
+
 export const DataApiConversationRowSchema = z.object({
   case_id: uuidSchema,
   client_id: uuidSchema,
@@ -44,6 +72,7 @@ export type DataApiConversationRow = z.input<
 >
 
 export const DataApiMessageRowSchema = z.object({
+  attachments: z.array(z.unknown()).optional(),
   body: z.string(),
   client_message_id: uuidSchema,
   conversation_id: uuidSchema,
@@ -57,6 +86,7 @@ export const DataApiMessageRowSchema = z.object({
   sender_kind: participantKindSchema,
   sender_user_id: uuidSchema.nullable(),
   sequence: numericSequenceSchema(1),
+  crm_case_message_attachments: z.array(z.unknown()).optional(),
 }).passthrough().superRefine((row, context) => {
   if (row.sender_kind === 'staff') {
     if (row.sender_client_person_id || row.sender_auth_user_id) {
@@ -143,6 +173,18 @@ export function mapConversationRow(row: unknown): Conversation {
 
 export function mapMessageRow(row: unknown): Message {
   const parsed = DataApiMessageRowSchema.parse(row)
+  const attachmentRows = parsed.attachments
+    ?? parsed.crm_case_message_attachments
+    ?? []
+  const attachments = attachmentRows
+    .map((attachment, index) => {
+      const mapped = mapMessageAttachmentRow(attachment)
+      const position = DataApiMessageAttachmentRowSchema.parse(attachment).position
+        ?? index + 1
+      return { mapped, position, index }
+    })
+    .sort((left, right) => left.position - right.position || left.index - right.index)
+    .map(item => item.mapped)
   return {
     id: parsed.id,
     organizationId: parsed.organization_id,
@@ -154,9 +196,20 @@ export function mapMessageRow(row: unknown): Message {
     senderClientPersonId: parsed.sender_client_person_id,
     senderAuthUserId: parsed.sender_auth_user_id,
     body: parsed.body,
+    attachments,
     createdAt: parsed.created_at,
     editedAt: parsed.edited_at,
     deletedAt: parsed.deleted_at,
+  }
+}
+
+export function mapMessageAttachmentRow(row: unknown): MessageAttachment {
+  const parsed = DataApiMessageAttachmentRowSchema.parse(row)
+  return {
+    id: parsed.id,
+    name: parsed.file_name ?? parsed.name!,
+    mimeType: parsed.content_type ?? parsed.mimeType!,
+    sizeBytes: parsed.size_bytes ?? parsed.sizeBytes!,
   }
 }
 
@@ -183,6 +236,12 @@ export function mapConversationRows(rows: readonly unknown[]): Conversation[] {
 
 export function mapMessageRows(rows: readonly unknown[]): Message[] {
   return rows.map(mapMessageRow)
+}
+
+export function mapMessageAttachmentRows(
+  rows: readonly unknown[],
+): MessageAttachment[] {
+  return rows.map(mapMessageAttachmentRow)
 }
 
 export function mapReceiptRows(rows: readonly unknown[]): Receipt[] {

@@ -1,5 +1,18 @@
 <script setup lang="ts">
-import type { Conversation, Message, Receipt } from '@openexpert/messaging'
+import type {
+  Conversation,
+  Message,
+  MessageAttachment,
+  Receipt,
+} from '@openexpert/messaging'
+import {
+  classifyMessageAttachmentCompletionFailure,
+  MessageAttachmentComposer,
+  MessageAttachments,
+  useMessageAttachmentDrafts,
+  type MessageAttachmentDraftAdapter,
+  type MessageAttachmentUploadReservation,
+} from '@openexpert/messaging-ui'
 import { PORTAL_TIME_ZONE } from '~/utils/portal-date'
 
 interface RealtimeConfiguration {
@@ -22,6 +35,25 @@ interface ConversationResponse {
   }
 }
 
+interface RetryableSend {
+  body: string
+  clientMessageId: string
+  attachmentIds: string[]
+}
+
+function requestErrorCode(error: unknown): string {
+  const candidate = error && typeof error === 'object'
+    ? error as Record<string, any>
+    : {}
+  return String(
+    candidate.data?.data?.code
+    ?? candidate.data?.code
+    ?? candidate.response?._data?.data?.code
+    ?? candidate.response?._data?.code
+    ?? '',
+  )
+}
+
 const props = withDefaults(defineProps<{
   caseId: string
   expertName: string
@@ -41,6 +73,50 @@ const apiPath = computed(
   () => `/api/client/cases/${encodeURIComponent(props.caseId)}/conversation`,
 )
 const requestFetch = useRequestFetch()
+const draftClientMessageId = useState<string>(
+  `portal-case-conversation:draft:${props.caseId}`,
+  () => crypto.randomUUID(),
+)
+const attachmentApiPaths = new Map<string, string>()
+const attachmentAdapter: MessageAttachmentDraftAdapter = {
+  async reserve(input) {
+    const attachmentApiPath = `${apiPath.value}/attachments`
+    const response = await $fetch<{ data: MessageAttachmentUploadReservation }>(
+      attachmentApiPath,
+      { method: 'POST', body: input },
+    )
+    attachmentApiPaths.set(response.data.attachment.id, attachmentApiPath)
+    return response.data
+  },
+  async complete(id) {
+    const attachmentApiPath = attachmentApiPaths.get(id)
+    if (!attachmentApiPath) {
+      throw Object.assign(
+        new Error('Nie znaleziono przygotowanego załącznika.'),
+        { statusCode: 404 },
+      )
+    }
+    const response = await $fetch<{ data: { attachment: MessageAttachment } }>(
+      `${attachmentApiPath}/${encodeURIComponent(id)}/complete`,
+      { method: 'POST' },
+    )
+    return response.data.attachment
+  },
+  async discard(id) {
+    const attachmentApiPath = attachmentApiPaths.get(id)
+    if (!attachmentApiPath) return
+    try {
+      await $fetch(`${attachmentApiPath}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+    }
+    finally {
+      attachmentApiPaths.delete(id)
+    }
+  },
+  completionFailureMode: classifyMessageAttachmentCompletionFailure,
+}
+const attachmentDrafts = useMessageAttachmentDrafts(attachmentAdapter)
 
 function previewConversationResponse(): ConversationResponse {
   const conversationId = `preview-conversation-${props.caseId}`
@@ -56,6 +132,7 @@ function previewConversationResponse(): ConversationResponse {
       senderClientPersonId: null,
       senderAuthUserId: null,
       body: 'Dzień dobry, dodałam najważniejsze informacje do sprawy. Jeśli coś będzie niejasne, proszę napisać tutaj.',
+      attachments: [],
       createdAt: '2026-08-01T08:42:00.000Z',
       editedAt: null,
       deletedAt: null,
@@ -71,6 +148,7 @@ function previewConversationResponse(): ConversationResponse {
       senderClientPersonId: 'preview-client',
       senderAuthUserId: 'preview-auth-user',
       body: 'Dziękuję. Dokument prześlę jeszcze dzisiaj po południu.',
+      attachments: [],
       createdAt: '2026-08-01T09:08:00.000Z',
       editedAt: null,
       deletedAt: null,
@@ -86,6 +164,7 @@ function previewConversationResponse(): ConversationResponse {
       senderClientPersonId: null,
       senderAuthUserId: null,
       body: 'Świetnie. Gdy tylko plik się pojawi, od razu go sprawdzę.',
+      attachments: [],
       createdAt: '2026-08-01T09:11:00.000Z',
       editedAt: null,
       deletedAt: null,
@@ -149,12 +228,15 @@ const realtimeConfiguration = ref<RealtimeConfiguration>({
   ephemeralChannel: null,
 })
 const composer = ref('')
+const retryableSend = ref<RetryableSend | null>(null)
 const sending = ref(false)
 const syncing = ref(false)
 const loadingOlder = ref(false)
 const hasOlderMessages = ref(false)
-const pendingBody = ref('')
-const failedAttempt = ref<{ body: string, clientMessageId: string } | null>(null)
+const pendingMessage = ref<{
+  body: string
+  attachments: MessageAttachment[]
+} | null>(null)
 const listElement = ref<HTMLElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
@@ -192,8 +274,19 @@ const isLoading = computed(() => status.value === 'pending' && !conversation.val
 const loadError = computed(() => Boolean(initialError.value) && !conversation.value)
 const canSend = computed(() => {
   const body = composer.value.trim()
-  return body.length >= 1 && body.length <= 4000 && !sending.value && !loadError.value
+  const hasContent = body.length >= 1 || attachmentDrafts.readyAttachments.value.length >= 1
+  return hasContent
+    && body.length <= 4000
+    && !sending.value
+    && !loadError.value
+    && !attachmentDrafts.isBusy.value
+    && !attachmentDrafts.hasFailed.value
 })
+
+function messageAttachmentUrl(attachment: MessageAttachment, download: boolean) {
+  const path = `${apiPath.value}/attachments/${encodeURIComponent(attachment.id)}`
+  return download ? `${path}?download=1` : path
+}
 
 function mergeMessages(incoming: Message[]) {
   const byId = new Map(messages.value.map(message => [message.id, message]))
@@ -206,6 +299,7 @@ function applyResponse(
   mode: 'initial' | 'incremental' | 'older' = 'initial',
 ) {
   if (!response?.data?.conversation) return
+  if (response.data.conversation.caseId !== props.caseId) return
   const shouldFollowMessages = mode === 'initial'
     || (mode === 'incremental' && listAtEnd.value)
   conversation.value = response.data.conversation
@@ -221,6 +315,28 @@ function applyResponse(
 }
 
 watch(initialResponse, response => applyResponse(response), { immediate: true })
+
+watch(() => props.caseId, () => {
+  void attachmentDrafts.clear({ discard: !sending.value })
+  retryableSend.value = null
+  draftClientMessageId.value = crypto.randomUUID()
+  composer.value = ''
+  pendingMessage.value = null
+  stopTyping()
+  disconnectRealtime()
+  conversation.value = null
+  messages.value = []
+  ownReceipt.value = null
+  peerReceipt.value = null
+  hasOlderMessages.value = false
+  peerTyping.value = false
+  realtimeConfiguration.value = {
+    mode: 'polling',
+    channel: null,
+    ephemeralChannel: null,
+  }
+  connectionState.value = props.preview ? 'connected' : 'connecting'
+})
 
 function formatMessageTime(value: string) {
   const date = new Date(value)
@@ -370,7 +486,7 @@ async function acknowledgeMessages() {
 
 async function sendMessage() {
   const body = composer.value.trim()
-  if (!body || !canSend.value) return
+  if (!canSend.value) return
 
   if (props.preview) {
     const sequence = latestSequence.value + 1
@@ -379,53 +495,103 @@ async function sendMessage() {
       organizationId: conversation.value?.organizationId || 'org-openexpert-local',
       conversationId: conversation.value?.id || `preview-conversation-${props.caseId}`,
       sequence,
-      clientMessageId: crypto.randomUUID(),
+      clientMessageId: draftClientMessageId.value,
       senderKind: 'client',
       senderUserId: null,
       senderClientPersonId: 'preview-client',
       senderAuthUserId: 'preview-auth-user',
       body,
+      attachments: [],
       createdAt: new Date().toISOString(),
       editedAt: null,
       deletedAt: null,
     }])
     composer.value = ''
+    draftClientMessageId.value = crypto.randomUUID()
     emit('messageSent')
     void nextTick(scrollToEnd)
     return
   }
 
-  const clientMessageId = failedAttempt.value?.body === body
-    ? failedAttempt.value.clientMessageId
-    : crypto.randomUUID()
-  failedAttempt.value = null
+  const sendingCaseId = props.caseId
+  const sendingApiPath = apiPath.value
+  const attachments = [...attachmentDrafts.readyAttachments.value]
+  const attachmentIds = attachments.map(attachment => attachment.id)
+  const previousAttempt = retryableSend.value
+  const matchesPreviousAttempt = previousAttempt?.body === body
+    && previousAttempt.attachmentIds.length === attachmentIds.length
+    && previousAttempt.attachmentIds.every((id, index) => id === attachmentIds[index])
+  if (previousAttempt && !matchesPreviousAttempt) {
+    const nextClientMessageId = crypto.randomUUID()
+    retryableSend.value = null
+    draftClientMessageId.value = nextClientMessageId
+    if (attachmentDrafts.drafts.value.length) {
+      await attachmentDrafts.restartForClientMessageId(nextClientMessageId)
+      toast.add({
+        title: 'Aktualizujemy załączniki',
+        description: 'Szkic się zmienił, dlatego pliki są bezpiecznie przesyłane ponownie.',
+        color: 'info',
+        icon: 'i-lucide-refresh-cw',
+      })
+      return
+    }
+  }
+  const attempt = matchesPreviousAttempt && previousAttempt
+    ? previousAttempt
+    : {
+        body,
+        clientMessageId: draftClientMessageId.value,
+        attachmentIds,
+      }
+  retryableSend.value = attempt
   sending.value = true
-  pendingBody.value = body
+  pendingMessage.value = { body, attachments }
   composer.value = ''
   stopTyping()
 
   try {
     const response = await $fetch<{ data: { message: Message, peerReceipt?: Receipt | null } }>(
-      apiPath.value,
+      sendingApiPath,
       {
         method: 'POST',
-        body: { body, clientMessageId },
+        body: {
+          body,
+          clientMessageId: attempt.clientMessageId,
+          attachmentIds: attempt.attachmentIds,
+        },
       },
     )
+    if (props.caseId !== sendingCaseId) {
+      for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
+      return
+    }
     if (response.data.message) mergeMessages([response.data.message])
     if (response.data.peerReceipt !== undefined) peerReceipt.value = response.data.peerReceipt
+    await attachmentDrafts.clear({ discard: false })
+    for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
+    retryableSend.value = null
+    draftClientMessageId.value = crypto.randomUUID()
     emit('messageSent')
-    failedAttempt.value = null
-    pendingBody.value = ''
+    pendingMessage.value = null
     void nextTick(scrollToEnd)
   }
-  catch {
-    failedAttempt.value = { body, clientMessageId }
+  catch (caught: any) {
+    if (props.caseId !== sendingCaseId) {
+      for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
+      return
+    }
+    if (requestErrorCode(caught) === 'case_message_attachment_unavailable') {
+      attachmentDrafts.invalidateReadyAttachments(
+        attachmentIds,
+        'Załącznik wygasł. Kliknij „Ponów”, aby przesłać go ponownie.',
+      )
+      retryableSend.value = null
+    }
     composer.value = body
-    pendingBody.value = ''
+    pendingMessage.value = null
     toast.add({
       title: 'Nie udało się wysłać wiadomości',
-      description: 'Treść została zachowana. Spróbuj ponownie za chwilę.',
+      description: 'Treść i załączniki zostały zachowane. Spróbuj ponownie za chwilę.',
       color: 'error',
       icon: 'i-lucide-circle-alert',
     })
@@ -648,12 +814,14 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  void attachmentDrafts.clear({ discard: !sending.value })
   stopTyping()
   if (peerTypingTimer) clearTimeout(peerTypingTimer)
   if (receiptTimer) clearTimeout(receiptTimer)
   visibilityObserver?.disconnect()
   document.removeEventListener('visibilitychange', scheduleReceipt)
   disconnectRealtime()
+  draftClientMessageId.value = crypto.randomUUID()
 })
 </script>
 
@@ -752,7 +920,7 @@ onBeforeUnmount(() => {
         Pokaż starsze wiadomości
       </UButton>
 
-      <div v-else-if="!messages.length && !pendingBody" class="portal-conversation__empty">
+      <div v-else-if="!messages.length && !pendingMessage" class="portal-conversation__empty">
         <span><UIcon name="i-lucide-messages-square" /></span>
         <strong>Zacznij rozmowę</strong>
         <p>Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu.</p>
@@ -767,7 +935,13 @@ onBeforeUnmount(() => {
         ]"
       >
         <div>
-          <p>{{ message.body }}</p>
+          <p v-if="message.body">{{ message.body }}</p>
+          <div v-if="message.attachments.length" class="portal-message__attachments">
+            <MessageAttachments
+              :attachments="message.attachments"
+              :url-for="messageAttachmentUrl"
+            />
+          </div>
           <footer>
             <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
             <span v-if="message.senderKind === 'client'">
@@ -782,9 +956,23 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <article v-if="pendingBody" class="portal-message portal-message--mine is-pending">
+      <article v-if="pendingMessage" class="portal-message portal-message--mine is-pending">
         <div>
-          <p>{{ pendingBody }}</p>
+          <p v-if="pendingMessage.body">{{ pendingMessage.body }}</p>
+          <div
+            v-if="pendingMessage.attachments.length"
+            class="portal-message__pending-attachments"
+            aria-label="Wysyłane załączniki"
+          >
+            <span v-for="attachment in pendingMessage.attachments" :key="attachment.id">
+              <UIcon
+                :name="attachment.mimeType.startsWith('image/')
+                  ? 'i-lucide-image'
+                  : 'i-lucide-file'"
+              />
+              <span>{{ attachment.name }}</span>
+            </span>
+          </div>
           <footer><span>Wysyłanie…</span></footer>
         </div>
       </article>
@@ -797,31 +985,47 @@ onBeforeUnmount(() => {
     </div>
 
     <form v-if="!loadError" class="portal-conversation__composer" @submit.prevent="sendMessage">
-      <UTextarea
-        v-model="composer"
-        class="w-full"
-        autoresize
-        :rows="1"
-        :maxrows="6"
-        :maxlength="4000"
-        :disabled="sending || loadError"
-        placeholder="Napisz wiadomość…"
-        aria-label="Treść wiadomości"
-        @input="onComposerInput"
-        @blur="stopTyping"
-        @keydown.enter.exact.prevent="sendMessage"
-      />
-      <UButton
-        type="submit"
-        icon="i-lucide-arrow-up"
-        variant="solid"
-        :loading="sending"
-        :disabled="!canSend"
-        aria-label="Wyślij wiadomość"
-      />
+      <MessageAttachmentComposer
+        :controller="attachmentDrafts"
+        :client-message-id="draftClientMessageId"
+        :disabled="preview || sending || loadError"
+        :disabled-reason="preview
+          ? 'Dodawanie załączników jest wyłączone w trybie podglądu.'
+          : sending
+            ? 'Poczekaj na wysłanie bieżącej wiadomości.'
+            : undefined"
+      >
+        <template #input>
+          <UTextarea
+            v-model="composer"
+            class="w-full"
+            autoresize
+            :rows="1"
+            :maxrows="6"
+            :maxlength="4000"
+            :disabled="sending || loadError"
+            placeholder="Napisz wiadomość…"
+            aria-label="Treść wiadomości"
+            @input="onComposerInput"
+            @blur="stopTyping"
+            @keydown.enter.exact.prevent="sendMessage"
+          />
+        </template>
+        <template #submit>
+          <UButton
+            class="portal-conversation__send"
+            type="submit"
+            icon="i-lucide-arrow-up"
+            variant="solid"
+            :loading="sending"
+            :disabled="!canSend"
+            aria-label="Wyślij wiadomość"
+          />
+        </template>
+      </MessageAttachmentComposer>
     </form>
     <p v-if="!loadError" class="portal-conversation__hint">
-      Enter wysyła · Shift+Enter dodaje nową linię
+      Enter wysyła · Shift+Enter dodaje nową linię · możesz wkleić lub przeciągnąć plik
     </p>
   </section>
 </template>
@@ -999,6 +1203,12 @@ onBeforeUnmount(() => {
 }
 
 .portal-message--mine > div {
+  --oe-message-attachment-bg: rgb(255 255 255 / 9%);
+  --oe-message-attachment-border: rgb(255 255 255 / 18%);
+  --oe-message-attachment-hover: rgb(255 255 255 / 14%);
+  --oe-message-attachment-text: #fff;
+  --oe-message-attachment-muted: rgb(255 255 255 / 78%);
+
   border-radius: 17px 17px 5px;
   background: #111827;
   color: #fff;
@@ -1014,6 +1224,40 @@ onBeforeUnmount(() => {
   line-height: 1.48;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.portal-message__attachments {
+  margin-top: 7px;
+}
+
+.portal-message__pending-attachments {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.portal-message__pending-attachments > span {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 9%);
+  font-size: 11px;
+}
+
+.portal-message__pending-attachments > span > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-message__pending-attachments svg {
+  width: 16px;
+  height: 16px;
 }
 
 .portal-message footer {
@@ -1071,10 +1315,6 @@ onBeforeUnmount(() => {
 }
 
 .portal-conversation__composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
-  align-items: end;
-  gap: 9px;
   margin: 0 16px;
   padding: 12px 0 6px;
   border-top: 1px solid var(--portal-line);
@@ -1085,7 +1325,7 @@ onBeforeUnmount(() => {
   border-radius: 15px;
 }
 
-.portal-conversation__composer :deep(button) {
+.portal-conversation__composer :deep(.portal-conversation__send) {
   width: 44px;
   height: 44px;
   border-radius: 999px;

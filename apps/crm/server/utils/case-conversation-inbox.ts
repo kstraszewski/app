@@ -43,6 +43,7 @@ const messageSelect = [
   'sender_auth_user_id',
   'body',
   'created_at',
+  'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
 
 const receiptSelect = [

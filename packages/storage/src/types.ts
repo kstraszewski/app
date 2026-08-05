@@ -37,6 +37,19 @@ export interface StorageObjectInput {
   path: string
 }
 
+export interface StorageSignedUploadUrlInput extends StorageObjectInput {
+  contentType: string
+  size: number
+  expiresInSeconds?: number
+}
+
+export interface StorageSignedUploadUrl {
+  url: string
+  method: 'PUT'
+  headers: Record<string, string>
+  expiresAt: Date
+}
+
 export interface StorageDownload {
   object: StorageObject
   stream: ReadableStream<Uint8Array>
@@ -66,10 +79,14 @@ export interface StorageSignedUrl {
 
 export interface StorageClient {
   upload(input: StorageUploadInput): Promise<StorageObject>
+  head(input: StorageObjectInput): Promise<StorageObject | null>
   download(input: StorageObjectInput): Promise<StorageDownload | null>
   delete(input: StorageObjectInput): Promise<void>
   list(input: StorageListInput): Promise<StorageListResult>
   createSignedUrl(input: StorageSignedUrlInput): Promise<StorageSignedUrl>
+  createSignedUploadUrl(
+    input: StorageSignedUploadUrlInput,
+  ): Promise<StorageSignedUploadUrl>
   getPublicUrl(input: StorageObjectInput): string
 }
 
@@ -96,6 +113,18 @@ export interface ProviderUploadInput {
 export interface ProviderObjectInput {
   access: StorageAccess
   key: string
+}
+
+export interface ProviderSignedUploadUrlInput extends ProviderObjectInput {
+  contentType: string
+  size: number
+  expiresInSeconds: number
+  expiresAt: Date
+}
+
+export interface ProviderSignedUploadUrl {
+  url: string
+  headers: Record<string, string>
 }
 
 export interface ProviderDownload {
@@ -127,9 +156,13 @@ export interface ProviderSignedUrl {
 export interface StorageProvider {
   readonly kind: string
   upload(input: ProviderUploadInput): Promise<ProviderObject>
+  head(input: ProviderObjectInput): Promise<ProviderObject | null>
   download(input: ProviderObjectInput): Promise<ProviderDownload | null>
   delete(input: ProviderObjectInput): Promise<void>
   list(input: ProviderListInput): Promise<ProviderListResult>
   createSignedUrl(input: ProviderSignedUrlInput): Promise<ProviderSignedUrl>
+  createSignedUploadUrl(
+    input: ProviderSignedUploadUrlInput,
+  ): Promise<ProviderSignedUploadUrl>
   getPublicUrl(input: ProviderObjectInput): string
 }

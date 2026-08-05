@@ -4,6 +4,7 @@ import {
   createStorageClient,
   createVercelBlobStorageProvider,
   type StorageBucketAdapter,
+  type StorageClient,
 } from '@openexpert/storage'
 import { useRuntimeConfig } from '#imports'
 import type { H3Event } from 'h3'
@@ -25,12 +26,15 @@ interface PlatformStorageConfig {
     publicBaseUrl: string
     privateToken: string
     privateStoreId: string
-    oidcToken: string
   }
 }
 
 let cachedStorage:
-  | { fingerprint: string, adapter: StorageBucketAdapter }
+  | {
+      fingerprint: string
+      adapter: StorageBucketAdapter
+      client: StorageClient
+    }
   | undefined
 
 function optional(value: string): string | undefined {
@@ -38,10 +42,10 @@ function optional(value: string): string | undefined {
   return normalized || undefined
 }
 
-export function serverStorage(event: H3Event): StorageBucketAdapter {
+function storageBoundary(event: H3Event) {
   const config = useRuntimeConfig(event).storage as PlatformStorageConfig
   const fingerprint = JSON.stringify(config)
-  if (cachedStorage?.fingerprint === fingerprint) return cachedStorage.adapter
+  if (cachedStorage?.fingerprint === fingerprint) return cachedStorage
 
   const provider = config.provider === 'vercel-blob'
     ? createVercelBlobStorageProvider({
@@ -50,12 +54,10 @@ export function serverStorage(event: H3Event): StorageBucketAdapter {
             token: optional(config.vercelBlob.publicToken),
             storeId: optional(config.vercelBlob.publicStoreId),
             publicBaseUrl: optional(config.vercelBlob.publicBaseUrl),
-            oidcToken: optional(config.vercelBlob.oidcToken),
           },
           private: {
             token: optional(config.vercelBlob.privateToken),
             storeId: optional(config.vercelBlob.privateStoreId),
-            oidcToken: optional(config.vercelBlob.oidcToken),
           },
         },
       })
@@ -69,7 +71,16 @@ export function serverStorage(event: H3Event): StorageBucketAdapter {
         publicBaseUrl: config.minio.publicBaseUrl,
       })
 
-  const adapter = createStorageBucketAdapter(createStorageClient(provider))
-  cachedStorage = { fingerprint, adapter }
-  return adapter
+  const client = createStorageClient(provider)
+  const adapter = createStorageBucketAdapter(client)
+  cachedStorage = { fingerprint, adapter, client }
+  return cachedStorage
+}
+
+export function serverStorage(event: H3Event): StorageBucketAdapter {
+  return storageBoundary(event).adapter
+}
+
+export function serverStorageClient(event: H3Event): StorageClient {
+  return storageBoundary(event).client
 }

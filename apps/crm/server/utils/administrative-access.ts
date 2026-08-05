@@ -404,7 +404,7 @@ export function throwAdministrativeAccessDbError(
   if (message.includes('anonymization_documents_require_manual_retention_review')) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Anonimizacja wymaga ręcznego przeglądu retencji dokumentów, obrazów lub zapisanych ofert.',
+      statusMessage: 'Anonimizacja wymaga ręcznego przeglądu retencji dokumentów, wiadomości, załączników, obrazów lub zapisanych ofert.',
       data: { code: 'anonymization_manual_retention_review_required' },
     })
   }

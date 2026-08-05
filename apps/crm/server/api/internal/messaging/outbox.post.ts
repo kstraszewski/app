@@ -7,6 +7,7 @@ import {
   setHeader,
 } from 'h3'
 import { drainCaseMessageOutbox } from '~~/server/utils/case-conversations'
+import { cleanupExpiredMessageAttachments } from '~~/server/utils/case-message-attachments'
 import { asRecord } from '~~/server/utils/crm'
 
 interface MessagingRuntimeConfig {
@@ -41,10 +42,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'limit must be between 1 and 100' })
   }
 
-  const result = await drainCaseMessageOutbox(
-    event,
-    `crm:${randomUUID()}`,
-    limit,
-  )
-  return { data: result }
+  const workerNonce = randomUUID()
+  const [result, attachmentCleanup] = await Promise.all([
+    drainCaseMessageOutbox(
+      event,
+      `crm:${workerNonce}`,
+      limit,
+    ),
+    cleanupExpiredMessageAttachments(
+      event,
+      `crm-attachments:${workerNonce}`,
+      limit,
+    ).catch((error) => {
+      console.warn('[crm-messaging] attachment cleanup failed', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return { claimed: 0, deleted: 0, failed: 1 }
+    }),
+  ])
+  return { data: { ...result, attachmentCleanup } }
 })

@@ -183,7 +183,10 @@ The initial container bootstrap supplies the runtime surface the schema needs:
 - `pgcrypto`, `pg_trgm`, `unaccent`, `vector`, and `btree_gist`;
 - explicit ACLs for `anonymous`, `authenticated`, and `openexpert_service`.
 
-MinIO is the local object-store target for the shared storage adapter.
+MinIO is the local object-store target for the shared storage adapter. Its API
+CORS allowlist is restricted to the CRM and client portal origins on
+`127.0.0.1`/`localhost` ports `3004` and `3006`, so those applications can use
+signed direct `PUT` uploads without enabling arbitrary browser origins.
 
 To inspect the fully interpolated Compose configuration manually:
 

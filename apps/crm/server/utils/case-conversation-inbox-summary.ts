@@ -1,4 +1,9 @@
-import type { Conversation, Message, Receipt } from '@openexpert/messaging'
+import {
+  buildMessagePreview,
+  type Conversation,
+  type Message,
+  type Receipt,
+} from '@openexpert/messaging'
 import type { CrmConversationInboxItem } from '../../shared/types/case-conversation-inbox.ts'
 
 export interface CrmConversationInboxCase {
@@ -84,7 +89,7 @@ export function buildCrmConversationInboxItem(input: {
     lastMessageSequence: conversation.lastMessageSequence,
     lastMessageAt: conversation.lastMessageAt,
     lastMessagePreview: lastMessage
-      ? truncateConversationPreview(lastMessage.body)
+      ? buildMessagePreview(lastMessage.body, lastMessage.attachments)
       : null,
     lastMessageSenderKind: lastMessage?.senderKind ?? null,
     lastMessageSentByCurrentUser: Boolean(

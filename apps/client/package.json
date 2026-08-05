@@ -23,6 +23,7 @@
     "@openexpert/data-api": "workspace:*",
     "@openexpert/email": "workspace:*",
     "@openexpert/messaging": "workspace:*",
+    "@openexpert/messaging-ui": "workspace:*",
     "@openexpert/storage": "workspace:*",
     "ably": "^2.26.0",
     "h3": "1.15.11",

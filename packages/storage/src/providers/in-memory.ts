@@ -9,6 +9,7 @@ import {
 } from '../body.ts'
 import {
   StorageConflictError,
+  StorageUnsupportedError,
   StorageValidationError,
 } from '../errors.ts'
 import type { StorageAccess } from '../namespaces.ts'
@@ -20,6 +21,8 @@ import type {
   ProviderObjectInput,
   ProviderSignedUrl,
   ProviderSignedUrlInput,
+  ProviderSignedUploadUrl,
+  ProviderSignedUploadUrlInput,
   ProviderUploadInput,
   StorageProvider,
 } from '../types.ts'
@@ -110,6 +113,11 @@ export function createInMemoryStorageProvider(
       return toProviderObject(entry)
     },
 
+    async head(input: ProviderObjectInput): Promise<ProviderObject | null> {
+      const entry = entries.get(entryId(input.access, input.key))
+      return entry ? toProviderObject(entry) : null
+    },
+
     async download(input: ProviderObjectInput): Promise<ProviderDownload | null> {
       const entry = entries.get(entryId(input.access, input.key))
       if (!entry) return null
@@ -157,6 +165,14 @@ export function createInMemoryStorageProvider(
       url.searchParams.set('signature', signature)
 
       return { url: url.toString() }
+    },
+
+    async createSignedUploadUrl(
+      _input: ProviderSignedUploadUrlInput,
+    ): Promise<ProviderSignedUploadUrl> {
+      throw new StorageUnsupportedError(
+        'In-memory storage does not support signed upload URLs',
+      )
     },
 
     getPublicUrl(input: ProviderObjectInput): string {

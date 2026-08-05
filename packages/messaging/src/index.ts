@@ -5,6 +5,7 @@ export {
 } from './channels.ts'
 export type { ConversationChannelNames } from './channels.ts'
 export {
+  DataApiMessageAttachmentRowSchema,
   DataApiConversationRowSchema,
   DataApiMessageRowSchema,
   DataApiReceiptRowSchema,
@@ -12,14 +13,38 @@ export {
   mapConversationRows,
   mapMessageRow,
   mapMessageRows,
+  mapMessageAttachmentRow,
+  mapMessageAttachmentRows,
   mapReceiptRow,
   mapReceiptRows,
 } from './mappers.ts'
 export type {
   DataApiConversationRow,
+  DataApiMessageAttachmentRow,
   DataApiMessageRow,
   DataApiReceiptRow,
 } from './mappers.ts'
+export {
+  buildMessageAttachmentStoragePath,
+  buildMessagePreview,
+  isMessageAttachmentContentType,
+  MESSAGE_ATTACHMENT_ACCEPT,
+  MESSAGE_ATTACHMENT_CONTENT_TYPES,
+  MESSAGE_ATTACHMENT_MAX_FILE_BYTES,
+  MESSAGE_ATTACHMENT_MAX_FILES,
+  MESSAGE_ATTACHMENT_MAX_TOTAL_BYTES,
+  MESSAGE_ATTACHMENT_NAME_MAX_LENGTH,
+  MESSAGE_ATTACHMENT_NAMESPACE,
+  messageAttachmentBlobPath,
+  messageAttachmentExtension,
+  normalizeMessageAttachmentName,
+  resolveMessageAttachmentContentType,
+  validateMessageAttachmentCandidate,
+} from './attachments.ts'
+export type {
+  MessageAttachmentCandidateValidation,
+  MessageAttachmentContentType,
+} from './attachments.ts'
 export {
   conversationTokenRequestSchema,
   ConversationEventSchema,
@@ -31,6 +56,8 @@ export {
   receiptUpdateInputSchema,
   ReceiptUpdatedEventSchema,
   ReceiptUpdateInputSchema,
+  reserveMessageAttachmentInputSchema,
+  ReserveMessageAttachmentInputSchema,
   sendMessageInputSchema,
   SendMessageInputSchema,
   TypingUpdatedEventSchema,
@@ -38,6 +65,7 @@ export {
 export type {
   ConversationTokenRequest,
   ReceiptUpdateInput,
+  ReserveMessageAttachmentInput,
   SendMessageInput,
 } from './schemas.ts'
 export type {
@@ -51,6 +79,7 @@ export type {
   EphemeralConversationEvent,
   Event,
   Message,
+  MessageAttachment,
   MessageDurableEvent,
   MessageDurableEventKind,
   Receipt,

@@ -16,6 +16,8 @@ import type {
   ProviderObjectInput,
   ProviderSignedUrl,
   ProviderSignedUrlInput,
+  ProviderSignedUploadUrl,
+  ProviderSignedUploadUrlInput,
   ProviderUploadInput,
   StorageProvider,
 } from '../types.ts'
@@ -59,15 +61,21 @@ interface S3CommandConstructor {
 interface S3Sdk {
   S3Client: new (options: Record<string, unknown>) => S3ClientLike
   PutObjectCommand: S3CommandConstructor
+  HeadObjectCommand: S3CommandConstructor
   GetObjectCommand: S3CommandConstructor
   DeleteObjectCommand: S3CommandConstructor
   ListObjectsV2Command: S3CommandConstructor
   getSignedUrl(
     client: S3ClientLike,
     command: unknown,
-    options: { expiresIn: number },
+    options: {
+      expiresIn: number
+      signableHeaders?: Set<string>
+    },
   ): Promise<string>
 }
+
+const SIGNED_UPLOAD_CACHE_CONTROL_SECONDS = 60
 
 let s3SdkPromise: Promise<S3Sdk> | undefined
 
@@ -244,6 +252,7 @@ export function createS3StorageProvider(
       region: options.region,
       credentials: options.credentials,
       forcePathStyle: options.forcePathStyle ?? false,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     }))
     return clientPromise
   }
@@ -287,6 +296,39 @@ export function createS3StorageProvider(
         url: input.access === 'public'
           ? buildPublicUrl(options.publicBaseUrl, input.key)
           : undefined,
+      }
+    },
+
+    async head(input: ProviderObjectInput): Promise<ProviderObject | null> {
+      const [sdk, client] = await Promise.all([loadS3Sdk(), getClient()])
+
+      try {
+        const response = asRecord(await client.send(new sdk.HeadObjectCommand({
+          Bucket: options.buckets[input.access],
+          Key: input.key,
+        })))
+        const size = optionalNumber(response.ContentLength)
+        if (size === undefined || size < 0) {
+          throw new StorageValidationError(
+            `S3 returned an invalid content length for "${input.key}"`,
+          )
+        }
+
+        return {
+          access: input.access,
+          key: input.key,
+          size,
+          contentType: optionalString(response.ContentType),
+          etag: optionalString(response.ETag),
+          uploadedAt: optionalDate(response.LastModified),
+          url: input.access === 'public'
+            ? buildPublicUrl(options.publicBaseUrl, input.key)
+            : undefined,
+        }
+      }
+      catch (error) {
+        if (isNotFoundError(error)) return null
+        throw error
       }
     },
 
@@ -380,6 +422,38 @@ export function createS3StorageProvider(
         expiresIn: input.expiresInSeconds,
       })
       return { url }
+    },
+
+    async createSignedUploadUrl(
+      input: ProviderSignedUploadUrlInput,
+    ): Promise<ProviderSignedUploadUrl> {
+      const [sdk, client] = await Promise.all([loadS3Sdk(), getClient()])
+      const cacheControl = `${input.access === 'public' ? 'public' : 'private'}, max-age=${SIGNED_UPLOAD_CACHE_CONTROL_SECONDS}`
+      const command = new sdk.PutObjectCommand({
+        Bucket: options.buckets[input.access],
+        Key: input.key,
+        ContentLength: input.size,
+        ContentType: input.contentType,
+        CacheControl: cacheControl,
+        IfNoneMatch: '*',
+      })
+      const url = await sdk.getSignedUrl(client, command, {
+        expiresIn: input.expiresInSeconds,
+        signableHeaders: new Set([
+          'cache-control',
+          'content-type',
+          'if-none-match',
+        ]),
+      })
+
+      return {
+        url,
+        headers: {
+          'cache-control': cacheControl,
+          'content-type': input.contentType,
+          'if-none-match': '*',
+        },
+      }
     },
 
     getPublicUrl(input: ProviderObjectInput): string {

@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildMessageAttachmentStoragePath,
+  buildMessagePreview,
   conversationChannelNames,
   DurableConversationEventSchema,
   mapConversationRow,
   mapMessageRow,
+  MESSAGE_ATTACHMENT_ACCEPT,
+  MESSAGE_ATTACHMENT_MAX_FILE_BYTES,
+  MESSAGE_ATTACHMENT_MAX_FILES,
+  MESSAGE_ATTACHMENT_MAX_TOTAL_BYTES,
   mapReceiptRow,
   ReceiptUpdateInputSchema,
+  ReserveMessageAttachmentInputSchema,
   SendMessageInputSchema,
+  resolveMessageAttachmentContentType,
+  validateMessageAttachmentCandidate,
 } from '../src/index.ts'
 
 const ids = {
@@ -35,6 +44,7 @@ test('validates and normalizes message input', () => {
     body: '  Dzień dobry  ',
     clientMessageId: ids.message,
   }), {
+    attachmentIds: [],
     body: 'Dzień dobry',
     clientMessageId: ids.message,
   })
@@ -46,6 +56,119 @@ test('validates and normalizes message input', () => {
     body: 'a'.repeat(4_001),
     clientMessageId: ids.message,
   }))
+  assert.deepEqual(SendMessageInputSchema.parse({
+    attachmentIds: [ids.receipt],
+    body: '',
+    clientMessageId: ids.message,
+  }), {
+    attachmentIds: [ids.receipt],
+    body: '',
+    clientMessageId: ids.message,
+  })
+  assert.throws(() => SendMessageInputSchema.parse({
+    attachmentIds: [ids.receipt, ids.receipt],
+    body: 'duplicate attachment',
+    clientMessageId: ids.message,
+  }))
+})
+
+test('validates attachment candidates and builds deterministic blob paths', () => {
+  assert.equal(MESSAGE_ATTACHMENT_MAX_FILES, 10)
+  assert.equal(MESSAGE_ATTACHMENT_MAX_FILE_BYTES, 25 * 1024 * 1024)
+  assert.equal(MESSAGE_ATTACHMENT_MAX_TOTAL_BYTES, 50 * 1024 * 1024)
+  assert.match(MESSAGE_ATTACHMENT_ACCEPT, /application\/pdf/u)
+
+  assert.equal(
+    resolveMessageAttachmentContentType('dokument.PDF', ''),
+    'application/pdf',
+  )
+  assert.equal(
+    resolveMessageAttachmentContentType('zdjecie.jpg', 'image/jpeg; charset=binary'),
+    'image/jpeg',
+  )
+  assert.equal(resolveMessageAttachmentContentType('payload.html', 'text/html'), null)
+  assert.deepEqual(validateMessageAttachmentCandidate({
+    name: 'umowa.pdf',
+    type: 'application/pdf',
+    size: 1024,
+  }), { ok: true, mimeType: 'application/pdf' })
+  assert.deepEqual(validateMessageAttachmentCandidate({
+    name: 'malware.exe',
+    type: 'application/pdf',
+    size: 1024,
+  }), {
+    ok: false,
+    reason: 'File extension does not match its type',
+  })
+  assert.deepEqual(validateMessageAttachmentCandidate({
+    name: 'raport.docx',
+    type: 'application/pdf',
+    size: 1024,
+  }), {
+    ok: false,
+    reason: 'File extension does not match its type',
+  })
+  assert.equal(validateMessageAttachmentCandidate({
+    name: 'za-duzy.pdf',
+    type: 'application/pdf',
+    size: MESSAGE_ATTACHMENT_MAX_FILE_BYTES + 1,
+  }).ok, false)
+
+  assert.equal(buildMessageAttachmentStoragePath({
+    organizationId: ids.organization,
+    caseId: ids.case,
+    conversationId: ids.conversation,
+    clientMessageId: ids.message,
+    attachmentId: ids.receipt,
+    mimeType: 'application/pdf',
+  }), [
+    ids.organization,
+    ids.case,
+    ids.conversation.toLowerCase(),
+    ids.message,
+    `${ids.receipt}.pdf`,
+  ].join('/'))
+})
+
+test('validates and normalizes attachment reservation input', () => {
+  assert.deepEqual(ReserveMessageAttachmentInputSchema.parse({
+    clientMessageId: ids.message,
+    name: '  folder\\umowa.pdf\u0000  ',
+    mimeType: 'application/pdf',
+    sizeBytes: 4096,
+  }), {
+    clientMessageId: ids.message,
+    name: 'folder-umowa.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 4096,
+  })
+  assert.throws(() => ReserveMessageAttachmentInputSchema.parse({
+    clientMessageId: ids.message,
+    name: 'payload.svg',
+    mimeType: 'image/svg+xml',
+    sizeBytes: 1024,
+  }))
+  assert.throws(() => ReserveMessageAttachmentInputSchema.parse({
+    clientMessageId: ids.message,
+    name: 'invoice.exe',
+    mimeType: 'application/pdf',
+    sizeBytes: 1024,
+  }))
+})
+
+test('builds safe text and attachment-only conversation previews', () => {
+  const attachment = {
+    id: ids.receipt,
+    name: 'potwierdzenie.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 1024,
+  }
+  assert.equal(buildMessagePreview('  Dzień\n dobry  ', [attachment]), 'Dzień dobry')
+  assert.equal(buildMessagePreview('', [attachment]), 'Załącznik: potwierdzenie.pdf')
+  assert.equal(buildMessagePreview('', [
+    attachment,
+    { ...attachment, id: ids.message },
+  ]), '2 załączników')
 })
 
 test('read receipt also advances delivery high-water mark', () => {
@@ -94,6 +217,23 @@ test('maps and normalizes Data API conversation and message rows', () => {
   assert.equal(conversation.createdAt, '2026-08-02T10:00:00.000Z')
 
   const message = mapMessageRow({
+    attachments: [
+      {
+        id: ids.receipt,
+        position: 2,
+        file_name: 'drugi.pdf',
+        content_type: 'application/pdf',
+        size_bytes: '2048',
+      },
+      {
+        id: 'f57efc08-9c7d-4794-b962-4959b1db3fb0',
+        position: 1,
+        file_name: 'pierwszy.jpg',
+        content_type: 'image/jpeg',
+        size_bytes: 1024,
+        storage_path: 'must/not/leak',
+      },
+    ],
     body: 'Dzień dobry',
     client_message_id: ids.message,
     conversation_id: ids.conversation,
@@ -107,9 +247,25 @@ test('maps and normalizes Data API conversation and message rows', () => {
     sequence: '12',
   })
   assert.equal(message.sequence, 12)
+  assert.deepEqual(message.attachments, [
+    {
+      id: 'f57efc08-9c7d-4794-b962-4959b1db3fb0',
+      name: 'pierwszy.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+    },
+    {
+      id: ids.receipt,
+      name: 'drugi.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 2048,
+    },
+  ])
+  assert.equal(JSON.stringify(message.attachments).includes('storage_path'), false)
   assert.equal(message.editedAt, null)
   assert.equal(message.deletedAt, null)
   assert.equal(mapMessageRow({
+    attachments: [],
     body: 'Archiwalna odpowiedź',
     client_message_id: '6c912252-878c-4d68-8419-2037d6a155bf',
     conversation_id: ids.conversation,

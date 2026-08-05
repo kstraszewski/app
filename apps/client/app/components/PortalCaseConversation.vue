@@ -1059,6 +1059,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .portal-conversation {
+  min-width: 0;
   overflow: hidden;
   margin-bottom: 28px;
   border: 1px solid var(--portal-line);
@@ -1072,6 +1073,8 @@ onBeforeUnmount(() => {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   margin-bottom: 0;
   border: 0;
@@ -1081,6 +1084,7 @@ onBeforeUnmount(() => {
 
 .portal-conversation__header {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -1099,7 +1103,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 13px;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .portal-conversation__expert > div {
@@ -1460,6 +1466,22 @@ onBeforeUnmount(() => {
   .portal-conversation__header-actions > :not(.portal-conversation__case-link),
   .portal-conversation__case-link :deep(span:not(.iconify)) {
     display: none;
+  }
+
+  .portal-conversation__case-link {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .portal-conversation__case-link :deep(.iconify) {
+    width: 18px;
+    height: 18px;
   }
 
   .portal-conversation__messages {

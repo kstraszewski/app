@@ -350,6 +350,10 @@ export default defineNuxtConfig({
       title: 'OpenExpert CRM',
       meta: [
         { name: 'description', content: 'CRM dla platformy OpenExpert.' },
+        { name: 'theme-color', content: '#030303' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
     },
   },

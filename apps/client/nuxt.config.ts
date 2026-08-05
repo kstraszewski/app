@@ -179,6 +179,9 @@ export default defineNuxtConfig({
         { name: 'robots', content: 'noindex, nofollow' },
         { name: 'theme-color', content: '#ffffff' },
       ],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      ],
     },
   },
 })

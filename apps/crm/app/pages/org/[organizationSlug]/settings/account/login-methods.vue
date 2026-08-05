@@ -690,7 +690,7 @@ watch(twoFactorModalOpen, (open) => {
     </UAlert>
 
     <section class="identity-summary">
-      <span><UIcon name="i-lucide-shield-check" /></span>
+      <span class="identity-summary__icon"><UIcon name="i-lucide-shield-check" /></span>
       <div>
         <p>Tożsamość OpenExpert</p>
         <h2>{{ authUser?.email }}</h2>
@@ -1324,7 +1324,7 @@ watch(twoFactorModalOpen, (open) => {
   padding: 18px 20px;
 }
 
-.identity-summary > span,
+.identity-summary__icon,
 .login-method-card__icon {
   display: grid;
   width: 42px;

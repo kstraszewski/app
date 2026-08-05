@@ -59,6 +59,53 @@ Stan: ciemny motyw OpenExpert, organizacja `openexpert-local`, administrator org
 
 ---
 
+# Design QA — karta tożsamości metod logowania
+
+## Wynik
+
+`passed`
+
+Badge potwierdzonego e-maila ponownie mieści się w obramowaniu karty i zachowuje prawidłowy układ na desktopie oraz mobile. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał porównawczy
+
+- Źródło wizualne i stan błędu: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-929155c5-e08b-4a5f-83b1-e0ab63ec3e86.png`, 2016 × 217 px, ciemny motyw, zrzut 2×.
+- Implementacja desktop — pełny widok: `/private/tmp/openexpert-login-methods-dark-wide-full.png`, 1440 × 900 px; CSS viewport 1440 × 900, DPR 1.
+- Implementacja desktop — detal karty: `/private/tmp/openexpert-login-methods-dark-wide-card.png`, 1128 × 98 px; CSS 1128 × 98, DPR 1.
+- Implementacja mobile: `/private/tmp/openexpert-login-methods-dark-mobile-page.png`, 390 × 1852 px; CSS viewport 390 × 844, DPR 1, pełna wysokość strony.
+- Wspólny obraz porównawczy: `/private/tmp/openexpert-identity-before-after.png`, stan błędny u góry i poprawiona implementacja u dołu. Źródło 2× znormalizowano do 1008 × 91 px, a implementację do 1008 × 88 px.
+
+Stan implementacji: ciemny motyw OpenExpert, organizacja `openexpert-local`, konto `admin@openexpert.local` z potwierdzonym e-mailem. Inny adres e-mail niż w źródle jest oczekiwaną różnicą danych; porównanie ocenia geometrię i styl karty.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Typografia i copy:** etykieta „E-mail potwierdzony”, hierarchia tekstu i mono-eyebrow pozostały bez zmian. Badge zachowuje jeden wiersz i nie jest już ograniczony do kwadratu 42 × 42 px.
+- **Spacing i rytm:** na desktopie badge ma 178,8 × 28 px i mieści się między x=1208,2 a x=1387 wewnątrz karty kończącej się na x=1408. Lewa ikona zachowuje 42 × 42 px. Na mobile badge przechodzi do drugiego wiersza i pozostaje wewnątrz karty.
+- **Kolory i tokeny:** po usunięciu kolizji selektora `UBadge` odzyskał semantyczny wariant `success`; nie dodano nowych kolorów ani tokenów.
+- **Ikony i zasoby:** zachowano istniejące ikony Lucide `shield-check` i `badge-check`. Ekran nie wymaga nowych obrazów, ilustracji, SVG ani atrap.
+- **Copy i treść:** treść karty nie została zmieniona. Lokalny seed używa innego adresu e-mail niż źródło, ale odwzorowuje stan potwierdzonego konta.
+- **Responsywność:** przy 1440 px dokument ma `clientWidth = scrollWidth = 1440`; przy 390 px ma `clientWidth = scrollWidth = 390`. Badge jest zawarty w karcie w obu punktach widoku i nie tworzy poziomego overflow.
+- **Dostępność i zachowanie:** semantyczny tekst statusu oraz ikona pozostały czytelne. Zmiana dotyczy wyłącznie selektora wrappera ikony i nie zmienia interakcji ani kolejności treści.
+
+## Historia porównania i poprawki
+
+- **P2 — status wypływał poza prawą krawędź karty:** selektor `.identity-summary > span` obejmował również root `<span>` renderowany przez `UBadge`, nadpisując mu `display: flex` przez `grid` oraz wymuszając 42 × 42 px. Wrapper lewej ikony otrzymał klasę `.identity-summary__icon`, a selektor zawężono do tej klasy.
+- **Weryfikacja po poprawce:** desktop pokazuje badge jako `display: flex`, 178,8 × 28 px, w całości wewnątrz karty. Mobile ustawia go w kolumnie 2, od x=93 do x=271,8, również wewnątrz karty. W obu przypadkach brak poziomego overflow.
+
+## Walidacja techniczna i przeglądarkowa
+
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `git diff --check` — bez błędów przed raportem.
+- Kontrola przeglądarkowa: jasny i ciemny motyw na desktopie 1440 × 900 oraz ciemny motyw na mobile 390 × 844.
+- Sprawdzono przełącznik motywu, geometrię karty, badge i dokumentu. Konsola przeglądarki nie zawiera błędów ani ostrzeżeń.
+- Nie wykonywano żadnych akcji zmieniających metody logowania.
+
+## Final result
+
+`passed`
+
+---
+
 # Design QA — bezpieczeństwo konta
 
 ## Wynik

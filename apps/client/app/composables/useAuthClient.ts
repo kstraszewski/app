@@ -23,9 +23,14 @@ export function useAuthClient() {
   const configuredBaseUrl = String(
     useRuntimeConfig().public.openexpert.authBaseUrl || '',
   ).trim()
-  authClient = createOpenExpertAuthClient(configuredBaseUrl
-    ? { baseURL: configuredBaseUrl }
-    : {})
+  authClient = createOpenExpertAuthClient({
+    ...(configuredBaseUrl ? { baseURL: configuredBaseUrl } : {}),
+    sessionOptions: {
+      refetchInterval: 60,
+      refetchOnWindowFocus: true,
+      refetchWhenOffline: false,
+    },
+  })
   return authClient
 }
 
@@ -48,16 +53,11 @@ export function authenticatedUserFromSession(
 
 export async function refreshAuthUser() {
   const user = useAuthUser()
-  try {
-    const response = await useRequestFetch()<BetterAuthSessionResponse | null>(
-      '/api/auth/get-session',
-      { headers: { 'cache-control': 'no-cache' } },
-    )
-    user.value = authenticatedUserFromSession(response)
-  }
-  catch {
-    user.value = null
-  }
+  const response = await useRequestFetch()<BetterAuthSessionResponse | null>(
+    '/api/auth/get-session',
+    { headers: { 'cache-control': 'no-cache' } },
+  )
+  user.value = authenticatedUserFromSession(response)
   return user.value
 }
 

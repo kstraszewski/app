@@ -11,15 +11,27 @@ export default defineNuxtPlugin(async () => {
     sessionChecked.value = false
   }
   else if (!sessionChecked.value) {
-    await refreshAuthUser()
-    sessionChecked.value = true
+    try {
+      await refreshAuthUser()
+      sessionChecked.value = true
+    }
+    catch {
+      // A temporary auth API failure must not be treated as a signed-out user.
+    }
   }
 
   if (import.meta.client) {
     const session = useAuthClient().useSession()
-    watch(session, (state) => {
+    watch(session, async (state) => {
       if (state.isPending || state.isRefetching) return
-      user.value = authenticatedUserFromSession(state.data)
+      if (state.error && state.error.status !== 401) return
+
+      const authenticated = authenticatedUserFromSession(state.data)
+      if (authenticated) {
+        user.value = authenticated
+        return
+      }
+      if (user.value) await handleExpiredClientSession()
     }, { immediate: true })
   }
 })

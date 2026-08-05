@@ -11,6 +11,7 @@ const loading = ref<'magic' | 'password' | 'google' | 'apple' | null>(null)
 const sent = ref(false)
 const error = ref('')
 const passwordVisible = ref(false)
+const sessionExpired = computed(() => route.query.reason === 'session-expired')
 
 const redirectPath = computed(() => safeRedirect(
   route.query.redirect ?? route.query.next,
@@ -101,6 +102,16 @@ function changeMode(nextMode: 'magic' | 'password') {
     title="Witaj w swoim panelu"
     description="Zaloguj się tym samym adresem email, który został podany ekspertowi lub podczas rezerwacji spotkania."
   >
+    <UAlert
+      v-if="sessionExpired && !sent"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-clock-alert"
+      title="Twoja sesja wygasła"
+      description="Zaloguj się ponownie. Po zalogowaniu wrócisz do poprzedniego miejsca."
+      class="login-alert"
+    />
+
     <UAlert
       v-if="sent"
       color="success"

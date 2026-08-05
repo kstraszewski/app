@@ -17,7 +17,7 @@ const portalCache = useNuxtData<{ data: PortalPayload }>(clientPortalDataKey(use
 const cachedCase = computed(() => portalCache.data.value?.data.cases.find(item => item.id === caseId.value))
 const caseKey = clientCaseDataKey(userId, caseId.value)
 
-const { data: caseResponse, status, error, refresh } = useFetch<{ data: PortalCase }>(
+const { data: caseResponse, status, error, refresh } = usePortalFetch<{ data: PortalCase }>(
   () => `/api/client/cases/${encodeURIComponent(caseId.value)}`,
   {
     key: caseKey,

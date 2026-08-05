@@ -15,6 +15,7 @@
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
     "test:demo": "node --test --experimental-strip-types test/demo-session.test.ts",
     "test:meeting-preparation": "node --test --experimental-strip-types test/meeting-preparation.test.ts",
+    "test:session-expiry": "node --test --experimental-strip-types test/session-expiry.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {

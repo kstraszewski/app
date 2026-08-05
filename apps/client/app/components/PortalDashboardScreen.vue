@@ -79,7 +79,7 @@ const previewPreparationCompletedAt = useState<string | null>(
   `client-preview-meeting-preparation:${props.payload.user.id}:${nextAppointment.value?.id || 'none'}`,
   () => null,
 )
-const preparationStatusRequest = useFetch<{ data: PortalMeetingPreparation }>(
+const preparationStatusRequest = usePortalFetch<{ data: PortalMeetingPreparation }>(
   () => `/api/client/appointments/${encodeURIComponent(preparationStatusAppointmentId.value || 'missing')}/preparation`,
   {
     key: `client-dashboard-meeting-preparation:${props.payload.user.id}:${nextAppointment.value?.id || 'none'}`,

@@ -57,6 +57,9 @@ function requestErrorCode(error: unknown): string {
 const props = withDefaults(defineProps<{
   caseId: string
   expertName: string
+  caseTitle?: string
+  caseTo?: string
+  backTo?: string
   preview?: boolean
   surface?: 'card' | 'pane'
 }>(), {
@@ -69,19 +72,20 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const { $portalFetch } = useNuxtApp()
 const apiPath = computed(
   () => `/api/client/cases/${encodeURIComponent(props.caseId)}/conversation`,
 )
-const requestFetch = useRequestFetch()
+const authenticatedUser = useAuthUser()
 const draftClientMessageId = useState<string>(
-  `portal-case-conversation:draft:${props.caseId}`,
+  `portal-case-conversation:draft:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
   () => crypto.randomUUID(),
 )
 const attachmentApiPaths = new Map<string, string>()
 const attachmentAdapter: MessageAttachmentDraftAdapter = {
   async reserve(input) {
     const attachmentApiPath = `${apiPath.value}/attachments`
-    const response = await $fetch<{ data: MessageAttachmentUploadReservation }>(
+    const response = await $portalFetch<{ data: MessageAttachmentUploadReservation }>(
       attachmentApiPath,
       { method: 'POST', body: input },
     )
@@ -96,7 +100,7 @@ const attachmentAdapter: MessageAttachmentDraftAdapter = {
         { statusCode: 404 },
       )
     }
-    const response = await $fetch<{ data: { attachment: MessageAttachment } }>(
+    const response = await $portalFetch<{ data: { attachment: MessageAttachment } }>(
       `${attachmentApiPath}/${encodeURIComponent(id)}/complete`,
       { method: 'POST' },
     )
@@ -106,7 +110,7 @@ const attachmentAdapter: MessageAttachmentDraftAdapter = {
     const attachmentApiPath = attachmentApiPaths.get(id)
     if (!attachmentApiPath) return
     try {
-      await $fetch(`${attachmentApiPath}/${encodeURIComponent(id)}`, {
+      await $portalFetch(`${attachmentApiPath}/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       })
     }
@@ -210,11 +214,11 @@ const {
   status,
   error: initialError,
   refresh,
-} = useAsyncData(
+} = useAsyncData<ConversationResponse>(
   () => `portal-case-conversation:${props.preview ? 'preview:' : ''}${props.caseId}`,
   () => props.preview
     ? Promise.resolve(previewConversationResponse())
-    : requestFetch<ConversationResponse>(apiPath.value),
+    : $portalFetch<ConversationResponse>(apiPath.value),
   { watch: [apiPath] },
 )
 
@@ -227,7 +231,10 @@ const realtimeConfiguration = ref<RealtimeConfiguration>({
   channel: null,
   ephemeralChannel: null,
 })
-const composer = ref('')
+const composer = useState<string>(
+  `portal-case-conversation:composer:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
+  () => '',
+)
 const retryableSend = ref<RetryableSend | null>(null)
 const sending = ref(false)
 const syncing = ref(false)
@@ -384,7 +391,7 @@ async function syncMissingMessages() {
     do {
       syncRequested = false
       const previousSequence = latestSequence.value
-      const response = await $fetch<ConversationResponse>(apiPath.value, {
+      const response = await $portalFetch<ConversationResponse>(apiPath.value, {
         query: { afterSequence: previousSequence },
       })
       applyResponse(response, 'incremental')
@@ -421,14 +428,15 @@ async function loadOlderMessages() {
   const list = listElement.value
   const previousHeight = list?.scrollHeight ?? 0
   try {
-    const response = await $fetch<ConversationResponse>(apiPath.value, {
+    const response = await $portalFetch<ConversationResponse>(apiPath.value, {
       query: { beforeSequence: firstSequence },
     })
     applyResponse(response, 'older')
     await nextTick()
     if (list) list.scrollTop += list.scrollHeight - previousHeight
   }
-  catch {
+  catch (caught) {
+    if (isUnauthorizedRequestError(caught)) return
     toast.add({
       title: 'Nie udało się pobrać starszych wiadomości',
       color: 'error',
@@ -472,7 +480,7 @@ async function acknowledgeMessages() {
   ) return
 
   try {
-    const response = await $fetch<{ data: { receipt: Receipt } }>(
+    const response = await $portalFetch<{ data: { receipt: Receipt } }>(
       `${apiPath.value}/receipt`,
       { method: 'POST', body: payload },
     )
@@ -550,7 +558,7 @@ async function sendMessage() {
   stopTyping()
 
   try {
-    const response = await $fetch<{ data: { message: Message, peerReceipt?: Receipt | null } }>(
+    const response = await $portalFetch<{ data: { message: Message, peerReceipt?: Receipt | null } }>(
       sendingApiPath,
       {
         method: 'POST',
@@ -589,6 +597,7 @@ async function sendMessage() {
     }
     composer.value = body
     pendingMessage.value = null
+    if (isUnauthorizedRequestError(caught)) return
     toast.add({
       title: 'Nie udało się wysłać wiadomości',
       description: 'Treść i załączniki zostały zachowane. Spróbuj ponownie za chwilę.',
@@ -602,12 +611,9 @@ async function sendMessage() {
 }
 
 async function tokenRequest() {
-  const response = await fetch(`${apiPath.value}/token`, {
-    credentials: 'same-origin',
+  const payload = await $portalFetch<any>(`${apiPath.value}/token`, {
     headers: { Accept: 'application/json' },
   })
-  if (!response.ok) throw new Error(`Realtime authorization failed (${response.status})`)
-  const payload = await response.json()
   return payload.data?.tokenRequest ?? payload.tokenRequest ?? payload
 }
 
@@ -836,9 +842,17 @@ onBeforeUnmount(() => {
   >
     <header class="portal-conversation__header">
       <div class="portal-conversation__expert">
+        <NuxtLink
+          v-if="backTo"
+          :to="backTo"
+          class="portal-conversation__back"
+          aria-label="Wróć do listy rozmów"
+        >
+          <UIcon name="i-lucide-arrow-left" />
+        </NuxtLink>
         <span class="portal-conversation__avatar">{{ expertInitials }}</span>
         <div>
-          <p id="portal-conversation-title">Wiadomości</p>
+          <p id="portal-conversation-title">{{ caseTitle || 'Wiadomości' }}</p>
           <strong>{{ expertName }}</strong>
           <span>
             <i
@@ -856,27 +870,40 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <UButton
-        v-if="!pushActivated
-          && (notificationsState === 'default' || notificationsState === 'granted')
-          && realtimeConfiguration.mode === 'ably'"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        icon="i-lucide-bell-plus"
-        :loading="activatingNotifications"
-        @click="activateNotifications"
-      >
-        Włącz powiadomienia
-      </UButton>
-      <UBadge
-        v-else-if="pushActivated"
-        color="success"
-        variant="subtle"
-        icon="i-lucide-bell-ring"
-      >
-        Powiadomienia włączone
-      </UBadge>
+      <div class="portal-conversation__header-actions">
+        <UButton
+          v-if="caseTo"
+          :to="caseTo"
+          class="portal-conversation__case-link"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          trailing-icon="i-lucide-arrow-up-right"
+        >
+          Otwórz sprawę
+        </UButton>
+        <UButton
+          v-if="!pushActivated
+            && (notificationsState === 'default' || notificationsState === 'granted')
+            && realtimeConfiguration.mode === 'ably'"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          icon="i-lucide-bell-plus"
+          :loading="activatingNotifications"
+          @click="activateNotifications"
+        >
+          Włącz powiadomienia
+        </UButton>
+        <UBadge
+          v-else-if="pushActivated"
+          color="success"
+          variant="subtle"
+          icon="i-lucide-bell-ring"
+        >
+          Powiadomienia włączone
+        </UBadge>
+      </div>
     </header>
 
     <div
@@ -1041,9 +1068,13 @@ onBeforeUnmount(() => {
 }
 
 .portal-conversation--pane {
-  overflow: visible;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   margin-bottom: 0;
-  border-width: 1px 0;
+  border: 0;
   border-radius: 0;
   box-shadow: none;
 }
@@ -1059,10 +1090,40 @@ onBeforeUnmount(() => {
   background: var(--portal-warm-surface);
 }
 
+.portal-conversation--pane .portal-conversation__header {
+  min-height: 78px;
+  padding-block: 13px;
+}
+
 .portal-conversation__expert {
   display: flex;
   align-items: center;
   gap: 13px;
+  min-width: 0;
+}
+
+.portal-conversation__expert > div {
+  min-width: 0;
+}
+
+.portal-conversation__back {
+  display: none;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ui-text-highlighted);
+  text-decoration: none;
+}
+
+.portal-conversation__back:hover {
+  background: var(--ui-bg-elevated);
+}
+
+.portal-conversation__back svg {
+  width: 20px;
+  height: 20px;
 }
 
 .portal-conversation__avatar {
@@ -1085,12 +1146,15 @@ onBeforeUnmount(() => {
 }
 
 .portal-conversation__expert p {
+  overflow: hidden;
   margin: 0 0 1px;
   color: var(--ui-text-muted);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .09em;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .portal-conversation__expert strong {
@@ -1122,6 +1186,13 @@ onBeforeUnmount(() => {
   background: var(--ui-color-error-500);
 }
 
+.portal-conversation__header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
 .portal-conversation__messages {
   display: flex;
   min-height: 280px;
@@ -1132,6 +1203,11 @@ onBeforeUnmount(() => {
   padding: 24px 20px 18px;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
+}
+
+.portal-conversation--pane .portal-conversation__messages {
+  min-height: 0;
+  max-height: none;
 }
 
 .portal-conversation__messages.is-error {
@@ -1360,25 +1436,41 @@ onBeforeUnmount(() => {
   }
 
   .portal-conversation--pane .portal-conversation__composer {
-    position: sticky;
-    z-index: 20;
-    bottom: calc(82px + env(safe-area-inset-bottom));
+    position: relative;
     margin-inline: 0;
+    margin-bottom: calc(80px + env(safe-area-inset-bottom));
     padding: 10px 12px;
     background: rgb(255 255 255 / 96%);
     backdrop-filter: blur(14px);
   }
 
   .portal-conversation__header {
-    align-items: flex-start;
-    flex-direction: column;
     padding: 15px 16px;
+  }
+
+  .portal-conversation--pane .portal-conversation__header {
+    min-height: 74px;
+    padding: 10px 12px;
+  }
+
+  .portal-conversation--pane .portal-conversation__back {
+    display: grid;
+  }
+
+  .portal-conversation__header-actions > :not(.portal-conversation__case-link),
+  .portal-conversation__case-link :deep(span:not(.iconify)) {
+    display: none;
   }
 
   .portal-conversation__messages {
     min-height: 330px;
     max-height: 62dvh;
     padding: 20px 12px 16px;
+  }
+
+  .portal-conversation--pane .portal-conversation__messages {
+    min-height: 0;
+    max-height: none;
   }
 
   .portal-conversation__messages.is-error {

@@ -12,6 +12,11 @@ export interface OpenExpertAuthClientOptions {
   baseURL?: string
   basePath?: string
   twoFactorPage?: string
+  sessionOptions?: {
+    refetchInterval?: number
+    refetchOnWindowFocus?: boolean
+    refetchWhenOffline?: boolean
+  }
 }
 
 export interface OpenExpertPasskey {

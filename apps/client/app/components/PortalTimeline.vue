@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{
   preview: false,
 })
 const toast = useToast()
+const { $portalFetch } = useNuxtApp()
 const authenticatedUser = useAuthUser()
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
@@ -96,7 +97,7 @@ async function uploadDocument(event: Event) {
     if (!props.preview) {
       const body = new FormData()
       body.append('file', file)
-      await $fetch(`/api/client/cases/${encodeURIComponent(props.caseData.id)}/documents`, {
+      await $portalFetch(`/api/client/cases/${encodeURIComponent(props.caseData.id)}/documents`, {
         method: 'POST',
         body,
       })
@@ -110,7 +111,8 @@ async function uploadDocument(event: Event) {
       icon: 'i-lucide-file-check-2',
     })
   }
-  catch {
+  catch (caught) {
+    if (isUnauthorizedRequestError(caught)) return
     toast.add({
       title: 'Nie udało się przesłać dokumentu',
       description: 'Spróbuj ponownie lub napisz do swojego eksperta.',

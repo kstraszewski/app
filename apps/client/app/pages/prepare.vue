@@ -10,12 +10,13 @@ definePageMeta({ middleware: 'client-auth' })
 
 const route = useRoute()
 const authenticatedUser = useAuthUser()
+const { $portalFetch } = useNuxtApp()
 const {
   data: response,
   status: portalStatus,
   error: portalError,
   refresh: refreshPortal,
-} = useFetch<{ data: PortalPayload }>('/api/client/portal', {
+} = usePortalFetch<{ data: PortalPayload }>('/api/client/portal', {
   key: clientPortalDataKey(authenticatedUser.value?.id),
   dedupe: 'defer',
   getCachedData: getClientSessionCachedData,
@@ -41,7 +42,7 @@ const appointmentId = computed(() => {
   return payload.value.appointments?.some(appointment => appointment.id === id) ? id : ''
 })
 
-const preparationRequest = useFetch<{ data: PortalMeetingPreparation }>(
+const preparationRequest = usePortalFetch<{ data: PortalMeetingPreparation }>(
   () => `/api/client/appointments/${encodeURIComponent(appointmentId.value || 'missing')}/preparation`,
   {
     key: `client-meeting-preparation:${authenticatedUser.value?.id || 'session'}`,
@@ -90,7 +91,7 @@ async function savePreparation(body: {
     throw new Error('Termin przygotowania zmienił się. Otwórz przygotowanie ponownie.')
   }
 
-  const saved = await $fetch<{ data: PortalMeetingPreparation }>(
+  const saved = await $portalFetch<{ data: PortalMeetingPreparation }>(
     `/api/client/appointments/${encodeURIComponent(targetAppointmentId)}/preparation`,
     { method: 'PUT', body },
   )

@@ -10,7 +10,7 @@ const {
   status,
   error,
   refresh,
-} = await useFetch<{ data: PortalPayload }>('/api/client/portal', {
+} = await usePortalFetch<{ data: PortalPayload }>('/api/client/portal', {
   key: clientPortalDataKey(authenticatedUser.value?.id),
   dedupe: 'defer',
   getCachedData: getClientSessionCachedData,

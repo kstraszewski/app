@@ -21,13 +21,14 @@ definePageMeta({
 const route = useRoute()
 const caseId = computed(() => String(route.params.caseId || ''))
 const authenticatedUser = useAuthUser()
+const { $portalFetch } = useNuxtApp()
 const userId = authenticatedUser.value?.id
 const portalCache = useNuxtData<{ data: PortalPayload }>(clientPortalDataKey(userId))
 const cachedCase = computed(() => portalCache.data.value?.data.cases.find(item => item.id === caseId.value))
 const caseKey = clientCaseDataKey(userId, caseId.value)
 const multiformKey = clientMultiformDataKey(userId, caseId.value)
 
-const caseRequest = useFetch<{ data: PortalCase }>(
+const caseRequest = usePortalFetch<{ data: PortalCase }>(
   () => `/api/client/cases/${encodeURIComponent(caseId.value)}`,
   {
     key: caseKey,
@@ -38,7 +39,7 @@ const caseRequest = useFetch<{ data: PortalCase }>(
 if (!caseRequest.data.value && cachedCase.value) {
   caseRequest.data.value = { data: cachedCase.value }
 }
-const multiformRequest = useFetch<{ data: PortalMultiformPayload }>(
+const multiformRequest = usePortalFetch<{ data: PortalMultiformPayload }>(
   () => `/api/client/cases/${encodeURIComponent(caseId.value)}/multiform`,
   {
     key: multiformKey,
@@ -77,7 +78,7 @@ async function save(body: {
   ) {
     throw new Error('Sprawa formularza zmieniła się. Otwórz formularz ponownie.')
   }
-  const response = await $fetch<{ data: PortalMultiformPayload }>(
+  const response = await $portalFetch<{ data: PortalMultiformPayload }>(
     `/api/client/cases/${encodeURIComponent(loadedCaseId)}/multiform`,
     { method: 'PUT', body },
   )

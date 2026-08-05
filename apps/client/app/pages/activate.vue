@@ -5,6 +5,7 @@ definePageMeta({ middleware: 'client-auth' })
 
 const route = useRoute()
 const authClient = useAuthClient()
+const { $portalFetch } = useNuxtApp()
 const runtimeConfig = useRuntimeConfig()
 const { errorMessage, safeRedirect } = usePortalAuth()
 const invitationId = computed(() => String(
@@ -40,7 +41,7 @@ async function activate() {
     status.value = 'activating'
     error.value = ''
     try {
-      await $fetch('/api/client/activate', {
+      await $portalFetch('/api/client/activate', {
         method: 'POST',
         body: { invitationId: invitationId.value },
       })
@@ -92,7 +93,7 @@ async function savePassword() {
   if (error.value) return
   passwordSaving.value = true
   try {
-    await $fetch('/api/client/password', {
+    await $portalFetch('/api/client/password', {
       method: 'POST',
       body: { password: password.value },
     })

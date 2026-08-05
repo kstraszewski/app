@@ -2,6 +2,7 @@
 definePageMeta({ middleware: 'client-auth' })
 
 const route = useRoute()
+const { $portalFetch } = useNuxtApp()
 const { errorMessage, safeRedirect } = usePortalAuth()
 const appointmentId = computed(() => typeof route.query.appointmentId === 'string'
   ? route.query.appointmentId
@@ -21,7 +22,7 @@ async function claim() {
   status.value = 'claiming'
   error.value = ''
   try {
-    await $fetch('/api/client/appointments/claim', {
+    await $portalFetch('/api/client/appointments/claim', {
       method: 'POST',
       body: { appointmentId: appointmentId.value },
     })

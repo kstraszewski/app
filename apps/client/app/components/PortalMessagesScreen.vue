@@ -33,7 +33,7 @@ const props = withDefaults(defineProps<{
 })
 
 const route = useRoute()
-const requestFetch = useRequestFetch()
+const { $portalFetch } = useNuxtApp()
 const messagesPath = computed(() => props.preview ? '/preview/messages' : '/messages')
 const selectedCaseQuery = computed(() => typeof route.query.case === 'string'
   ? route.query.case
@@ -68,11 +68,11 @@ const {
   status: inboxStatus,
   error: inboxError,
   refresh: refreshInbox,
-} = useAsyncData(
+} = useAsyncData<InboxResponse>(
   () => `portal-message-inbox:${props.preview ? 'preview' : props.payload.user.id}`,
   () => props.preview
     ? Promise.resolve(previewInboxResponse())
-    : requestFetch<InboxResponse>('/api/client/conversations'),
+    : $portalFetch<InboxResponse>('/api/client/conversations'),
 )
 
 let inboxRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -105,6 +105,17 @@ const threads = computed<MessageThread[]>(() => props.payload.cases
       : 0
     return rightTime - leftTime
   }))
+const searchQuery = ref('')
+const filteredThreads = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase('pl-PL')
+  if (!query) return threads.value
+
+  return threads.value.filter(({ caseData, summary }) => [
+    caseData.title,
+    caseData.expert.name,
+    summary?.lastMessagePreview,
+  ].some(value => value?.toLocaleLowerCase('pl-PL').includes(query)))
+})
 
 const selectedCase = computed(() => props.payload.cases.find(
   caseData => caseData.id === selectedCaseQuery.value,
@@ -168,16 +179,6 @@ function threadTime(summary: InboxConversationSummary | null) {
       class="portal-messages-screen__main"
       :class="{ 'has-thread-selection': hasExplicitSelection }"
     >
-      <header class="portal-messages-screen__heading">
-        <div>
-          <p>TWOJE ROZMOWY</p>
-          <h1>Wiadomości</h1>
-        </div>
-        <p>
-          Każda rozmowa jest przypisana do konkretnej sprawy, żeby kontekst zawsze był jasny.
-        </p>
-      </header>
-
       <div
         class="portal-inbox"
         :class="{ 'has-selection': hasExplicitSelection }"
@@ -185,11 +186,20 @@ function threadTime(summary: InboxConversationSummary | null) {
         <aside class="portal-inbox__threads" aria-label="Rozmowy według spraw">
           <header class="portal-inbox__threads-header">
             <div>
-              <strong>Wszystkie sprawy</strong>
+              <strong>Wiadomości</strong>
               <span>{{ threads.length }}</span>
             </div>
             <span v-if="totalUnread">{{ totalUnread }} nowe</span>
           </header>
+
+          <UInput
+            v-model="searchQuery"
+            class="portal-inbox__search"
+            icon="i-lucide-search"
+            size="lg"
+            placeholder="Szukaj rozmowy"
+            aria-label="Szukaj rozmowy"
+          />
 
           <div v-if="isInitialInboxLoading" class="portal-inbox__loading">
             <USkeleton v-for="index in 3" :key="index" class="h-24 w-full" />
@@ -211,9 +221,9 @@ function threadTime(summary: InboxConversationSummary | null) {
             </template>
           </UAlert>
 
-          <nav v-if="threads.length" class="portal-inbox__thread-list">
+          <nav v-if="filteredThreads.length" class="portal-inbox__thread-list">
             <NuxtLink
-              v-for="thread in threads"
+              v-for="thread in filteredThreads"
               :key="thread.caseData.id"
               :to="threadTo(thread.caseData.id)"
               :class="{ 'is-active': selectedCase?.id === thread.caseData.id }"
@@ -240,6 +250,12 @@ function threadTime(summary: InboxConversationSummary | null) {
             </NuxtLink>
           </nav>
 
+          <div v-else-if="threads.length" class="portal-inbox__empty">
+            <UIcon name="i-lucide-search-x" />
+            <strong>Nie znaleziono rozmowy</strong>
+            <p>Spróbuj wpisać nazwę sprawy albo eksperta.</p>
+          </div>
+
           <div v-else class="portal-inbox__empty">
             <UIcon name="i-lucide-message-circle-dashed" />
             <strong>Nie masz jeszcze spraw z rozmową</strong>
@@ -248,27 +264,12 @@ function threadTime(summary: InboxConversationSummary | null) {
         </aside>
 
         <section v-if="selectedCase" class="portal-inbox__conversation" aria-label="Wybrana rozmowa">
-          <header class="portal-inbox__conversation-context">
-            <NuxtLink :to="messagesPath" class="portal-inbox__mobile-back">
-              <UIcon name="i-lucide-arrow-left" />
-              Wszystkie rozmowy
-            </NuxtLink>
-            <div>
-              <span>SPRAWA</span>
-              <strong>{{ selectedCase.title }}</strong>
-            </div>
-            <UButton
-              :to="caseTo(selectedCase.id)"
-              color="neutral"
-              variant="ghost"
-              trailing-icon="i-lucide-arrow-up-right"
-            >
-              Otwórz sprawę
-            </UButton>
-          </header>
           <PortalCaseConversation
             :key="selectedCase.id"
             :case-id="selectedCase.id"
+            :case-title="selectedCase.title"
+            :case-to="caseTo(selectedCase.id)"
+            :back-to="messagesPath"
             :expert-name="selectedCase.expert.name"
             :preview="preview"
             surface="pane"
@@ -289,83 +290,46 @@ function threadTime(summary: InboxConversationSummary | null) {
 
 <style scoped>
 .portal-messages-screen {
-  min-height: 100dvh;
-  background: var(--ui-bg-muted);
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ui-bg);
 }
 
 .portal-messages-screen__main {
-  width: min(1240px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 40px 0 110px;
-}
-
-.portal-messages-screen__heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 40px;
-  margin-bottom: 24px;
-}
-
-.portal-messages-screen__heading p,
-.portal-messages-screen__heading h1 {
-  margin: 0;
-}
-
-.portal-messages-screen__heading > div > p {
-  margin-bottom: 4px;
-  color: var(--ui-text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .12em;
-}
-
-.portal-messages-screen__heading h1 {
-  font-size: clamp(38px, 4vw, 52px);
-  line-height: 1.1;
-}
-
-.portal-messages-screen__heading > p {
-  max-width: 430px;
-  padding-bottom: 5px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: right;
+  height: calc(100dvh - var(--portal-header-height));
+  min-height: 0;
 }
 
 .portal-inbox {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-  min-height: min(690px, calc(100dvh - 220px));
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--portal-line);
-  border-radius: 22px;
   background: var(--ui-bg);
-  box-shadow: 0 22px 60px rgb(0 0 0 / 5%);
 }
 
 .portal-inbox__threads {
+  display: flex;
+  min-height: 0;
   min-width: 0;
-  padding: 17px;
+  flex-direction: column;
+  padding: 18px 14px 14px;
   border-right: 1px solid var(--portal-line);
   background: var(--portal-warm-surface);
 }
 
 .portal-inbox__threads-header,
 .portal-inbox__threads-header > div,
-.portal-inbox__thread-copy > span:first-child,
-.portal-inbox__conversation-context,
-.portal-inbox__mobile-back {
+.portal-inbox__thread-copy > span:first-child {
   display: flex;
   align-items: center;
 }
 
 .portal-inbox__threads-header {
   justify-content: space-between;
-  min-height: 42px;
-  padding: 0 5px 12px;
-  border-bottom: 1px solid var(--portal-line);
+  min-height: 46px;
+  padding: 0 6px 8px;
 }
 
 .portal-inbox__threads-header > div {
@@ -373,7 +337,10 @@ function threadTime(summary: InboxConversationSummary | null) {
 }
 
 .portal-inbox__threads-header strong {
-  font-size: 14px;
+  color: var(--ui-text-highlighted);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -.03em;
 }
 
 .portal-inbox__threads-header > div span,
@@ -395,6 +362,16 @@ function threadTime(summary: InboxConversationSummary | null) {
   color: var(--ui-text-inverted);
 }
 
+.portal-inbox__search {
+  flex: 0 0 auto;
+  margin: 6px 2px 8px;
+}
+
+.portal-inbox__search :deep(input) {
+  border-radius: 999px;
+  background: var(--ui-bg-elevated);
+}
+
 .portal-inbox__loading {
   display: grid;
   gap: 9px;
@@ -407,8 +384,12 @@ function threadTime(summary: InboxConversationSummary | null) {
 
 .portal-inbox__thread-list {
   display: grid;
-  gap: 7px;
-  margin-top: 10px;
+  gap: 4px;
+  min-height: 0;
+  margin-top: 2px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  overscroll-behavior: contain;
 }
 
 .portal-inbox__thread-list > a {
@@ -417,8 +398,8 @@ function threadTime(summary: InboxConversationSummary | null) {
   grid-template-columns: 42px minmax(0, 1fr) auto;
   gap: 11px;
   min-width: 0;
-  padding: 13px 11px;
-  border-radius: 15px;
+  padding: 12px 11px;
+  border-radius: 14px;
   color: var(--ui-text);
   text-decoration: none;
   transition: color 160ms ease, background 160ms ease;
@@ -511,44 +492,10 @@ function threadTime(summary: InboxConversationSummary | null) {
 
 .portal-inbox__conversation {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
   min-width: 0;
   background: var(--ui-bg);
-}
-
-.portal-inbox__conversation-context {
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 66px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--portal-line);
-}
-
-.portal-inbox__conversation-context > div {
-  display: grid;
-  min-width: 0;
-}
-
-.portal-inbox__conversation-context > div span {
-  color: var(--ui-text-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .12em;
-}
-
-.portal-inbox__conversation-context > div strong {
-  overflow: hidden;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.portal-inbox__mobile-back {
-  display: none;
-  gap: 7px;
-  color: var(--ui-text-muted);
-  font-size: 12px;
-  text-decoration: none;
 }
 
 .portal-inbox__empty,
@@ -575,44 +522,31 @@ function threadTime(summary: InboxConversationSummary | null) {
   font-size: 13px;
 }
 
+@media (max-width: 900px) {
+  .portal-messages-screen__main {
+    height: calc(100dvh - 68px);
+  }
+}
+
 @media (max-width: 760px) {
   .portal-messages-screen__main {
-    width: min(calc(100% - 32px), 640px);
-    padding: 26px 0 var(--portal-mobile-nav-clearance);
-  }
-
-  .portal-messages-screen__heading {
-    display: block;
-    margin-bottom: 20px;
-  }
-
-  .portal-messages-screen__heading h1 {
-    font-size: 38px;
-  }
-
-  .portal-messages-screen__heading > p {
-    max-width: 390px;
-    margin-top: 8px;
-    padding: 0;
-    text-align: left;
+    width: 100%;
   }
 
   .portal-inbox {
     display: block;
-    min-height: 0;
-    overflow: visible;
-    border-radius: 18px;
+    overflow: hidden;
   }
 
   .portal-inbox__threads {
-    min-height: 520px;
+    height: 100%;
+    padding: 16px;
     border-right: 0;
-    border-radius: inherit;
   }
 
   .portal-inbox__conversation {
     display: none;
-    border-radius: inherit;
+    height: 100%;
   }
 
   .portal-inbox.has-selection .portal-inbox__threads {
@@ -622,47 +556,11 @@ function threadTime(summary: InboxConversationSummary | null) {
   .portal-inbox.has-selection .portal-inbox__conversation {
     display: grid;
   }
-
-  .portal-inbox.has-selection + * {
-    display: none;
-  }
-
-  .portal-inbox__mobile-back {
-    display: inline-flex;
-    grid-column: 1 / -1;
-  }
-
-  .portal-inbox__conversation-context {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    padding: 13px 15px;
-  }
 }
 
 @media (max-width: 640px) {
-  .portal-messages-screen__main {
-    padding-top: 20px;
-  }
-
-  .portal-messages-screen__heading h1 {
-    font-size: 34px;
-  }
-
-  .portal-messages-screen__main.has-thread-selection {
-    padding-top: 10px;
-  }
-
-  .portal-messages-screen__main.has-thread-selection .portal-messages-screen__heading {
-    display: none;
-  }
-
-  .portal-inbox {
-    margin-inline: -4px;
-    border-radius: 17px;
-  }
-
   .portal-inbox__threads {
-    padding: 12px;
+    padding: 14px 12px var(--portal-mobile-nav-clearance);
   }
 
   .portal-inbox__thread-list > a {
@@ -674,13 +572,5 @@ function threadTime(summary: InboxConversationSummary | null) {
     width: 40px;
     height: 40px;
   }
-
-  .portal-inbox.has-selection {
-    margin-inline: -16px;
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-  }
-
 }
 </style>

@@ -67,7 +67,7 @@ services:
       - --console-address
       - :9001
     environment:
-      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:3004,http://127.0.0.1:3006,http://localhost:3004,http://localhost:3006
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:3004,http://127.0.0.1:3006,http://127.0.0.1:3016,http://localhost:3004,http://localhost:3006,http://localhost:3016
       MINIO_API_CORS_ALLOW_CREDENTIALS_WITH_WILDCARD: "off"
       MINIO_ROOT_PASSWORD: ${OPENEXPERT_MINIO_ROOT_PASSWORD:-openexpert-minio-local-secret}
       MINIO_ROOT_USER: ${OPENEXPERT_MINIO_ROOT_USER:-openexpert}

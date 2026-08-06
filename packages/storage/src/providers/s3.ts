@@ -22,9 +22,6 @@ import type {
   StorageProvider,
 } from '../types.ts'
 
-const S3_CLIENT_MODULE: string = '@aws-sdk/client-s3'
-const S3_PRESIGNER_MODULE: string = '@aws-sdk/s3-request-presigner'
-
 interface S3Credentials {
   accessKeyId: string
   secretAccessKey: string
@@ -81,8 +78,8 @@ let s3SdkPromise: Promise<S3Sdk> | undefined
 
 function loadS3Sdk(): Promise<S3Sdk> {
   s3SdkPromise ??= Promise.all([
-    import(S3_CLIENT_MODULE),
-    import(S3_PRESIGNER_MODULE),
+    import('@aws-sdk/client-s3'),
+    import('@aws-sdk/s3-request-presigner'),
   ]).then(([clientModule, presignerModule]) => ({
     ...(clientModule as unknown as Omit<S3Sdk, 'getSignedUrl'>),
     getSignedUrl: (

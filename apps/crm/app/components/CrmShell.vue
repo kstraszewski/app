@@ -27,7 +27,10 @@ const hasAuthConfig = useHasAuthConfig()
 <template>
   <div
     class="crm-page"
-    :class="{ 'crm-page--workspace': props.workspace }"
+    :class="{
+      'crm-page--workspace': props.workspace,
+      'crm-content-mode--workspace': props.workspace,
+    }"
   >
     <CrmPageHeader
       :title="props.title"

@@ -513,7 +513,7 @@ async function publishDraft() {
 
 <template>
   <CrmShell
-    class="template-studio-shell"
+    class="template-studio-shell crm-content-mode--workspace"
     :title="template?.id ?? templateId"
     :description="studioDescription"
     :back-to="profilePath"

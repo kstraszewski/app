@@ -223,7 +223,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="crm-messages-workspace"
+    class="crm-messages-workspace crm-content-mode--workspace"
     :class="{ 'has-explicit-selection': hasExplicitSelection }"
   >
     <aside class="crm-messages-inbox" aria-labelledby="crm-messages-title">

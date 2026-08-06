@@ -52,7 +52,16 @@ const messageSelect = [
   'sender_client_person_id',
   'sender_auth_user_id',
   'body',
+  'reply_to_message_id',
   'created_at',
+  'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
+].join(',')
+
+const replyMessageSelect = [
+  'id',
+  'sequence',
+  'sender_kind',
+  'body',
   'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
 
@@ -370,7 +379,11 @@ async function loadMessages(
   const result = await request.limit(page.limit + 1)
   throwDbError(result.error)
   const hasMore = (result.data ?? []).length > page.limit
-  const messages = (result.data ?? []).slice(0, page.limit).map(mapMessageRow)
+  const rows = await hydrateMessageReplies(
+    access,
+    (result.data ?? []).slice(0, page.limit),
+  )
+  const messages = rows.map(mapMessageRow)
   if (!ascending) messages.reverse()
   return {
     messages,
@@ -379,6 +392,49 @@ async function loadMessages(
       ? messages.at(-1)?.sequence ?? page.afterSequence ?? 0
       : access.conversation.lastMessageSequence,
   }
+}
+
+async function hydrateMessageReplies(
+  access: CaseConversationAccess,
+  inputRows: unknown[],
+): Promise<Record<string, unknown>[]> {
+  const rows = inputRows.map(asRecord)
+  const replyIds = [...new Set(rows.flatMap((row) => {
+    const replyId = row.reply_to_message_id
+    return typeof replyId === 'string' ? [replyId] : []
+  }))]
+  if (!replyIds.length) return rows
+
+  const replyIdChunks: string[][] = []
+  for (let offset = 0; offset < replyIds.length; offset += 40) {
+    replyIdChunks.push(replyIds.slice(offset, offset + 40))
+  }
+  const replyRowGroups = await Promise.all(replyIdChunks.map(async (replyIdsChunk) => {
+    const replyResult = await access.session.dataApi
+      .from('crm_case_messages')
+      .select(replyMessageSelect)
+      .eq('organization_id', access.session.organizationId)
+      .eq('conversation_id', access.conversation.id)
+      .in('id', replyIdsChunk)
+    throwDbError(replyResult.error)
+    return replyResult.data ?? []
+  }))
+
+  const repliesById = new Map(
+    replyRowGroups.flat().map((input: unknown) => {
+      const reply = asRecord(input)
+      return [String(reply.id), reply] as const
+    }),
+  )
+  return rows.map((row) => {
+    const replyId = typeof row.reply_to_message_id === 'string'
+      ? row.reply_to_message_id
+      : null
+    return {
+      ...row,
+      reply_to_message: replyId ? repliesById.get(replyId) ?? null : null,
+    }
+  })
 }
 
 function receiptRank(receipt: Receipt): [number, number, number] {
@@ -562,6 +618,8 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
 
 function rpcMessage(input: unknown): Message {
   const message = asRecord(input)
+  const rawReply = message.replyToMessage ?? message.reply_to_message
+  const reply = rawReply ? asRecord(rawReply) : null
   return mapMessageRow({
     id: message.id,
     organization_id: message.organizationId ?? message.organization_id,
@@ -575,6 +633,19 @@ function rpcMessage(input: unknown): Message {
     sender_auth_user_id:
       message.senderAuthUserId ?? message.sender_auth_user_id ?? null,
     body: message.body,
+    reply_to_message_id:
+      message.replyToMessageId ?? message.reply_to_message_id ?? null,
+    reply_to_message: reply
+      ? {
+          id: reply.id,
+          sequence: reply.sequence,
+          sender_kind: reply.senderKind ?? reply.sender_kind,
+          body: reply.body,
+          attachments: reply.attachments
+            ?? reply.crm_case_message_attachments
+            ?? [],
+        }
+      : null,
     attachments: message.attachments
       ?? message.crm_case_message_attachments
       ?? [],
@@ -696,15 +767,26 @@ export async function sendStaffConversationMessage(
     })
   }
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_staff_case_message_v2', {
+  const result = await backend.rpc('send_staff_case_message_v3', {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
     p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_client_message_id: input.clientMessageId,
+    p_reply_to_message_id: input.replyToMessageId ?? null,
     p_body: input.body,
     p_attachment_ids: input.attachmentIds,
   })
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_reply_')
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'The message being replied to is no longer available.',
+      data: { code: 'case_message_reply_unavailable' },
+    })
+  }
   if (
     result.error
     && String(result.error.message ?? '').includes('case_message_attachment_unavailable')

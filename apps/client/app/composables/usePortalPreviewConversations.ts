@@ -50,7 +50,7 @@ const previewConversationSeeds: Record<string, PreviewMessageSeed[]> = {
   ],
 }
 
-const previewConversationStorageKey = 'openexpert:preview-conversations:v2'
+const previewConversationStorageKey = 'openexpert:preview-conversations:v3'
 
 function isStoredPreviewConversations(value: unknown): value is Record<string, Message[]> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -73,6 +73,8 @@ function previewMessage(caseId: string, seed: PreviewMessageSeed): Message {
     senderAuthUserId: senderIsClient ? 'preview-auth-user' : null,
     body: seed.body,
     attachments: [],
+    replyToMessageId: null,
+    replyToMessage: null,
     createdAt: seed.createdAt,
     editedAt: null,
     deletedAt: null,
@@ -92,10 +94,10 @@ export function createPortalPreviewMessages(caseId: string): Message[] {
 
 export function usePortalPreviewConversations(enabled = true) {
   const messagesByCase = useState<Record<string, Message[]>>(
-    'portal-preview-conversations-v2',
+    'portal-preview-conversations-v3',
     () => ({}),
   )
-  const storageHydrated = useState('portal-preview-conversations-storage-hydrated-v2', () => false)
+  const storageHydrated = useState('portal-preview-conversations-storage-hydrated-v3', () => false)
 
   function persistMessages() {
     if (!enabled || !import.meta.client || !storageHydrated.value) return

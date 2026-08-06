@@ -47,6 +47,8 @@ function message(overrides: Partial<Message> = {}): Message {
     senderAuthUserId: 'auth-user-1',
     body: '  Dzień dobry\n\tJak możemy pomóc?  ',
     attachments: [],
+    replyToMessageId: null,
+    replyToMessage: null,
     createdAt: '2026-08-03T10:07:00.000Z',
     editedAt: null,
     deletedAt: null,

@@ -47,6 +47,7 @@ test('validates and normalizes message input', () => {
     attachmentIds: [],
     body: 'Dzień dobry',
     clientMessageId: ids.message,
+    replyToMessageId: null,
   })
   assert.throws(() => SendMessageInputSchema.parse({
     body: ' '.repeat(10),
@@ -64,7 +65,18 @@ test('validates and normalizes message input', () => {
     attachmentIds: [ids.receipt],
     body: '',
     clientMessageId: ids.message,
+    replyToMessageId: null,
   })
+  assert.equal(SendMessageInputSchema.parse({
+    body: 'Odpowiedź',
+    clientMessageId: ids.message,
+    replyToMessageId: ids.receipt,
+  }).replyToMessageId, ids.receipt)
+  assert.throws(() => SendMessageInputSchema.parse({
+    body: 'Odpowiedź',
+    clientMessageId: ids.message,
+    replyToMessageId: 'not-a-uuid',
+  }))
   assert.throws(() => SendMessageInputSchema.parse({
     attachmentIds: [ids.receipt, ids.receipt],
     body: 'duplicate attachment',
@@ -216,7 +228,7 @@ test('maps and normalizes Data API conversation and message rows', () => {
   assert.equal(conversation.lastMessageSequence, 12)
   assert.equal(conversation.createdAt, '2026-08-02T10:00:00.000Z')
 
-  const message = mapMessageRow({
+  const rawMessage = {
     attachments: [
       {
         id: ids.receipt,
@@ -240,13 +252,46 @@ test('maps and normalizes Data API conversation and message rows', () => {
     created_at: '2026-08-02T10:01:00Z',
     id: ids.message,
     organization_id: ids.organization,
+    reply_to_message_id: ids.receipt,
+    reply_to_message: {
+      attachments: [{
+        id: '9aeeac92-644c-49a3-b88d-eead0d4ff34f',
+        position: 1,
+        file_name: 'cytowany.pdf',
+        content_type: 'application/pdf',
+        size_bytes: 512,
+        storage_path: 'must/not/leak/either',
+      }],
+      body: 'Wcześniejsza wiadomość',
+      id: ids.receipt,
+      sender_kind: 'staff',
+      sequence: 11,
+    },
     sender_auth_user_id: ids.authUser,
     sender_client_person_id: ids.clientPerson,
     sender_kind: 'client',
     sender_user_id: null,
     sequence: '12',
-  })
+  }
+  const message = mapMessageRow(rawMessage)
   assert.equal(message.sequence, 12)
+  assert.equal(message.replyToMessageId, ids.receipt)
+  assert.deepEqual(message.replyToMessage, {
+    id: ids.receipt,
+    sequence: 11,
+    senderKind: 'staff',
+    body: 'Wcześniejsza wiadomość',
+    attachments: [{
+      id: '9aeeac92-644c-49a3-b88d-eead0d4ff34f',
+      name: 'cytowany.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 512,
+    }],
+  })
+  assert.equal(
+    JSON.stringify(message.replyToMessage).includes('storage_path'),
+    false,
+  )
   assert.deepEqual(message.attachments, [
     {
       id: 'f57efc08-9c7d-4794-b962-4959b1db3fb0',
@@ -264,7 +309,7 @@ test('maps and normalizes Data API conversation and message rows', () => {
   assert.equal(JSON.stringify(message.attachments).includes('storage_path'), false)
   assert.equal(message.editedAt, null)
   assert.equal(message.deletedAt, null)
-  assert.equal(mapMessageRow({
+  const archivedMessage = mapMessageRow({
     attachments: [],
     body: 'Archiwalna odpowiedź',
     client_message_id: '6c912252-878c-4d68-8419-2037d6a155bf',
@@ -277,7 +322,17 @@ test('maps and normalizes Data API conversation and message rows', () => {
     sender_kind: 'staff',
     sender_user_id: null,
     sequence: '13',
-  }).senderUserId, null)
+  })
+  assert.equal(archivedMessage.senderUserId, null)
+  assert.equal(archivedMessage.replyToMessageId, null)
+  assert.equal(archivedMessage.replyToMessage, null)
+  assert.throws(() => mapMessageRow({
+    ...rawMessage,
+    reply_to_message: {
+      ...rawMessage.reply_to_message,
+      id: ids.message,
+    },
+  }))
   assert.throws(() => mapMessageRow({
     ...message,
     client_message_id: ids.message,

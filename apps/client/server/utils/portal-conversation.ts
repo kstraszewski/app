@@ -60,7 +60,16 @@ const messageSelect = [
   'sender_client_person_id',
   'sender_auth_user_id',
   'body',
+  'reply_to_message_id',
   'created_at',
+  'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
+].join(',')
+
+const replyMessageSelect = [
+  'id',
+  'sequence',
+  'sender_kind',
+  'body',
   'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
 
@@ -400,7 +409,11 @@ async function loadMessages(
   throwPortalDbError(result.error, 'could not load case messages')
 
   const hasMore = (result.data ?? []).length > page.limit
-  const selectedRows = (result.data ?? []).slice(0, page.limit)
+  const selectedRows = await hydrateMessageReplies(
+    backend,
+    conversation,
+    (result.data ?? []).slice(0, page.limit),
+  )
   const messages = selectedRows.map(mapMessageRow)
   if (!ascending) messages.reverse()
 
@@ -411,6 +424,49 @@ async function loadMessages(
       ? messages.at(-1)?.sequence ?? page.afterSequence ?? 0
       : conversation.lastMessageSequence,
   }
+}
+
+async function hydrateMessageReplies(
+  backend: any,
+  conversation: Conversation,
+  inputRows: unknown[],
+): Promise<Record<string, unknown>[]> {
+  const rows = inputRows.map(asRecord)
+  const replyIds = [...new Set(rows.flatMap((row) => {
+    const replyId = row.reply_to_message_id
+    return typeof replyId === 'string' ? [replyId] : []
+  }))]
+  if (!replyIds.length) return rows
+
+  const replyRowGroups = await runPortalQueryChunks(
+    chunkPortalQueryValues(replyIds),
+    async (replyIdsChunk) => {
+      const replyResult = await backend
+        .from('crm_case_messages')
+        .select(replyMessageSelect)
+        .eq('organization_id', conversation.organizationId)
+        .eq('conversation_id', conversation.id)
+        .in('id', replyIdsChunk)
+      throwPortalDbError(replyResult.error, 'could not load replied-to messages')
+      return replyResult.data ?? []
+    },
+  )
+
+  const repliesById = new Map(
+    replyRowGroups.flat().map((input: unknown) => {
+      const reply = asRecord(input)
+      return [String(reply.id), reply] as const
+    }),
+  )
+  return rows.map((row) => {
+    const replyId = typeof row.reply_to_message_id === 'string'
+      ? row.reply_to_message_id
+      : null
+    return {
+      ...row,
+      reply_to_message: replyId ? repliesById.get(replyId) ?? null : null,
+    }
+  })
 }
 
 function receiptRank(receipt: Receipt): [number, number, number] {
@@ -482,6 +538,8 @@ export async function loadPortalConversationSnapshot(
 
 function rpcMessage(input: unknown): Message {
   const message = asRecord(input)
+  const rawReply = message.replyToMessage ?? message.reply_to_message
+  const reply = rawReply ? asRecord(rawReply) : null
   return mapMessageRow({
     id: message.id,
     organization_id: message.organizationId ?? message.organization_id,
@@ -495,6 +553,19 @@ function rpcMessage(input: unknown): Message {
     sender_auth_user_id:
       message.senderAuthUserId ?? message.sender_auth_user_id ?? null,
     body: message.body,
+    reply_to_message_id:
+      message.replyToMessageId ?? message.reply_to_message_id ?? null,
+    reply_to_message: reply
+      ? {
+          id: reply.id,
+          sequence: reply.sequence,
+          sender_kind: reply.senderKind ?? reply.sender_kind,
+          body: reply.body,
+          attachments: reply.attachments
+            ?? reply.crm_case_message_attachments
+            ?? [],
+        }
+      : null,
     attachments: message.attachments
       ?? message.crm_case_message_attachments
       ?? [],
@@ -649,15 +720,26 @@ export async function sendPortalConversationMessage(
 ) {
   await enforcePortalMessageRateLimit(event, context, input.clientMessageId)
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_client_case_message_v2', {
+  const result = await backend.rpc('send_client_case_message_v3', {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
     p_auth_user_id: context.access.session.identity.userId,
     p_client_message_id: input.clientMessageId,
+    p_reply_to_message_id: input.replyToMessageId ?? null,
     p_body: input.body,
     p_attachment_ids: input.attachmentIds,
   })
+  if (
+    result.error
+    && String(result.error.message ?? '').includes('case_message_reply_')
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'The message being replied to is no longer available.',
+      data: { code: 'case_message_reply_unavailable' },
+    })
+  }
   if (
     result.error
     && String(result.error.message ?? '').includes('case_message_attachment_unavailable')

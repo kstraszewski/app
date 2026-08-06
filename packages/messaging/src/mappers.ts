@@ -4,6 +4,7 @@ import type {
   ConversationParticipantKind,
   Message,
   MessageAttachment,
+  MessageReplyReference,
   Receipt,
 } from './types.ts'
 
@@ -71,6 +72,19 @@ export type DataApiConversationRow = z.input<
   typeof DataApiConversationRowSchema
 >
 
+export const DataApiMessageReplyRowSchema = z.object({
+  attachments: z.array(z.unknown()).optional(),
+  body: z.string(),
+  id: uuidSchema,
+  sender_kind: participantKindSchema,
+  sequence: numericSequenceSchema(1),
+  crm_case_message_attachments: z.array(z.unknown()).optional(),
+}).passthrough()
+
+export type DataApiMessageReplyRow = z.input<
+  typeof DataApiMessageReplyRowSchema
+>
+
 export const DataApiMessageRowSchema = z.object({
   attachments: z.array(z.unknown()).optional(),
   body: z.string(),
@@ -81,6 +95,8 @@ export const DataApiMessageRowSchema = z.object({
   edited_at: nullableTimestampSchema.optional().default(null),
   id: uuidSchema,
   organization_id: uuidSchema,
+  reply_to_message: DataApiMessageReplyRowSchema.nullable().optional().default(null),
+  reply_to_message_id: uuidSchema.nullable().optional().default(null),
   sender_auth_user_id: uuidSchema.nullable().optional().default(null),
   sender_client_person_id: uuidSchema.nullable(),
   sender_kind: participantKindSchema,
@@ -88,6 +104,17 @@ export const DataApiMessageRowSchema = z.object({
   sequence: numericSequenceSchema(1),
   crm_case_message_attachments: z.array(z.unknown()).optional(),
 }).passthrough().superRefine((row, context) => {
+  if (
+    row.reply_to_message
+    && row.reply_to_message_id !== row.reply_to_message.id
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Reply reference does not match reply_to_message_id',
+      path: ['reply_to_message'],
+    })
+  }
+
   if (row.sender_kind === 'staff') {
     if (row.sender_client_person_id || row.sender_auth_user_id) {
       context.addIssue({
@@ -173,18 +200,9 @@ export function mapConversationRow(row: unknown): Conversation {
 
 export function mapMessageRow(row: unknown): Message {
   const parsed = DataApiMessageRowSchema.parse(row)
-  const attachmentRows = parsed.attachments
-    ?? parsed.crm_case_message_attachments
-    ?? []
-  const attachments = attachmentRows
-    .map((attachment, index) => {
-      const mapped = mapMessageAttachmentRow(attachment)
-      const position = DataApiMessageAttachmentRowSchema.parse(attachment).position
-        ?? index + 1
-      return { mapped, position, index }
-    })
-    .sort((left, right) => left.position - right.position || left.index - right.index)
-    .map(item => item.mapped)
+  const attachments = mapMessageAttachments(
+    parsed.attachments ?? parsed.crm_case_message_attachments ?? [],
+  )
   return {
     id: parsed.id,
     organizationId: parsed.organization_id,
@@ -197,9 +215,38 @@ export function mapMessageRow(row: unknown): Message {
     senderAuthUserId: parsed.sender_auth_user_id,
     body: parsed.body,
     attachments,
+    replyToMessageId: parsed.reply_to_message_id,
+    replyToMessage: parsed.reply_to_message
+      ? mapMessageReplyRow(parsed.reply_to_message)
+      : null,
     createdAt: parsed.created_at,
     editedAt: parsed.edited_at,
     deletedAt: parsed.deleted_at,
+  }
+}
+
+function mapMessageAttachments(rows: readonly unknown[]): MessageAttachment[] {
+  return rows
+    .map((attachment, index) => {
+      const mapped = mapMessageAttachmentRow(attachment)
+      const position = DataApiMessageAttachmentRowSchema.parse(attachment).position
+        ?? index + 1
+      return { mapped, position, index }
+    })
+    .sort((left, right) => left.position - right.position || left.index - right.index)
+    .map(item => item.mapped)
+}
+
+export function mapMessageReplyRow(row: unknown): MessageReplyReference {
+  const parsed = DataApiMessageReplyRowSchema.parse(row)
+  return {
+    id: parsed.id,
+    sequence: parsed.sequence,
+    senderKind: parsed.sender_kind as ConversationParticipantKind,
+    body: parsed.body,
+    attachments: mapMessageAttachments(
+      parsed.attachments ?? parsed.crm_case_message_attachments ?? [],
+    ),
   }
 }
 

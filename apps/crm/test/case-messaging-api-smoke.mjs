@@ -480,6 +480,7 @@ try {
   const expertSendInput = {
     body: expertMessageBody,
     clientMessageId: expertMessageId,
+    replyToMessageId: clientSend.message.id,
   }
   const expertSendResult = await api(
     crmBaseUrl,
@@ -498,6 +499,11 @@ try {
   assert.equal(expertSend.message.senderClientPersonId, null)
   assert.equal(expertSend.message.clientMessageId, expertMessageId)
   assert.equal(expertSend.message.sequence, clientSequence + 1)
+  assert.equal(expertSend.message.replyToMessageId, clientSend.message.id)
+  assert.equal(expertSend.message.replyToMessage.id, clientSend.message.id)
+  assert.equal(expertSend.message.replyToMessage.sequence, clientSequence)
+  assert.equal(expertSend.message.replyToMessage.senderKind, 'client')
+  assert.equal(expertSend.message.replyToMessage.body, clientMessageBody)
   const expertSequence = expertSend.message.sequence
 
   const expertReplayResult = await api(
@@ -514,6 +520,19 @@ try {
   assert.equal(expertReplay.replayed, true)
   assert.equal(expertReplay.message.id, expertSend.message.id)
   assert.equal(expertReplay.message.sequence, expertSequence)
+  assert.equal(expertReplay.message.replyToMessageId, clientSend.message.id)
+
+  const conflictingExpertReply = await api(
+    crmBaseUrl,
+    messagesPath,
+    expertCookie,
+    postJson({
+      body: expertMessageBody,
+      clientMessageId: expertMessageId,
+      replyToMessageId: null,
+    }),
+  )
+  assert.equal(conflictingExpertReply.response.ok, false)
 
   const clientSyncResult = await api(
     clientBaseUrl,
@@ -529,6 +548,11 @@ try {
   ])
   assert.equal(clientSync.messages[0].body, expertMessageBody)
   assert.equal(clientSync.pageInfo.lastSequence, expertSequence)
+  assert.equal(clientSync.messages[0].replyToMessageId, clientSend.message.id)
+  assert.equal(clientSync.messages[0].replyToMessage.id, clientSend.message.id)
+  assert.equal(clientSync.messages[0].replyToMessage.sequence, clientSequence)
+  assert.equal(clientSync.messages[0].replyToMessage.senderKind, 'client')
+  assert.equal(clientSync.messages[0].replyToMessage.body, clientMessageBody)
 
   const clientReadResult = await api(
     clientBaseUrl,
@@ -559,6 +583,92 @@ try {
     expertSequence,
   )
 
+  const unavailableReply = await api(
+    clientBaseUrl,
+    clientConversationPath,
+    clientCookie,
+    postJson({
+      body: `Test E2E niedostępny cytat ${runId}`,
+      clientMessageId: randomUUID(),
+      replyToMessageId: randomUUID(),
+    }),
+  )
+  assert.equal(unavailableReply.response.status, 409)
+  assert.equal(
+    unavailableReply.body?.data?.code,
+    'case_message_reply_unavailable',
+  )
+
+  const clientReplyMessageId = randomUUID()
+  const clientReplyBody = `Test E2E odpowiedź klienta ${runId}`
+  const clientReplyInput = {
+    body: clientReplyBody,
+    clientMessageId: clientReplyMessageId,
+    replyToMessageId: expertSend.message.id,
+  }
+  const clientReplyResult = await api(
+    clientBaseUrl,
+    clientConversationPath,
+    clientCookie,
+    postJson(clientReplyInput),
+  )
+  const clientReply = assertOk(
+    clientReplyResult,
+    'Sending a client reply to the expert message',
+  ).data
+  assert.equal(clientReply.created, true)
+  assert.equal(clientReply.replayed, false)
+  assert.equal(clientReply.message.sequence, expertSequence + 1)
+  assert.equal(clientReply.message.replyToMessageId, expertSend.message.id)
+  assert.equal(clientReply.message.replyToMessage.id, expertSend.message.id)
+  assert.equal(clientReply.message.replyToMessage.sequence, expertSequence)
+  assert.equal(clientReply.message.replyToMessage.senderKind, 'staff')
+  assert.equal(clientReply.message.replyToMessage.body, expertMessageBody)
+  const clientReplySequence = clientReply.message.sequence
+
+  const clientReplyReplayResult = await api(
+    clientBaseUrl,
+    clientConversationPath,
+    clientCookie,
+    postJson(clientReplyInput),
+  )
+  const clientReplyReplay = assertOk(
+    clientReplyReplayResult,
+    'Replaying the client reply',
+  ).data
+  assert.equal(clientReplyReplay.created, false)
+  assert.equal(clientReplyReplay.replayed, true)
+  assert.equal(clientReplyReplay.message.id, clientReply.message.id)
+  assert.equal(clientReplyReplay.message.replyToMessageId, expertSend.message.id)
+
+  const conflictingClientReply = await api(
+    clientBaseUrl,
+    clientConversationPath,
+    clientCookie,
+    postJson({
+      ...clientReplyInput,
+      replyToMessageId: clientSend.message.id,
+    }),
+  )
+  assert.equal(conflictingClientReply.response.ok, false)
+
+  const expertReplySyncResult = await api(
+    crmBaseUrl,
+    `${messagesPath}?afterSequence=${expertSequence}`,
+    expertCookie,
+  )
+  const expertReplySync = assertOk(
+    expertReplySyncResult,
+    'Synchronizing the client reply for the expert',
+  ).data
+  assert.deepEqual(expertReplySync.messages.map(message => message.id), [
+    clientReply.message.id,
+  ])
+  assert.equal(
+    expertReplySync.messages[0].replyToMessage.id,
+    expertSend.message.id,
+  )
+
   const clientReloadResult = await api(
     clientBaseUrl,
     clientConversationPath,
@@ -571,9 +681,14 @@ try {
   const clientReloadedIds = clientReload.messages.map(message => message.id)
   assert.ok(clientReloadedIds.includes(clientSend.message.id))
   assert.ok(clientReloadedIds.includes(expertSend.message.id))
+  assert.ok(clientReloadedIds.includes(clientReply.message.id))
   assert.ok(
     clientReloadedIds.indexOf(clientSend.message.id)
       < clientReloadedIds.indexOf(expertSend.message.id),
+  )
+  assert.ok(
+    clientReloadedIds.indexOf(expertSend.message.id)
+      < clientReloadedIds.indexOf(clientReply.message.id),
   )
 
   const expertReloadResult = await api(
@@ -605,14 +720,22 @@ try {
 
   const messageRowsResult = await backendClient
     .from('crm_case_messages')
-    .select('id, client_message_id, sequence')
+    .select('id, client_message_id, sequence, reply_to_message_id')
     .eq('conversation_id', conversationId)
-    .in('id', [clientSend.message.id, expertSend.message.id])
+    .in('id', [
+      clientSend.message.id,
+      expertSend.message.id,
+      clientReply.message.id,
+    ])
     .order('sequence')
   assert.ifError(messageRowsResult.error)
   assert.deepEqual(
     (messageRowsResult.data ?? []).map(row => row.id),
-    [clientSend.message.id, expertSend.message.id],
+    [clientSend.message.id, expertSend.message.id, clientReply.message.id],
+  )
+  assert.deepEqual(
+    (messageRowsResult.data ?? []).map(row => row.reply_to_message_id),
+    [null, clientSend.message.id, expertSend.message.id],
   )
 
   const immutableMessageUpdate = await backendClient
@@ -628,10 +751,10 @@ try {
 
   const newOutboxRows = (await conversationOutbox(conversationId))
     .filter(row => !baselineOutboxIds.has(row.id))
-  assert.equal(newOutboxRows.length, 5)
+  assert.equal(newOutboxRows.length, 6)
   assert.equal(
     newOutboxRows.filter(row => row.event_type === 'message.created').length,
-    2,
+    3,
   )
   assert.equal(
     newOutboxRows.filter(row => row.event_type === 'receipt.updated').length,
@@ -642,7 +765,11 @@ try {
       .filter(row => row.message_id)
       .map(row => row.message_id)
       .sort(),
-    [clientSend.message.id, expertSend.message.id].sort(),
+    [
+      clientSend.message.id,
+      expertSend.message.id,
+      clientReply.message.id,
+    ].sort(),
   )
   for (const outbox of newOutboxRows) {
     assert.equal(outbox.status, 'completed')
@@ -651,6 +778,9 @@ try {
     const serializedPayload = JSON.stringify(outbox.payload)
     assert.equal(serializedPayload.includes(clientMessageBody), false)
     assert.equal(serializedPayload.includes(expertMessageBody), false)
+    assert.equal(serializedPayload.includes(clientReplyBody), false)
+    assert.equal(serializedPayload.includes('replyToMessageId'), false)
+    assert.equal(serializedPayload.includes('reply_to_message_id'), false)
     assert.equal(Object.hasOwn(outbox.payload, 'body'), false)
   }
 
@@ -662,6 +792,8 @@ try {
     clientSequence,
     expertMessageId: expertSend.message.id,
     expertSequence,
+    clientReplyMessageId: clientReply.message.id,
+    clientReplySequence,
     realtimeMode: initial.realtime.mode,
   }, null, 2))
 }

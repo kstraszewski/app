@@ -55,6 +55,8 @@ const message: Message = {
   senderAuthUserId: null,
   body: `  Proszę\nuzupełnić ${'dokumenty '.repeat(30)}  `,
   attachments: [],
+  replyToMessageId: null,
+  replyToMessage: null,
   createdAt: '2026-08-02T10:01:00.000Z',
   editedAt: null,
   deletedAt: null,

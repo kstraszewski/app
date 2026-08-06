@@ -4,6 +4,7 @@ import type {
   Conversation,
   Message,
   MessageAttachment,
+  MessageReplyReference,
   Receipt,
 } from '@openexpert/messaging'
 import { buildMessagePreview } from '@openexpert/messaging'
@@ -11,6 +12,9 @@ import {
   classifyMessageAttachmentCompletionFailure,
   MessageAttachmentComposer,
   MessageAttachments,
+  MessageReplyQuote,
+  messageReplyReference,
+  resolveMessageReplySwipe,
   useMessageAttachmentDrafts,
   type MessageAttachmentDraftAdapter,
   type MessageAttachmentUploadReservation,
@@ -101,7 +105,20 @@ interface RetryableSend {
   body: string
   clientMessageId: string
   attachmentIds: string[]
+  replyToMessageId: string | null
 }
+
+interface ReplySwipeState {
+  pointerId: number | null
+  messageId: string
+  startX: number
+  startY: number
+  offset: number
+  shouldReply: boolean
+  cancelled: boolean
+}
+
+type LoadOlderMessagesResult = 'loaded' | 'busy' | 'unavailable' | 'error' | 'cancelled'
 
 interface CompleteAttachmentResponse {
   data: {
@@ -180,10 +197,13 @@ const realtimeConfiguration = ref<RealtimeConfiguration>({
 })
 const composer = ref('')
 const composerDrafts = new Map<string, string>()
+const replyDrafts = new Map<string, MessageReplyReference | null>()
 const retryableSends = new Map<string, RetryableSend>()
+const replyingTo = ref<MessageReplyReference | null>(null)
 const draftClientMessageId = ref('')
 const pendingBody = ref('')
 const pendingAttachments = ref<MessageAttachment[]>([])
+const pendingReply = ref<MessageReplyReference | null>(null)
 const pendingClientMessageId = ref('')
 const pendingConversationId = ref('')
 const pendingRecipientId = ref('')
@@ -194,6 +214,7 @@ const loadingOlder = ref(false)
 const syncing = ref(false)
 const hasOlderMessages = ref(false)
 const listElement = ref<HTMLElement | null>(null)
+const composerElement = ref<HTMLFormElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
 const panelVisible = ref(false)
@@ -205,6 +226,17 @@ const connectionState = ref<'idle' | 'connecting' | 'connected' | 'polling' | 'o
 const notificationsState = ref<'unsupported' | NotificationPermission>('unsupported')
 const activatingNotifications = ref(false)
 const pushActivated = ref(false)
+const highlightedMessageId = ref('')
+const replyNavigationStatus = ref('')
+const replySwipe = reactive<ReplySwipeState>({
+  pointerId: null,
+  messageId: '',
+  startX: 0,
+  startY: 0,
+  offset: 0,
+  shouldReply: false,
+  cancelled: false,
+})
 
 let realtimeClient: any = null
 let durableChannel: any = null
@@ -214,6 +246,7 @@ let indexPollingTimer: ReturnType<typeof setInterval> | null = null
 let typingTimer: ReturnType<typeof setTimeout> | null = null
 let peerTypingTimer: ReturnType<typeof setTimeout> | null = null
 let receiptTimer: ReturnType<typeof setTimeout> | null = null
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
 let visibilityObserver: IntersectionObserver | null = null
 let connectedSignature = ''
 let selectionRevision = 0
@@ -439,6 +472,7 @@ function pendingAttachmentUrl(attachment: MessageAttachment, download: boolean) 
 function clearPendingMessage() {
   pendingBody.value = ''
   pendingAttachments.value = []
+  pendingReply.value = null
   pendingClientMessageId.value = ''
   pendingConversationId.value = ''
   pendingRecipientId.value = ''
@@ -666,8 +700,12 @@ watch(requestedClientPersonId, (requested) => {
 })
 
 watch(selectedClientPersonId, (selected, previous) => {
-  if (previous) composerDrafts.set(previous, composer.value)
+  if (previous) {
+    composerDrafts.set(previous, composer.value)
+    replyDrafts.set(previous, replyingTo.value)
+  }
   composer.value = composerDrafts.get(selected) ?? ''
+  replyingTo.value = replyDrafts.get(selected) ?? null
   if (import.meta.client) {
     draftClientMessageId.value = retryableSends.get(selected)?.clientMessageId
       ?? crypto.randomUUID()
@@ -678,8 +716,10 @@ watch(selectedClientPersonId, (selected, previous) => {
 watch(() => props.caseId, () => {
   abandonAttachmentDrafts(!sending.value)
   composerDrafts.clear()
+  replyDrafts.clear()
   retryableSends.clear()
   composer.value = ''
+  replyingTo.value = null
   clearPendingMessage()
   selectionRevision += 1
   conversationRevision += 1
@@ -713,6 +753,150 @@ function deliveryLabel(message: Message) {
   if ((peerReceipt.value?.readThroughSequence ?? 0) >= message.sequence) return 'Odczytano'
   if ((peerReceipt.value?.deliveredThroughSequence ?? 0) >= message.sequence) return 'Dostarczono'
   return 'Wysłano'
+}
+
+function replyAuthorLabel(reply: MessageReplyReference) {
+  return reply.senderKind === 'staff'
+    ? 'Ty'
+    : selectedRecipient.value?.displayName || 'Klient'
+}
+
+function replyActionLabel(message: Message) {
+  const author = message.senderKind === 'staff'
+    ? 'Ciebie'
+    : selectedRecipient.value?.displayName || 'klienta'
+  return `Odpowiedz na wiadomość od ${author}`
+}
+
+function focusComposer() {
+  void nextTick(() => composerElement.value?.querySelector('textarea')?.focus())
+}
+
+function startReply(message: Message) {
+  if (sending.value || message.deletedAt) return
+  replyingTo.value = messageReplyReference(message)
+  replyDrafts.set(selectedClientPersonId.value, replyingTo.value)
+  focusComposer()
+}
+
+function cancelReply() {
+  replyingTo.value = null
+  replyDrafts.set(selectedClientPersonId.value, null)
+}
+
+function resetReplySwipe() {
+  replySwipe.pointerId = null
+  replySwipe.messageId = ''
+  replySwipe.startX = 0
+  replySwipe.startY = 0
+  replySwipe.offset = 0
+  replySwipe.shouldReply = false
+  replySwipe.cancelled = false
+}
+
+function messageSwipeOffset(messageId: string) {
+  return replySwipe.messageId === messageId ? replySwipe.offset : 0
+}
+
+function onMessagePointerDown(event: PointerEvent, message: Message) {
+  if (
+    sending.value
+    || event.pointerType === 'mouse'
+    || event.button !== 0
+    || message.deletedAt
+    || (event.target as Element | null)?.closest(
+      'a, button, input, textarea, select, [role="button"]',
+    )
+  ) return
+
+  resetReplySwipe()
+  replySwipe.pointerId = event.pointerId
+  replySwipe.messageId = message.id
+  replySwipe.startX = event.clientX
+  replySwipe.startY = event.clientY
+  ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function onMessagePointerMove(event: PointerEvent) {
+  if (
+    replySwipe.pointerId !== event.pointerId
+    || replySwipe.cancelled
+  ) return
+  const frame = resolveMessageReplySwipe(
+    event.clientX - replySwipe.startX,
+    event.clientY - replySwipe.startY,
+  )
+  if (frame.intent === 'vertical' || frame.intent === 'opposite') {
+    replySwipe.cancelled = true
+    replySwipe.offset = 0
+    replySwipe.shouldReply = false
+    return
+  }
+  if (frame.intent !== 'horizontal') return
+  event.preventDefault()
+  replySwipe.offset = frame.offset
+  replySwipe.shouldReply = frame.shouldReply
+}
+
+function onMessagePointerEnd(event: PointerEvent) {
+  if (replySwipe.pointerId !== event.pointerId) return
+  const message = replySwipe.shouldReply
+    ? messages.value.find(candidate => candidate.id === replySwipe.messageId)
+    : null
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+  resetReplySwipe()
+  if (message) startReply(message)
+}
+
+function onMessagePointerCancel(event: PointerEvent) {
+  if (replySwipe.pointerId !== event.pointerId) return
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+  resetReplySwipe()
+}
+
+async function revealReply(reply: MessageReplyReference) {
+  const requestedConversationId = conversation.value?.id
+  const selector = `[data-message-id="${reply.id}"]`
+  let element = listElement.value?.querySelector<HTMLElement>(selector) ?? null
+  let attempts = 0
+  while (
+    !element
+    && hasOlderMessages.value
+    && (messages.value[0]?.sequence ?? Number.MAX_SAFE_INTEGER) > reply.sequence
+    && attempts < 20
+  ) {
+    const previousFirstSequence = messages.value[0]?.sequence
+    const loadResult = await loadOlderMessages()
+    if (
+      conversation.value?.id !== requestedConversationId
+      || loadResult === 'busy'
+      || loadResult === 'error'
+      || loadResult === 'cancelled'
+    ) return
+    await nextTick()
+    element = listElement.value?.querySelector<HTMLElement>(selector) ?? null
+    attempts += 1
+    if (messages.value[0]?.sequence === previousFirstSequence) break
+  }
+  if (!element) {
+    toast.add({
+      title: 'Oryginalna wiadomość jest niedostępna',
+      color: 'info',
+      icon: 'i-lucide-message-circle-warning',
+    })
+    return
+  }
+  element.scrollIntoView({
+    behavior: shouldReduceMotion() ? 'auto' : 'smooth',
+    block: 'center',
+  })
+  highlightedMessageId.value = reply.id
+  element.focus({ preventScroll: true })
+  replyNavigationStatus.value = `Przejście do cytowanej wiadomości numer ${reply.sequence}.`
+  if (highlightTimer) clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    if (highlightedMessageId.value === reply.id) highlightedMessageId.value = ''
+  }, 1_600)
 }
 
 function shouldReduceMotion() {
@@ -761,10 +945,13 @@ async function sendMessage() {
 
   const sendingCaseId = props.caseId
   const recipientId = selectedClientPersonId.value
+  const replyTarget = replyingTo.value
+  const replyToMessageId = replyTarget?.id ?? null
   const readyAttachments = [...attachmentDrafts.readyAttachments.value]
   const attachmentIds = readyAttachments.map(attachment => attachment.id)
   const previousAttempt = retryableSends.get(recipientId)
   const matchesPreviousAttempt = previousAttempt?.body === body
+    && previousAttempt.replyToMessageId === replyToMessageId
     && previousAttempt.attachmentIds.length === attachmentIds.length
     && previousAttempt.attachmentIds.every((id, index) => id === attachmentIds[index])
   if (previousAttempt && !matchesPreviousAttempt) {
@@ -788,6 +975,7 @@ async function sendMessage() {
         body,
         clientMessageId: draftClientMessageId.value || crypto.randomUUID(),
         attachmentIds,
+        replyToMessageId,
       }
   draftClientMessageId.value = attempt.clientMessageId
   retryableSends.set(recipientId, attempt)
@@ -795,6 +983,7 @@ async function sendMessage() {
   sending.value = true
   pendingBody.value = body
   pendingAttachments.value = readyAttachments
+  pendingReply.value = replyTarget
   pendingClientMessageId.value = attempt.clientMessageId
   pendingConversationId.value = conversation.value?.id ?? ''
   pendingRecipientId.value = recipientId
@@ -805,6 +994,8 @@ async function sendMessage() {
     }
   }
   composer.value = ''
+  replyingTo.value = null
+  replyDrafts.set(recipientId, null)
   stopTyping()
 
   try {
@@ -819,12 +1010,14 @@ async function sendMessage() {
           body,
           clientMessageId: attempt.clientMessageId,
           attachmentIds: attempt.attachmentIds,
+          replyToMessageId: attempt.replyToMessageId,
         },
       },
     )
     const stillSelected = conversation.value?.id === activeConversationId
     retryableSends.delete(recipientId)
     composerDrafts.delete(recipientId)
+    replyDrafts.delete(recipientId)
     if (stillSelected) {
       conversation.value = response.data.conversation
       mergeMessages([response.data.message])
@@ -852,23 +1045,36 @@ async function sendMessage() {
       for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
       return
     }
-    if (requestErrorCode(caught) === 'case_message_attachment_unavailable') {
+    const errorCode = requestErrorCode(caught)
+    const replyUnavailable = errorCode === 'case_message_reply_unavailable'
+    if (errorCode === 'case_message_attachment_unavailable') {
       attachmentDrafts.invalidateReadyAttachments(
         attachmentIds,
         'Załącznik wygasł. Kliknij „Ponów”, aby przesłać go ponownie.',
       )
       retryableSends.delete(recipientId)
     }
-    if (selectedClientPersonId.value === recipientId) composer.value = draftBody
-    else composerDrafts.set(recipientId, draftBody)
+    if (replyUnavailable) retryableSends.delete(recipientId)
+    if (selectedClientPersonId.value === recipientId) {
+      composer.value = draftBody
+      replyingTo.value = replyUnavailable ? null : replyTarget
+    }
+    else {
+      composerDrafts.set(recipientId, draftBody)
+    }
+    replyDrafts.set(recipientId, replyUnavailable ? null : replyTarget)
     if (pendingRecipientId.value === recipientId) {
       clearPendingMessage()
     }
     toast.add({
-      title: 'Nie udało się wysłać wiadomości',
-      description: caught?.data?.statusMessage ?? 'Treść została zachowana. Spróbuj ponownie.',
-      color: 'error',
-      icon: 'i-lucide-circle-alert',
+      title: replyUnavailable
+        ? 'Nie można już odpowiedzieć na tę wiadomość'
+        : 'Nie udało się wysłać wiadomości',
+      description: replyUnavailable
+        ? 'Treść została zachowana. Wybierz inną wiadomość lub wyślij ją bez cytatu.'
+        : caught?.data?.statusMessage ?? 'Treść została zachowana. Spróbuj ponownie.',
+      color: replyUnavailable ? 'warning' : 'error',
+      icon: replyUnavailable ? 'i-lucide-message-circle-warning' : 'i-lucide-circle-alert',
     })
   }
   finally {
@@ -924,9 +1130,10 @@ async function syncMissingMessages() {
   }
 }
 
-async function loadOlderMessages() {
+async function loadOlderMessages(): Promise<LoadOlderMessagesResult> {
   const firstSequence = messages.value[0]?.sequence
-  if (!conversation.value || !firstSequence || loadingOlder.value) return
+  if (!conversation.value || !firstSequence) return 'unavailable'
+  if (loadingOlder.value) return 'busy'
 
   const conversationId = conversation.value.id
   const previousScrollHeight = listElement.value?.scrollHeight ?? 0
@@ -936,7 +1143,7 @@ async function loadOlderMessages() {
       conversationApiPath(conversationId, '/messages'),
       { query: { beforeSequence: firstSequence } },
     )
-    if (conversation.value?.id !== conversationId) return
+    if (conversation.value?.id !== conversationId) return 'cancelled'
     applyBootstrap(response.data, 'prepend')
     await nextTick()
     if (listElement.value) {
@@ -944,6 +1151,7 @@ async function loadOlderMessages() {
       updateListPosition()
     }
     messageMotionReady.value = true
+    return 'loaded'
   }
   catch {
     toast.add({
@@ -951,9 +1159,10 @@ async function loadOlderMessages() {
       color: 'error',
       icon: 'i-lucide-circle-alert',
     })
+    return 'error'
   }
   finally {
-    loadingOlder.value = false
+    if (conversation.value?.id === conversationId) loadingOlder.value = false
   }
 }
 
@@ -1262,6 +1471,8 @@ onBeforeUnmount(() => {
   stopTyping()
   if (peerTypingTimer) clearTimeout(peerTypingTimer)
   if (receiptTimer) clearTimeout(receiptTimer)
+  if (highlightTimer) clearTimeout(highlightTimer)
+  resetReplySwipe()
   visibilityObserver?.disconnect()
   document.removeEventListener('visibilitychange', scheduleReceipt)
   stopIndexPolling()
@@ -1573,12 +1784,51 @@ onBeforeUnmount(() => {
               <article
                 v-for="message in messages"
                 :key="message.clientMessageId"
+                :data-message-id="message.id"
+                tabindex="-1"
                 :class="[
                   'case-message',
                   message.senderKind === 'staff' ? 'case-message--mine' : 'case-message--theirs',
+                  {
+                    'is-highlighted': highlightedMessageId === message.id,
+                    'is-swiping': replySwipe.messageId === message.id && replySwipe.offset > 0,
+                    'is-swipe-ready': replySwipe.messageId === message.id && replySwipe.shouldReply,
+                  },
                 ]"
+                @pointerdown="onMessagePointerDown($event, message)"
+                @pointermove="onMessagePointerMove"
+                @pointerup="onMessagePointerEnd"
+                @pointercancel="onMessagePointerCancel"
               >
-                <div>
+                <UButton
+                  v-if="message.senderKind === 'staff'"
+                  class="case-message__reply-action"
+                  type="button"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-reply"
+                  :disabled="sending"
+                  :aria-label="replyActionLabel(message)"
+                  @click="startReply(message)"
+                />
+                <div
+                  class="case-message__bubble"
+                  :style="{ '--case-message-swipe-offset': `${messageSwipeOffset(message.id)}px` }"
+                >
+                  <MessageReplyQuote
+                    v-if="message.replyToMessage"
+                    :reply="message.replyToMessage"
+                    :author-label="replyAuthorLabel(message.replyToMessage)"
+                    interactive
+                    @select="revealReply"
+                  />
+                  <div
+                    v-else-if="message.replyToMessageId"
+                    class="case-message__reply-missing"
+                  >
+                    Oryginalna wiadomość jest niedostępna
+                  </div>
                   <p v-if="message.body">{{ message.body }}</p>
                   <MessageAttachments
                     :attachments="message.attachments"
@@ -1601,6 +1851,18 @@ onBeforeUnmount(() => {
                     </Transition>
                   </footer>
                 </div>
+                <UButton
+                  v-if="message.senderKind !== 'staff'"
+                  class="case-message__reply-action"
+                  type="button"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-reply"
+                  :disabled="sending"
+                  :aria-label="replyActionLabel(message)"
+                  @click="startReply(message)"
+                />
               </article>
 
               <article
@@ -1608,7 +1870,12 @@ onBeforeUnmount(() => {
                 :key="pendingClientMessageId"
                 class="case-message case-message--mine is-pending"
               >
-                <div>
+                <div class="case-message__bubble">
+                  <MessageReplyQuote
+                    v-if="pendingReply"
+                    :reply="pendingReply"
+                    :author-label="replyAuthorLabel(pendingReply)"
+                  />
                   <p v-if="pendingBody">{{ pendingBody }}</p>
                   <MessageAttachments
                     :attachments="pendingAttachments"
@@ -1643,11 +1910,42 @@ onBeforeUnmount(() => {
           </Transition>
         </div>
 
+        <p class="sr-only" role="status" aria-live="polite">
+          {{ replyNavigationStatus }}
+        </p>
+
         <form
           v-if="!conversationLoadError"
+          ref="composerElement"
           class="case-conversation__composer"
           @submit.prevent="sendMessage"
+          @keydown.esc.prevent="cancelReply"
         >
+          <Transition name="case-reply-composer">
+            <div
+              v-if="replyingTo"
+              class="case-conversation__reply-composer"
+            >
+              <div>
+                <span role="status" aria-live="polite">
+                  Odpowiadasz: {{ replyAuthorLabel(replyingTo) }}
+                </span>
+                <MessageReplyQuote
+                  :reply="replyingTo"
+                  :author-label="replyAuthorLabel(replyingTo)"
+                  :show-author="false"
+                />
+              </div>
+              <UButton
+                type="button"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-x"
+                aria-label="Anuluj odpowiedź na wiadomość"
+                @click="cancelReply"
+              />
+            </div>
+          </Transition>
           <MessageAttachmentComposer
             :controller="attachmentDrafts"
             :client-message-id="draftClientMessageId"
@@ -2052,18 +2350,28 @@ onBeforeUnmount(() => {
 }
 
 .case-message {
+  position: relative;
   display: flex;
   width: 100%;
+  align-items: center;
+  gap: 4px;
+  touch-action: pan-y pinch-zoom;
   transform-origin: left bottom;
 }
 
-.case-message > div {
+.case-message__bubble {
+  position: relative;
+  z-index: 1;
   max-width: min(76%, 660px);
   padding: 10px 13px 7px;
   border-radius: 17px 17px 17px 5px;
   background: var(--ui-bg-muted);
   color: var(--ui-text-highlighted);
-  transition: opacity var(--oe-motion-fast);
+  transform: translate3d(var(--case-message-swipe-offset, 0), 0, 0);
+  transition:
+    opacity var(--oe-motion-fast),
+    transform var(--oe-duration-fast) var(--ease-out),
+    box-shadow var(--oe-duration-fast) var(--ease-out);
 }
 
 .case-message--mine {
@@ -2071,14 +2379,60 @@ onBeforeUnmount(() => {
   transform-origin: right bottom;
 }
 
-.case-message--mine > div {
+.case-message--mine .case-message__bubble {
   border-radius: 17px 17px 5px;
   background: var(--ui-bg-inverted);
   color: var(--ui-text-inverted);
 }
 
-.case-message.is-pending > div {
+.case-message.is-pending .case-message__bubble {
   opacity: .65;
+}
+
+.case-message.is-swiping .case-message__bubble {
+  transition: none;
+}
+
+.case-message.is-highlighted .case-message__bubble {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ui-primary) 30%, transparent),
+    0 10px 30px color-mix(in srgb, var(--ui-primary) 15%, transparent);
+}
+
+.case-message__reply-action {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  border-radius: 999px;
+  opacity: 0;
+  transform: scale(.88);
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    color var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.case-message:hover .case-message__reply-action,
+.case-message:focus-within .case-message__reply-action {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.case-message.is-swipe-ready .case-message__reply-action {
+  color: var(--ui-primary);
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.case-message__reply-missing {
+  margin-bottom: 7px;
+  padding: 7px 9px 7px 11px;
+  border-left: 3px solid currentColor;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: color-mix(in srgb, currentColor 66%, transparent);
+  font-size: 11px;
 }
 
 .case-message-list-enter-active {
@@ -2114,12 +2468,25 @@ onBeforeUnmount(() => {
   margin-top: 7px;
 }
 
+.case-message__bubble > :deep(.oe-message-reply-quote) {
+  margin-bottom: 7px;
+}
+
 .case-message--mine :deep(.oe-message-attachments) {
   --oe-message-attachment-bg: color-mix(in srgb, currentColor 12%, transparent);
   --oe-message-attachment-border: color-mix(in srgb, currentColor 22%, transparent);
   --oe-message-attachment-hover: color-mix(in srgb, currentColor 18%, transparent);
   --oe-message-attachment-text: currentColor;
   --oe-message-attachment-muted: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+.case-message--mine :deep(.oe-message-reply-quote) {
+  --oe-message-reply-bg: color-mix(in srgb, currentColor 12%, transparent);
+  --oe-message-reply-hover: color-mix(in srgb, currentColor 18%, transparent);
+  --oe-message-reply-accent: currentColor;
+  --oe-message-reply-author: currentColor;
+  --oe-message-reply-muted: color-mix(in srgb, currentColor 76%, transparent);
+  --oe-message-reply-text: currentColor;
 }
 
 .case-message footer {
@@ -2218,10 +2585,58 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--ui-border-muted);
 }
 
+.case-conversation__reply-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding: 7px 7px 7px 10px;
+  border-radius: 12px;
+  background: var(--ui-bg-muted);
+}
+
+.case-conversation__reply-composer > div {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
+}
+
+.case-conversation__reply-composer > div > span {
+  color: var(--ui-text-toned);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.case-conversation__reply-composer > button {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.case-reply-composer-enter-active,
+.case-reply-composer-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.case-reply-composer-enter-from,
+.case-reply-composer-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
 .case-conversation--pane .case-conversation__composer {
   flex: 0 0 auto;
   padding: 12px 20px 0;
   background: var(--ui-bg);
+}
+
+.case-conversation--pane .case-conversation__reply-composer {
+  margin-right: 122px;
 }
 
 .case-conversation__send {
@@ -2263,7 +2678,10 @@ onBeforeUnmount(() => {
   .case-message-status-leave-active,
   .case-new-message-enter-active,
   .case-new-message-leave-active,
-  .case-message > div {
+  .case-reply-composer-enter-active,
+  .case-reply-composer-leave-active,
+  .case-message__bubble,
+  .case-message__reply-action {
     transition-duration: 150ms !important;
     transition-property: opacity !important;
   }
@@ -2276,6 +2694,11 @@ onBeforeUnmount(() => {
   .case-new-message-enter-from,
   .case-new-message-leave-to {
     transform: translateX(-50%) !important;
+  }
+
+  .case-reply-composer-enter-from,
+  .case-reply-composer-leave-to {
+    transform: none !important;
   }
 
   .case-conversation__typing > span {
@@ -2315,8 +2738,8 @@ onBeforeUnmount(() => {
     max-height: 62dvh;
   }
 
-  .case-message > div {
-    max-width: 88%;
+  .case-message__bubble {
+    max-width: min(88%, calc(100% - 48px));
   }
 
   .case-conversation__hint {
@@ -2388,8 +2811,31 @@ onBeforeUnmount(() => {
     padding: 10px 12px 0;
   }
 
+  .case-conversation--pane .case-conversation__reply-composer {
+    margin-right: 56px;
+  }
+
   .case-conversation--pane .case-conversation__hint {
     display: none;
   }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .case-message__reply-action {
+    opacity: .58;
+    transform: scale(1);
+  }
+}
+
+.case-message__reply-action:disabled {
+  opacity: 0;
+}
+
+.case-message--theirs.is-swiping .case-message__reply-action {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%) scale(1);
 }
 </style>

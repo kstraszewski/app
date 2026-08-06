@@ -7,12 +7,14 @@ export type { ConversationChannelNames } from './channels.ts'
 export {
   DataApiMessageAttachmentRowSchema,
   DataApiConversationRowSchema,
+  DataApiMessageReplyRowSchema,
   DataApiMessageRowSchema,
   DataApiReceiptRowSchema,
   mapConversationRow,
   mapConversationRows,
   mapMessageRow,
   mapMessageRows,
+  mapMessageReplyRow,
   mapMessageAttachmentRow,
   mapMessageAttachmentRows,
   mapReceiptRow,
@@ -22,6 +24,7 @@ export type {
   DataApiConversationRow,
   DataApiMessageAttachmentRow,
   DataApiMessageRow,
+  DataApiMessageReplyRow,
   DataApiReceiptRow,
 } from './mappers.ts'
 export {
@@ -80,6 +83,7 @@ export type {
   Event,
   Message,
   MessageAttachment,
+  MessageReplyReference,
   MessageDurableEvent,
   MessageDurableEventKind,
   Receipt,

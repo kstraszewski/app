@@ -25,6 +25,7 @@ export const MessageBodySchema = z.string()
 export const SendMessageInputSchema = z.object({
   body: MessageBodySchema,
   clientMessageId: uuidSchema,
+  replyToMessageId: uuidSchema.nullable().optional().default(null),
   attachmentIds: z.array(uuidSchema)
     .max(MESSAGE_ATTACHMENT_MAX_FILES)
     .default([]),

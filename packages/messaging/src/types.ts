@@ -12,6 +12,14 @@ export interface Conversation {
   updatedAt: string
 }
 
+export interface MessageReplyReference {
+  id: string
+  sequence: number
+  senderKind: ConversationParticipantKind
+  body: string
+  attachments: MessageAttachment[]
+}
+
 export interface Message {
   id: string
   organizationId: string
@@ -24,6 +32,8 @@ export interface Message {
   senderAuthUserId: string | null
   body: string
   attachments: MessageAttachment[]
+  replyToMessageId: string | null
+  replyToMessage: MessageReplyReference | null
   createdAt: string
   editedAt: string | null
   deletedAt: string | null

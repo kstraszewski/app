@@ -3,12 +3,16 @@ import type {
   Conversation,
   Message,
   MessageAttachment,
+  MessageReplyReference,
   Receipt,
 } from '@openexpert/messaging'
 import {
   classifyMessageAttachmentCompletionFailure,
   MessageAttachmentComposer,
   MessageAttachments,
+  MessageReplyQuote,
+  messageReplyReference,
+  resolveMessageReplySwipe,
   useMessageAttachmentDrafts,
   type MessageAttachmentDraftAdapter,
   type MessageAttachmentUploadReservation,
@@ -39,7 +43,20 @@ interface RetryableSend {
   body: string
   clientMessageId: string
   attachmentIds: string[]
+  replyToMessageId: string | null
 }
+
+interface ReplySwipeState {
+  pointerId: number | null
+  messageId: string
+  startX: number
+  startY: number
+  offset: number
+  shouldReply: boolean
+  cancelled: boolean
+}
+
+type LoadOlderMessagesResult = 'loaded' | 'busy' | 'unavailable' | 'error' | 'cancelled'
 
 function requestErrorCode(error: unknown): string {
   const candidate = error && typeof error === 'object'
@@ -189,6 +206,10 @@ const composer = useState<string>(
   () => '',
 )
 const retryableSend = ref<RetryableSend | null>(null)
+const replyingTo = useState<MessageReplyReference | null>(
+  `portal-case-conversation:reply:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
+  () => null,
+)
 const sending = ref(false)
 const syncing = ref(false)
 const loadingOlder = ref(false)
@@ -197,6 +218,7 @@ const pendingMessage = ref<{
   clientMessageId: string
   body: string
   attachments: MessageAttachment[]
+  replyToMessage: MessageReplyReference | null
 } | null>(null)
 const visiblePendingMessage = computed(() => {
   const pending = pendingMessage.value
@@ -208,6 +230,7 @@ const visiblePendingMessage = computed(() => {
 const messageMotionReady = ref(false)
 const unseenMessageCount = ref(0)
 const listElement = ref<HTMLElement | null>(null)
+const composerElement = ref<HTMLFormElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
 const conversationVisible = ref(false)
@@ -218,6 +241,17 @@ const peerTyping = ref(false)
 const notificationsState = ref<'unsupported' | 'default' | 'denied' | 'granted'>('unsupported')
 const activatingNotifications = ref(false)
 const pushActivated = ref(false)
+const highlightedMessageId = ref('')
+const replyNavigationStatus = ref('')
+const replySwipe = reactive<ReplySwipeState>({
+  pointerId: null,
+  messageId: '',
+  startX: 0,
+  startY: 0,
+  offset: 0,
+  shouldReply: false,
+  cancelled: false,
+})
 
 let realtimeClient: any = null
 let durableChannel: any = null
@@ -226,6 +260,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let typingTimer: ReturnType<typeof setTimeout> | null = null
 let peerTypingTimer: ReturnType<typeof setTimeout> | null = null
 let receiptTimer: ReturnType<typeof setTimeout> | null = null
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
 let visibilityObserver: IntersectionObserver | null = null
 let connectedConversationId = ''
 let syncRequested = false
@@ -322,6 +357,7 @@ watch(
 watch(() => props.caseId, () => {
   void attachmentDrafts.clear({ discard: !sending.value })
   retryableSend.value = null
+  replyingTo.value = null
   draftClientMessageId.value = crypto.randomUUID()
   composer.value = ''
   pendingMessage.value = null
@@ -360,6 +396,146 @@ function deliveryLabel(message: Message) {
   if ((peerReceipt.value?.readThroughSequence ?? 0) >= message.sequence) return 'Odczytano'
   if ((peerReceipt.value?.deliveredThroughSequence ?? 0) >= message.sequence) return 'Dostarczono'
   return 'Wysłano'
+}
+
+function replyAuthorLabel(reply: MessageReplyReference) {
+  return reply.senderKind === 'client' ? 'Ty' : props.expertName || 'Ekspert'
+}
+
+function replyActionLabel(message: Message) {
+  const author = message.senderKind === 'client' ? 'Ciebie' : props.expertName || 'eksperta'
+  return `Odpowiedz na wiadomość od ${author}`
+}
+
+function focusComposer() {
+  void nextTick(() => composerElement.value?.querySelector('textarea')?.focus())
+}
+
+function startReply(message: Message) {
+  if (sending.value || message.deletedAt) return
+  replyingTo.value = messageReplyReference(message)
+  focusComposer()
+}
+
+function cancelReply() {
+  replyingTo.value = null
+}
+
+function resetReplySwipe() {
+  replySwipe.pointerId = null
+  replySwipe.messageId = ''
+  replySwipe.startX = 0
+  replySwipe.startY = 0
+  replySwipe.offset = 0
+  replySwipe.shouldReply = false
+  replySwipe.cancelled = false
+}
+
+function messageSwipeOffset(messageId: string) {
+  return replySwipe.messageId === messageId ? replySwipe.offset : 0
+}
+
+function onMessagePointerDown(event: PointerEvent, message: Message) {
+  if (
+    sending.value
+    || event.pointerType === 'mouse'
+    || event.button !== 0
+    || message.deletedAt
+    || (event.target as Element | null)?.closest(
+      'a, button, input, textarea, select, [role="button"]',
+    )
+  ) return
+
+  resetReplySwipe()
+  replySwipe.pointerId = event.pointerId
+  replySwipe.messageId = message.id
+  replySwipe.startX = event.clientX
+  replySwipe.startY = event.clientY
+  ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function onMessagePointerMove(event: PointerEvent) {
+  if (
+    replySwipe.pointerId !== event.pointerId
+    || replySwipe.cancelled
+  ) return
+  const frame = resolveMessageReplySwipe(
+    event.clientX - replySwipe.startX,
+    event.clientY - replySwipe.startY,
+  )
+  if (frame.intent === 'vertical' || frame.intent === 'opposite') {
+    replySwipe.cancelled = true
+    replySwipe.offset = 0
+    replySwipe.shouldReply = false
+    return
+  }
+  if (frame.intent !== 'horizontal') return
+  event.preventDefault()
+  replySwipe.offset = frame.offset
+  replySwipe.shouldReply = frame.shouldReply
+}
+
+function onMessagePointerEnd(event: PointerEvent) {
+  if (replySwipe.pointerId !== event.pointerId) return
+  const message = replySwipe.shouldReply
+    ? messages.value.find(candidate => candidate.id === replySwipe.messageId)
+    : null
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+  resetReplySwipe()
+  if (message) startReply(message)
+}
+
+function onMessagePointerCancel(event: PointerEvent) {
+  if (replySwipe.pointerId !== event.pointerId) return
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+  resetReplySwipe()
+}
+
+async function revealReply(reply: MessageReplyReference) {
+  const requestedCaseId = props.caseId
+  const requestedConversationId = conversation.value?.id
+  const selector = `[data-message-id="${reply.id}"]`
+  let element = listElement.value?.querySelector<HTMLElement>(selector) ?? null
+  let attempts = 0
+  while (
+    !element
+    && hasOlderMessages.value
+    && (messages.value[0]?.sequence ?? Number.MAX_SAFE_INTEGER) > reply.sequence
+    && attempts < 20
+  ) {
+    const previousFirstSequence = messages.value[0]?.sequence
+    const loadResult = await loadOlderMessages()
+    if (
+      props.caseId !== requestedCaseId
+      || conversation.value?.id !== requestedConversationId
+      || loadResult === 'busy'
+      || loadResult === 'error'
+      || loadResult === 'cancelled'
+    ) return
+    await nextTick()
+    element = listElement.value?.querySelector<HTMLElement>(selector) ?? null
+    attempts += 1
+    if (messages.value[0]?.sequence === previousFirstSequence) break
+  }
+  if (!element) {
+    toast.add({
+      title: 'Oryginalna wiadomość jest niedostępna',
+      color: 'info',
+      icon: 'i-lucide-message-circle-warning',
+    })
+    return
+  }
+  element.scrollIntoView({
+    behavior: shouldReduceMotion() ? 'auto' : 'smooth',
+    block: 'center',
+  })
+  highlightedMessageId.value = reply.id
+  element.focus({ preventScroll: true })
+  replyNavigationStatus.value = `Przejście do cytowanej wiadomości numer ${reply.sequence}.`
+  if (highlightTimer) clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    if (highlightedMessageId.value === reply.id) highlightedMessageId.value = ''
+  }, 1_600)
 }
 
 function shouldReduceMotion() {
@@ -425,10 +601,13 @@ async function syncMissingMessages() {
   }
 }
 
-async function loadOlderMessages() {
-  if (props.preview) return
+async function loadOlderMessages(): Promise<LoadOlderMessagesResult> {
+  if (props.preview) return 'unavailable'
   const firstSequence = messages.value[0]?.sequence
-  if (!conversation.value || !firstSequence || loadingOlder.value) return
+  if (!conversation.value || !firstSequence) return 'unavailable'
+  if (loadingOlder.value) return 'busy'
+  const requestedCaseId = props.caseId
+  const requestedConversationId = conversation.value.id
   loadingOlder.value = true
   const list = listElement.value
   const previousHeight = list?.scrollHeight ?? 0
@@ -436,21 +615,30 @@ async function loadOlderMessages() {
     const response = await $portalFetch<ConversationResponse>(apiPath.value, {
       query: { beforeSequence: firstSequence },
     })
+    if (
+      props.caseId !== requestedCaseId
+      || conversation.value?.id !== requestedConversationId
+    ) return 'cancelled'
     applyResponse(response, 'older')
     await nextTick()
     if (list) list.scrollTop += list.scrollHeight - previousHeight
     messageMotionReady.value = true
+    return 'loaded'
   }
   catch (caught) {
-    if (isUnauthorizedRequestError(caught)) return
+    if (isUnauthorizedRequestError(caught)) return 'error'
     toast.add({
       title: 'Nie udało się pobrać starszych wiadomości',
       color: 'error',
       icon: 'i-lucide-circle-alert',
     })
+    return 'error'
   }
   finally {
-    loadingOlder.value = false
+    if (
+      props.caseId === requestedCaseId
+      && conversation.value?.id === requestedConversationId
+    ) loadingOlder.value = false
   }
 }
 
@@ -501,6 +689,8 @@ async function acknowledgeMessages() {
 async function sendMessage() {
   const body = composer.value.trim()
   if (!canSend.value) return
+  const replyTarget = replyingTo.value
+  const replyToMessageId = replyTarget?.id ?? null
 
   if (props.preview) {
     const sequence = latestSequence.value + 1
@@ -516,6 +706,8 @@ async function sendMessage() {
       senderAuthUserId: 'preview-auth-user',
       body,
       attachments: [],
+      replyToMessageId,
+      replyToMessage: replyTarget,
       createdAt: new Date().toISOString(),
       editedAt: null,
       deletedAt: null,
@@ -523,6 +715,7 @@ async function sendMessage() {
     previewConversations.appendMessage(props.caseId, message)
     mergeMessages([message])
     composer.value = ''
+    replyingTo.value = null
     draftClientMessageId.value = crypto.randomUUID()
     emit('messageSent')
     void nextTick(scrollToEnd)
@@ -535,6 +728,7 @@ async function sendMessage() {
   const attachmentIds = attachments.map(attachment => attachment.id)
   const previousAttempt = retryableSend.value
   const matchesPreviousAttempt = previousAttempt?.body === body
+    && previousAttempt.replyToMessageId === replyToMessageId
     && previousAttempt.attachmentIds.length === attachmentIds.length
     && previousAttempt.attachmentIds.every((id, index) => id === attachmentIds[index])
   if (previousAttempt && !matchesPreviousAttempt) {
@@ -558,6 +752,7 @@ async function sendMessage() {
         body,
         clientMessageId: draftClientMessageId.value,
         attachmentIds,
+        replyToMessageId,
       }
   retryableSend.value = attempt
   sending.value = true
@@ -565,8 +760,10 @@ async function sendMessage() {
     clientMessageId: attempt.clientMessageId,
     body,
     attachments,
+    replyToMessage: replyTarget,
   }
   composer.value = ''
+  replyingTo.value = null
   stopTyping()
 
   try {
@@ -578,6 +775,7 @@ async function sendMessage() {
           body,
           clientMessageId: attempt.clientMessageId,
           attachmentIds: attempt.attachmentIds,
+          replyToMessageId: attempt.replyToMessageId,
         },
       },
     )
@@ -600,21 +798,29 @@ async function sendMessage() {
       for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
       return
     }
-    if (requestErrorCode(caught) === 'case_message_attachment_unavailable') {
+    const errorCode = requestErrorCode(caught)
+    const replyUnavailable = errorCode === 'case_message_reply_unavailable'
+    if (errorCode === 'case_message_attachment_unavailable') {
       attachmentDrafts.invalidateReadyAttachments(
         attachmentIds,
         'Załącznik wygasł. Kliknij „Ponów”, aby przesłać go ponownie.',
       )
       retryableSend.value = null
     }
+    if (replyUnavailable) retryableSend.value = null
     composer.value = body
+    replyingTo.value = replyUnavailable ? null : replyTarget
     pendingMessage.value = null
     if (isUnauthorizedRequestError(caught)) return
     toast.add({
-      title: 'Nie udało się wysłać wiadomości',
-      description: 'Treść i załączniki zostały zachowane. Spróbuj ponownie za chwilę.',
-      color: 'error',
-      icon: 'i-lucide-circle-alert',
+      title: replyUnavailable
+        ? 'Nie można już odpowiedzieć na tę wiadomość'
+        : 'Nie udało się wysłać wiadomości',
+      description: replyUnavailable
+        ? 'Treść została zachowana. Wybierz inną wiadomość lub wyślij ją bez cytatu.'
+        : 'Treść i załączniki zostały zachowane. Spróbuj ponownie za chwilę.',
+      color: replyUnavailable ? 'warning' : 'error',
+      icon: replyUnavailable ? 'i-lucide-message-circle-warning' : 'i-lucide-circle-alert',
     })
   }
   finally {
@@ -836,6 +1042,8 @@ onBeforeUnmount(() => {
   stopTyping()
   if (peerTypingTimer) clearTimeout(peerTypingTimer)
   if (receiptTimer) clearTimeout(receiptTimer)
+  if (highlightTimer) clearTimeout(highlightTimer)
+  resetReplySwipe()
   visibilityObserver?.disconnect()
   document.removeEventListener('visibilitychange', scheduleReceipt)
   disconnectRealtime()
@@ -975,12 +1183,51 @@ onBeforeUnmount(() => {
           <article
             v-for="message in messages"
             :key="message.clientMessageId"
+            :data-message-id="message.id"
+            tabindex="-1"
             :class="[
               'portal-message',
               message.senderKind === 'client' ? 'portal-message--mine' : 'portal-message--theirs',
+              {
+                'is-highlighted': highlightedMessageId === message.id,
+                'is-swiping': replySwipe.messageId === message.id && replySwipe.offset > 0,
+                'is-swipe-ready': replySwipe.messageId === message.id && replySwipe.shouldReply,
+              },
             ]"
+            @pointerdown="onMessagePointerDown($event, message)"
+            @pointermove="onMessagePointerMove"
+            @pointerup="onMessagePointerEnd"
+            @pointercancel="onMessagePointerCancel"
           >
-            <div>
+            <UButton
+              v-if="message.senderKind === 'client'"
+              class="portal-message__reply-action"
+              type="button"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-reply"
+              :disabled="sending"
+              :aria-label="replyActionLabel(message)"
+              @click="startReply(message)"
+            />
+            <div
+              class="portal-message__bubble"
+              :style="{ '--portal-message-swipe-offset': `${messageSwipeOffset(message.id)}px` }"
+            >
+              <MessageReplyQuote
+                v-if="message.replyToMessage"
+                :reply="message.replyToMessage"
+                :author-label="replyAuthorLabel(message.replyToMessage)"
+                interactive
+                @select="revealReply"
+              />
+              <div
+                v-else-if="message.replyToMessageId"
+                class="portal-message__reply-missing"
+              >
+                Oryginalna wiadomość jest niedostępna
+              </div>
               <p v-if="message.body">{{ message.body }}</p>
               <div v-if="message.attachments.length" class="portal-message__attachments">
                 <MessageAttachments
@@ -1005,6 +1252,18 @@ onBeforeUnmount(() => {
                 </Transition>
               </footer>
             </div>
+            <UButton
+              v-if="message.senderKind !== 'client'"
+              class="portal-message__reply-action"
+              type="button"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-reply"
+              :disabled="sending"
+              :aria-label="replyActionLabel(message)"
+              @click="startReply(message)"
+            />
           </article>
 
           <article
@@ -1012,7 +1271,12 @@ onBeforeUnmount(() => {
             :key="visiblePendingMessage.clientMessageId"
             class="portal-message portal-message--mine is-pending"
           >
-            <div>
+            <div class="portal-message__bubble">
+              <MessageReplyQuote
+                v-if="visiblePendingMessage.replyToMessage"
+                :reply="visiblePendingMessage.replyToMessage"
+                :author-label="replyAuthorLabel(visiblePendingMessage.replyToMessage)"
+              />
               <p v-if="visiblePendingMessage.body">{{ visiblePendingMessage.body }}</p>
               <div
                 v-if="visiblePendingMessage.attachments.length"
@@ -1056,7 +1320,42 @@ onBeforeUnmount(() => {
       </Transition>
     </div>
 
-    <form v-if="!loadError" class="portal-conversation__composer" @submit.prevent="sendMessage">
+    <p class="sr-only" role="status" aria-live="polite">
+      {{ replyNavigationStatus }}
+    </p>
+
+    <form
+      v-if="!loadError"
+      ref="composerElement"
+      class="portal-conversation__composer"
+      @submit.prevent="sendMessage"
+      @keydown.esc.prevent="cancelReply"
+    >
+      <Transition name="portal-reply-composer">
+        <div
+          v-if="replyingTo"
+          class="portal-conversation__reply-composer"
+        >
+          <div>
+            <span role="status" aria-live="polite">
+              Odpowiadasz: {{ replyAuthorLabel(replyingTo) }}
+            </span>
+            <MessageReplyQuote
+              :reply="replyingTo"
+              :author-label="replyAuthorLabel(replyingTo)"
+              :show-author="false"
+            />
+          </div>
+          <UButton
+            type="button"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-x"
+            aria-label="Anuluj odpowiedź na wiadomość"
+            @click="cancelReply"
+          />
+        </div>
+      </Transition>
       <MessageAttachmentComposer
         :controller="attachmentDrafts"
         :client-message-id="draftClientMessageId"
@@ -1330,17 +1629,28 @@ onBeforeUnmount(() => {
 }
 
 .portal-message {
+  position: relative;
   display: flex;
   width: 100%;
+  align-items: center;
+  gap: 4px;
+  touch-action: pan-y pinch-zoom;
   transform-origin: left bottom;
 }
 
-.portal-message > div {
+.portal-message__bubble {
+  position: relative;
+  z-index: 1;
   max-width: min(76%, 620px);
   padding: 10px 13px 7px;
   border-radius: 17px 17px 17px 5px;
   background: var(--ui-bg-muted);
   color: var(--ui-text-highlighted);
+  transform: translate3d(var(--portal-message-swipe-offset, 0), 0, 0);
+  transition:
+    opacity var(--oe-motion-fast),
+    transform var(--oe-duration-fast) var(--ease-out),
+    box-shadow var(--oe-duration-fast) var(--ease-out);
 }
 
 .portal-message--mine {
@@ -1348,7 +1658,7 @@ onBeforeUnmount(() => {
   transform-origin: right bottom;
 }
 
-.portal-message--mine > div {
+.portal-message--mine .portal-message__bubble {
   --oe-message-attachment-bg: rgb(255 255 255 / 9%);
   --oe-message-attachment-border: rgb(255 255 255 / 18%);
   --oe-message-attachment-hover: rgb(255 255 255 / 14%);
@@ -1360,12 +1670,54 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
-.portal-message > div {
-  transition: opacity var(--oe-motion-fast);
+.portal-message.is-pending .portal-message__bubble {
+  opacity: .65;
 }
 
-.portal-message.is-pending > div {
-  opacity: .65;
+.portal-message.is-swiping .portal-message__bubble {
+  transition: none;
+}
+
+.portal-message.is-highlighted .portal-message__bubble {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ui-primary) 28%, transparent),
+    0 10px 30px color-mix(in srgb, var(--ui-primary) 14%, transparent);
+}
+
+.portal-message__reply-action {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  border-radius: 999px;
+  opacity: 0;
+  transform: scale(.88);
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    color var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.portal-message:hover .portal-message__reply-action,
+.portal-message:focus-within .portal-message__reply-action {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.portal-message.is-swipe-ready .portal-message__reply-action {
+  color: var(--ui-primary);
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.portal-message__reply-missing {
+  margin-bottom: 7px;
+  padding: 7px 9px 7px 11px;
+  border-left: 3px solid currentColor;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: color-mix(in srgb, currentColor 66%, transparent);
+  font-size: 11px;
 }
 
 .portal-message-list-enter-active {
@@ -1396,6 +1748,19 @@ onBeforeUnmount(() => {
   line-height: 1.48;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.portal-message__bubble > :deep(.oe-message-reply-quote) {
+  margin-bottom: 7px;
+}
+
+.portal-message--mine :deep(.oe-message-reply-quote) {
+  --oe-message-reply-bg: rgb(255 255 255 / 11%);
+  --oe-message-reply-hover: rgb(255 255 255 / 17%);
+  --oe-message-reply-accent: currentColor;
+  --oe-message-reply-author: currentColor;
+  --oe-message-reply-muted: rgb(255 255 255 / 76%);
+  --oe-message-reply-text: currentColor;
 }
 
 .portal-message__attachments {
@@ -1535,6 +1900,50 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--portal-line);
 }
 
+.portal-conversation__reply-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding: 7px 7px 7px 10px;
+  border-radius: 12px;
+  background: var(--ui-bg-muted);
+}
+
+.portal-conversation__reply-composer > div {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
+}
+
+.portal-conversation__reply-composer > div > span {
+  color: var(--ui-text-toned);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.portal-conversation__reply-composer > button {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.portal-reply-composer-enter-active,
+.portal-reply-composer-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.portal-reply-composer-enter-from,
+.portal-reply-composer-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
 .portal-conversation__composer :deep(textarea) {
   min-height: 44px;
   border-radius: 15px;
@@ -1571,7 +1980,10 @@ onBeforeUnmount(() => {
   .portal-message-status-leave-active,
   .portal-new-message-enter-active,
   .portal-new-message-leave-active,
-  .portal-message > div {
+  .portal-reply-composer-enter-active,
+  .portal-reply-composer-leave-active,
+  .portal-message__bubble,
+  .portal-message__reply-action {
     transition-duration: 150ms !important;
     transition-property: opacity !important;
   }
@@ -1584,6 +1996,11 @@ onBeforeUnmount(() => {
   .portal-new-message-enter-from,
   .portal-new-message-leave-to {
     transform: translateX(-50%) !important;
+  }
+
+  .portal-reply-composer-enter-from,
+  .portal-reply-composer-leave-to {
+    transform: none !important;
   }
 
   .portal-conversation__typing span {
@@ -1664,8 +2081,8 @@ onBeforeUnmount(() => {
     padding: 14px 0;
   }
 
-  .portal-message > div {
-    max-width: 87%;
+  .portal-message__bubble {
+    max-width: min(87%, calc(100% - 48px));
   }
 
   .portal-conversation__composer {
@@ -1675,5 +2092,24 @@ onBeforeUnmount(() => {
   .portal-conversation__hint {
     display: none;
   }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .portal-message__reply-action {
+    opacity: .58;
+    transform: scale(1);
+  }
+}
+
+.portal-message__reply-action:disabled {
+  opacity: 0;
+}
+
+.portal-message--theirs.is-swiping .portal-message__reply-action {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%) scale(1);
 }
 </style>

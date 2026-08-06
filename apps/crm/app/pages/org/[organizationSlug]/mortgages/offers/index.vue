@@ -7,7 +7,6 @@ import {
   normalizeMortgageOfferBanksPayload,
 } from '~/types/mortgage-offer-backoffice'
 import { apiErrorMessage } from '~/utils/api-error'
-import { createMortgageAdminTabs } from '~/utils/crm-navigation'
 import { createDefaultMortgageOfferV2 } from '~/utils/mortgage-offer-draft'
 
 definePageMeta({
@@ -21,7 +20,6 @@ const route = useRoute()
 const toast = useToast()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
 const listPath = computed(() => `/org/${organizationSlug.value}/settings/products`)
-const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
 const { data: organizations } = await useOrganizations()
 const isSuperAdmin = computed(() => organizations.value.access.superAdmin)
 
@@ -211,7 +209,6 @@ function validityLabel(offer: MortgageOfferSummary) {
     title="Produkty kredytowe"
     eyebrow="Ustawienia administracyjne"
     description="Katalog produktów, ich wersji, statusów publikacji i ustawień kalkulatora."
-    :tabs="tabs"
   >
     <template #actions>
       <UButton v-if="isSuperAdmin" icon="i-lucide-plus" @click="openCreate()">

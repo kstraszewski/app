@@ -4,7 +4,6 @@ import {
   type InstitutionSearchAlias,
   type InstitutionSearchMatch,
 } from '~/utils/mortgage-institution-search'
-import { createMortgageAdminTabs } from '~/utils/crm-navigation'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
@@ -67,8 +66,6 @@ const sourceItems = [
   { label: 'Ze zmianami', value: 'custom' },
   { label: 'Dane źródłowe', value: 'source' },
 ]
-
-const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
 
 const { data, status, error, refresh } = await useFetch<Payload>(apiBase, {
   default: () => ({ banks: [], role: 'expert' as const, superAdmin: false }),
@@ -171,7 +168,6 @@ function clearFilters() {
     title="Instytucje"
     eyebrow="Ustawienia administracyjne"
     description="Katalog instytucji finansowych i produktów dostępnych w organizacji."
-    :tabs="tabs"
   >
     <template #actions>
       <UButton

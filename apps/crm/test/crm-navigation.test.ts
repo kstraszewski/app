@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CRM_CALCULATOR_PATHS,
-  createMortgageAdminTabs,
+  createMortgageAdminNavigationItems,
   isCrmNavigationPathActive,
   type CrmNavigationTarget,
 } from '../app/utils/crm-navigation.ts'
@@ -47,8 +47,8 @@ test('does not mark a calculator active on capacity administration routes', () =
   assert.deepEqual(activeCalculatorLabels(`${organizationBase}/settings/capacity`), [])
 })
 
-test('builds one complete navigation model for mortgage administration pages', () => {
-  assert.deepEqual(createMortgageAdminTabs('acme'), [
+test('builds the sidebar navigation for mortgage administration pages', () => {
+  assert.deepEqual(createMortgageAdminNavigationItems('acme'), [
     {
       label: 'Instytucje',
       to: `${organizationBase}/settings/institutions`,
@@ -70,20 +70,27 @@ test('builds one complete navigation model for mortgage administration pages', (
   ])
 })
 
-test('marks exactly one mortgage administration tab active on each page', () => {
-  const tabs = createMortgageAdminTabs('acme')
+test('marks exactly one mortgage administration item active on each page', () => {
+  const items = createMortgageAdminNavigationItems('acme')
 
-  for (const activeTab of tabs) {
+  for (const activeItem of items) {
     assert.deepEqual(
-      tabs.filter(tab => isCrmNavigationPathActive(activeTab.to, tab)).map(tab => tab.label),
-      [activeTab.label],
+      items.filter(item => isCrmNavigationPathActive(activeItem.to, item)).map(item => item.label),
+      [activeItem.label],
     )
   }
+
+  assert.deepEqual(
+    items
+      .filter(item => isCrmNavigationPathActive(`${organizationBase}/settings/products/product-1`, item))
+      .map(item => item.label),
+    ['Produkty'],
+  )
 })
 
 test('encodes organization slugs in mortgage administration links', () => {
   assert.equal(
-    createMortgageAdminTabs('oddział warszawa')[0]?.to,
+    createMortgageAdminNavigationItems('oddział warszawa')[0]?.to,
     '/org/oddzia%C5%82%20warszawa/settings/institutions',
   )
 })

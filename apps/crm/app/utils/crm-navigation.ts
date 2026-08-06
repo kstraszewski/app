@@ -3,7 +3,7 @@ export const CRM_CALCULATOR_PATHS = {
   mortgages: '/calculator/mortgages',
 } as const
 
-const CRM_MORTGAGE_ADMIN_TAB_DEFINITIONS = [
+const CRM_MORTGAGE_ADMIN_NAVIGATION_DEFINITIONS = [
   {
     label: 'Instytucje',
     path: '/settings/institutions',
@@ -27,13 +27,13 @@ export interface CrmNavigationTarget {
   exact?: boolean
 }
 
-export function createMortgageAdminTabs(organizationSlug: string) {
+export function createMortgageAdminNavigationItems(organizationSlug: string) {
   const organizationBase = `/org/${encodeURIComponent(organizationSlug)}`
 
-  return CRM_MORTGAGE_ADMIN_TAB_DEFINITIONS.map(tab => ({
-    label: tab.label,
-    to: `${organizationBase}${tab.path}`,
-    icon: tab.icon,
+  return CRM_MORTGAGE_ADMIN_NAVIGATION_DEFINITIONS.map(item => ({
+    label: item.label,
+    to: `${organizationBase}${item.path}`,
+    icon: item.icon,
     exact: false,
   }))
 }

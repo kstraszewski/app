@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { createMortgageAdminTabs } from '~/utils/crm-navigation'
-
 definePageMeta({
   middleware: ['auth', 'organization'],
   path: 'settings/institution-files',
@@ -21,7 +19,6 @@ const initialPage = computed(() => {
   return Number.isSafeInteger(page) && page > 0 ? page : null
 })
 const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
-const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
 </script>
 
 <template>
@@ -29,7 +26,6 @@ const tabs = computed(() => createMortgageAdminTabs(organizationSlug.value))
     title="Pliki z banków"
     eyebrow="Ustawienia administracyjne"
     description="Wspólne repozytorium procedur, formularzy i materiałów źródłowych instytucji finansowych."
-    :tabs="tabs"
   >
     <template #actions>
       <UButton

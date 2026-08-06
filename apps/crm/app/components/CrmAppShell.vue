@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { CrmMeetingListResponse } from '~/types/crm-meeting'
 import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
-import { CRM_CALCULATOR_PATHS, isCrmNavigationPathActive } from '~/utils/crm-navigation'
+import {
+  CRM_CALCULATOR_PATHS,
+  createMortgageAdminNavigationItems,
+  isCrmNavigationPathActive,
+} from '~/utils/crm-navigation'
 
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
@@ -332,22 +336,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
     }
 
     if (isSuperAdmin.value) {
-      adminItems.push(
-        {
-          label: 'Instytucje',
-          to: `${organizationBase.value}/settings/institutions`,
-          icon: 'i-lucide-landmark',
-          activePaths: [
-            `${organizationBase.value}/settings/institutions`,
-            `${organizationBase.value}/settings/products`,
-          ],
-        },
-        {
-          label: 'Pliki z banków',
-          to: `${organizationBase.value}/settings/institution-files`,
-          icon: 'i-lucide-folder-search-2',
-        },
-      )
+      adminItems.push(...createMortgageAdminNavigationItems(organizationSlug.value))
     }
 
     if (isOrganizationAdmin.value) {

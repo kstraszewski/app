@@ -59,6 +59,64 @@ Stan: ciemny motyw OpenExpert, organizacja `openexpert-local`, administrator org
 
 ---
 
+# Design QA — pełnoekranowy widok wiadomości klienta
+
+## Wynik
+
+`passed`
+
+Widok wiadomości zaczyna się bezpośrednio pod główną nawigacją i zajmuje całą pozostałą wysokość ekranu. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał porównawczy
+
+- Źródło produktu przed zmianą: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-6b0ece48-caed-4e31-882b-acc088b535eb.png`, 3024 × 1658 px. Źródło definiuje typografię, kolory, globalny nagłówek i styl wiadomości OpenExpert.
+- Referencja układu Messenger: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-c3003fae-e2ba-4f4e-90c6-36a3fcfa2c6c.png`, 2288 × 1650 px. Referencja definiuje pełnowysokościowy podział na listę rozmów i aktywny czat, wyszukiwarkę oraz kompozytor przy dolnej krawędzi.
+- Implementacja desktop: `/private/tmp/openexpert-messages-desktop-final.png`, 1600 × 900 px; CSS viewport 1600 × 900, DPR 1.
+- Implementacja mobile — lista: `/private/tmp/openexpert-messages-mobile-list.png`, 390 × 844 px; CSS viewport 390 × 844, DPR 1.
+- Implementacja mobile — aktywny czat: `/private/tmp/openexpert-messages-mobile-chat.png`, 390 × 844 px; CSS viewport 390 × 844, DPR 1.
+- Pełny widok źródła produktu, referencji Messenger i implementacji otwarto razem w jednym wejściu porównawczym. Gęstość pikseli nie była normalizowana 1:1, ponieważ drugi screenshot jest referencją kompozycji, a nie źródłem do klonowania; oceniano proporcje regionów i zachowanie layoutu.
+
+Stan implementacji: jasny motyw, bezpieczny podgląd portalu klienta, dwie demonstracyjne sprawy, pierwsza rozmowa aktywna na desktopie; na mobile sprawdzono osobno listę i aktywny czat.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Typografia:** zachowano DM Sans, optyczne wagi OpenExpert, uppercase tytułu sprawy, istniejące rozmiary wiadomości i metadanych. Tytuł „Wiadomości” przeniesiono do panelu listy, zgodnie z hierarchią Messengera, bez dodawania nowego stylu display.
+- **Spacing i rytm:** usunięto duży nagłówek strony, zewnętrzne marginesy, zaokrągloną kartę i cień. Globalny nagłówek ma 82 px, a inbox dokładnie 818 px przy viewporcie 900 px. Sidebar ma 380 px, a rozmowa 1220 px; historia i kompozytor nie powodują przewijania dokumentu.
+- **Kolory i tokeny:** zachowano jasną paletę OpenExpert, `--portal-warm-surface`, `--portal-line` i semantyczne tokeny `--ui-*`. Aktywna rozmowa oraz własne wiadomości pozostają czarne, bez kopiowania ciemnego motywu Messengera.
+- **Ikony i zasoby:** wszystkie nowe ikony pochodzą z istniejącej kolekcji Lucide (`search`, `search-x`, `arrow-left`, `arrow-up-right`). Widok nie wymaga nowych obrazów ani ilustracji; nie dodano własnych SVG, atrap ani CSS-art.
+- **Copy i treść:** zachowano nazwy spraw, ekspertów, status synchronizacji, metadane dostarczenia i treść rozmowy. Dodano jedynie użytkowe copy wyszukiwania oraz jego stan pusty.
+- **Responsywność:** przy 390 px lista i czat są osobnymi stanami. Powrót mieści się w nagłówku rozmowy, dokument ma `clientWidth = scrollWidth = 390`, a kompozytor kończy się na y=764, tuż nad dolną nawigacją zaczynającą się na y=770.
+- **Dostępność:** panel listy i aktywna rozmowa zachowują nazwy regionów; wyszukiwarka ma label, aktywny wątek `aria-current`, a mobilny powrót jednoznaczną nazwę dostępną. Istniejące live regiony, focus-visible i stany disabled pozostały bez zmian.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Wyszukanie `Refinansowanie` ograniczyło listę do właściwej rozmowy, a wyczyszczenie pola przywróciło oba wątki.
+- Wybór drugiego wątku zaktualizował URL do `?case=case-preview-refinance` i przełączył kontekst rozmowy.
+- Mobilny przycisk powrotu usunął parametr sprawy i przywrócił pełnoekranową listę.
+- Pole wiadomości, przycisk wysyłki, akcja załącznika i dolna nawigacja pozostały widoczne w aktywnym czacie.
+- Konsola nie zawierała błędów ani ostrzeżeń w stanach desktop, mobile-list i mobile-chat.
+
+## Historia porównania i poprawki
+
+- **P1 — główna część ekranu była zajęta przez tytuł i zewnętrzne odstępy:** usunięto blok „Twoje rozmowy / Wiadomości”, wrapper 1240 px, padding i kartę. Finalny inbox dochodzi od y=82 do y=900 i zajmuje pełną szerokość 1600 px.
+- **P2 — aktywny czat miał dwa kolejne nagłówki:** tytuł sprawy, ekspert, status i akcję „Otwórz sprawę” połączono w jeden pasek o wysokości 78 px.
+- **P2 — pierwszy wariant mobilny miał 508 px szerokości w viewporcie 390 px:** źródłem był min-content linku „Otwórz sprawę”. Panel otrzymał `min-width: 0`, szerokość 100%, elastyczny blok eksperta i ikonowy wariant akcji. Po poprawce nagłówek, historia i kompozytor mają dokładnie 390 px szerokości, a poziomy overflow nie występuje.
+- **P2 — pole pisania mogło wejść pod dolną nawigację:** panel rozmowy otrzymał siatkę z elastycznym regionem historii oraz mobilny odstęp pod kompozytorem. Finalne pomiary pokazują 6 px przerwy między kompozytorem a dolną nawigacją.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/client typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/client test:conversation-inbox` — 4/4 testy zakończone powodzeniem.
+- `git diff --check` — bez błędów.
+- Kontrola przeglądarkowa desktop 1600 × 900 oraz mobile 390 × 844; sprawdzono wyszukiwanie, wybór rozmowy, mobilny powrót, geometrię regionów, brak poziomego overflow i logi konsoli.
+- Próba dodatkowego `nuxt build` nie została uruchomiona, ponieważ w tym samym katalogu działał już inny proces buildu (PID 24123). Nie zatrzymywano procesu użytkownika; typecheck i testy zakończyły się powodzeniem.
+
+## Final result
+
+`passed`
+
+---
+
 # Design QA — karta tożsamości metod logowania
 
 ## Wynik
@@ -202,6 +260,66 @@ Stan implementacji: jasny motyw OpenExpert, organizacja `openexpert-local`, akty
 - `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
 - `git diff --check` — bez błędów.
 - Kontrola przeglądarkowa desktop 1440 × 1000 i mobile 390 × 844; brak błędów konsoli.
+
+## Final result
+
+`passed`
+
+---
+
+# Design QA — widoki wiadomości CRM
+
+## Wynik
+
+`passed`
+
+Globalna skrzynka CRM i zakładka Wiadomości na karcie sprawy korzystają teraz z pełnowysokościowego układu rozmowy. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonym stanie desktopowym i głównych interakcjach.
+
+## Materiał porównawczy
+
+- Referencja docelowego układu klienta: `/private/tmp/openexpert-client-messages-reference.png`, 1280 × 720 px.
+- Poprzedni widok CRM: `/private/tmp/openexpert-crm-messages-before.png`, 1280 × 720 px.
+- Finalna globalna skrzynka CRM: `/private/tmp/openexpert-crm-messages-final.png`, 1280 × 720 px.
+- Finalna zakładka wiadomości sprawy: `/private/tmp/openexpert-crm-case-messages-final.png`, 1280 × 720 px.
+
+Porównanie wykonano w tym samym wywołaniu przeglądarkowym i w tym samym viewporcie. Lewa nawigacja CRM oraz ciemny motyw są oczekiwanymi różnicami produktu; oceniano strukturę lista–rozmowa, rytm, hierarchię i zachowanie.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Layout i spacing:** usunięto duży hero oraz kartę ograniczającą inbox. Globalny widok ma rail 300–360 px i elastyczny panel rozmowy. Na sprawie kompaktowy nagłówek i zakładki pozostają nad panelem, a historia zajmuje całą pozostałą wysokość.
+- **Typografia i copy:** zachowano fonty i hierarchię CRM. Tytuł listy, nazwa klienta, nazwa sprawy, status synchronizacji, czas oraz podgląd wiadomości są skanowalne i odpowiednio skracane.
+- **Kolory i powierzchnie:** użyto istniejących tokenów CRM. Aktywny wątek korzysta z podwyższonej powierzchni oraz znacznika `--ui-primary`, zgodnie z istniejącym wzorcem skrzynki pocztowej CRM.
+- **Ikony i zasoby:** wszystkie akcje używają istniejących ikon Lucide. Nie dodano obrazów, własnych SVG, CSS-art ani atrap zasobów.
+- **Stany:** zachowano loading, błąd, pustą listę, brak wyników, wszystko przeczytane, limit 100 rozmów, unread, disabled composer, realtime/polling, typing, receipts, załączniki i panel plików klienta.
+- **Responsywność:** przy `max-width: 1100px` globalny widok przechodzi na list-or-detail, dzięki czemu sidebar CRM nie ściska rozmowy na małych laptopach i tabletach. Przycisk powrotu przywraca listę; composer respektuje safe area, a historia pozostaje jedynym pionowym obszarem przewijania.
+- **Dostępność:** lista, panel rozmowy, wyszukiwarka, filtry, aktywny wątek, composer i akcje mają nazwy dostępne. Zachowano `aria-current`, live regiony, focus-visible, stan disabled i praktyczne rozmiary kontrolek.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Wyszukiwanie pokazało stan „Brak wyników”, a „Wyczyść filtry” przywróciło rozmowę.
+- Filtr „Nieprzeczytane” pokazał stan „Wszystko przeczytane”; powrót do „Wszystkie” przywrócił listę.
+- Kliknięcie wątku ustawiło URL `?case=…&person=…` i zachowało właściwy kontekst rozmowy.
+- Panel „Pliki od klienta” otworzył się z poprawną nazwą klienta i zamknął bez błędu.
+- Wpisanie szkicu aktywowało przycisk wysyłki, a wyczyszczenie pola ponownie go dezaktywowało. Nie wysłano wiadomości testowej.
+- Świeże załadowanie globalnego widoku oraz karty sprawy zakończyło się bez błędów i ostrzeżeń konsoli.
+
+## Historia porównania i poprawki
+
+- **P1 — globalna skrzynka nie pokazywała rozmowy:** wiersz prowadził do karty sprawy, a większość ekranu pozostawała pusta. Dodano pełnowysokościowy split view z wyborem utrwalonym w URL.
+- **P1 — wiadomości sprawy miały limit `62dvh`:** panel otrzymał wariant `pane`, łańcuch `min-height: 0` i elastyczny region historii z composerem przy dolnej krawędzi.
+- **P2 — nagłówek sprawy zabierał za dużo wysokości:** wariant compact ukrywa opisowy hero, ogranicza tytuł i odstępy oraz pozostawia zakładki.
+- **P2 — Agent AI zasłaniał composer:** launcher na trasach wiadomości został przesunięty nad pole odpowiedzi.
+- **P2 — pierwszy przebieg miał ostrzeżenia hydratacji:** panel otrzymał deterministyczny fallback do zakończenia hydratacji. Powtórny test w świeżych kartach zwrócił zero błędów i ostrzeżeń.
+- **P2 — ikona pustego stanu nie istniała w zestawie Lucide:** zastąpiono ją dostępną ikoną `message-circle-more`.
+- **P1 — polling mógł przełączyć domyślnie otwartą rozmowę:** pierwszy desktopowy wybór jest teraz zapamiętywany, a zmiana wątku zostaje zablokowana podczas aktywnego szkicu lub wysyłania.
+- **P2 — sidebar mógł ścisnąć split view przy 768–1100 px:** breakpoint list-or-detail podniesiono do 1100 px; panel rozmowy pokazuje wtedy akcję powrotu.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/crm test:message-attachments` — 3/3 testy zakończone powodzeniem.
+- `git diff --check` — bez błędów.
+- Kontrola przeglądarkowa: globalne `/messages` i `cases/:id?view=messages`, viewport 1280 × 720, ciemny motyw; brak błędów i ostrzeżeń w świeżych kartach.
 
 ## Final result
 

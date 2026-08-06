@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RouteLocationRaw } from 'vue-router'
 import type {
   Conversation,
   Message,
@@ -125,14 +126,29 @@ function requestErrorCode(error: unknown): string {
   )
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   caseId: string
+  fixedClientPersonId?: string
+  caseTitle?: string
+  caseTo?: RouteLocationRaw
+  backTo?: RouteLocationRaw
+  surface?: 'card' | 'pane'
+}>(), {
+  fixedClientPersonId: '',
+  caseTitle: '',
+  caseTo: undefined,
+  backTo: undefined,
+  surface: 'card',
+})
+
+const emit = defineEmits<{
+  activity: []
 }>()
 
 const toast = useToast()
 const route = useRoute()
 const requestFetch = useRequestFetch()
-const { organizationSlug, crmApiPath } = useOrganizationContext()
+const { organizationSlug, crmApiPath, orgPath } = useOrganizationContext()
 
 const indexApiPath = computed(() => crmApiPath(
   `/cases/${encodeURIComponent(props.caseId)}/conversations`,
@@ -168,6 +184,7 @@ const retryableSends = new Map<string, RetryableSend>()
 const draftClientMessageId = ref('')
 const pendingBody = ref('')
 const pendingAttachments = ref<MessageAttachment[]>([])
+const pendingClientMessageId = ref('')
 const pendingConversationId = ref('')
 const pendingRecipientId = ref('')
 const sending = ref(false)
@@ -180,7 +197,10 @@ const listElement = ref<HTMLElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
 const panelVisible = ref(false)
+const panelHydrated = ref(false)
 const peerTyping = ref(false)
+const messageMotionReady = ref(false)
+const unseenMessageCount = ref(0)
 const connectionState = ref<'idle' | 'connecting' | 'connected' | 'polling' | 'offline'>('idle')
 const notificationsState = ref<'unsupported' | NotificationPermission>('unsupported')
 const activatingNotifications = ref(false)
@@ -203,6 +223,8 @@ let conversationRevision = 0
 let syncRequested = false
 const attachmentApiPaths = new Map<string, string>()
 const pendingAttachmentPreviewUrls = new Map<string, string>()
+const clientFilesOpen = ref(false)
+const clientFilesRefreshKey = ref(0)
 
 const attachmentDraftAdapter: MessageAttachmentDraftAdapter = {
   async reserve(input) {
@@ -244,10 +266,26 @@ const attachmentDrafts = useMessageAttachmentDrafts(attachmentDraftAdapter)
 const selectedRecipient = computed(() => recipients.value.find(
   recipient => recipient.clientPersonId === selectedClientPersonId.value,
 ) ?? null)
+const selectedRecipientInitials = computed(() => {
+  const words = (selectedRecipient.value?.displayName || 'Klient')
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+  return (words.length > 1
+    ? `${words[0]?.[0] ?? ''}${words.at(-1)?.[0] ?? ''}`
+    : words[0]?.slice(0, 2) ?? 'KL')
+    .toLocaleUpperCase('pl-PL')
+})
+const conversationCardUi = {
+  root: 'case-conversation__card-root',
+  header: 'case-conversation__card-header',
+  body: 'case-conversation__card-body',
+}
 const hasAttachmentDrafts = computed(() => attachmentDrafts.drafts.value.length > 0)
 const hasPendingMessage = computed(() => (
   Boolean(pendingRecipientId.value)
   && pendingRecipientId.value === selectedClientPersonId.value
+  && !messages.value.some(message => message.clientMessageId === pendingClientMessageId.value)
 ))
 const recipientSelectionModel = computed({
   get: () => selectedClientPersonId.value,
@@ -269,7 +307,8 @@ const recipientSelectionModel = computed({
 })
 
 const requestedClientPersonId = computed(() => {
-  const raw = Array.isArray(route.query.person) ? route.query.person[0] : route.query.person
+  const raw = props.fixedClientPersonId
+    || (Array.isArray(route.query.person) ? route.query.person[0] : route.query.person)
   if (typeof raw !== 'string') return ''
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(raw)
     ? raw
@@ -321,6 +360,14 @@ const canSend = computed(() => {
   )
 })
 
+function canLeaveConversation() {
+  return !sending.value
+    && !hasAttachmentDrafts.value
+    && !composer.value.trim()
+}
+
+defineExpose({ canLeaveConversation })
+
 const attachmentDisabledReason = computed(() => {
   if (!draftClientMessageId.value) return 'Przygotowywanie bezpiecznego przesyłania…'
   if (!selectedRecipient.value?.portalEnabled) return 'Najpierw udostępnij panel klienta.'
@@ -345,14 +392,18 @@ const connectionColor = computed<'success' | 'warning' | 'neutral'>(() => {
 })
 
 const portalSettingsLocation = computed(() => ({
-  path: route.path,
-  query: { ...route.query, view: 'documents' },
+  path: orgPath(`/cases/${props.caseId}`),
+  query: { view: 'documents' },
   hash: '#case-applications',
 }))
 
 function conversationApiPath(conversationId: string, suffix = '') {
   return `${indexApiPath.value}/${encodeURIComponent(conversationId)}${suffix}`
 }
+
+const clientFilesApiPath = computed(() => conversation.value
+  ? conversationApiPath(conversation.value.id, '/attachments')
+  : '')
 
 function rotateDraftClientMessageId() {
   if (!import.meta.client) return
@@ -388,6 +439,7 @@ function pendingAttachmentUrl(attachment: MessageAttachment, download: boolean) 
 function clearPendingMessage() {
   pendingBody.value = ''
   pendingAttachments.value = []
+  pendingClientMessageId.value = ''
   pendingConversationId.value = ''
   pendingRecipientId.value = ''
   pendingAttachmentPreviewUrls.clear()
@@ -400,9 +452,14 @@ function abandonAttachmentDrafts(discard = true) {
 }
 
 function mergeMessages(incoming: Message[]) {
-  const byId = new Map(messages.value.map(message => [message.id, message]))
-  for (const message of incoming) byId.set(message.id, message)
-  messages.value = [...byId.values()].sort((left, right) => left.sequence - right.sequence)
+  const byClientMessageId = new Map(messages.value.map(message => [
+    message.clientMessageId || message.id,
+    message,
+  ]))
+  for (const message of incoming) {
+    byClientMessageId.set(message.clientMessageId || message.id, message)
+  }
+  messages.value = [...byClientMessageId.values()].sort((left, right) => left.sequence - right.sequence)
 }
 
 function updateConversationEntry(updated: Conversation, additions: Partial<ConversationListItem> = {}) {
@@ -432,6 +489,19 @@ function applyBootstrap(
     && bootstrap.conversation.clientPersonId !== selectedClientPersonId.value
   ) return
 
+  const incomingMessages = bootstrap.messages ?? []
+  const knownMessageIds = new Set(messages.value.map(
+    message => message.clientMessageId || message.id,
+  ))
+  const addedMessages = mode === 'append'
+    ? incomingMessages.filter(message => !knownMessageIds.has(
+        message.clientMessageId || message.id,
+      ))
+    : []
+  if (mode !== 'append') messageMotionReady.value = false
+  const receivedClientFiles = mode === 'append' && bootstrap.messages.some(message => (
+    message.senderKind === 'client' && message.attachments.length > 0
+  ))
   conversationLoadError.value = false
   conversation.value = bootstrap.conversation
   ownReceipt.value = bootstrap.receipt
@@ -445,7 +515,7 @@ function applyBootstrap(
 
   const shouldFollowMessages = mode === 'replace' || (mode === 'append' && listAtEnd.value)
   if (mode === 'replace') messages.value = []
-  mergeMessages(bootstrap.messages ?? [])
+  mergeMessages(incomingMessages)
   if (mode !== 'append') hasOlderMessages.value = Boolean(bootstrap.pageInfo?.hasMore)
 
   updateConversationEntry(bootstrap.conversation, {
@@ -466,9 +536,16 @@ function applyBootstrap(
         visibilityObserver.unobserve(readSentinelElement.value)
         visibilityObserver.observe(readSentinelElement.value)
       }
+      if (mode === 'replace') messageMotionReady.value = true
     })
   }
+  else if (mode === 'append' && addedMessages.length) {
+    unseenMessageCount.value += addedMessages.length
+  }
+  if (mode === 'replace') unseenMessageCount.value = 0
   scheduleReceipt()
+  if (receivedClientFiles) clientFilesRefreshKey.value += 1
+  if (mode === 'append' && (bootstrap.messages?.length ?? 0) > 0) emit('activity')
 }
 
 function resetConversationState() {
@@ -483,11 +560,14 @@ function resetConversationState() {
   conversation.value = null
   messages.value = []
   listAtEnd.value = true
+  messageMotionReady.value = false
+  unseenMessageCount.value = 0
   panelVisible.value = false
   ownReceipt.value = null
   peerReceipt.value = null
   hasOlderMessages.value = false
   peerTyping.value = false
+  clientFilesOpen.value = false
   realtimeConfiguration.value = {
     mode: indexResponse.value?.data.realtime.mode ?? 'polling',
     channel: null,
@@ -611,6 +691,7 @@ watch(() => props.caseId, () => {
   messages.value = []
   ownReceipt.value = null
   peerReceipt.value = null
+  clientFilesOpen.value = false
   hasOlderMessages.value = false
   connectionState.value = 'idle'
 })
@@ -634,12 +715,18 @@ function deliveryLabel(message: Message) {
   return 'Wysłano'
 }
 
+function shouldReduceMotion() {
+  return import.meta.client
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 function scrollToEnd(behavior: ScrollBehavior = 'smooth') {
   if (!listElement.value) return
   listAtEnd.value = true
+  unseenMessageCount.value = 0
   listElement.value.scrollTo({
     top: listElement.value.scrollHeight,
-    behavior,
+    behavior: shouldReduceMotion() ? 'auto' : behavior,
   })
 }
 
@@ -647,6 +734,7 @@ function updateListPosition() {
   const element = listElement.value
   if (!element) return
   listAtEnd.value = element.scrollHeight - element.scrollTop - element.clientHeight <= 56
+  if (listAtEnd.value) unseenMessageCount.value = 0
   scheduleReceipt()
 }
 
@@ -707,6 +795,7 @@ async function sendMessage() {
   sending.value = true
   pendingBody.value = body
   pendingAttachments.value = readyAttachments
+  pendingClientMessageId.value = attempt.clientMessageId
   pendingConversationId.value = conversation.value?.id ?? ''
   pendingRecipientId.value = recipientId
   pendingAttachmentPreviewUrls.clear()
@@ -736,6 +825,11 @@ async function sendMessage() {
     const stillSelected = conversation.value?.id === activeConversationId
     retryableSends.delete(recipientId)
     composerDrafts.delete(recipientId)
+    if (stillSelected) {
+      conversation.value = response.data.conversation
+      mergeMessages([response.data.message])
+      realtimeConfiguration.value = response.data.realtime
+    }
     if (pendingRecipientId.value === recipientId) {
       clearPendingMessage()
     }
@@ -749,10 +843,8 @@ async function sendMessage() {
         response.data.message.attachments,
       ),
     })
+    emit('activity')
     if (!stillSelected) return
-    conversation.value = response.data.conversation
-    mergeMessages([response.data.message])
-    realtimeConfiguration.value = response.data.realtime
     void nextTick(() => scrollToEnd())
   }
   catch (caught: any) {
@@ -851,6 +943,7 @@ async function loadOlderMessages() {
       listElement.value.scrollTop += listElement.value.scrollHeight - previousScrollHeight
       updateListPosition()
     }
+    messageMotionReady.value = true
   }
   catch {
     toast.add({
@@ -905,6 +998,7 @@ async function acknowledgeMessages() {
     ownReceipt.value = response.data.receipt
     peerReceipt.value = response.data.peerReceipt
     updateConversationEntry(conversation.value, { unreadCount: 0 })
+    emit('activity')
   }
   catch {
     // A later visibility change or synchronization retries this monotonic receipt.
@@ -1139,6 +1233,7 @@ watch(readSentinelElement, (current, previous) => {
 })
 
 onMounted(() => {
+  panelHydrated.value = true
   if (!draftClientMessageId.value) rotateDraftClientMessageId()
   notificationsState.value = (
     'Notification' in window
@@ -1176,13 +1271,62 @@ onBeforeUnmount(() => {
 
 <template>
   <section
-    class="case-conversation"
+    :class="[
+      'case-conversation',
+      `case-conversation--${props.surface}`,
+    ]"
     aria-labelledby="case-conversation-title"
   >
-    <UCard class="case-conversation__card">
+    <UCard
+      v-if="!panelHydrated"
+      class="case-conversation__card"
+      :ui="conversationCardUi"
+      aria-busy="true"
+    >
+      <h2 id="case-conversation-title" class="sr-only">Wiadomości z klientem</h2>
+      <div class="case-conversation__loading">
+        <USkeleton class="h-12 w-2/3" />
+        <USkeleton class="h-16 w-3/4" />
+        <USkeleton class="ml-auto h-16 w-3/4" />
+      </div>
+    </UCard>
+
+    <UCard
+      v-else
+      class="case-conversation__card"
+      :ui="conversationCardUi"
+    >
       <template #header>
         <div class="case-conversation__header">
-          <div class="case-conversation__heading">
+          <div
+            v-if="props.surface === 'pane'"
+            class="case-conversation__pane-heading"
+          >
+            <UButton
+              v-if="props.backTo"
+              class="case-conversation__back"
+              :to="props.backTo"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-arrow-left"
+              aria-label="Wróć do listy rozmów"
+            />
+            <span class="case-conversation__avatar">
+              {{ selectedRecipientInitials }}
+            </span>
+            <div>
+              <p>{{ props.caseTitle || 'Rozmowa w sprawie' }}</p>
+              <h2 id="case-conversation-title">
+                {{ selectedRecipient?.displayName || 'Wiadomości' }}
+              </h2>
+              <span class="case-conversation__connection">
+                <i :class="`is-${connectionState}`" />
+                {{ peerTyping ? `${selectedRecipient?.displayName || 'Klient'} pisze…` : connectionLabel }}
+              </span>
+            </div>
+          </div>
+
+          <div v-else class="case-conversation__heading">
             <span class="case-conversation__heading-icon">
               <UIcon name="i-lucide-messages-square" />
             </span>
@@ -1195,7 +1339,7 @@ onBeforeUnmount(() => {
 
           <div class="case-conversation__actions">
             <UBadge
-              v-if="totalUnreadCount > 0"
+              v-if="props.surface !== 'pane' && totalUnreadCount > 0"
               color="primary"
               variant="subtle"
               icon="i-lucide-mail-plus"
@@ -1203,6 +1347,7 @@ onBeforeUnmount(() => {
               Nowe: {{ totalUnreadCount }}
             </UBadge>
             <UBadge
+              v-if="props.surface !== 'pane'"
               :color="connectionColor"
               variant="subtle"
               :icon="connectionState === 'connected'
@@ -1214,10 +1359,33 @@ onBeforeUnmount(() => {
               {{ connectionLabel }}
             </UBadge>
             <UButton
+              v-if="props.surface === 'pane' && props.caseTo"
+              class="case-conversation__case-link"
+              :to="props.caseTo"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              trailing-icon="i-lucide-arrow-up-right"
+            >
+              Otwórz sprawę
+            </UButton>
+            <UButton
+              v-if="conversation"
+              class="case-conversation__files-action"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-folder-open"
+              @click="clientFilesOpen = true"
+            >
+              <span class="case-conversation__action-label">Pliki od klienta</span>
+            </UButton>
+            <UButton
               v-if="!pushActivated
                 && (notificationsState === 'default' || notificationsState === 'granted')
                 && realtimeConfiguration.mode === 'ably'
                 && conversation"
+              class="case-conversation__notification-action"
               color="neutral"
               variant="outline"
               size="sm"
@@ -1226,10 +1394,11 @@ onBeforeUnmount(() => {
               :disabled="connectionState !== 'connected'"
               @click="activateNotifications"
             >
-              Powiadomienia
+              <span class="case-conversation__action-label">Powiadomienia</span>
             </UButton>
             <UBadge
               v-else-if="pushActivated"
+              class="case-conversation__push-enabled"
               color="success"
               variant="subtle"
               icon="i-lucide-bell-ring"
@@ -1240,7 +1409,7 @@ onBeforeUnmount(() => {
         </div>
 
         <UFormField
-          v-if="recipients.length > 1"
+          v-if="recipients.length > 1 && !props.fixedClientPersonId"
           class="case-conversation__recipient-field"
           label="Rozmowa z"
           name="conversation-recipient"
@@ -1260,7 +1429,10 @@ onBeforeUnmount(() => {
           />
         </UFormField>
 
-        <div v-else-if="selectedRecipient" class="case-conversation__recipient">
+        <div
+          v-else-if="selectedRecipient && props.surface !== 'pane'"
+          class="case-conversation__recipient"
+        >
           <span><UIcon name="i-lucide-user-round" /></span>
           <div>
             <strong>{{ selectedRecipient.displayName }}</strong>
@@ -1355,91 +1527,120 @@ onBeforeUnmount(() => {
           </template>
         </UAlert>
 
-        <div
-          v-if="!conversationLoadError"
-          ref="listElement"
-          class="case-conversation__messages"
-          aria-live="polite"
-          aria-label="Historia wiadomości"
-          @scroll.passive="updateListPosition"
-        >
-          <div v-if="hasOlderMessages" class="case-conversation__older">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              icon="i-lucide-history"
-              :loading="loadingOlder"
-              @click="loadOlderMessages"
-            >
-              Pokaż starsze wiadomości
-            </UButton>
-          </div>
-
-          <template v-if="loadingConversation">
-            <USkeleton class="h-16 w-3/4" />
-            <USkeleton class="ml-auto h-16 w-3/4" />
-            <USkeleton class="h-16 w-2/3" />
-          </template>
-
+        <div v-if="!conversationLoadError" class="case-conversation__stage">
           <div
-            v-else-if="!messages.length
-              && !hasPendingMessage"
-            class="case-conversation__empty"
+            ref="listElement"
+            class="case-conversation__messages"
+            aria-live="polite"
+            aria-label="Historia wiadomości"
+            @scroll.passive="updateListPosition"
           >
-            <span><UIcon name="i-lucide-message-circle-more" /></span>
-            <strong>Zacznij rozmowę z {{ selectedRecipient?.displayName }}</strong>
-            <p>Napisz krótką wiadomość — klient zobaczy ją w panelu swojej sprawy.</p>
-          </div>
+            <div v-if="hasOlderMessages" class="case-conversation__older">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-history"
+                :loading="loadingOlder"
+                @click="loadOlderMessages"
+              >
+                Pokaż starsze wiadomości
+              </UButton>
+            </div>
 
-          <article
-            v-for="message in messages"
-            :key="message.id"
-            :class="[
-              'case-message',
-              message.senderKind === 'staff' ? 'case-message--mine' : 'case-message--theirs',
-            ]"
-          >
-            <div>
-              <p v-if="message.body">{{ message.body }}</p>
-              <MessageAttachments
-                :attachments="message.attachments"
-                :url-for="messageAttachmentUrlFor(message.conversationId)"
-              />
-              <footer>
-                <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
-                <span v-if="message.senderKind === 'staff'">
-                  {{ deliveryLabel(message) }}
-                  <UIcon
-                    :name="deliveryLabel(message) === 'Odczytano'
-                      ? 'i-lucide-check-check'
-                      : 'i-lucide-check'"
+            <template v-if="loadingConversation">
+              <USkeleton class="h-16 w-3/4" />
+              <USkeleton class="ml-auto h-16 w-3/4" />
+              <USkeleton class="h-16 w-2/3" />
+            </template>
+
+            <div
+              v-else-if="!messages.length
+                && !hasPendingMessage"
+              class="case-conversation__empty"
+            >
+              <span><UIcon name="i-lucide-message-circle-more" /></span>
+              <strong>Zacznij rozmowę z {{ selectedRecipient?.displayName }}</strong>
+              <p>Napisz krótką wiadomość — klient zobaczy ją w panelu swojej sprawy.</p>
+            </div>
+
+            <TransitionGroup
+              tag="div"
+              name="case-message-list"
+              class="case-conversation__stream"
+              :css="messageMotionReady"
+            >
+              <article
+                v-for="message in messages"
+                :key="message.clientMessageId"
+                :class="[
+                  'case-message',
+                  message.senderKind === 'staff' ? 'case-message--mine' : 'case-message--theirs',
+                ]"
+              >
+                <div>
+                  <p v-if="message.body">{{ message.body }}</p>
+                  <MessageAttachments
+                    :attachments="message.attachments"
+                    :url-for="messageAttachmentUrlFor(message.conversationId)"
                   />
-                </span>
-              </footer>
-            </div>
-          </article>
+                  <footer>
+                    <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
+                    <Transition name="case-message-status" mode="out-in">
+                      <span
+                        v-if="message.senderKind === 'staff'"
+                        :key="deliveryLabel(message)"
+                      >
+                        {{ deliveryLabel(message) }}
+                        <UIcon
+                          :name="deliveryLabel(message) === 'Odczytano'
+                            ? 'i-lucide-check-check'
+                            : 'i-lucide-check'"
+                        />
+                      </span>
+                    </Transition>
+                  </footer>
+                </div>
+              </article>
 
-          <article
-            v-if="hasPendingMessage"
-            class="case-message case-message--mine is-pending"
-          >
-            <div>
-              <p v-if="pendingBody">{{ pendingBody }}</p>
-              <MessageAttachments
-                :attachments="pendingAttachments"
-                :url-for="pendingAttachmentUrl"
-                :interactive="false"
-              />
-              <footer><span>Wysyłanie…</span></footer>
-            </div>
-          </article>
+              <article
+                v-if="hasPendingMessage"
+                :key="pendingClientMessageId"
+                class="case-message case-message--mine is-pending"
+              >
+                <div>
+                  <p v-if="pendingBody">{{ pendingBody }}</p>
+                  <MessageAttachments
+                    :attachments="pendingAttachments"
+                    :url-for="pendingAttachmentUrl"
+                    :interactive="false"
+                  />
+                  <footer><span>Wysyłanie…</span></footer>
+                </div>
+              </article>
 
-          <div v-if="peerTyping" class="case-conversation__typing">
-            <span /><span /><span />
-            {{ selectedRecipient?.displayName }} pisze…
+              <div v-if="peerTyping" key="peer-typing" class="case-conversation__typing">
+                <span /><span /><span />
+                {{ selectedRecipient?.displayName }} pisze…
+              </div>
+            </TransitionGroup>
+            <span ref="readSentinelElement" class="case-conversation__read-sentinel" aria-hidden="true" />
           </div>
-          <span ref="readSentinelElement" class="case-conversation__read-sentinel" aria-hidden="true" />
+
+          <Transition name="case-new-message">
+            <UButton
+              v-if="unseenMessageCount"
+              class="case-conversation__new-message"
+              color="neutral"
+              variant="solid"
+              size="sm"
+              trailing-icon="i-lucide-arrow-down"
+              :aria-label="`${unseenMessageCount} ${unseenMessageCount === 1 ? 'nowa wiadomość' : 'nowe wiadomości'}. Przejdź na koniec rozmowy.`"
+              @click="scrollToEnd()"
+            >
+              {{ unseenMessageCount === 1 ? 'Nowa wiadomość' : `${unseenMessageCount} nowe wiadomości` }}
+            </UButton>
+          </Transition>
         </div>
 
         <form
@@ -1490,6 +1691,13 @@ onBeforeUnmount(() => {
         </p>
       </template>
     </UCard>
+
+    <CaseConversationFilesSlideover
+      v-model:open="clientFilesOpen"
+      :api-path="clientFilesApiPath"
+      :client-name="selectedRecipient?.displayName || ''"
+      :refresh-key="clientFilesRefreshKey"
+    />
   </section>
 </template>
 
@@ -1502,8 +1710,40 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.case-conversation--pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.case-conversation--pane .case-conversation__card {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 0;
+  background: var(--ui-bg);
+  box-shadow: none;
+}
+
+.case-conversation--pane .case-conversation__card[aria-busy='true'] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.case-conversation--pane :deep(.case-conversation__card-header) {
+  padding: 0;
+}
+
+.case-conversation--pane :deep(.case-conversation__card-body) {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+  padding: 0;
+}
+
 .case-conversation__header,
 .case-conversation__heading,
+.case-conversation__pane-heading,
 .case-conversation__actions,
 .case-conversation__recipient,
 .case-message footer,
@@ -1521,6 +1761,93 @@ onBeforeUnmount(() => {
 .case-conversation__heading {
   gap: 12px;
   min-width: 0;
+}
+
+.case-conversation__pane-heading {
+  min-width: 0;
+  gap: 12px;
+}
+
+.case-conversation__pane-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.case-conversation__pane-heading p,
+.case-conversation__pane-heading h2,
+.case-conversation__pane-heading span {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-conversation__pane-heading p {
+  max-width: min(46vw, 540px);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.case-conversation__pane-heading h2 {
+  color: var(--ui-text-highlighted);
+  font-size: 17px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.case-conversation__avatar {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.case-conversation__connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.case-conversation__connection i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--ui-text-dimmed);
+  transition: background-color var(--oe-motion-fast);
+}
+
+.case-conversation__connection i.is-connected {
+  background: var(--ui-success);
+}
+
+.case-conversation__connection i.is-offline {
+  background: var(--ui-warning);
+}
+
+.case-conversation__back {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.case-conversation--pane .case-conversation__header {
+  min-height: 76px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--ui-border-muted);
+  background: var(--ui-bg);
 }
 
 .case-conversation__heading-icon,
@@ -1586,6 +1913,13 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
+.case-conversation--pane .case-conversation__recipient-field {
+  margin: 0;
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid var(--ui-border-muted);
+  background: var(--ui-bg);
+}
+
 .case-conversation__recipient {
   gap: 10px;
   padding-top: 14px;
@@ -1625,11 +1959,31 @@ onBeforeUnmount(() => {
   margin-bottom: 14px;
 }
 
+.case-conversation--pane .case-conversation__notice {
+  flex: 0 0 auto;
+  margin: 12px 20px 0;
+}
+
 .case-conversation__loading {
   display: grid;
   min-height: 360px;
   align-content: center;
   gap: 12px;
+}
+
+.case-conversation--pane .case-conversation__loading {
+  min-height: 0;
+  flex: 1 1 0;
+  padding: 24px;
+}
+
+.case-conversation__stage {
+  position: relative;
+  min-height: 0;
+}
+
+.case-conversation--pane .case-conversation__stage {
+  flex: 1 1 0;
 }
 
 .case-conversation__messages {
@@ -1643,6 +1997,22 @@ onBeforeUnmount(() => {
   padding: 18px 8px 20px;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
+}
+
+.case-conversation--pane .case-conversation__messages {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 0;
+  margin: 0;
+  padding: 24px 28px 32px;
+  background: var(--ui-bg);
+}
+
+.case-conversation__stream {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
 .case-conversation__older {
@@ -1684,6 +2054,7 @@ onBeforeUnmount(() => {
 .case-message {
   display: flex;
   width: 100%;
+  transform-origin: left bottom;
 }
 
 .case-message > div {
@@ -1692,10 +2063,12 @@ onBeforeUnmount(() => {
   border-radius: 17px 17px 17px 5px;
   background: var(--ui-bg-muted);
   color: var(--ui-text-highlighted);
+  transition: opacity var(--oe-motion-fast);
 }
 
 .case-message--mine {
   justify-content: flex-end;
+  transform-origin: right bottom;
 }
 
 .case-message--mine > div {
@@ -1706,6 +2079,28 @@ onBeforeUnmount(() => {
 
 .case-message.is-pending > div {
   opacity: .65;
+}
+
+.case-message-list-enter-active {
+  transition:
+    opacity var(--oe-duration-base) var(--ease-out),
+    transform var(--oe-duration-base) var(--ease-out);
+}
+
+.case-message-list-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.case-message-list-enter-from {
+  opacity: 0;
+  transform: translateY(4px) scale(.985);
+}
+
+.case-message-list-leave-to {
+  opacity: 0;
+  transform: translateY(2px) scale(.985);
 }
 
 .case-message p {
@@ -1744,6 +2139,16 @@ onBeforeUnmount(() => {
   height: 11px;
 }
 
+.case-message-status-enter-active,
+.case-message-status-leave-active {
+  transition: opacity 100ms var(--ease-out);
+}
+
+.case-message-status-enter-from,
+.case-message-status-leave-to {
+  opacity: .45;
+}
+
 .case-conversation__typing {
   align-self: flex-start;
   gap: 4px;
@@ -1758,7 +2163,7 @@ onBeforeUnmount(() => {
   height: 5px;
   border-radius: 999px;
   background: var(--ui-text-dimmed);
-  animation: case-conversation-typing 1.1s infinite ease-in-out;
+  animation: case-conversation-typing 1.1s infinite var(--ease-in-out);
 }
 
 .case-conversation__typing > span:nth-child(2) {
@@ -1775,9 +2180,48 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.case-conversation__new-message {
+  position: absolute;
+  z-index: 5;
+  bottom: 12px;
+  left: 50%;
+  min-height: 36px;
+  border-radius: 999px;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ui-text) 14%, transparent);
+  transform: translateX(-50%);
+}
+
+.case-conversation__new-message:active:not(:disabled) {
+  transform: translateX(-50%) scale(.97);
+}
+
+.case-new-message-enter-active {
+  transition:
+    opacity var(--oe-duration-base) var(--ease-out),
+    transform var(--oe-duration-base) var(--ease-out);
+}
+
+.case-new-message-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.case-new-message-enter-from,
+.case-new-message-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px) scale(.98);
+}
+
 .case-conversation__composer {
   padding-top: 14px;
   border-top: 1px solid var(--ui-border-muted);
+}
+
+.case-conversation--pane .case-conversation__composer {
+  flex: 0 0 auto;
+  padding: 12px 20px 0;
+  background: var(--ui-bg);
 }
 
 .case-conversation__send {
@@ -1795,18 +2239,58 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
+.case-conversation--pane .case-conversation__hint {
+  flex: 0 0 auto;
+  margin: 6px 0 0;
+  padding: 0 20px 10px;
+  background: var(--ui-bg);
+}
+
+.case-conversation--pane .case-conversation__send {
+  width: 44px;
+  height: 44px;
+}
+
 @keyframes case-conversation-typing {
   0%, 60%, 100% { transform: translateY(0); opacity: .45; }
   30% { transform: translateY(-3px); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .case-message-list-enter-active,
+  .case-message-list-leave-active,
+  .case-message-status-enter-active,
+  .case-message-status-leave-active,
+  .case-new-message-enter-active,
+  .case-new-message-leave-active,
+  .case-message > div {
+    transition-duration: 150ms !important;
+    transition-property: opacity !important;
+  }
+
+  .case-message-list-enter-from,
+  .case-message-list-leave-to {
+    transform: none !important;
+  }
+
+  .case-new-message-enter-from,
+  .case-new-message-leave-to {
+    transform: translateX(-50%) !important;
+  }
+
   .case-conversation__typing > span {
     animation: none;
+    opacity: .65;
   }
 }
 
-@media (max-width: 640px) {
+@media (min-width: 761px) and (max-width: 1100px) {
+  .case-conversation--pane .case-conversation__back {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 760px) {
   .case-conversation__header {
     align-items: flex-start;
     flex-direction: column;
@@ -1836,6 +2320,75 @@ onBeforeUnmount(() => {
   }
 
   .case-conversation__hint {
+    display: none;
+  }
+
+  .case-conversation--pane .case-conversation__header {
+    min-height: 68px;
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .case-conversation--pane .case-conversation__pane-heading {
+    flex: 1 1 0;
+    gap: 8px;
+  }
+
+  .case-conversation--pane .case-conversation__pane-heading p {
+    max-width: 42vw;
+  }
+
+  .case-conversation--pane .case-conversation__avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .case-conversation--pane .case-conversation__back {
+    display: inline-flex;
+  }
+
+  .case-conversation--pane .case-conversation__actions {
+    width: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .case-conversation--pane .case-conversation__case-link,
+  .case-conversation--pane .case-conversation__push-enabled {
+    display: none;
+  }
+
+  .case-conversation--pane .case-conversation__files-action,
+  .case-conversation--pane .case-conversation__notification-action {
+    width: 40px;
+    height: 40px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .case-conversation--pane .case-conversation__action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .case-conversation--pane .case-conversation__messages {
+    min-height: 0;
+    max-height: none;
+    padding: 18px 14px 24px;
+  }
+
+  .case-conversation--pane .case-conversation__composer {
+    padding: 10px 12px 0;
+  }
+
+  .case-conversation--pane .case-conversation__hint {
     display: none;
   }
 }

@@ -642,6 +642,8 @@ async function completePreparation() {
             </UButton>
           </div>
 
+          <Transition name="preparation-step" mode="out-in">
+          <div :key="state.activeStep" class="preparation-step-content">
           <template v-if="state.activeStep === 0">
             <header class="preparation-card__header">
               <p>KROK 1 · TWÓJ PUNKT STARTU</p>
@@ -1205,6 +1207,8 @@ async function completePreparation() {
                 : 'Ekspert widzi te odpowiedzi przed rozmową. Na spotkaniu wspólnie potwierdzicie wszystkie orientacyjne informacje.'"
             />
           </template>
+          </div>
+          </Transition>
 
           <footer class="preparation-card__footer">
             <UButton
@@ -1598,6 +1602,25 @@ async function completePreparation() {
   border-radius: 20px;
 }
 
+.preparation-step-enter-active {
+  transition:
+    opacity 180ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 180ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.preparation-step-leave-active {
+  transition: opacity 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.preparation-step-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.preparation-step-leave-to {
+  opacity: 0;
+}
+
 .preparation-card__header { max-width: 740px; margin-bottom: 30px; }
 .preparation-card__header > p:first-child { margin: 0 0 9px; color: var(--ui-text-muted); font-size: 9px; font-weight: 700; letter-spacing: 0.12em; }
 .preparation-card__header h2 { margin: 0; font-size: clamp(29px, 3.2vw, 42px); line-height: 1.1; }
@@ -1845,6 +1868,17 @@ async function completePreparation() {
 
 @media (prefers-reduced-motion: reduce) {
   .preparation-save-state .is-spinning { animation-duration: 1800ms; }
+
+  .preparation-step-enter-active,
+  .preparation-step-leave-active {
+    transition: opacity 120ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  .preparation-step-enter-from,
+  .preparation-step-leave-to {
+    opacity: 0;
+    transform: none;
+  }
 }
 
 @media print {

@@ -184,6 +184,7 @@ const statusMessage = computed(() => {
     :groups="searchGroups"
     :loading="searchState === 'pending'"
     :color-mode="false"
+    :transition="false"
     :preserve-group-order="true"
     :search-delay="0"
     :fuse="{

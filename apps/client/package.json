@@ -11,7 +11,7 @@
     "generate": "nuxt generate",
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3006",
-    "test:conversation-inbox": "node --test --experimental-strip-types test/portal-conversation-inbox.test.ts",
+    "test:conversation-inbox": "node --test --experimental-strip-types test/portal-conversation-inbox.test.ts test/portal-preview-conversations.test.ts",
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
     "test:demo": "node --test --experimental-strip-types test/demo-session.test.ts",
     "test:meeting-preparation": "node --test --experimental-strip-types test/meeting-preparation.test.ts",

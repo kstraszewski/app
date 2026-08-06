@@ -10,6 +10,10 @@ import {
   type MessageAttachment,
   type ReserveMessageAttachmentInput,
 } from '@openexpert/messaging'
+import type {
+  CrmClientConversationAttachment,
+  CrmConversationAttachmentsResponse,
+} from '#shared/types/case-conversation-attachments'
 import {
   createError,
   sendRedirect,
@@ -17,6 +21,11 @@ import {
   setHeader,
   type H3Event,
 } from 'h3'
+import {
+  decodeClientAttachmentCursor,
+  encodeClientAttachmentCursor,
+  type ClientAttachmentCursor,
+} from './case-conversation-attachment-cursor'
 import { caseUuidPattern } from './case-identifiers'
 import type { CaseConversationAccess } from './case-conversations'
 import { asRecord, throwDbError } from './crm'
@@ -41,10 +50,151 @@ const reservationSelect = [
   'discarded_at',
 ].join(',')
 
+const clientAttachmentListSelect = [
+  'id',
+  'message_id',
+  'position',
+  'file_name',
+  'content_type',
+  'size_bytes',
+  'attached_at',
+].join(',')
+
+const CLIENT_ATTACHMENT_PAGE_DEFAULT = 50
+const CLIENT_ATTACHMENT_PAGE_MAX = 100
+
+export interface ClientAttachmentPageRequest {
+  cursor: ClientAttachmentCursor | null
+  limit: number
+}
+
 interface StaffAttachmentReservation {
   attachment: MessageAttachment
   storagePath: string
   expiresAt: string
+}
+
+function clientAttachmentCursor(value: unknown): ClientAttachmentCursor | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'cursor is invalid' })
+  }
+
+  try {
+    return decodeClientAttachmentCursor(value)
+  }
+  catch {
+    throw createError({ statusCode: 400, statusMessage: 'cursor is invalid' })
+  }
+}
+
+function clientAttachmentLimit(value: unknown): number {
+  if (value === undefined || value === null || value === '') {
+    return CLIENT_ATTACHMENT_PAGE_DEFAULT
+  }
+  const input = Array.isArray(value) ? value[0] : value
+  if (typeof input !== 'string' || !/^\d+$/u.test(input)) {
+    throw createError({ statusCode: 400, statusMessage: 'limit must be an integer' })
+  }
+  const parsed = Number(input)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > CLIENT_ATTACHMENT_PAGE_MAX) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `limit must be between 1 and ${CLIENT_ATTACHMENT_PAGE_MAX}`,
+    })
+  }
+  return parsed
+}
+
+export function parseClientAttachmentPageQuery(
+  query: Record<string, unknown>,
+): ClientAttachmentPageRequest {
+  return {
+    cursor: clientAttachmentCursor(query.cursor),
+    limit: clientAttachmentLimit(query.limit),
+  }
+}
+
+interface MappedClientConversationAttachment {
+  attachment: CrmClientConversationAttachment
+  cursorSentAt: string
+}
+
+function mapClientConversationAttachmentRow(
+  value: unknown,
+): MappedClientConversationAttachment {
+  const row = asRecord(value)
+  const attachment = mapMessageAttachmentRow(row)
+  const messageId = String(row.message_id ?? '')
+  const position = Number(row.position)
+  const sentAt = String(row.attached_at ?? '')
+  if (
+    !caseUuidPattern.test(messageId)
+    || !Number.isSafeInteger(position)
+    || position < 1
+    || position > 10
+    || !Number.isFinite(Date.parse(sentAt))
+  ) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Conversation attachment returned an invalid result',
+    })
+  }
+  return {
+    attachment: {
+      ...attachment,
+      messageId: messageId.toLowerCase(),
+      position,
+      sentAt: new Date(sentAt).toISOString(),
+    },
+    cursorSentAt: sentAt,
+  }
+}
+
+export async function listClientConversationAttachments(
+  access: CaseConversationAccess,
+  page: ClientAttachmentPageRequest,
+): Promise<CrmConversationAttachmentsResponse['data']> {
+  let request = access.session.dataApi
+    .from('crm_case_message_attachments')
+    .select(clientAttachmentListSelect)
+    .eq('organization_id', access.session.organizationId)
+    .eq('conversation_id', access.conversation.id)
+    .eq('uploader_kind', 'client')
+    .eq('uploader_client_person_id', access.clientPerson.clientPersonId)
+    .not('message_id', 'is', null)
+    .not('attached_at', 'is', null)
+    .is('discarded_at', null)
+    .order('attached_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(page.limit + 1)
+
+  if (page.cursor) {
+    request = request.or(
+      `attached_at.lt.${page.cursor.sentAt},and(attached_at.eq.${page.cursor.sentAt},id.lt.${page.cursor.id})`,
+    )
+  }
+
+  const result = await request
+  throwDbError(result.error)
+  const mappedRows: MappedClientConversationAttachment[] = (result.data ?? [])
+    .map((row: unknown) => mapClientConversationAttachmentRow(row))
+  const hasMore = mappedRows.length > page.limit
+  const visibleRows = mappedRows.slice(0, page.limit)
+  const last = visibleRows.at(-1)
+
+  return {
+    attachments: visibleRows.map(row => row.attachment),
+    pageInfo: {
+      hasMore,
+      nextCursor: hasMore && last
+        ? encodeClientAttachmentCursor({
+            sentAt: last.cursorSentAt,
+            id: last.attachment.id,
+          })
+        : null,
+    },
+  }
 }
 
 function throwAttachmentDbError(

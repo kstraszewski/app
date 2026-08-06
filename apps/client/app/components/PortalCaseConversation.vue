@@ -73,6 +73,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const { $portalFetch } = useNuxtApp()
+const previewConversations = usePortalPreviewConversations(props.preview)
 const apiPath = computed(
   () => `/api/client/cases/${encodeURIComponent(props.caseId)}/conversation`,
 )
@@ -124,56 +125,8 @@ const attachmentDrafts = useMessageAttachmentDrafts(attachmentAdapter)
 
 function previewConversationResponse(): ConversationResponse {
   const conversationId = `preview-conversation-${props.caseId}`
-  const messages: Message[] = [
-    {
-      id: `${conversationId}-1`,
-      organizationId: 'org-openexpert-local',
-      conversationId,
-      sequence: 1,
-      clientMessageId: `${conversationId}-client-1`,
-      senderKind: 'staff',
-      senderUserId: 'preview-expert',
-      senderClientPersonId: null,
-      senderAuthUserId: null,
-      body: 'Dzień dobry, dodałam najważniejsze informacje do sprawy. Jeśli coś będzie niejasne, proszę napisać tutaj.',
-      attachments: [],
-      createdAt: '2026-08-01T08:42:00.000Z',
-      editedAt: null,
-      deletedAt: null,
-    },
-    {
-      id: `${conversationId}-2`,
-      organizationId: 'org-openexpert-local',
-      conversationId,
-      sequence: 2,
-      clientMessageId: `${conversationId}-client-2`,
-      senderKind: 'client',
-      senderUserId: null,
-      senderClientPersonId: 'preview-client',
-      senderAuthUserId: 'preview-auth-user',
-      body: 'Dziękuję. Dokument prześlę jeszcze dzisiaj po południu.',
-      attachments: [],
-      createdAt: '2026-08-01T09:08:00.000Z',
-      editedAt: null,
-      deletedAt: null,
-    },
-    {
-      id: `${conversationId}-3`,
-      organizationId: 'org-openexpert-local',
-      conversationId,
-      sequence: 3,
-      clientMessageId: `${conversationId}-client-3`,
-      senderKind: 'staff',
-      senderUserId: 'preview-expert',
-      senderClientPersonId: null,
-      senderAuthUserId: null,
-      body: 'Świetnie. Gdy tylko plik się pojawi, od razu go sprawdzę.',
-      attachments: [],
-      createdAt: '2026-08-01T09:11:00.000Z',
-      editedAt: null,
-      deletedAt: null,
-    },
-  ]
+  const messages = previewConversations.ensureMessages(props.caseId)
+  const lastMessage = messages.at(-1)
 
   return {
     data: {
@@ -183,10 +136,10 @@ function previewConversationResponse(): ConversationResponse {
         caseId: props.caseId,
         clientId: 'preview-client-account',
         clientPersonId: 'preview-client',
-        lastMessageSequence: messages.length,
-        lastMessageAt: messages.at(-1)?.createdAt ?? null,
+        lastMessageSequence: lastMessage?.sequence ?? 0,
+        lastMessageAt: lastMessage?.createdAt ?? null,
         createdAt: '2026-07-29T08:00:00.000Z',
-        updatedAt: messages.at(-1)?.createdAt ?? '2026-07-29T08:00:00.000Z',
+        updatedAt: lastMessage?.createdAt ?? '2026-07-29T08:00:00.000Z',
       },
       messages,
       receipt: null,
@@ -241,9 +194,19 @@ const syncing = ref(false)
 const loadingOlder = ref(false)
 const hasOlderMessages = ref(false)
 const pendingMessage = ref<{
+  clientMessageId: string
   body: string
   attachments: MessageAttachment[]
 } | null>(null)
+const visiblePendingMessage = computed(() => {
+  const pending = pendingMessage.value
+  if (!pending) return null
+  return messages.value.some(message => message.clientMessageId === pending.clientMessageId)
+    ? null
+    : pending
+})
+const messageMotionReady = ref(false)
+const unseenMessageCount = ref(0)
 const listElement = ref<HTMLElement | null>(null)
 const listAtEnd = ref(true)
 const readSentinelElement = ref<HTMLElement | null>(null)
@@ -296,9 +259,14 @@ function messageAttachmentUrl(attachment: MessageAttachment, download: boolean) 
 }
 
 function mergeMessages(incoming: Message[]) {
-  const byId = new Map(messages.value.map(message => [message.id, message]))
-  for (const message of incoming) byId.set(message.id, message)
-  messages.value = [...byId.values()].sort((a, b) => a.sequence - b.sequence)
+  const byClientMessageId = new Map(messages.value.map(message => [
+    message.clientMessageId || message.id,
+    message,
+  ]))
+  for (const message of incoming) {
+    byClientMessageId.set(message.clientMessageId || message.id, message)
+  }
+  messages.value = [...byClientMessageId.values()].sort((a, b) => a.sequence - b.sequence)
 }
 
 function applyResponse(
@@ -307,21 +275,49 @@ function applyResponse(
 ) {
   if (!response?.data?.conversation) return
   if (response.data.conversation.caseId !== props.caseId) return
+  const incomingMessages = response.data.messages ?? []
+  const knownMessageIds = new Set(messages.value.map(
+    message => message.clientMessageId || message.id,
+  ))
+  const addedMessages = mode === 'incremental'
+    ? incomingMessages.filter(message => !knownMessageIds.has(
+        message.clientMessageId || message.id,
+      ))
+    : []
+  if (mode !== 'incremental') messageMotionReady.value = false
   const shouldFollowMessages = mode === 'initial'
     || (mode === 'incremental' && listAtEnd.value)
   conversation.value = response.data.conversation
   ownReceipt.value = response.data.receipt
   peerReceipt.value = response.data.peerReceipt
   realtimeConfiguration.value = response.data.realtime ?? realtimeConfiguration.value
-  mergeMessages(response.data.messages ?? [])
+  mergeMessages(incomingMessages)
   if (mode !== 'incremental') {
     hasOlderMessages.value = response.data.pageInfo?.hasMore === true
   }
-  if (shouldFollowMessages) void nextTick(scrollToEnd)
+  if (mode === 'incremental' && !shouldFollowMessages && addedMessages.length) {
+    unseenMessageCount.value += addedMessages.length
+  }
+  if (shouldFollowMessages) {
+    void nextTick(() => scrollToEnd(mode === 'initial' ? 'auto' : 'smooth'))
+  }
+  if (mode === 'initial') {
+    unseenMessageCount.value = 0
+    void nextTick(() => {
+      messageMotionReady.value = true
+    })
+  }
   scheduleReceipt()
 }
 
 watch(initialResponse, response => applyResponse(response), { immediate: true })
+
+watch(
+  () => previewConversations.messagesByCase.value[props.caseId],
+  storedMessages => {
+    if (props.preview && storedMessages) mergeMessages(storedMessages)
+  },
+)
 
 watch(() => props.caseId, () => {
   void attachmentDrafts.clear({ discard: !sending.value })
@@ -337,6 +333,8 @@ watch(() => props.caseId, () => {
   peerReceipt.value = null
   hasOlderMessages.value = false
   peerTyping.value = false
+  messageMotionReady.value = false
+  unseenMessageCount.value = 0
   realtimeConfiguration.value = {
     mode: 'polling',
     channel: null,
@@ -364,12 +362,18 @@ function deliveryLabel(message: Message) {
   return 'Wysłano'
 }
 
-function scrollToEnd() {
+function shouldReduceMotion() {
+  return import.meta.client
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function scrollToEnd(behavior: ScrollBehavior = messages.value.length > 1 ? 'smooth' : 'auto') {
   if (!listElement.value) return
   listAtEnd.value = true
+  unseenMessageCount.value = 0
   listElement.value.scrollTo({
     top: listElement.value.scrollHeight,
-    behavior: messages.value.length > 1 ? 'smooth' : 'auto',
+    behavior: shouldReduceMotion() ? 'auto' : behavior,
   })
 }
 
@@ -377,6 +381,7 @@ function updateListPosition() {
   const element = listElement.value
   if (!element) return
   listAtEnd.value = element.scrollHeight - element.scrollTop - element.clientHeight <= 48
+  if (listAtEnd.value) unseenMessageCount.value = 0
   scheduleReceipt()
 }
 
@@ -434,6 +439,7 @@ async function loadOlderMessages() {
     applyResponse(response, 'older')
     await nextTick()
     if (list) list.scrollTop += list.scrollHeight - previousHeight
+    messageMotionReady.value = true
   }
   catch (caught) {
     if (isUnauthorizedRequestError(caught)) return
@@ -498,7 +504,7 @@ async function sendMessage() {
 
   if (props.preview) {
     const sequence = latestSequence.value + 1
-    mergeMessages([{
+    const message: Message = {
       id: crypto.randomUUID(),
       organizationId: conversation.value?.organizationId || 'org-openexpert-local',
       conversationId: conversation.value?.id || `preview-conversation-${props.caseId}`,
@@ -513,7 +519,9 @@ async function sendMessage() {
       createdAt: new Date().toISOString(),
       editedAt: null,
       deletedAt: null,
-    }])
+    }
+    previewConversations.appendMessage(props.caseId, message)
+    mergeMessages([message])
     composer.value = ''
     draftClientMessageId.value = crypto.randomUUID()
     emit('messageSent')
@@ -553,7 +561,11 @@ async function sendMessage() {
       }
   retryableSend.value = attempt
   sending.value = true
-  pendingMessage.value = { body, attachments }
+  pendingMessage.value = {
+    clientMessageId: attempt.clientMessageId,
+    body,
+    attachments,
+  }
   composer.value = ''
   stopTyping()
 
@@ -573,6 +585,7 @@ async function sendMessage() {
       for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
       return
     }
+    pendingMessage.value = null
     if (response.data.message) mergeMessages([response.data.message])
     if (response.data.peerReceipt !== undefined) peerReceipt.value = response.data.peerReceipt
     await attachmentDrafts.clear({ discard: false })
@@ -580,7 +593,6 @@ async function sendMessage() {
     retryableSend.value = null
     draftClientMessageId.value = crypto.randomUUID()
     emit('messageSent')
-    pendingMessage.value = null
     void nextTick(scrollToEnd)
   }
   catch (caught: any) {
@@ -906,109 +918,142 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div
-      ref="listElement"
-      :class="[
-        'portal-conversation__messages',
-        { 'is-error': loadError },
-      ]"
-      aria-live="polite"
-      @scroll.passive="updateListPosition"
-    >
-      <template v-if="isLoading">
-        <USkeleton v-for="index in 3" :key="index" class="h-16 w-3/4" />
-      </template>
-
-      <UAlert
-        v-else-if="loadError"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Nie udało się pobrać rozmowy"
-        description="Historia jest bezpieczna. Spróbuj ponownie za chwilę."
-      >
-        <template #actions>
-          <UButton color="error" variant="soft" size="sm" @click="refresh()">
-            Spróbuj ponownie
-          </UButton>
-        </template>
-      </UAlert>
-
-      <UButton
-        v-else-if="hasOlderMessages"
-        class="portal-conversation__older"
-        color="neutral"
-        variant="ghost"
-        size="xs"
-        icon="i-lucide-history"
-        :loading="loadingOlder"
-        @click="loadOlderMessages"
-      >
-        Pokaż starsze wiadomości
-      </UButton>
-
-      <div v-else-if="!messages.length && !pendingMessage" class="portal-conversation__empty">
-        <span><UIcon name="i-lucide-messages-square" /></span>
-        <strong>Zacznij rozmowę</strong>
-        <p>Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu.</p>
-      </div>
-
-      <article
-        v-for="message in messages"
-        :key="message.id"
+    <div class="portal-conversation__stage">
+      <div
+        ref="listElement"
         :class="[
-          'portal-message',
-          message.senderKind === 'client' ? 'portal-message--mine' : 'portal-message--theirs',
+          'portal-conversation__messages',
+          { 'is-error': loadError },
         ]"
+        aria-live="polite"
+        @scroll.passive="updateListPosition"
       >
-        <div>
-          <p v-if="message.body">{{ message.body }}</p>
-          <div v-if="message.attachments.length" class="portal-message__attachments">
-            <MessageAttachments
-              :attachments="message.attachments"
-              :url-for="messageAttachmentUrl"
-            />
-          </div>
-          <footer>
-            <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
-            <span v-if="message.senderKind === 'client'">
-              {{ deliveryLabel(message) }}
-              <UIcon
-                :name="deliveryLabel(message) === 'Odczytano'
-                  ? 'i-lucide-check-check'
-                  : 'i-lucide-check'"
-              />
-            </span>
-          </footer>
-        </div>
-      </article>
+        <template v-if="isLoading">
+          <USkeleton v-for="index in 3" :key="index" class="h-16 w-3/4" />
+        </template>
 
-      <article v-if="pendingMessage" class="portal-message portal-message--mine is-pending">
-        <div>
-          <p v-if="pendingMessage.body">{{ pendingMessage.body }}</p>
-          <div
-            v-if="pendingMessage.attachments.length"
-            class="portal-message__pending-attachments"
-            aria-label="Wysyłane załączniki"
+        <UAlert
+          v-else-if="loadError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          title="Nie udało się pobrać rozmowy"
+          description="Historia jest bezpieczna. Spróbuj ponownie za chwilę."
+        >
+          <template #actions>
+            <UButton color="error" variant="soft" size="sm" @click="refresh()">
+              Spróbuj ponownie
+            </UButton>
+          </template>
+        </UAlert>
+
+        <UButton
+          v-else-if="hasOlderMessages"
+          class="portal-conversation__older"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          icon="i-lucide-history"
+          :loading="loadingOlder"
+          @click="loadOlderMessages"
+        >
+          Pokaż starsze wiadomości
+        </UButton>
+
+        <div v-else-if="!messages.length && !visiblePendingMessage" class="portal-conversation__empty">
+          <span><UIcon name="i-lucide-messages-square" /></span>
+          <strong>Zacznij rozmowę</strong>
+          <p>Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu.</p>
+        </div>
+
+        <TransitionGroup
+          tag="div"
+          name="portal-message-list"
+          class="portal-conversation__stream"
+          :css="messageMotionReady"
+        >
+          <article
+            v-for="message in messages"
+            :key="message.clientMessageId"
+            :class="[
+              'portal-message',
+              message.senderKind === 'client' ? 'portal-message--mine' : 'portal-message--theirs',
+            ]"
           >
-            <span v-for="attachment in pendingMessage.attachments" :key="attachment.id">
-              <UIcon
-                :name="attachment.mimeType.startsWith('image/')
-                  ? 'i-lucide-image'
-                  : 'i-lucide-file'"
-              />
-              <span>{{ attachment.name }}</span>
-            </span>
-          </div>
-          <footer><span>Wysyłanie…</span></footer>
-        </div>
-      </article>
+            <div>
+              <p v-if="message.body">{{ message.body }}</p>
+              <div v-if="message.attachments.length" class="portal-message__attachments">
+                <MessageAttachments
+                  :attachments="message.attachments"
+                  :url-for="messageAttachmentUrl"
+                />
+              </div>
+              <footer>
+                <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
+                <Transition name="portal-message-status" mode="out-in">
+                  <span
+                    v-if="message.senderKind === 'client'"
+                    :key="deliveryLabel(message)"
+                  >
+                    {{ deliveryLabel(message) }}
+                    <UIcon
+                      :name="deliveryLabel(message) === 'Odczytano'
+                        ? 'i-lucide-check-check'
+                        : 'i-lucide-check'"
+                    />
+                  </span>
+                </Transition>
+              </footer>
+            </div>
+          </article>
 
-      <div v-if="peerTyping" class="portal-conversation__typing">
-        <span /><span /><span />
-        {{ expertFirstName }} pisze…
+          <article
+            v-if="visiblePendingMessage"
+            :key="visiblePendingMessage.clientMessageId"
+            class="portal-message portal-message--mine is-pending"
+          >
+            <div>
+              <p v-if="visiblePendingMessage.body">{{ visiblePendingMessage.body }}</p>
+              <div
+                v-if="visiblePendingMessage.attachments.length"
+                class="portal-message__pending-attachments"
+                aria-label="Wysyłane załączniki"
+              >
+                <span v-for="attachment in visiblePendingMessage.attachments" :key="attachment.id">
+                  <UIcon
+                    :name="attachment.mimeType.startsWith('image/')
+                      ? 'i-lucide-image'
+                      : 'i-lucide-file'"
+                  />
+                  <span>{{ attachment.name }}</span>
+                </span>
+              </div>
+              <footer><span>Wysyłanie…</span></footer>
+            </div>
+          </article>
+
+          <div v-if="peerTyping" key="peer-typing" class="portal-conversation__typing">
+            <span /><span /><span />
+            {{ expertFirstName }} pisze…
+          </div>
+        </TransitionGroup>
+        <span ref="readSentinelElement" class="portal-conversation__read-sentinel" aria-hidden="true" />
       </div>
-      <span ref="readSentinelElement" class="portal-conversation__read-sentinel" aria-hidden="true" />
+
+      <Transition name="portal-new-message">
+        <UButton
+          v-if="unseenMessageCount"
+          class="portal-conversation__new-message"
+          color="neutral"
+          variant="solid"
+          size="sm"
+          trailing-icon="i-lucide-arrow-down"
+          :aria-label="`${unseenMessageCount} ${unseenMessageCount === 1 ? 'nowa wiadomość' : 'nowe wiadomości'}. Przejdź na koniec rozmowy.`"
+          @click="scrollToEnd()"
+        >
+          {{ unseenMessageCount === 1 ? 'Nowa wiadomość' : `${unseenMessageCount} nowe wiadomości` }}
+        </UButton>
+      </Transition>
     </div>
 
     <form v-if="!loadError" class="portal-conversation__composer" @submit.prevent="sendMessage">
@@ -1182,6 +1227,7 @@ onBeforeUnmount(() => {
   height: 7px;
   border-radius: 999px;
   background: var(--ui-color-warning-500);
+  transition: background-color var(--oe-motion-fast);
 }
 
 .portal-conversation__expert i.is-connected {
@@ -1199,6 +1245,15 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.portal-conversation__stage {
+  position: relative;
+  min-height: 0;
+}
+
+.portal-conversation--pane .portal-conversation__stage {
+  height: 100%;
+}
+
 .portal-conversation__messages {
   display: flex;
   min-height: 280px;
@@ -1212,8 +1267,15 @@ onBeforeUnmount(() => {
 }
 
 .portal-conversation--pane .portal-conversation__messages {
+  height: 100%;
   min-height: 0;
   max-height: none;
+}
+
+.portal-conversation__stream {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
 .portal-conversation__messages.is-error {
@@ -1270,6 +1332,7 @@ onBeforeUnmount(() => {
 .portal-message {
   display: flex;
   width: 100%;
+  transform-origin: left bottom;
 }
 
 .portal-message > div {
@@ -1282,6 +1345,7 @@ onBeforeUnmount(() => {
 
 .portal-message--mine {
   justify-content: flex-end;
+  transform-origin: right bottom;
 }
 
 .portal-message--mine > div {
@@ -1296,8 +1360,34 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
+.portal-message > div {
+  transition: opacity var(--oe-motion-fast);
+}
+
 .portal-message.is-pending > div {
   opacity: .65;
+}
+
+.portal-message-list-enter-active {
+  transition:
+    opacity var(--oe-duration-base) var(--ease-out),
+    transform var(--oe-duration-base) var(--ease-out);
+}
+
+.portal-message-list-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.portal-message-list-enter-from {
+  opacity: 0;
+  transform: translateY(4px) scale(.985);
+}
+
+.portal-message-list-leave-to {
+  opacity: 0;
+  transform: translateY(2px) scale(.985);
 }
 
 .portal-message p {
@@ -1362,6 +1452,16 @@ onBeforeUnmount(() => {
   height: 12px;
 }
 
+.portal-message-status-enter-active,
+.portal-message-status-leave-active {
+  transition: opacity 100ms var(--ease-out);
+}
+
+.portal-message-status-enter-from,
+.portal-message-status-leave-to {
+  opacity: .45;
+}
+
 .portal-conversation__typing {
   display: flex;
   align-items: center;
@@ -1379,7 +1479,7 @@ onBeforeUnmount(() => {
   height: 5px;
   border-radius: 999px;
   background: currentColor;
-  animation: portal-typing 1.2s infinite ease-in-out;
+  animation: portal-typing 1.2s infinite var(--ease-in-out);
 }
 
 .portal-conversation__typing span:nth-child(2) {
@@ -1396,6 +1496,39 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.portal-conversation__new-message {
+  position: absolute;
+  z-index: 5;
+  bottom: 12px;
+  left: 50%;
+  min-height: 36px;
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
+  transform: translateX(-50%);
+}
+
+.portal-conversation__new-message:active:not(:disabled) {
+  transform: translateX(-50%) scale(.97);
+}
+
+.portal-new-message-enter-active {
+  transition:
+    opacity var(--oe-duration-base) var(--ease-out),
+    transform var(--oe-duration-base) var(--ease-out);
+}
+
+.portal-new-message-leave-active {
+  transition:
+    opacity var(--oe-duration-fast) var(--ease-out),
+    transform var(--oe-duration-fast) var(--ease-out);
+}
+
+.portal-new-message-enter-from,
+.portal-new-message-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px) scale(.98);
+}
+
 .portal-conversation__composer {
   margin: 0 16px;
   padding: 12px 0 6px;
@@ -1410,6 +1543,7 @@ onBeforeUnmount(() => {
 .portal-conversation__composer :deep(.portal-conversation__send) {
   width: 44px;
   height: 44px;
+  justify-content: center;
   border-radius: 999px;
   background: #111827;
   color: #fff;
@@ -1428,6 +1562,40 @@ onBeforeUnmount(() => {
   60%,
   100% { transform: translateY(0); opacity: .45; }
   30% { transform: translateY(-3px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-message-list-enter-active,
+  .portal-message-list-leave-active,
+  .portal-message-status-enter-active,
+  .portal-message-status-leave-active,
+  .portal-new-message-enter-active,
+  .portal-new-message-leave-active,
+  .portal-message > div {
+    transition-duration: 150ms !important;
+    transition-property: opacity !important;
+  }
+
+  .portal-message-list-enter-from,
+  .portal-message-list-leave-to {
+    transform: none !important;
+  }
+
+  .portal-new-message-enter-from,
+  .portal-new-message-leave-to {
+    transform: translateX(-50%) !important;
+  }
+
+  .portal-conversation__typing span {
+    animation: none;
+    opacity: .65;
+  }
+}
+
+@media (max-width: 760px) {
+  .portal-conversation--pane .portal-conversation__back {
+    display: grid;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1457,10 +1625,6 @@ onBeforeUnmount(() => {
   .portal-conversation--pane .portal-conversation__header {
     min-height: 74px;
     padding: 10px 12px;
-  }
-
-  .portal-conversation--pane .portal-conversation__back {
-    display: grid;
   }
 
   .portal-conversation__header-actions > :not(.portal-conversation__case-link),

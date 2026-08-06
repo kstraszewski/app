@@ -11,13 +11,19 @@ const routeUsesLoader = (path: string) => loaderRoutePrefixes.some(prefix => (
 ))
 const isLoading = ref(routeUsesLoader(route.path))
 const isDark = ref(false)
+const prefersReducedMotion = ref(false)
 let animationReady = false
 let pageReady = false
 let shownAt = Date.now()
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 let safetyTimer: ReturnType<typeof setTimeout> | undefined
-let mediaQuery: MediaQueryList | undefined
-const updateTheme = () => { isDark.value = mediaQuery?.matches ?? false }
+let colorSchemeMediaQuery: MediaQueryList | undefined
+let motionMediaQuery: MediaQueryList | undefined
+const updateTheme = () => { isDark.value = colorSchemeMediaQuery?.matches ?? false }
+const updateMotionPreference = () => {
+  prefersReducedMotion.value = motionMediaQuery?.matches ?? false
+  if (prefersReducedMotion.value) onAnimationSettled()
+}
 
 const loaderSrc = computed(() => isDark.value
   ? '/rive/openexpert-loader-darkmode.riv'
@@ -58,9 +64,12 @@ const removeAfterEach = router.afterEach((to) => {
 })
 
 onMounted(() => {
-  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  motionMediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
   updateTheme()
-  mediaQuery.addEventListener('change', updateTheme)
+  updateMotionPreference()
+  colorSchemeMediaQuery.addEventListener('change', updateTheme)
+  motionMediaQuery.addEventListener('change', updateMotionPreference)
 
   // The first route is already resolved by the time the root component mounts.
   if (routeUsesLoader(route.path)) {
@@ -72,7 +81,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearTimeout(hideTimer)
   clearTimeout(safetyTimer)
-  mediaQuery?.removeEventListener('change', updateTheme)
+  colorSchemeMediaQuery?.removeEventListener('change', updateTheme)
+  motionMediaQuery?.removeEventListener('change', updateMotionPreference)
   removeBeforeEach()
   removeAfterEach()
 })
@@ -87,6 +97,7 @@ onBeforeUnmount(() => {
       <div v-if="isLoading" class="app-loader" role="status" aria-live="polite">
         <ClientOnly>
           <LoaderAnimation
+            v-if="!prefersReducedMotion"
             class="app-loader__animation"
             :src="loaderSrc"
             :auto-bind="false"
@@ -95,6 +106,7 @@ onBeforeUnmount(() => {
             @load="onAnimationSettled"
             @error="onAnimationSettled"
           />
+          <span v-else class="app-loader__fallback">Ładowanie…</span>
           <template #fallback>
             <span class="app-loader__fallback">Ładowanie…</span>
           </template>

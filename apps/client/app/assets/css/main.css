@@ -42,6 +42,11 @@
   --color-green-800: #166534;
   --color-green-900: #14532d;
   --color-green-950: #052e16;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-oe: var(--ease-out);
+  --ease-oe-exit: var(--ease-out);
 }
 
 :root {
@@ -74,6 +79,12 @@
   --portal-warm-border: #e1ddd7;
   --portal-line: #dfdfdf;
   --portal-mobile-nav-clearance: calc(104px + env(safe-area-inset-bottom));
+  --oe-duration-fast: 150ms;
+  --oe-duration-base: 220ms;
+  --oe-duration-slow: 280ms;
+  --oe-motion-fast: var(--oe-duration-fast) var(--ease-oe);
+  --oe-motion-base: var(--oe-duration-base) var(--ease-oe);
+  --oe-motion-slow: var(--oe-duration-slow) var(--ease-oe);
 }
 
 * {
@@ -139,12 +150,67 @@ select {
   border: 0;
 }
 
+.oe-field-motion {
+  transition-property: color, background-color, border-color, box-shadow, opacity;
+  transition-duration: var(--oe-duration-fast);
+  transition-timing-function: var(--ease-oe);
+}
+
+.oe-state-motion,
+.oe-state-motion::before {
+  transition-property: color, background-color, border-color, box-shadow, opacity;
+  transition-duration: var(--oe-duration-fast);
+  transition-timing-function: var(--ease-oe);
+}
+
+.oe-pressable {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: var(--oe-duration-fast);
+  transition-timing-function: var(--ease-oe);
+}
+
+.oe-pressable:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+
+.oe-overlay-motion-fast {
+  --oe-animation-duration: var(--oe-duration-fast);
+}
+
+.oe-overlay-motion-base,
+.oe-disclosure-motion {
+  --oe-animation-duration: var(--oe-duration-base);
+}
+
+.oe-overlay-motion-fast,
+.oe-overlay-motion-base,
+.oe-disclosure-motion {
+  animation-duration: var(--oe-animation-duration) !important;
+  animation-timing-function: var(--ease-oe) !important;
+}
+
+.oe-overlay-motion-base[data-state="closed"] {
+  animation-duration: var(--oe-duration-fast) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .oe-pressable:active {
+    transform: none;
+  }
+
+  .oe-overlay-motion-fast,
+  .oe-overlay-motion-base,
+  .oe-disclosure-motion,
+  .oe-overlay-motion-base[data-state="closed"] {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }

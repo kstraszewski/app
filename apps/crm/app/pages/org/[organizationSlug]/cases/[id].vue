@@ -1060,6 +1060,7 @@ watch(
 <template>
   <CrmShell
     :title="data.data.title || 'Sprawa'"
+    :workspace="currentView === 'messages'"
     eyebrow="Karta sprawy"
     description="Klienci, nieruchomości, oferty, dokumenty i historia procesu w jednym miejscu."
     :back-to="orgPath('/cases')"
@@ -1077,6 +1078,7 @@ watch(
     </template>
     <template #actions>
       <UButton
+        v-if="currentView !== 'messages'"
         color="neutral"
         variant="outline"
         size="lg"
@@ -1085,10 +1087,22 @@ watch(
       >
         Deleguj zadanie
       </UButton>
-      <UButton class="case-next-action" color="neutral" variant="solid" size="lg" trailing-icon="i-lucide-arrow-right" @click="openNextStep">
+      <UButton
+        v-if="currentView !== 'messages'"
+        class="case-next-action"
+        color="neutral"
+        variant="solid"
+        size="lg"
+        trailing-icon="i-lucide-arrow-right"
+        @click="openNextStep"
+      >
         Otwórz następny krok
       </UButton>
-      <UDropdownMenu :items="headerMenuItems" :content="{ align: 'end' }">
+      <UDropdownMenu
+        v-if="currentView !== 'messages'"
+        :items="headerMenuItems"
+        :content="{ align: 'end' }"
+      >
         <UButton
           icon="i-lucide-ellipsis"
           color="neutral"
@@ -1169,10 +1183,16 @@ watch(
       />
     </div>
 
-    <CaseConversationPanel
+    <div
       v-else-if="currentView === 'messages'"
-      :case-id="data.data.id"
-    />
+      class="case-messages-workspace"
+    >
+      <CaseConversationPanel
+        :case-id="data.data.id"
+        :case-title="data.data.title || 'Sprawa'"
+        surface="pane"
+      />
+    </div>
 
     <section v-else-if="currentView === 'credit'" class="case-credit-view">
       <div id="case-bank-applications">
@@ -1743,6 +1763,15 @@ watch(
 <style scoped>
 .detail-alert {
   margin-bottom: 16px;
+}
+
+.case-messages-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .case-header-meta,

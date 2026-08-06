@@ -8,11 +8,18 @@ definePageMeta({ middleware: ['auth', 'organization'] })
 useHead({ title: 'Wiadomości — OpenExpert CRM' })
 
 type InboxFilter = 'all' | 'unread'
+type ConversationPanelHandle = {
+  canLeaveConversation: () => boolean
+}
 
+const route = useRoute()
 const toast = useToast()
 const { organizationSlug, crmApiPath, orgPath } = useOrganizationContext()
 const search = ref('')
 const selectedFilter = ref<InboxFilter>('all')
+const desktopFallbackEnabled = ref(false)
+const rememberedConversationId = ref('')
+const conversationPanel = ref<ConversationPanelHandle | null>(null)
 
 const emptyResponse: CrmConversationInboxResponse = {
   data: {
@@ -57,6 +64,50 @@ const visibleConversations = computed(() => {
   })
 })
 
+const selectedCaseId = computed(() => {
+  const value = Array.isArray(route.query.case) ? route.query.case[0] : route.query.case
+  return typeof value === 'string' ? value : ''
+})
+
+const selectedClientPersonId = computed(() => {
+  const value = Array.isArray(route.query.person) ? route.query.person[0] : route.query.person
+  return typeof value === 'string' ? value : ''
+})
+
+const explicitConversation = computed(() => conversations.value.find(conversation => (
+  conversation.caseId === selectedCaseId.value
+  && conversation.clientPersonId === selectedClientPersonId.value
+)) ?? null)
+
+watch(explicitConversation, (conversation) => {
+  if (conversation) rememberedConversationId.value = conversation.conversationId
+}, { immediate: true })
+
+watch(
+  [desktopFallbackEnabled, conversations],
+  ([desktopEnabled, nextConversations]) => {
+    if (
+      !desktopEnabled
+      || explicitConversation.value
+      || rememberedConversationId.value
+    ) return
+    rememberedConversationId.value = nextConversations[0]?.conversationId ?? ''
+  },
+  { immediate: true },
+)
+
+const rememberedConversation = computed(() => conversations.value.find(conversation => (
+  conversation.conversationId === rememberedConversationId.value
+)) ?? null)
+
+const selectedConversation = computed(() => (
+  explicitConversation.value
+  ?? rememberedConversation.value
+  ?? (desktopFallbackEnabled.value ? conversations.value[0] : null)
+  ?? null
+))
+const hasExplicitSelection = computed(() => Boolean(explicitConversation.value))
+
 const updatedAtLabel = computed(() => {
   const value = response.value.data.generatedAt
   if (!value || Number.isNaN(Date.parse(value))) return 'Oczekiwanie na synchronizację'
@@ -69,12 +120,37 @@ const updatedAtLabel = computed(() => {
 
 function conversationLocation(conversation: CrmConversationInboxItem) {
   return {
+    path: orgPath('/messages'),
+    query: {
+      case: conversation.caseId,
+      person: conversation.clientPersonId,
+    },
+  }
+}
+
+function caseConversationLocation(conversation: CrmConversationInboxItem) {
+  return {
     path: orgPath(`/cases/${encodeURIComponent(conversation.caseId)}`),
     query: {
       view: 'messages',
       person: conversation.clientPersonId,
     },
   }
+}
+
+function guardConversationChange(
+  event: MouseEvent,
+  conversation: CrmConversationInboxItem,
+) {
+  if (selectedConversation.value?.conversationId === conversation.conversationId) return
+  if (conversationPanel.value?.canLeaveConversation() ?? true) return
+  event.preventDefault()
+  toast.add({
+    title: 'Najpierw zakończ szkic wiadomości',
+    description: 'Wyślij albo wyczyść treść i załączniki przed zmianą rozmowy.',
+    color: 'warning',
+    icon: 'i-lucide-paperclip',
+  })
 }
 
 function clientInitials(name: string) {
@@ -117,9 +193,22 @@ async function refreshInbox() {
   })
 }
 
+function syncInboxAfterActivity() {
+  if (status.value === 'pending') return
+  void refresh().catch(() => {})
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+let splitViewMedia: MediaQueryList | null = null
+
+function enableDesktopFallback() {
+  if (splitViewMedia?.matches) desktopFallbackEnabled.value = true
+}
 
 onMounted(() => {
+  splitViewMedia = window.matchMedia('(min-width: 1101px)')
+  enableDesktopFallback()
+  splitViewMedia.addEventListener('change', enableDesktopFallback)
   refreshTimer = setInterval(() => {
     if (document.visibilityState !== 'visible' || status.value === 'pending') return
     void refresh().catch(() => {})
@@ -128,144 +217,137 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer)
+  splitViewMedia?.removeEventListener('change', enableDesktopFallback)
 })
 </script>
 
 <template>
-  <CrmShell
-    title="Wiadomości"
-    eyebrow="Komunikacja"
-    description="Wszystkie rozmowy z panelu klienta, uporządkowane według ostatniej aktywności."
+  <div
+    class="crm-messages-workspace"
+    :class="{ 'has-explicit-selection': hasExplicitSelection }"
   >
-    <template #meta>
-      <UBadge
-        :color="unreadCount ? 'primary' : 'neutral'"
-        :variant="unreadCount ? 'subtle' : 'outline'"
-        icon="i-lucide-message-circle"
-      >
-        {{ unreadCount ? `${unreadCount} nieprzeczytanych` : 'Wszystko przeczytane' }}
-      </UBadge>
-    </template>
-
-    <template #actions>
-      <UButton
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-refresh-cw"
-        :loading="refreshing"
-        @click="refreshInbox"
-      >
-        Odśwież
-      </UButton>
-    </template>
-
-    <section class="message-inbox" aria-labelledby="message-inbox-title">
-      <header class="message-inbox__toolbar">
-        <div class="message-inbox__heading">
-          <div>
-            <h2 id="message-inbox-title">Rozmowy</h2>
-            <p>{{ updatedAtLabel }}</p>
-          </div>
-          <span class="message-inbox__count" aria-live="polite">
-            {{ visibleConversations.length }}
-          </span>
+    <aside class="crm-messages-inbox" aria-labelledby="crm-messages-title">
+      <header class="crm-messages-inbox__header">
+        <div class="crm-messages-inbox__title">
+          <h1 id="crm-messages-title">Wiadomości</h1>
+          <span aria-live="polite">{{ conversations.length }}</span>
         </div>
 
-        <div class="message-inbox__controls">
-          <UInput
-            v-model="search"
-            class="message-inbox__search"
-            icon="i-lucide-search"
-            placeholder="Szukaj klienta, sprawy lub treści"
-            aria-label="Szukaj w wiadomościach"
-          >
-            <template v-if="search" #trailing>
-              <UButton
-                color="neutral"
-                variant="link"
-                square
-                size="xs"
-                icon="i-lucide-x"
-                aria-label="Wyczyść wyszukiwanie"
-                @click="search = ''"
-              />
-            </template>
-          </UInput>
-
-          <div class="message-inbox__filters" role="tablist" aria-label="Filtr wiadomości">
-            <button
-              type="button"
-              role="tab"
-              :aria-selected="selectedFilter === 'all'"
-              :class="{ 'message-inbox__filter--active': selectedFilter === 'all' }"
-              @click="selectedFilter = 'all'"
-            >
-              Wszystkie
-            </button>
-            <button
-              type="button"
-              role="tab"
-              :aria-selected="selectedFilter === 'unread'"
-              :class="{ 'message-inbox__filter--active': selectedFilter === 'unread' }"
-              @click="selectedFilter = 'unread'"
-            >
-              Nieprzeczytane
-              <span v-if="unreadConversationCount">
-                {{ unreadConversationCount > 99 ? '99+' : unreadConversationCount }}
-              </span>
-            </button>
-          </div>
+        <div class="crm-messages-inbox__header-actions">
+          <span v-if="unreadCount" class="crm-messages-inbox__new">
+            {{ unreadCount > 99 ? '99+' : unreadCount }} nowe
+          </span>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            square
+            icon="i-lucide-refresh-cw"
+            :loading="refreshing"
+            aria-label="Odśwież wiadomości"
+            title="Odśwież wiadomości"
+            @click="refreshInbox"
+          />
         </div>
       </header>
 
+      <p class="crm-messages-inbox__updated">{{ updatedAtLabel }}</p>
+
+      <UInput
+        v-model="search"
+        class="crm-messages-inbox__search"
+        icon="i-lucide-search"
+        size="lg"
+        placeholder="Szukaj klienta, sprawy lub treści"
+        aria-label="Szukaj w wiadomościach"
+      >
+        <template v-if="search" #trailing>
+          <UButton
+            color="neutral"
+            variant="link"
+            square
+            size="xs"
+            icon="i-lucide-x"
+            aria-label="Wyczyść wyszukiwanie"
+            @click="search = ''"
+          />
+        </template>
+      </UInput>
+
+      <div class="crm-messages-inbox__filters" role="tablist" aria-label="Filtr wiadomości">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="selectedFilter === 'all'"
+          :class="{ 'is-active': selectedFilter === 'all' }"
+          @click="selectedFilter = 'all'"
+        >
+          Wszystkie
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="selectedFilter === 'unread'"
+          :class="{ 'is-active': selectedFilter === 'unread' }"
+          @click="selectedFilter = 'unread'"
+        >
+          Nieprzeczytane
+          <span v-if="unreadConversationCount">
+            {{ unreadConversationCount > 99 ? '99+' : unreadConversationCount }}
+          </span>
+        </button>
+      </div>
+
       <UAlert
         v-if="error && conversations.length"
-        class="message-inbox__alert"
+        class="crm-messages-inbox__alert"
         color="warning"
         variant="subtle"
         icon="i-lucide-wifi-off"
         title="Lista może być nieaktualna"
-        description="Nie udało się pobrać najnowszych wiadomości. Zachowaliśmy ostatnio załadowane wyniki."
+        description="Nie udało się pobrać najnowszych wiadomości. Zachowaliśmy ostatnie wyniki."
       />
 
-      <div v-if="initialLoading" class="message-inbox__skeletons" aria-label="Ładowanie wiadomości">
-        <div v-for="index in 6" :key="index" class="message-inbox__skeleton">
+      <div v-if="initialLoading" class="crm-messages-inbox__skeletons" aria-label="Ładowanie wiadomości">
+        <div v-for="index in 6" :key="index" class="crm-messages-inbox__skeleton">
           <USkeleton class="size-11 shrink-0 rounded-full" />
           <div>
-            <USkeleton class="h-4 w-40 max-w-full" />
-            <USkeleton class="mt-2 h-4 w-64 max-w-full" />
-            <USkeleton class="mt-2 h-3 w-52 max-w-full" />
+            <USkeleton class="h-4 w-36 max-w-full" />
+            <USkeleton class="mt-2 h-3 w-48 max-w-full" />
+            <USkeleton class="mt-2 h-3 w-56 max-w-full" />
           </div>
         </div>
       </div>
 
-      <div v-else-if="error && !conversations.length" class="message-inbox__state">
-        <span class="message-inbox__state-icon">
-          <UIcon name="i-lucide-cloud-off" aria-hidden="true" />
-        </span>
-        <h2>Nie udało się pobrać wiadomości</h2>
+      <div v-else-if="error && !conversations.length" class="crm-messages-inbox__state">
+        <UIcon name="i-lucide-cloud-off" aria-hidden="true" />
+        <strong>Nie udało się pobrać wiadomości</strong>
         <p>Sprawdź połączenie i spróbuj ponownie.</p>
-        <UButton icon="i-lucide-refresh-cw" @click="refreshInbox">
+        <UButton size="sm" icon="i-lucide-refresh-cw" @click="refreshInbox">
           Spróbuj ponownie
         </UButton>
       </div>
 
-      <div v-else-if="!conversations.length" class="message-inbox__state">
-        <span class="message-inbox__state-icon">
-          <UIcon name="i-lucide-message-square-dashed" aria-hidden="true" />
-        </span>
-        <h2>Nie ma jeszcze rozmów</h2>
+      <div v-else-if="!conversations.length" class="crm-messages-inbox__state">
+        <UIcon name="i-lucide-message-square-dashed" aria-hidden="true" />
+        <strong>Nie ma jeszcze rozmów</strong>
         <p>Wiadomości wysłane w sprawach pojawią się tutaj automatycznie.</p>
-        <UButton color="neutral" variant="outline" :to="orgPath('/cases')" icon="i-lucide-briefcase-business">
+        <UButton
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :to="orgPath('/cases')"
+          icon="i-lucide-briefcase-business"
+        >
           Przejdź do spraw
         </UButton>
       </div>
 
-      <div v-else-if="!visibleConversations.length" class="message-inbox__state">
-        <span class="message-inbox__state-icon">
-          <UIcon :name="selectedFilter === 'unread' ? 'i-lucide-mail-check' : 'i-lucide-search-x'" aria-hidden="true" />
-        </span>
-        <h2>{{ selectedFilter === 'unread' && !search ? 'Wszystko przeczytane' : 'Brak wyników' }}</h2>
+      <div v-else-if="!visibleConversations.length" class="crm-messages-inbox__state">
+        <UIcon
+          :name="selectedFilter === 'unread' ? 'i-lucide-mail-check' : 'i-lucide-search-x'"
+          aria-hidden="true"
+        />
+        <strong>{{ selectedFilter === 'unread' && !search ? 'Wszystko przeczytane' : 'Brak wyników' }}</strong>
         <p>
           {{ selectedFilter === 'unread' && !search
             ? 'Nie masz teraz żadnych nieprzeczytanych rozmów.'
@@ -274,6 +356,7 @@ onBeforeUnmount(() => {
         <UButton
           color="neutral"
           variant="outline"
+          size="sm"
           icon="i-lucide-list-filter"
           @click="search = ''; selectedFilter = 'all'"
         >
@@ -281,72 +364,67 @@ onBeforeUnmount(() => {
         </UButton>
       </div>
 
-      <ul v-else class="message-inbox__list" aria-label="Lista rozmów">
-        <li v-for="conversation in visibleConversations" :key="conversation.conversationId">
-          <NuxtLink
-            class="message-thread"
-            :class="{ 'message-thread--unread': conversation.unreadCount > 0 }"
-            :to="conversationLocation(conversation)"
-            :aria-label="`Otwórz rozmowę z ${conversation.clientName} w sprawie ${conversation.caseTitle}`"
-          >
-            <span class="message-thread__avatar" aria-hidden="true">
-              {{ clientInitials(conversation.clientName) }}
+      <nav v-else class="crm-messages-inbox__list" aria-label="Lista rozmów">
+        <NuxtLink
+          v-for="conversation in visibleConversations"
+          :key="conversation.conversationId"
+          :to="conversationLocation(conversation)"
+          :class="{
+            'is-active': selectedConversation?.conversationId === conversation.conversationId,
+            'is-unread': conversation.unreadCount > 0,
+          }"
+          :aria-current="selectedConversation?.conversationId === conversation.conversationId ? 'page' : undefined"
+          :aria-label="`Otwórz rozmowę z ${conversation.clientName} w sprawie ${conversation.caseTitle}`"
+          @click="guardConversationChange($event, conversation)"
+        >
+          <span class="crm-messages-inbox__avatar" aria-hidden="true">
+            {{ clientInitials(conversation.clientName) }}
+          </span>
+
+          <span class="crm-messages-inbox__thread-copy">
+            <span class="crm-messages-inbox__thread-topline">
+              <strong>{{ conversation.clientName }}</strong>
+              <time :datetime="conversation.lastMessageAt">
+                {{ formatConversationTime(conversation.lastMessageAt) }}
+              </time>
             </span>
+            <small :title="conversation.caseTitle">{{ conversation.caseTitle }}</small>
+            <span class="crm-messages-inbox__preview">{{ messagePreview(conversation) }}</span>
+          </span>
 
-            <span class="message-thread__content">
-              <span class="message-thread__topline">
-                <strong>{{ conversation.clientName }}</strong>
-                <time :datetime="conversation.lastMessageAt">
-                  {{ formatConversationTime(conversation.lastMessageAt) }}
-                </time>
-              </span>
+          <span v-if="conversation.unreadCount" class="crm-messages-inbox__unread">
+            {{ conversation.unreadCount > 99 ? '99+' : conversation.unreadCount }}
+          </span>
+        </NuxtLink>
+      </nav>
 
-              <span class="message-thread__context">
-                <UBadge
-                  class="message-thread__case"
-                  color="neutral"
-                  variant="subtle"
-                  size="xs"
-                  icon="i-lucide-briefcase-business"
-                  :title="conversation.caseTitle"
-                >
-                  Sprawa · {{ conversation.caseTitle }}
-                </UBadge>
-                <span v-if="conversation.clientEmail" class="message-thread__email">
-                  {{ conversation.clientEmail }}
-                </span>
-              </span>
+      <div v-if="response.data.hasMore" class="crm-messages-inbox__limit">
+        <UIcon name="i-lucide-info" aria-hidden="true" />
+        <span>Pokazujemy 100 najnowszych rozmów.</span>
+      </div>
+    </aside>
 
-              <span class="message-thread__preview">
-                {{ messagePreview(conversation) }}
-              </span>
-            </span>
-
-            <span class="message-thread__aside">
-              <UBadge
-                v-if="conversation.unreadCount"
-                color="primary"
-                variant="solid"
-                size="xs"
-                :aria-label="`${conversation.unreadCount} nieprzeczytanych wiadomości`"
-              >
-                {{ conversation.unreadCount > 99 ? '99+' : conversation.unreadCount }}
-              </UBadge>
-              <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
-            </span>
-          </NuxtLink>
-        </li>
-      </ul>
-
-      <UAlert
-        v-if="response.data.hasMore"
-        class="message-inbox__limit"
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-info"
-        title="Pokazujemy 100 najnowszych rozmów"
-        description="Starsze rozmowy nadal znajdziesz w odpowiednich sprawach."
+    <section
+      v-if="selectedConversation"
+      class="crm-messages-conversation"
+      aria-label="Wybrana rozmowa"
+    >
+      <CaseConversationPanel
+        ref="conversationPanel"
+        surface="pane"
+        :case-id="selectedConversation.caseId"
+        :fixed-client-person-id="selectedConversation.clientPersonId"
+        :case-title="selectedConversation.caseTitle"
+        :case-to="caseConversationLocation(selectedConversation)"
+        :back-to="orgPath('/messages')"
+        @activity="syncInboxAfterActivity"
       />
+    </section>
+
+    <section v-else class="crm-messages-conversation crm-messages-conversation--empty">
+      <UIcon name="i-lucide-message-circle-more" aria-hidden="true" />
+      <h2>Wybierz rozmowę</h2>
+      <p>Historia wiadomości i pole odpowiedzi pojawią się w tym miejscu.</p>
     </section>
 
     <span class="sr-only" aria-live="polite" aria-atomic="true">
@@ -354,355 +432,454 @@ onBeforeUnmount(() => {
         ? `Masz ${unreadCount} nieprzeczytanych wiadomości w ${unreadConversationCount} rozmowach.`
         : 'Wszystkie rozmowy są przeczytane.' }}
     </span>
-  </CrmShell>
+  </div>
 </template>
 
 <style scoped>
-.message-inbox {
-  max-width: 1040px;
-  margin-inline: auto;
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-surface);
-  background: var(--ui-bg);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text) 4%, transparent);
-}
-
-.message-inbox__toolbar {
+.crm-messages-workspace {
   display: grid;
-  gap: 16px;
-  padding: 18px;
-  border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-bg-elevated);
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-bg);
 }
 
-.message-inbox__heading,
-.message-inbox__controls,
-.message-thread__topline,
-.message-thread__context,
-.message-thread__aside {
+.crm-messages-inbox {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  padding: 18px 14px 12px;
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.crm-messages-inbox__header,
+.crm-messages-inbox__title,
+.crm-messages-inbox__header-actions,
+.crm-messages-inbox__thread-topline {
   display: flex;
   align-items: center;
 }
 
-.message-inbox__heading,
-.message-thread__topline {
+.crm-messages-inbox__header {
+  min-height: 46px;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  padding-inline: 6px 2px;
 }
 
-.message-inbox__heading h2,
-.message-inbox__state h2 {
+.crm-messages-inbox__title {
+  min-width: 0;
+  gap: 8px;
+}
+
+.crm-messages-inbox__title h1 {
   margin: 0;
   color: var(--ui-text-highlighted);
-  font-size: 16px;
+  font-size: 23px;
+  font-weight: 680;
+  letter-spacing: -.03em;
+}
+
+.crm-messages-inbox__title > span,
+.crm-messages-inbox__new {
+  display: grid;
+  min-width: 22px;
+  min-height: 22px;
+  place-items: center;
+  padding-inline: 6px;
+  border-radius: 999px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text-muted);
+  font-size: 10px;
   font-weight: 700;
 }
 
-.message-inbox__heading p,
-.message-inbox__state p {
-  margin: 3px 0 0;
-  color: var(--ui-text-muted);
-  font-size: 12px;
-}
-
-.message-inbox__count {
-  display: grid;
-  min-width: 30px;
-  height: 26px;
-  place-items: center;
-  padding-inline: 8px;
-  border-radius: 999px;
-  background: var(--ui-bg-muted);
-  color: var(--ui-text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.message-inbox__controls {
-  gap: 12px;
-}
-
-.message-inbox__search {
-  flex: 1 1 360px;
-}
-
-.message-inbox__filters {
-  display: inline-flex;
+.crm-messages-inbox__header-actions {
   flex: 0 0 auto;
   gap: 3px;
+}
+
+.crm-messages-inbox__new {
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+}
+
+.crm-messages-inbox__updated {
+  margin: -1px 6px 8px;
+  color: var(--ui-text-dimmed);
+  font-size: 10px;
+}
+
+.crm-messages-inbox__search {
+  flex: 0 0 auto;
+  margin: 3px 2px 8px;
+}
+
+.crm-messages-inbox__search :deep(input) {
+  border-radius: 999px;
+  background: var(--ui-bg-elevated);
+}
+
+.crm-messages-inbox__filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin: 0 2px 8px;
   padding: 3px;
   border: 1px solid var(--ui-border);
   border-radius: 10px;
-  background: var(--ui-bg-muted);
+  background: var(--ui-bg-elevated);
 }
 
-.message-inbox__filters button {
+.crm-messages-inbox__filters button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 32px;
   align-items: center;
-  gap: 7px;
-  padding: 6px 11px;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 9px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
 
-.message-inbox__filters button:hover {
+.crm-messages-inbox__filters button:hover,
+.crm-messages-inbox__filters button.is-active {
   color: var(--ui-text-highlighted);
 }
 
-.message-inbox__filters button:focus-visible {
+.crm-messages-inbox__filters button.is-active {
+  background: var(--ui-bg);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text) 9%, transparent);
+}
+
+.crm-messages-inbox__filters button:focus-visible {
   outline: 2px solid var(--ui-primary);
   outline-offset: 1px;
 }
 
-.message-inbox__filters .message-inbox__filter--active {
-  background: var(--ui-bg);
-  color: var(--ui-text-highlighted);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text) 10%, transparent);
-}
-
-.message-inbox__filters span {
+.crm-messages-inbox__filters button span {
   display: grid;
-  min-width: 19px;
+  min-width: 18px;
   height: 18px;
   place-items: center;
   padding-inline: 4px;
   border-radius: 999px;
-  background: var(--ui-primary);
-  color: var(--ui-bg);
-  font-size: 10px;
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+  font-size: 9px;
 }
 
-.message-inbox__alert {
-  margin: 14px 14px 0;
+.crm-messages-inbox__alert {
+  margin: 4px 2px 8px;
 }
 
-.message-inbox__skeletons,
-.message-inbox__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.crm-messages-inbox__skeletons {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 4px;
 }
 
-.message-inbox__skeleton {
+.crm-messages-inbox__skeleton {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px;
-  border-bottom: 1px solid var(--ui-border);
+  gap: 11px;
+  padding: 12px 10px;
 }
 
-.message-inbox__skeleton:last-child {
-  border-bottom: 0;
-}
-
-.message-inbox__state {
+.crm-messages-inbox__state {
   display: grid;
-  min-height: 320px;
+  flex: 1 1 auto;
+  min-height: 220px;
   place-items: center;
   align-content: center;
-  gap: 8px;
-  padding: 40px 20px;
+  gap: 7px;
+  padding: 28px 18px;
+  color: var(--ui-text-muted);
   text-align: center;
 }
 
-.message-inbox__state-icon {
+.crm-messages-inbox__state > svg {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 5px;
+}
+
+.crm-messages-inbox__state strong {
+  color: var(--ui-text-highlighted);
+  font-size: 14px;
+}
+
+.crm-messages-inbox__state p {
+  max-width: 300px;
+  margin: 0 0 7px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.crm-messages-inbox__list {
   display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  margin-bottom: 4px;
-  border-radius: 16px;
-  background: var(--ui-bg-elevated);
-  color: var(--ui-primary);
-  font-size: 24px;
+  align-content: start;
+  gap: 4px;
+  min-height: 0;
+  margin-top: 2px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  overscroll-behavior: contain;
 }
 
-.message-inbox__state p {
-  max-width: 420px;
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-
-.message-inbox__list li:not(:last-child) {
-  border-bottom: 1px solid var(--ui-border);
-}
-
-.message-thread {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  min-height: 92px;
-  align-items: center;
-  padding: 16px 18px;
-  color: inherit;
-  text-decoration: none;
-  transition: background-color var(--oe-motion-fast);
-}
-
-.message-thread:hover {
-  background: var(--ui-bg-muted);
-}
-
-.message-thread:focus-visible {
+.crm-messages-inbox__list > a {
   position: relative;
-  z-index: 1;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px 11px;
+  border-radius: 14px;
+  color: var(--ui-text);
+  text-decoration: none;
+  transition: color var(--oe-motion-fast), background-color var(--oe-motion-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .crm-messages-inbox__list > a:hover {
+    background: var(--ui-bg-elevated);
+  }
+}
+
+.crm-messages-inbox__list > a:focus-visible {
   outline: 2px solid var(--ui-primary);
   outline-offset: -2px;
 }
 
-.message-thread--unread {
-  background: color-mix(in srgb, var(--ui-primary) 5%, var(--ui-bg));
-}
-
-.message-thread__avatar {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border-radius: 14px;
+.crm-messages-inbox__list > a.is-active {
   background: var(--ui-bg-elevated);
   color: var(--ui-text-highlighted);
-  font-size: 13px;
-  font-weight: 750;
+  box-shadow: inset 3px 0 0 var(--ui-primary);
 }
 
-.message-thread--unread .message-thread__avatar {
-  background: color-mix(in srgb, var(--ui-primary) 14%, var(--ui-bg));
-  color: var(--ui-primary);
+.crm-messages-inbox__avatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .84;
 }
 
-.message-thread__content {
+.crm-messages-inbox__thread-copy {
   display: grid;
   min-width: 0;
-  gap: 6px;
 }
 
-.message-thread__topline strong {
+.crm-messages-inbox__thread-topline {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crm-messages-inbox__thread-topline strong {
   overflow: hidden;
-  color: var(--ui-text-highlighted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.message-thread--unread .message-thread__topline strong {
-  font-weight: 750;
+.crm-messages-inbox__list > a.is-unread:not(.is-active) .crm-messages-inbox__thread-topline strong,
+.crm-messages-inbox__list > a.is-unread:not(.is-active) .crm-messages-inbox__preview {
+  color: var(--ui-text-highlighted);
+  font-weight: 720;
 }
 
-.message-thread__topline time {
+.crm-messages-inbox__thread-topline time,
+.crm-messages-inbox__thread-copy small,
+.crm-messages-inbox__preview {
+  color: currentColor;
+  opacity: .6;
+}
+
+.crm-messages-inbox__thread-topline time {
   flex: 0 0 auto;
-  color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: 9px;
 }
 
-.message-thread__context {
-  min-width: 0;
-  gap: 9px;
-}
-
-.message-thread__case {
-  max-width: min(360px, 55vw);
+.crm-messages-inbox__thread-copy small {
   overflow: hidden;
+  margin-top: 1px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.message-thread__email {
-  overflow: hidden;
-  color: var(--ui-text-muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.message-thread__preview {
+.crm-messages-inbox__preview {
   display: -webkit-box;
+  margin-top: 5px;
   overflow: hidden;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.message-thread--unread .message-thread__preview {
-  color: var(--ui-text);
+.crm-messages-inbox__unread {
+  display: grid;
+  align-self: center;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding-inline: 5px;
+  border-radius: 999px;
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+  font-size: 9px;
+  font-weight: 750;
 }
 
-.message-thread__aside {
-  align-self: stretch;
-  gap: 9px;
+.crm-messages-inbox__list > a.is-active .crm-messages-inbox__unread {
+  background: var(--ui-primary);
+  color: var(--ui-text-inverted);
+}
+
+.crm-messages-inbox__limit {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin: 5px 4px 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--ui-border);
   color: var(--ui-text-dimmed);
+  font-size: 10px;
 }
 
-.message-thread__aside > :last-child {
-  font-size: 17px;
+.crm-messages-conversation {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-bg);
 }
 
-.message-inbox__limit {
-  margin: 14px;
+.crm-messages-conversation--empty {
+  place-items: center;
+  align-content: center;
+  padding: 32px;
+  color: var(--ui-text-muted);
+  text-align: center;
 }
 
-@media (max-width: 680px) {
-  .message-inbox__toolbar,
-  .message-thread {
-    padding-inline: 14px;
+.crm-messages-conversation--empty > svg {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 12px;
+}
+
+.crm-messages-conversation--empty h2,
+.crm-messages-conversation--empty p {
+  margin: 0;
+}
+
+.crm-messages-conversation--empty h2 {
+  color: var(--ui-text-highlighted);
+  font-size: 18px;
+}
+
+.crm-messages-conversation--empty p {
+  max-width: 380px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .crm-messages-workspace {
+    position: relative;
+    display: block;
+    overflow: hidden;
   }
 
-  .message-inbox__controls {
-    align-items: stretch;
-    flex-direction: column;
+  .crm-messages-inbox,
+  .crm-messages-conversation {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition:
+      opacity var(--oe-duration-base) var(--ease-out),
+      transform var(--oe-duration-base) var(--ease-drawer),
+      visibility 0s linear 0s;
   }
 
-  .message-inbox__search {
-    flex-basis: auto;
+  .crm-messages-inbox {
+    z-index: 1;
+    padding: 15px 12px max(18px, env(safe-area-inset-bottom));
+    border-right: 0;
   }
 
-  .message-inbox__filters {
-    align-self: flex-start;
+  .crm-messages-conversation {
+    z-index: 2;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+    transition-duration:
+      var(--oe-duration-fast),
+      var(--oe-duration-fast),
+      0s;
+    transition-delay: 0s, 0s, var(--oe-duration-fast);
   }
 
-  .message-thread {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 11px;
+  .crm-messages-workspace.has-explicit-selection .crm-messages-inbox {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-12px);
+    pointer-events: none;
+    transition-duration:
+      var(--oe-duration-fast),
+      var(--oe-duration-fast),
+      0s;
+    transition-delay: 0s, 0s, var(--oe-duration-fast);
   }
 
-  .message-thread__avatar {
+  .crm-messages-workspace.has-explicit-selection .crm-messages-conversation {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .crm-messages-inbox__list > a {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    padding-inline: 9px;
+  }
+
+  .crm-messages-inbox__avatar {
     width: 40px;
     height: 40px;
-    border-radius: 12px;
   }
+}
 
-  .message-thread__aside {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: start;
-    justify-self: end;
-    padding-top: 25px;
-  }
-
-  .message-thread__aside > :last-child,
-  .message-thread__topline time,
-  .message-thread__email {
-    display: none;
-  }
-
-  .message-thread__content {
-    grid-column: 2;
-    grid-row: 1;
-    padding-right: 42px;
-  }
-
-  .message-thread__case {
-    max-width: 58vw;
+@media (max-width: 1100px) and (prefers-reduced-motion: reduce) {
+  .crm-messages-inbox,
+  .crm-messages-conversation {
+    transform: none !important;
+    transition-duration: 150ms, 150ms, 0s !important;
+    transition-property: opacity, transform, visibility !important;
   }
 }
 </style>

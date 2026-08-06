@@ -848,7 +848,8 @@ onBeforeUnmount(() => {
         </ol>
       </nav>
 
-      <div v-if="status === 'pending'" class="booking-loading" aria-label="Ładowanie widgetu">
+      <Transition :name="confirmation ? 'booking-stage' : 'booking-stage-idle'" mode="out-in">
+      <div v-if="status === 'pending'" key="loading" class="booking-loading" aria-label="Ładowanie widgetu">
         <USkeleton class="h-12 w-full" />
         <USkeleton class="h-12 w-full" />
         <USkeleton class="h-48 w-full" />
@@ -856,6 +857,7 @@ onBeforeUnmount(() => {
 
       <UAlert
         v-else-if="error"
+        key="error"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
@@ -863,7 +865,7 @@ onBeforeUnmount(() => {
         description="Odśwież stronę albo skontaktuj się bezpośrednio z placówką."
       />
 
-      <section v-else-if="confirmation" class="booking-confirmation" aria-live="polite">
+      <section v-else-if="confirmation" key="confirmation" class="booking-confirmation" aria-live="polite">
         <span class="booking-confirmation__icon"><UIcon name="i-lucide-check" /></span>
         <p class="booking-kicker">Rezerwacja potwierdzona</p>
         <h2>Do zobaczenia na spotkaniu</h2>
@@ -895,6 +897,7 @@ onBeforeUnmount(() => {
 
       <section
         v-else-if="bookingUnavailableReason"
+        key="unavailable"
         class="booking-unavailable"
         role="status"
         aria-live="polite"
@@ -910,6 +913,7 @@ onBeforeUnmount(() => {
 
       <BookingCapacityCalculator
         v-else-if="showCalculator && data.widget.widgetType === 'mortgage_capacity'"
+        key="capacity-calculator"
         class="booking-calculator"
         :policy="data.capacityPolicy"
         :policy-revision="data.capacityPolicyRevision ?? 0"
@@ -919,12 +923,13 @@ onBeforeUnmount(() => {
 
       <BookingPaymentCalculator
         v-else-if="showCalculator && data.widget.widgetType === 'mortgage_payment'"
+        key="payment-calculator"
         class="booking-calculator"
         @started="trackCalculatorStarted"
         @continue="continueFromCalculator"
       />
 
-      <form v-else class="booking-form" @submit.prevent="submitBooking">
+      <form v-else key="form" class="booking-form" @submit.prevent="submitBooking">
         <UAlert
           v-if="isPreview"
           color="neutral"
@@ -1240,6 +1245,7 @@ onBeforeUnmount(() => {
           </button>
         </footer>
       </form>
+      </Transition>
     </section>
   </main>
 </template>
@@ -1886,6 +1892,36 @@ onBeforeUnmount(() => {
   font-size: 26px;
 }
 
+.booking-stage-enter-active {
+  transition:
+    opacity 180ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 180ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.booking-stage-leave-active {
+  transition: opacity 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.booking-stage-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.booking-stage-leave-to {
+  opacity: 0;
+}
+
+.booking-stage-enter-active .booking-confirmation__icon {
+  transition:
+    opacity 200ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 200ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.booking-stage-enter-from .booking-confirmation__icon {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
 .booking-confirmation dl {
   display: grid;
   width: 100%;
@@ -2126,6 +2162,19 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .booking-stage-enter-active,
+  .booking-stage-leave-active,
+  .booking-stage-enter-active .booking-confirmation__icon {
+    transition: opacity 120ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  .booking-stage-enter-from,
+  .booking-stage-leave-to,
+  .booking-stage-enter-from .booking-confirmation__icon {
+    opacity: 0;
+    transform: none;
+  }
+
   .booking-actionbar__button {
     transition: none;
   }

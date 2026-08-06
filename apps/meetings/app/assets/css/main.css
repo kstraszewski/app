@@ -55,8 +55,11 @@
   --color-green-900: #14532d;
   --color-green-950: #052e16;
 
-  --ease-oe: cubic-bezier(0.2, 0, 0, 1);
-  --ease-oe-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-oe: var(--ease-out);
+  --ease-oe-exit: var(--ease-out);
 }
 
 :root {
@@ -70,7 +73,7 @@
   --oe-button-font-weight: 600;
   --oe-duration-fast: 150ms;
   --oe-duration-base: 220ms;
-  --oe-duration-slow: 320ms;
+  --oe-duration-slow: 280ms;
   --oe-motion-fast: var(--oe-duration-fast) var(--ease-oe);
   --oe-motion-base: var(--oe-duration-base) var(--ease-oe);
   --oe-motion-slow: var(--oe-duration-slow) var(--ease-oe);
@@ -178,7 +181,7 @@ a:focus-visible {
 }
 
 .oe-pressable:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 .brand-mark {
@@ -459,12 +462,17 @@ a:focus-visible {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.1rem 0.55rem;
   text-align: left;
-  transition: 150ms ease;
+  transition:
+    color var(--oe-motion-fast),
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast);
 }
 
-.role-picker button:hover {
-  border-color: #cfc8ee;
-  background: white;
+@media (hover: hover) and (pointer: fine) {
+  .role-picker button:hover {
+    border-color: #cfc8ee;
+    background: white;
+  }
 }
 
 .role-picker button.is-selected {
@@ -762,12 +770,18 @@ a:focus-visible {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 650;
-  transition: 150ms ease;
+  transition:
+    color var(--oe-motion-fast),
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast),
+    transform var(--oe-motion-fast);
 }
 
-.prejoin-preview__toggles button:hover {
-  border-color: #cdc7dc;
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .prejoin-preview__toggles button:hover {
+    border-color: #cdc7dc;
+    transform: translateY(-1px);
+  }
 }
 
 .prejoin-preview__toggles button.is-off {
@@ -1057,13 +1071,18 @@ a:focus-visible {
   color: rgba(255, 255, 255, 0.72);
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
-  transition: 150ms ease;
+  transition:
+    color var(--oe-motion-fast),
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast);
 }
 
-.meeting-icon-button:hover {
-  color: white;
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) and (pointer: fine) {
+  .meeting-icon-button:hover {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .meeting-room__notices {
@@ -1767,13 +1786,19 @@ a:focus-visible {
   border-radius: 0.88rem;
   color: rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.07);
-  transition: 150ms ease;
+  transition:
+    color var(--oe-motion-fast),
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast),
+    transform var(--oe-motion-fast);
 }
 
-.meeting-control:not(:disabled):hover > span {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.12);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .meeting-control:not(:disabled):hover > span {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+  }
 }
 
 .meeting-control small {

@@ -175,10 +175,11 @@ defineExpose({
     @drop="onDrop"
     @paste.capture="onPaste"
   >
-    <div
-      v-if="drafts.length"
+    <TransitionGroup
+      name="oe-attachment-draft"
+      tag="div"
       class="oe-attachment-composer__tray"
-      aria-label="Załączniki przygotowywane do wysłania"
+      :aria-label="drafts.length ? 'Załączniki przygotowywane do wysłania' : undefined"
     >
       <article
         v-for="draft in drafts"
@@ -239,9 +240,14 @@ defineExpose({
           </button>
         </div>
       </article>
-    </div>
+    </TransitionGroup>
 
-    <div v-if="rejections.length" class="oe-attachment-composer__errors" aria-label="Odrzucone pliki">
+    <TransitionGroup
+      name="oe-attachment-rejection"
+      tag="div"
+      class="oe-attachment-composer__errors"
+      :aria-label="rejections.length ? 'Odrzucone pliki' : undefined"
+    >
       <div v-for="rejection in rejections" :key="rejection.id" role="alert">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
@@ -259,7 +265,7 @@ defineExpose({
           </svg>
         </button>
       </div>
-    </div>
+    </TransitionGroup>
 
     <div class="oe-attachment-composer__row">
       <input
@@ -297,13 +303,15 @@ defineExpose({
       </span>
     </div>
 
-    <div v-if="isDragging" class="oe-attachment-composer__drop" aria-hidden="true">
-      <svg viewBox="0 0 24 24">
-        <path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5" />
-      </svg>
-      <strong>Upuść pliki, aby je dołączyć</strong>
-      <span>{{ limitsDescription }}</span>
-    </div>
+    <Transition name="oe-attachment-drop">
+      <div v-if="isDragging" class="oe-attachment-composer__drop" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5" />
+        </svg>
+        <strong>Upuść pliki, aby je dołączyć</strong>
+        <span>{{ limitsDescription }}</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -337,6 +345,39 @@ defineExpose({
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
+}
+
+.oe-attachment-composer__tray:empty,
+.oe-attachment-composer__errors:empty {
+  display: none;
+}
+
+.oe-attachment-draft-enter-active,
+.oe-attachment-rejection-enter-active,
+.oe-attachment-drop-enter-active {
+  transition:
+    opacity var(--oe-duration-base, 220ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--oe-duration-base, 220ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: opacity, transform;
+}
+
+.oe-attachment-draft-leave-active,
+.oe-attachment-rejection-leave-active,
+.oe-attachment-drop-leave-active {
+  transition:
+    opacity var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: opacity, transform;
+}
+
+.oe-attachment-draft-enter-from,
+.oe-attachment-draft-leave-to,
+.oe-attachment-rejection-enter-from,
+.oe-attachment-rejection-leave-to,
+.oe-attachment-drop-enter-from,
+.oe-attachment-drop-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(.98);
 }
 
 .oe-attachment-draft {
@@ -456,11 +497,14 @@ defineExpose({
   background: transparent;
   color: var(--ui-text-muted);
   cursor: pointer;
+  transition:
+    color var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    background-color var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
-.oe-icon-button:hover:not(:disabled) {
-  background: var(--ui-bg-accented);
-  color: var(--ui-text-highlighted);
+.oe-icon-button:active:not(:disabled) {
+  transform: scale(.97);
 }
 
 .oe-icon-button:focus-visible {
@@ -581,7 +625,37 @@ defineExpose({
   }
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .oe-icon-button:hover:not(:disabled) {
+    background: var(--ui-bg-accented);
+    color: var(--ui-text-highlighted);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .oe-attachment-draft-enter-active,
+  .oe-attachment-draft-leave-active,
+  .oe-attachment-rejection-enter-active,
+  .oe-attachment-rejection-leave-active,
+  .oe-attachment-drop-enter-active,
+  .oe-attachment-drop-leave-active {
+    transition: opacity var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) !important;
+  }
+
+  .oe-attachment-draft-enter-from,
+  .oe-attachment-draft-leave-to,
+  .oe-attachment-rejection-enter-from,
+  .oe-attachment-rejection-leave-to,
+  .oe-attachment-drop-enter-from,
+  .oe-attachment-drop-leave-to {
+    opacity: 0;
+    transform: none;
+  }
+
+  .oe-icon-button:active:not(:disabled) {
+    transform: none;
+  }
+
   .oe-attachment-draft__progress {
     animation: none;
   }

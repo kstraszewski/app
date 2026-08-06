@@ -62,8 +62,11 @@
   --color-green-950: #052e16;
 
   --container-8xl: 88rem;
-  --ease-oe: cubic-bezier(0.2, 0, 0, 1);
-  --ease-oe-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-oe: var(--ease-out);
+  --ease-oe-exit: var(--ease-out);
 }
 
 :root {
@@ -121,7 +124,7 @@
   --oe-logo-filter: none;
   --oe-duration-fast: 150ms;
   --oe-duration-base: 220ms;
-  --oe-duration-slow: 320ms;
+  --oe-duration-slow: 280ms;
   --default-transition-duration: var(--oe-duration-fast);
   --default-transition-timing-function: var(--ease-oe);
   --oe-motion-fast: var(--oe-duration-fast) var(--ease-oe);
@@ -253,7 +256,7 @@ em {
 }
 
 .oe-choice-motion:active:not(:disabled):not([data-disabled]) {
-  transform: scale(0.94);
+  transform: scale(0.97);
 }
 
 .oe-choice-indicator-motion {
@@ -373,7 +376,7 @@ em {
 }
 
 .oe-pressable:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 .oe-grid-bg {
@@ -397,7 +400,7 @@ em {
 @keyframes oe-choice-in {
   from {
     opacity: 0;
-    transform: scale(0.72);
+    transform: scale(0.95);
   }
   to {
     opacity: 1;

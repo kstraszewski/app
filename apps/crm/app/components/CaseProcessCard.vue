@@ -176,7 +176,9 @@ function resolveHandoff(action: CaseItemHandoffAction) {
           >
             <span class="workflow-stage__rail" aria-hidden="true" />
             <span class="workflow-stage__point" aria-hidden="true">
-              <UIcon v-if="index < currentStatusIndex" name="i-lucide-check" />
+              <Transition name="workflow-check">
+                <UIcon v-if="index < currentStatusIndex" name="i-lucide-check" />
+              </Transition>
             </span>
             <span class="workflow-stage__label">{{ status.label }}</span>
           </li>
@@ -428,6 +430,19 @@ function resolveHandoff(action: CaseItemHandoffAction) {
   background: var(--ui-border-accented);
 }
 
+.workflow-stage__rail::after {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ui-success) 68%, var(--ui-border));
+  content: '';
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1)),
+    transform 120ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
 .workflow-stages li:first-child .workflow-stage__rail { left: 50%; width: 50%; }
 .workflow-stages li:last-child .workflow-stage__rail { width: 50%; }
 .workflow-stages li:only-child .workflow-stage__rail { display: none; }
@@ -444,6 +459,19 @@ function resolveHandoff(action: CaseItemHandoffAction) {
   background: var(--ui-bg);
 }
 
+.workflow-stage__point::after {
+  position: absolute;
+  inset: -4px;
+  border: 4px solid color-mix(in srgb, var(--ui-primary) 14%, transparent);
+  border-radius: inherit;
+  content: '';
+  opacity: 0;
+  transform: scale(0.82);
+  transition:
+    opacity 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1)),
+    transform 120ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
 .workflow-stage__point .iconify { width: 10px; height: 10px; }
 
 .workflow-stage__label {
@@ -452,9 +480,13 @@ function resolveHandoff(action: CaseItemHandoffAction) {
   line-height: 1.25;
 }
 
-.workflow-stages li.is-complete .workflow-stage__rail,
-.workflow-stages li.is-current .workflow-stage__rail {
-  background: color-mix(in srgb, var(--ui-success) 68%, var(--ui-border));
+.workflow-stages li.is-complete .workflow-stage__rail::after,
+.workflow-stages li.is-current .workflow-stage__rail::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transition:
+    opacity 150ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 220ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
 }
 
 .workflow-stages li.is-complete .workflow-stage__point {
@@ -470,7 +502,32 @@ function resolveHandoff(action: CaseItemHandoffAction) {
 
 .workflow-stages li.is-current .workflow-stage__point {
   border-color: var(--ui-primary);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-primary) 14%, transparent);
+}
+
+.workflow-stages li.is-current .workflow-stage__point::after {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 150ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 180ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.workflow-check-enter-active {
+  transition:
+    opacity 150ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1)),
+    transform 150ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.workflow-check-leave-active {
+  transition:
+    opacity 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1)),
+    transform 90ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.workflow-check-enter-from,
+.workflow-check-leave-to {
+  opacity: 0;
+  transform: scale(0.82);
 }
 
 .handoff-notice {
@@ -544,5 +601,22 @@ function resolveHandoff(action: CaseItemHandoffAction) {
 
 @media (prefers-reduced-motion: reduce) {
   .process-card { transition: none; }
+
+  .workflow-stage__rail::after,
+  .workflow-stages li.is-complete .workflow-stage__rail::after,
+  .workflow-stages li.is-current .workflow-stage__rail::after,
+  .workflow-stage__point::after,
+  .workflow-stages li.is-current .workflow-stage__point::after,
+  .workflow-check-enter-active,
+  .workflow-check-leave-active {
+    transform: none;
+    transition: opacity 120ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  .workflow-check-enter-from,
+  .workflow-check-leave-to {
+    opacity: 0;
+    transform: none;
+  }
 }
 </style>

@@ -107,7 +107,7 @@ onBeforeUnmount(detachVideo)
       ref="videoElement"
       class="participant-tile__video"
       :class="{
-        'participant-tile__video--hidden': !isVideoVisible,
+        'participant-tile__video--inactive': !isVideoVisible,
         'participant-tile__video--local': participant.isLocal,
       }"
       autoplay
@@ -115,13 +115,15 @@ onBeforeUnmount(detachVideo)
       :muted="participant.isLocal"
     />
 
-    <div
-      v-if="!isVideoVisible"
-      class="participant-tile__fallback"
-      :style="avatarStyle"
-    >
-      <span class="participant-tile__avatar">{{ initials }}</span>
-    </div>
+    <Transition name="participant-fallback">
+      <div
+        v-if="!isVideoVisible"
+        class="participant-tile__fallback"
+        :style="avatarStyle"
+      >
+        <span class="participant-tile__avatar">{{ initials }}</span>
+      </div>
+    </Transition>
 
     <div class="participant-tile__scrim" />
 
@@ -144,3 +146,37 @@ onBeforeUnmount(detachVideo)
     </span>
   </article>
 </template>
+
+<style scoped>
+.participant-tile__video {
+  opacity: 1;
+  transition: opacity 160ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.participant-tile__video--inactive {
+  opacity: 0;
+  transition: opacity 100ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.participant-fallback-enter-active {
+  transition: opacity 160ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.participant-fallback-leave-active {
+  transition: opacity 100ms var(--ease-oe-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.participant-fallback-enter-from,
+.participant-fallback-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .participant-tile__video,
+  .participant-tile__video--inactive,
+  .participant-fallback-enter-active,
+  .participant-fallback-leave-active {
+    transition: opacity 120ms var(--ease-oe, cubic-bezier(0.2, 0, 0, 1));
+  }
+}
+</style>

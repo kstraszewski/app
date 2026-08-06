@@ -31,6 +31,11 @@ const currentCaseId = computed(() => {
   const value = route.params.id
   return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
 })
+const messageWorkspace = computed(() => {
+  const view = Array.isArray(route.query.view) ? route.query.view[0] : route.query.view
+  return /\/messages\/?$/.test(route.path)
+    || (/\/cases\/[^/]+\/?$/.test(route.path) && view === 'messages')
+})
 
 function friendlyAssistantError(caught: { message?: string } | null | undefined) {
   const message = caught?.message?.trim() ?? ''
@@ -216,7 +221,14 @@ defineExpose({ newConversation })
 </script>
 
 <template>
-  <div v-if="organizationSlug" class="crm-eve-assistant" :class="`crm-eve-assistant--${mode}`">
+  <div
+    v-if="organizationSlug"
+    class="crm-eve-assistant"
+    :class="[
+      `crm-eve-assistant--${mode}`,
+      { 'is-message-workspace': messageWorkspace },
+    ]"
+  >
     <CrmEveChat
       v-if="mode === 'page'"
       ref="chat"
@@ -284,12 +296,20 @@ defineExpose({ newConversation })
   box-shadow: 0 16px 40px rgb(0 0 0 / 16%);
 }
 
+.crm-eve-assistant.is-message-workspace .crm-eve-assistant__launcher {
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}
+
 @media (max-width: 640px) {
   .crm-eve-assistant__launcher {
     right: calc(16px + env(safe-area-inset-right, 0px));
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     min-width: 48px;
     min-height: 48px;
+  }
+
+  .crm-eve-assistant.is-message-workspace .crm-eve-assistant__launcher {
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
 
   .crm-eve-assistant__launcher span { display: none; }

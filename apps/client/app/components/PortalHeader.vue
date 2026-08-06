@@ -77,9 +77,6 @@ async function signOut() {
       <NuxtLink :to="preview ? '/preview' : '/'" class="portal-header__brand">
         <OpenExpertLogo />
       </NuxtLink>
-      <span v-if="preview" class="portal-header__preview-label">
-        Podgląd · dane demonstracyjne
-      </span>
     </div>
 
     <nav class="portal-header__nav" aria-label="Główna nawigacja">
@@ -172,22 +169,6 @@ async function signOut() {
   flex: 0 0 auto;
   width: fit-content;
   text-decoration: none;
-}
-
-.portal-header__preview-label {
-  display: inline-flex;
-  align-items: center;
-  min-height: 27px;
-  padding: 4px 9px;
-  border: 1px solid var(--ui-border-accented);
-  border-radius: 999px;
-  background: var(--ui-bg-muted);
-  color: var(--ui-text-toned);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.035em;
-  line-height: 1.2;
-  white-space: nowrap;
 }
 
 .portal-header__nav {
@@ -343,10 +324,6 @@ async function signOut() {
     display: block;
   }
 
-  .portal-header__preview-label {
-    font-size: 9px;
-  }
-
   .portal-header__name,
   .portal-header__divider {
     display: none;
@@ -380,13 +357,5 @@ async function signOut() {
     display: none;
   }
 
-  .portal-header--preview .portal-header__brand-group {
-    gap: 10px;
-  }
-
-  .portal-header__preview-label {
-    max-width: 150px;
-    white-space: normal;
-  }
 }
 </style>

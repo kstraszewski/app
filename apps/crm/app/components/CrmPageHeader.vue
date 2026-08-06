@@ -12,6 +12,7 @@ type PageHeaderTab = {
 
 const props = withDefaults(defineProps<{
   title: string
+  compact?: boolean
   eyebrow?: string
   description?: string
   backTo?: string
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<{
   avatarAlt?: string
   avatarText?: string
 }>(), {
+  compact: false,
   eyebrow: '',
   description: '',
   backTo: '',
@@ -118,6 +120,7 @@ onBeforeUnmount(() => {
     :class="{
       'crm-page-header--without-tabs': !props.tabs.length,
       'crm-page-header--with-tabs': props.tabs.length,
+      'crm-page-header--compact': props.compact,
     }"
   >
     <div class="crm-page-header__copy">
@@ -202,6 +205,52 @@ onBeforeUnmount(() => {
 
 .crm-page-header--with-tabs {
   padding-bottom: 0;
+}
+
+.crm-page-header.crm-page-header--compact {
+  column-gap: 20px;
+  row-gap: 8px;
+  margin-bottom: 0;
+  padding: 10px 20px 0;
+  background: var(--ui-bg);
+}
+
+.crm-page-header--compact .crm-page-header__eyebrow,
+.crm-page-header--compact .crm-page-header__description {
+  display: none;
+}
+
+.crm-page-header--compact .crm-page-header__back {
+  min-height: 24px;
+  margin: 0 0 3px -8px;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.crm-page-header.crm-page-header--compact h1,
+.crm-page-header.crm-page-header--compact .crm-page-header__identity h1 {
+  margin-top: 0;
+  font-size: clamp(20px, 1.8vw, 25px);
+  line-height: 1.1;
+}
+
+.crm-page-header--compact .crm-page-header__meta {
+  margin-top: 5px;
+}
+
+.crm-page-header--compact .crm-page-header__tabs {
+  gap: 22px;
+  min-height: 32px;
+}
+
+.crm-page-header--compact .crm-page-header__tab {
+  min-height: 32px;
+  padding-bottom: 7px;
+  font-size: 13px;
+}
+
+.crm-page-header--compact .crm-page-header__actions {
+  gap: 6px;
 }
 
 .crm-page-header--with-tabs .crm-page-header__tabs {
@@ -392,6 +441,29 @@ onBeforeUnmount(() => {
   .crm-page-header__tab:focus-visible {
     outline-offset: -2px;
   }
+
+  .crm-page-header--compact,
+  .crm-page-header--compact.crm-page-header--without-tabs {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .crm-page-header--compact .crm-page-header__actions {
+    grid-column: 2;
+    grid-row: 1;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .crm-page-header--compact.crm-page-header--with-tabs .crm-page-header__tabs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .crm-page-header--compact .crm-page-header__tab,
+  .crm-page-header--compact .crm-page-header__actions :deep(button),
+  .crm-page-header--compact .crm-page-header__actions :deep(a) {
+    min-height: 36px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -425,6 +497,24 @@ onBeforeUnmount(() => {
 
   .crm-page-header__meta--with-avatar {
     margin-left: 64px;
+  }
+
+  .crm-page-header--compact,
+  .crm-page-header--compact.crm-page-header--without-tabs {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .crm-page-header--compact .crm-page-header__actions {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .crm-page-header--compact.crm-page-header--with-tabs .crm-page-header__tabs {
+    grid-column: 1;
+    grid-row: 3;
+    gap: 18px;
   }
 }
 

@@ -188,11 +188,7 @@ function markImageUnavailable(id: string): void {
   height: 100%;
   min-height: inherit;
   object-fit: cover;
-  transition: transform 160ms ease;
-}
-
-.oe-message-attachments__image:hover img {
-  transform: scale(1.015);
+  transition: transform var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .oe-message-attachments__image-error {
@@ -220,11 +216,9 @@ function markImageUnavailable(id: string): void {
   background: color-mix(in srgb, var(--ui-bg-inverted) 76%, transparent);
   color: var(--ui-text-inverted);
   opacity: 0;
-  transition: opacity 140ms ease;
   backdrop-filter: blur(5px);
 }
 
-.oe-message-attachments__images > article:hover .oe-message-attachments__download,
 .oe-message-attachments__download:focus-visible {
   opacity: 1;
 }
@@ -260,10 +254,7 @@ function markImageUnavailable(id: string): void {
   padding: 6px 8px;
   color: inherit;
   text-decoration: none;
-}
-
-.oe-message-file__open:hover {
-  background: var(--oe-message-attachment-hover, var(--ui-bg-accented));
+  transition: background-color var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .oe-message-file__type {
@@ -326,11 +317,6 @@ function markImageUnavailable(id: string): void {
   color: var(--oe-message-attachment-muted, var(--ui-text-muted));
 }
 
-.oe-message-file__download:hover {
-  background: var(--oe-message-attachment-hover, var(--ui-bg-accented));
-  color: var(--oe-message-attachment-text, var(--ui-text-highlighted));
-}
-
 .oe-message-attachments__icon-button {
   display: grid;
   width: 44px;
@@ -338,6 +324,20 @@ function markImageUnavailable(id: string): void {
   place-items: center;
   border-radius: 9px;
   text-decoration: none;
+  transition:
+    color var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    background-color var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.oe-message-attachments__download.oe-message-attachments__icon-button {
+  transition:
+    opacity var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.oe-message-attachments__icon-button:active {
+  transform: scale(.97);
 }
 
 .oe-message-attachments__icon-button svg,
@@ -352,6 +352,25 @@ function markImageUnavailable(id: string): void {
 .oe-message-attachments__icon-button svg {
   width: 18px;
   height: 18px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .oe-message-attachments__image:hover img {
+    transform: scale(1.015);
+  }
+
+  .oe-message-attachments__images > article:hover .oe-message-attachments__download {
+    opacity: 1;
+  }
+
+  .oe-message-file__open:hover {
+    background: var(--oe-message-attachment-hover, var(--ui-bg-accented));
+  }
+
+  .oe-message-file__download:hover {
+    background: var(--oe-message-attachment-hover, var(--ui-bg-accented));
+    color: var(--oe-message-attachment-text, var(--ui-text-highlighted));
+  }
 }
 
 @media (hover: none) {
@@ -371,9 +390,17 @@ function markImageUnavailable(id: string): void {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oe-message-attachments__image img,
-  .oe-message-attachments__download {
+  .oe-message-attachments__image img {
+    transform: none;
     transition: none;
+  }
+
+  .oe-message-attachments__download {
+    transition: opacity var(--oe-duration-fast, 150ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) !important;
+  }
+
+  .oe-message-attachments__icon-button:active {
+    transform: none;
   }
 }
 </style>

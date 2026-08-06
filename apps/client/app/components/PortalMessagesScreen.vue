@@ -34,6 +34,7 @@ const props = withDefaults(defineProps<{
 
 const route = useRoute()
 const { $portalFetch } = useNuxtApp()
+const previewConversations = usePortalPreviewConversations(props.preview)
 const messagesPath = computed(() => props.preview ? '/preview/messages' : '/messages')
 const selectedCaseQuery = computed(() => typeof route.query.case === 'string'
   ? route.query.case
@@ -42,23 +43,24 @@ const selectedCaseQuery = computed(() => typeof route.query.case === 'string'
 function previewInboxResponse(): InboxResponse {
   return {
     data: {
-      conversations: props.payload.cases.map((caseData, index) => ({
-        caseId: caseData.id,
-        conversationId: `preview-conversation-${caseData.id}`,
-        lastMessageAt: index === 0
-          ? '2026-08-01T09:11:00.000Z'
-          : '2026-07-31T14:26:00.000Z',
-        lastMessageSequence: index === 0 ? 3 : 2,
-        readThroughSequence: index === 0 ? 2 : 2,
-        unreadCount: index === 0 ? 1 : 0,
-        lastMessagePreview: index === 0
-          ? 'Świetnie. Gdy tylko plik się pojawi, od razu go sprawdzę.'
-          : 'Zestawienie finalnych ofert będzie gotowe jutro rano.',
-        lastMessageSenderKind: 'staff',
-        lastMessageCreatedAt: index === 0
-          ? '2026-08-01T09:11:00.000Z'
-          : '2026-07-31T14:26:00.000Z',
-      })),
+      conversations: props.payload.cases.map((caseData, index) => {
+        const messages = previewConversations.ensureMessages(caseData.id)
+        const lastMessage = messages.at(-1) ?? null
+        const unreadCount = index === 0 && lastMessage?.senderKind === 'staff' ? 1 : 0
+        const lastMessageSequence = lastMessage?.sequence ?? 0
+
+        return {
+          caseId: caseData.id,
+          conversationId: `preview-conversation-${caseData.id}`,
+          lastMessageAt: lastMessage?.createdAt ?? null,
+          lastMessageSequence,
+          readThroughSequence: Math.max(0, lastMessageSequence - unreadCount),
+          unreadCount,
+          lastMessagePreview: lastMessage?.body || null,
+          lastMessageSenderKind: lastMessage?.senderKind ?? null,
+          lastMessageCreatedAt: lastMessage?.createdAt ?? null,
+        }
+      }),
     },
   }
 }
@@ -74,6 +76,10 @@ const {
     ? Promise.resolve(previewInboxResponse())
     : $portalFetch<InboxResponse>('/api/client/conversations'),
 )
+
+watch(previewConversations.messagesByCase, () => {
+  if (props.preview) void refreshInbox()
+})
 
 let inboxRefreshTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -402,11 +408,15 @@ function threadTime(summary: InboxConversationSummary | null) {
   border-radius: 14px;
   color: var(--ui-text);
   text-decoration: none;
-  transition: color 160ms ease, background 160ms ease;
+  transition:
+    color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast);
 }
 
-.portal-inbox__thread-list > a:hover {
-  background: var(--ui-bg-elevated);
+@media (hover: hover) and (pointer: fine) {
+  .portal-inbox__thread-list > a:hover {
+    background: var(--ui-bg-elevated);
+  }
 }
 
 .portal-inbox__thread-list > a.is-active {
@@ -534,27 +544,68 @@ function threadTime(summary: InboxConversationSummary | null) {
   }
 
   .portal-inbox {
+    position: relative;
     display: block;
     overflow: hidden;
   }
 
-  .portal-inbox__threads {
+  .portal-inbox__threads,
+  .portal-inbox__conversation {
+    position: absolute;
+    inset: 0;
     height: 100%;
+    transition:
+      opacity var(--oe-duration-base) var(--ease-out),
+      transform var(--oe-duration-base) var(--ease-drawer),
+      visibility 0s linear 0s;
+  }
+
+  .portal-inbox__threads {
+    z-index: 1;
     padding: 16px;
     border-right: 0;
   }
 
   .portal-inbox__conversation {
-    display: none;
-    height: 100%;
+    z-index: 2;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+    transition-duration:
+      var(--oe-duration-fast),
+      var(--oe-duration-fast),
+      0s;
+    transition-delay: 0s, 0s, var(--oe-duration-fast);
   }
 
   .portal-inbox.has-selection .portal-inbox__threads {
-    display: none;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-12px);
+    pointer-events: none;
+    transition-duration:
+      var(--oe-duration-fast),
+      var(--oe-duration-fast),
+      0s;
+    transition-delay: 0s, 0s, var(--oe-duration-fast);
   }
 
   .portal-inbox.has-selection .portal-inbox__conversation {
-    display: grid;
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  .portal-inbox__threads,
+  .portal-inbox__conversation {
+    transform: none !important;
+    transition-duration: 150ms, 150ms, 0s !important;
+    transition-property: opacity, transform, visibility !important;
   }
 }
 

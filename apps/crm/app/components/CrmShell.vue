@@ -3,6 +3,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 const props = defineProps<{
   title: string
+  workspace?: boolean
   eyebrow?: string
   description?: string
   backTo?: string
@@ -24,9 +25,13 @@ const hasAuthConfig = useHasAuthConfig()
 </script>
 
 <template>
-  <div class="crm-page">
+  <div
+    class="crm-page"
+    :class="{ 'crm-page--workspace': props.workspace }"
+  >
     <CrmPageHeader
       :title="props.title"
+      :compact="props.workspace"
       :eyebrow="props.eyebrow"
       :description="props.description"
       :back-to="props.backTo"
@@ -63,7 +68,16 @@ const hasAuthConfig = useHasAuthConfig()
   min-width: 0;
 }
 
+.crm-page--workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+}
+
 .crm-alert {
+  flex: 0 0 auto;
   margin-bottom: 24px;
 }
 </style>

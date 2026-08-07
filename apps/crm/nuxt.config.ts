@@ -68,7 +68,7 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxt/ui', 'eve/nuxt', 'nuxt-charts'],
+  modules: ['@nuxtjs/mdc', '@nuxt/ui', 'eve/nuxt', 'nuxt-charts'],
   nuxtCharts: {
     prefix: 'Nc',
     include: ['LineChart'],
@@ -127,6 +127,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   ui: {
     fonts: false,
+    prose: true,
     theme: {
       colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error'],
       transitions: true,

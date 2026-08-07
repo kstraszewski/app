@@ -31,6 +31,8 @@ interface DynamicContentDraft extends DynamicContentSource {
 interface PersistedDraft extends DynamicContentDraft {
   schemaVersion: 1
   updatedAt: string
+  knowledgeDocumentId?: string | null
+  knowledgeRevision?: number | null
 }
 
 interface DynamicContentRequestSnapshot {
@@ -276,6 +278,9 @@ const hydrated = ref(false)
 const composer = ref('')
 const saveState = ref<'saved' | 'saving' | 'error'>('saved')
 const lastSavedAt = ref<Date | null>(null)
+const knowledgeDocumentId = ref<string | null>(null)
+const knowledgeRevision = ref<number | null>(null)
+const knowledgeSaving = ref(false)
 const livePreview = ref(true)
 const previewStatus = ref<PreviewStatus>('loading')
 const previewRuntimeError = ref('')
@@ -669,6 +674,8 @@ function saveDraft() {
       css: draft.css,
       javascript: draft.javascript,
       updatedAt: new Date().toISOString(),
+      knowledgeDocumentId: knowledgeDocumentId.value,
+      knowledgeRevision: knowledgeRevision.value,
     }
     localStorage.setItem(storageKey.value, JSON.stringify(persisted))
     lastSavedAt.value = new Date(persisted.updatedAt)
@@ -694,6 +701,12 @@ function loadDraft() {
       ? persisted.title
       : DEFAULT_TITLE
     Object.assign(draft, source)
+    if (typeof persisted.knowledgeDocumentId === 'string') {
+      knowledgeDocumentId.value = persisted.knowledgeDocumentId
+    }
+    if (typeof persisted.knowledgeRevision === 'number' && persisted.knowledgeRevision >= 1) {
+      knowledgeRevision.value = persisted.knowledgeRevision
+    }
     if (typeof persisted.updatedAt === 'string') {
       const date = new Date(persisted.updatedAt)
       if (!Number.isNaN(date.getTime())) lastSavedAt.value = date
@@ -781,8 +794,72 @@ async function copyActiveSource() {
   }
 }
 
+async function saveToKnowledge() {
+  if (knowledgeSaving.value) return
+  const source = currentSource.value
+  if (!isDynamicContentWithinLimits(source) || !source.html.trim()) {
+    toast.add({
+      title: 'Projekt nie jest gotowy do zapisu',
+      description: 'Dodaj HTML i upewnij się, że źródło nie przekracza 60 000 znaków.',
+      color: 'warning',
+      icon: 'i-lucide-triangle-alert',
+    })
+    return
+  }
+
+  knowledgeSaving.value = true
+  try {
+    const body = {
+      kind: 'dynamic_html',
+      title: draft.title.trim() || DEFAULT_TITLE,
+      htmlContent: source.html,
+      cssContent: source.css,
+      javascriptContent: source.javascript,
+      ...(knowledgeDocumentId.value && knowledgeRevision.value
+        ? { expectedRevision: knowledgeRevision.value }
+        : {}),
+    }
+    const endpoint = knowledgeDocumentId.value
+      ? `/api/org/${encodeURIComponent(organizationSlug.value)}/experiments/knowledge/${encodeURIComponent(knowledgeDocumentId.value)}`
+      : `/api/org/${encodeURIComponent(organizationSlug.value)}/experiments/knowledge`
+    const response = await $fetch<{ data: { id: string, revision: number, indexingStatus: string } }>(endpoint, {
+      method: knowledgeDocumentId.value ? 'PUT' : 'POST',
+      body,
+    })
+    knowledgeDocumentId.value = response.data.id
+    knowledgeRevision.value = response.data.revision
+    saveDraft()
+    toast.add({
+      title: response.data.indexingStatus === 'ready'
+        ? 'Zapisano i zwektoryzowano'
+        : 'Zapisano w Wiedzy',
+      description: response.data.indexingStatus === 'ready'
+        ? 'Interaktywna strona jest dostępna we wspólnej wyszukiwarce.'
+        : 'Wyszukiwanie tekstowe działa, ale embedding nie powstał.',
+      color: response.data.indexingStatus === 'ready' ? 'success' : 'warning',
+      icon: response.data.indexingStatus === 'ready' ? 'i-lucide-sparkles' : 'i-lucide-triangle-alert',
+    })
+  }
+  catch (caught) {
+    const description = typeof caught === 'object' && caught
+      ? String((caught as { data?: { statusMessage?: unknown } }).data?.statusMessage ?? 'Spróbuj ponownie.')
+      : 'Spróbuj ponownie.'
+    toast.add({
+      title: 'Nie udało się zapisać w Wiedzy',
+      description,
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  }
+  finally {
+    knowledgeSaving.value = false
+  }
+}
+
 function createNewProject() {
   Object.assign(draft, blankDraft())
+  knowledgeDocumentId.value = null
+  knowledgeRevision.value = null
   newProjectModalOpen.value = false
   void newConversation()
   void nextTick().then(runPreview)
@@ -861,6 +938,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="dynamic-commandbar__actions">
+          <UButton
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-library-big"
+            :label="knowledgeDocumentId ? 'Aktualizuj wiedzę' : 'Zapisz w Wiedzy'"
+            :loading="knowledgeSaving"
+            @click="saveToKnowledge"
+          />
           <UButton
             class="dynamic-eve-toggle"
             color="primary"

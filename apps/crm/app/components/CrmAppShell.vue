@@ -308,6 +308,11 @@ const navGroups = computed<NavigationGroup[]>(() => {
       label: 'Eksperymenty',
       items: [
         {
+          label: 'Wiedza',
+          to: `${organizationBase.value}/experiments/knowledge`,
+          icon: 'i-lucide-library-big',
+        },
+        {
           label: 'Edytor tekstu',
           to: `${organizationBase.value}/experiments/text-editor`,
           icon: 'i-lucide-file-pen-line',

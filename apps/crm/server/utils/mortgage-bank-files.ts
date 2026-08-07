@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { gateway } from '@ai-sdk/gateway'
+import { createGateway, gateway } from '@ai-sdk/gateway'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { embed, embedMany } from 'ai'
 import { createError, type H3Event } from 'h3'
@@ -221,10 +221,17 @@ export async function extractMortgageBankPdf(bytes: Uint8Array): Promise<{
   }
 }
 
-export function mortgageBankFileEmbeddingProvider(apiKey: string | null | undefined) {
-  const normalizedApiKey = apiKey?.trim()
-  return normalizedApiKey
-    ? createGoogleGenerativeAI({ apiKey: normalizedApiKey }).embedding(mortgageBankFileEmbeddingModel)
+export function mortgageBankFileEmbeddingProvider(
+  googleApiKey: string | null | undefined,
+  gatewayApiKey?: string | null,
+) {
+  const normalizedGoogleApiKey = googleApiKey?.trim()
+  if (normalizedGoogleApiKey) {
+    return createGoogleGenerativeAI({ apiKey: normalizedGoogleApiKey }).embedding(mortgageBankFileEmbeddingModel)
+  }
+  const normalizedGatewayApiKey = gatewayApiKey?.trim()
+  return normalizedGatewayApiKey
+    ? createGateway({ apiKey: normalizedGatewayApiKey }).embedding(mortgageBankFileGatewayEmbeddingModel)
     : gateway.embedding(mortgageBankFileGatewayEmbeddingModel)
 }
 

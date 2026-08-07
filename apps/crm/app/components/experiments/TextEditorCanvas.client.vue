@@ -111,6 +111,8 @@ interface PersistedDraft {
   title: string
   markdown: string
   updatedAt: string
+  knowledgeDocumentId?: string | null
+  knowledgeRevision?: number | null
 }
 
 const MAX_CONTEXT_CHARACTERS = 60_000
@@ -130,6 +132,9 @@ const composer = ref('')
 const hydrated = ref(false)
 const saveState = ref<'saved' | 'saving' | 'error'>('saved')
 const lastSavedAt = ref<Date | null>(null)
+const knowledgeDocumentId = ref<string | null>(null)
+const knowledgeRevision = ref<number | null>(null)
+const knowledgeSaving = ref(false)
 const newDocumentModalOpen = ref(false)
 const evePanelOpen = ref(false)
 const availability = ref<AssistantAvailability>('checking')
@@ -409,6 +414,8 @@ function saveDraft() {
       title: documentTitle.value.trim() || DEFAULT_TITLE,
       markdown: documentMarkdown.value,
       updatedAt: new Date().toISOString(),
+      knowledgeDocumentId: knowledgeDocumentId.value,
+      knowledgeRevision: knowledgeRevision.value,
     }
     localStorage.setItem(storageKey.value, JSON.stringify(draft))
     lastSavedAt.value = new Date(draft.updatedAt)
@@ -427,6 +434,10 @@ function loadDraft() {
     if (draft.schemaVersion !== 1) return
     if (typeof draft.title === 'string') documentTitle.value = draft.title || DEFAULT_TITLE
     if (typeof draft.markdown === 'string') documentMarkdown.value = draft.markdown
+    if (typeof draft.knowledgeDocumentId === 'string') knowledgeDocumentId.value = draft.knowledgeDocumentId
+    if (typeof draft.knowledgeRevision === 'number' && draft.knowledgeRevision >= 1) {
+      knowledgeRevision.value = draft.knowledgeRevision
+    }
     if (typeof draft.updatedAt === 'string') {
       const date = new Date(draft.updatedAt)
       if (!Number.isNaN(date.getTime())) lastSavedAt.value = date
@@ -677,6 +688,65 @@ async function copyMarkdown() {
   }
 }
 
+async function saveToKnowledge() {
+  if (knowledgeSaving.value) return
+  if (!documentMarkdown.value.trim()) {
+    toast.add({
+      title: 'Dokument jest pusty',
+      description: 'Dodaj treść przed zapisaniem jej w Wiedzy.',
+      color: 'warning',
+      icon: 'i-lucide-triangle-alert',
+    })
+    return
+  }
+
+  knowledgeSaving.value = true
+  try {
+    const body = {
+      kind: 'text',
+      title: documentTitle.value.trim() || DEFAULT_TITLE,
+      textContent: documentMarkdown.value,
+      ...(knowledgeDocumentId.value && knowledgeRevision.value
+        ? { expectedRevision: knowledgeRevision.value }
+        : {}),
+    }
+    const endpoint = knowledgeDocumentId.value
+      ? `/api/org/${encodeURIComponent(organizationSlug.value)}/experiments/knowledge/${encodeURIComponent(knowledgeDocumentId.value)}`
+      : `/api/org/${encodeURIComponent(organizationSlug.value)}/experiments/knowledge`
+    const response = await $fetch<{ data: { id: string, revision: number, indexingStatus: string } }>(endpoint, {
+      method: knowledgeDocumentId.value ? 'PUT' : 'POST',
+      body,
+    })
+    knowledgeDocumentId.value = response.data.id
+    knowledgeRevision.value = response.data.revision
+    saveDraft()
+    toast.add({
+      title: response.data.indexingStatus === 'ready'
+        ? 'Zapisano i zwektoryzowano'
+        : 'Zapisano w Wiedzy',
+      description: response.data.indexingStatus === 'ready'
+        ? 'Dokument jest już dostępny we wspólnej wyszukiwarce.'
+        : 'Wyszukiwanie tekstowe działa, ale embedding nie powstał.',
+      color: response.data.indexingStatus === 'ready' ? 'success' : 'warning',
+      icon: response.data.indexingStatus === 'ready' ? 'i-lucide-sparkles' : 'i-lucide-triangle-alert',
+    })
+  }
+  catch (caught) {
+    const description = typeof caught === 'object' && caught
+      ? String((caught as { data?: { statusMessage?: unknown } }).data?.statusMessage ?? 'Spróbuj ponownie.')
+      : 'Spróbuj ponownie.'
+    toast.add({
+      title: 'Nie udało się zapisać w Wiedzy',
+      description,
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  }
+  finally {
+    knowledgeSaving.value = false
+  }
+}
+
 function downloadMarkdown() {
   const safeTitle = (documentTitle.value.trim() || 'dokument')
     .toLocaleLowerCase('pl')
@@ -695,6 +765,8 @@ function downloadMarkdown() {
 function createNewDocument() {
   documentTitle.value = DEFAULT_TITLE
   documentMarkdown.value = ''
+  knowledgeDocumentId.value = null
+  knowledgeRevision.value = null
   documentRevision.value += 1
   newDocumentModalOpen.value = false
   newConversation()
@@ -728,6 +800,14 @@ function createNewDocument() {
         </div>
 
         <div class="canvas-commandbar__actions">
+          <UButton
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-library-big"
+            :label="knowledgeDocumentId ? 'Aktualizuj wiedzę' : 'Zapisz w Wiedzy'"
+            :loading="knowledgeSaving"
+            @click="saveToKnowledge"
+          />
           <UButton
             class="canvas-eve-toggle"
             color="primary"

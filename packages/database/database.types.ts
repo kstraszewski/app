@@ -4868,6 +4868,8 @@ export type Database = {
       }
       mortgage_banks: {
         Row: {
+          brand_color: string | null
+          brand_foreground_color: string | null
           created_at: string
           id: string
           logo_background_color: string | null
@@ -4878,6 +4880,8 @@ export type Database = {
           website_url: string
         }
         Insert: {
+          brand_color?: string | null
+          brand_foreground_color?: string | null
           created_at?: string
           id?: string
           logo_background_color?: string | null
@@ -4888,6 +4892,8 @@ export type Database = {
           website_url: string
         }
         Update: {
+          brand_color?: string | null
+          brand_foreground_color?: string | null
           created_at?: string
           id?: string
           logo_background_color?: string | null

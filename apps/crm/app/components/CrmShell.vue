@@ -44,6 +44,9 @@ const hasAuthConfig = useHasAuthConfig()
       :avatar-text="props.avatarText"
       :tabs="props.tabs"
     >
+      <template v-if="$slots['title-trailing']" #title-trailing>
+        <slot name="title-trailing" />
+      </template>
       <template v-if="$slots.meta" #meta>
         <slot name="meta" />
       </template>

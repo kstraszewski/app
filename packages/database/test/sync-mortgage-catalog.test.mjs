@@ -45,3 +45,17 @@ test('manifest Erste uses a direct HTTPS image asset', async () => {
     { value: 'santander.pl', type: 'former_domain' },
   ])
 })
+
+test('manifest provides accessible brand pairs for every mortgage bank', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../data/mortgages/pl-2026-07-12.json', import.meta.url),
+    'utf8',
+  ))
+
+  const banks = manifest.products.map(item => item.bank)
+  assert.deepEqual(banks.map(bank => bank.slug).sort(), ['erste', 'ing', 'mbank', 'pekao', 'pko-bp'])
+  for (const bank of banks) {
+    assert.match(bank.brandColor, /^#[0-9A-F]{6}$/u)
+    assert.match(bank.brandForegroundColor, /^#[0-9A-F]{6}$/u)
+  }
+})

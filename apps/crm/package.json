@@ -25,6 +25,7 @@
     "test:property-import": "node --test --experimental-strip-types test/property-import.test.ts",
     "test:team-scope": "node --test --experimental-strip-types test/team-scope.test.ts",
     "seed:bank-files": "node ./scripts/import-official-bank-files.mjs",
+    "seed:knowledge-demo": "node ./scripts/seed-knowledge-demo.mjs",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "@ai-sdk/google": "4.0.21",
     "@nuxt/icon": "^2.3.1",
     "@nuxt/ui": "^4.10.0",
+    "@nuxtjs/mdc": "0.22.2",
     "@openexpert/auth": "workspace:*",
     "@openexpert/data-api": "workspace:*",
     "@openexpert/email": "workspace:*",

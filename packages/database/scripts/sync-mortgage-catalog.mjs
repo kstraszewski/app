@@ -264,6 +264,8 @@ export async function syncMortgageCatalog(
         website_url: item.bank.websiteUrl,
         logo_url: item.bank.logoUrl ?? null,
         logo_background_color: item.bank.logoBackgroundColor ?? null,
+        brand_color: item.bank.brandColor ?? null,
+        brand_foreground_color: item.bank.brandForegroundColor ?? null,
       }, { onConflict: 'slug' })
       .select('id')
       .single()

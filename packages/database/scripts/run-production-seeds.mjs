@@ -8,6 +8,12 @@ const SHOWCASE_COMMAND = [
   '--confirm',
   'SEED_OPENEXPERT_PRODUCTION_SHOWCASE',
 ]
+const KNOWLEDGE_MIGRATION_COMMAND = [
+  resolve(dirname(fileURLToPath(import.meta.url)), 'migrate-production-knowledge-release.mjs'),
+  '--apply',
+  '--confirm',
+  'MIGRATE_OPENEXPERT_PRODUCTION_KNOWLEDGE_RELEASE',
+]
 const BANK_FILES_COMMAND = [
   resolve(dirname(fileURLToPath(import.meta.url)), 'seed-official-bank-files.mjs'),
   '--apply',
@@ -15,6 +21,28 @@ const BANK_FILES_COMMAND = [
   'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION',
 ]
 const runMode = String(process.env.OPENEXPERT_RUN_PRODUCTION_SEEDS ?? '').trim()
+const isProductionBuild = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production'
+
+function runCommand(argumentsList) {
+  const result = spawnSync(process.execPath, argumentsList, {
+    cwd: resolve(scriptsDirectory, '../../..'),
+    env: process.env,
+    stdio: 'inherit',
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`${argumentsList[0]} failed with exit code ${result.status ?? 'unknown'}`)
+  }
+}
+
+const scriptsDirectory = dirname(fileURLToPath(import.meta.url))
+
+if (isProductionBuild) {
+  runCommand(KNOWLEDGE_MIGRATION_COMMAND)
+}
+else {
+  console.log('Production knowledge release migrations: skipped.')
+}
 
 if (!runMode) {
   console.log('Production data seeds: skipped.')
@@ -31,22 +59,12 @@ if (!commands) {
   )
 }
 
-if (process.env.VERCEL !== '1' || process.env.VERCEL_ENV !== 'production') {
+if (!isProductionBuild) {
   throw new Error('Production data seeds can run only in a Vercel production build.')
 }
 
-const scriptsDirectory = dirname(fileURLToPath(import.meta.url))
-
 for (const argumentsList of commands) {
-  const result = spawnSync(process.execPath, argumentsList, {
-    cwd: resolve(scriptsDirectory, '../../..'),
-    env: process.env,
-    stdio: 'inherit',
-  })
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`${argumentsList[0]} failed with exit code ${result.status ?? 'unknown'}`)
-  }
+  runCommand(argumentsList)
 }
 
 console.log('All requested production data seeds completed.')

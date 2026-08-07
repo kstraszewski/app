@@ -136,17 +136,22 @@ onBeforeUnmount(() => {
       </UButton>
 
       <p v-if="props.eyebrow" class="crm-page-header__eyebrow">{{ props.eyebrow }}</p>
-      <div v-if="hasAvatar" class="crm-page-header__identity">
-        <UAvatar
-          class="crm-page-header__avatar"
-          :src="props.avatarSrc || undefined"
-          :alt="props.avatarAlt || props.title"
-          :text="props.avatarText || undefined"
-          size="3xl"
-        />
-        <h1>{{ props.title }}</h1>
+      <div class="crm-page-header__title-row">
+        <div v-if="hasAvatar" class="crm-page-header__identity">
+          <UAvatar
+            class="crm-page-header__avatar"
+            :src="props.avatarSrc || undefined"
+            :alt="props.avatarAlt || props.title"
+            :text="props.avatarText || undefined"
+            size="3xl"
+          />
+          <h1>{{ props.title }}</h1>
+        </div>
+        <h1 v-else>{{ props.title }}</h1>
+        <div v-if="$slots['title-trailing']" class="crm-page-header__title-trailing">
+          <slot name="title-trailing" />
+        </div>
       </div>
-      <h1 v-else>{{ props.title }}</h1>
       <p v-if="props.description" class="crm-page-header__description">{{ props.description }}</p>
 
       <div
@@ -215,6 +220,10 @@ onBeforeUnmount(() => {
   background: var(--ui-bg);
 }
 
+.crm-page-header.crm-page-header--compact.crm-page-header--without-tabs {
+  padding-bottom: 10px;
+}
+
 .crm-page-header--compact .crm-page-header__eyebrow,
 .crm-page-header--compact .crm-page-header__description {
   display: none;
@@ -232,6 +241,10 @@ onBeforeUnmount(() => {
   margin-top: 0;
   font-size: clamp(20px, 1.8vw, 25px);
   line-height: 1.1;
+}
+
+.crm-page-header--compact .crm-page-header__title-row {
+  margin-top: 0;
 }
 
 .crm-page-header--compact .crm-page-header__meta {
@@ -287,11 +300,26 @@ onBeforeUnmount(() => {
 }
 
 .crm-page-header h1 {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--ui-text-highlighted);
   font-size: clamp(36px, 3.5vw, 48px);
   font-weight: var(--oe-heading-font-weight);
   line-height: 1.05;
+}
+
+.crm-page-header__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.crm-page-header__title-trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 
 .crm-page-header__identity {
@@ -299,7 +327,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   min-width: 0;
-  margin-top: 5px;
+  margin-top: 0;
 }
 
 .crm-page-header__identity h1 {

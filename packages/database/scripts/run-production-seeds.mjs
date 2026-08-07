@@ -18,7 +18,7 @@ const BANK_FILES_COMMAND = [
   resolve(dirname(fileURLToPath(import.meta.url)), 'seed-official-bank-files.mjs'),
   '--apply',
   '--confirm',
-  'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION',
+  'IMPORT_34_OFFICIAL_BANK_FILES_TO_PRODUCTION',
 ]
 const runMode = String(process.env.OPENEXPERT_RUN_PRODUCTION_SEEDS ?? '').trim()
 const isProductionBuild = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production'

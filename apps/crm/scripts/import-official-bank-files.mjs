@@ -1,7 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -25,14 +23,39 @@ const manifestPath = join(
   repositoryRoot,
   'packages/database/data/mortgages/official-bank-files.json',
 )
+const bankCatalogPath = join(
+  repositoryRoot,
+  'packages/database/data/mortgages/official-bank-file-banks.json',
+)
+const assetDirectory = join(
+  repositoryRoot,
+  'packages/database/data/mortgages/official-bank-file-assets',
+)
 
 const officialBankDomains = new Map([
+  ['alior', ['aliorbank.pl']],
+  ['bank-bps', ['bankbps.pl']],
+  ['bnp-paribas', ['bnpparibas.pl']],
+  ['bos', ['bosbank.pl']],
+  ['credit-agricole', ['credit-agricole.pl']],
   ['erste', ['erste.pl']],
   ['ing', ['ing.pl']],
   ['mbank', ['mbank.pl']],
+  ['millennium', ['bankmillennium.pl']],
   ['pekao', ['pekao.com.pl']],
   ['pko-bp', ['pkobp.pl']],
+  ['velobank', ['velobank.pl']],
 ])
+
+const managedCategories = [
+  {
+    category_key: 'product_rules',
+    label: 'Regulaminy produktów',
+    icon: 'i-lucide-book-open-check',
+    sort_order: 45,
+    is_archived: false,
+  },
+]
 
 function parseEnvFile(content) {
   const values = {}
@@ -187,12 +210,51 @@ function assertOfficialUrl(bankSlug, value, label) {
   }
 }
 
-function validateManifest(value) {
+function validateBankCatalog(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('Katalog banków hipotecznych jest pusty albo nieprawidłowy.')
+  }
+
+  const slugs = new Set()
+  for (const [index, bank] of value.entries()) {
+    const label = `bankCatalog[${index}]`
+    assertPlainObject(bank, label)
+    for (const field of ['slug', 'name', 'websiteUrl', 'brandColor', 'brandForegroundColor']) {
+      if (typeof bank[field] !== 'string' || !bank[field].trim()) {
+        throw new Error(`${label}.${field} jest wymagany.`)
+      }
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(bank.slug)) {
+      throw new Error(`${label}.slug ma nieprawidłowy format.`)
+    }
+    if (!officialBankDomains.has(bank.slug)) {
+      throw new Error(`${label}.slug nie jest obsługiwany: ${bank.slug}.`)
+    }
+    if (slugs.has(bank.slug)) throw new Error(`${label}.slug jest zduplikowany.`)
+    assertOfficialUrl(bank.slug, bank.websiteUrl, `${label}.websiteUrl`)
+    if (bank.logoUrl) {
+      const logoUrl = new URL(bank.logoUrl)
+      if (logoUrl.protocol !== 'https:' || logoUrl.username || logoUrl.password) {
+        throw new Error(`${label}.logoUrl musi być adresem HTTPS bez danych logowania.`)
+      }
+    }
+    for (const field of ['logoBackgroundColor', 'brandColor', 'brandForegroundColor']) {
+      if (bank[field] && !/^#[0-9A-Fa-f]{6}$/u.test(bank[field])) {
+        throw new Error(`${label}.${field} musi być sześciocyfrowym kolorem hex albo null.`)
+      }
+    }
+    slugs.add(bank.slug)
+  }
+  return value
+}
+
+function validateManifest(value, bankCatalog) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('Manifest dokumentów jest pusty albo ma nieprawidłowy format.')
   }
 
   const identities = new Set()
+  const fileNames = new Set()
   for (const [index, entry] of value.entries()) {
     const label = `manifest[${index}]`
     assertPlainObject(entry, label)
@@ -202,132 +264,60 @@ function validateManifest(value) {
         throw new Error(`${label}.${field} jest wymagany.`)
       }
     }
+    if (!bankCatalog.some(bank => bank.slug === entry.bankSlug)) {
+      throw new Error(`${label}.bankSlug nie występuje w katalogu banków.`)
+    }
     if (!officialBankDomains.has(entry.bankSlug)) {
       throw new Error(`${label}.bankSlug nie jest obsługiwany: ${entry.bankSlug}.`)
     }
-    if (entry.mimeType !== 'application/pdf') {
-      throw new Error(`${label}.mimeType musi mieć wartość application/pdf.`)
+    if (entry.mimeType !== 'application/pdf' || !entry.fileName.endsWith('.pdf')) {
+      throw new Error(`${label} musi opisywać plik PDF.`)
+    }
+    if (basename(entry.fileName) !== entry.fileName) {
+      throw new Error(`${label}.fileName nie może zawierać ścieżki katalogu.`)
+    }
+    if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(entry.sha256)) {
+      throw new Error(`${label}.sha256 musi być sumą SHA-256 zapisaną małymi literami.`)
     }
     assertOfficialUrl(entry.bankSlug, entry.downloadUrl, `${label}.downloadUrl`)
     assertOfficialUrl(entry.bankSlug, entry.sourcePageUrl, `${label}.sourcePageUrl`)
     assertOptionalDate(entry.effectiveFrom, `${label}.effectiveFrom`)
     assertOptionalDate(entry.effectiveTo, `${label}.effectiveTo`)
 
-    if (
-      entry.pageCount !== undefined
-      && (!Number.isInteger(entry.pageCount) || entry.pageCount < 1)
-    ) {
+    if (!Number.isInteger(entry.pageCount) || entry.pageCount < 1) {
       throw new Error(`${label}.pageCount musi być dodatnią liczbą całkowitą.`)
     }
 
     const identity = `${entry.bankSlug}\u0000${entry.title.trim().toLocaleLowerCase('pl-PL')}`
     if (identities.has(identity)) throw new Error(`${label} duplikuje bank i tytuł dokumentu.`)
+    if (fileNames.has(entry.fileName)) throw new Error(`${label}.fileName jest zduplikowany.`)
     identities.add(identity)
+    fileNames.add(entry.fileName)
   }
 
   return value
 }
 
-function run(command, args) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      cwd: repositoryRoot,
-      env: process.env,
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', chunk => {
-      stdout += chunk
-    })
-    child.stderr.on('data', chunk => {
-      stderr += chunk
-    })
-    child.once('error', rejectPromise)
-    child.once('close', (code, signal) => {
-      if (code === 0) {
-        resolvePromise({ stdout, stderr })
-        return
-      }
-      const cause = signal ? `sygnał ${signal}` : `kod ${code}`
-      rejectPromise(new Error(`${command} zakończył się błędem (${cause}): ${stderr.trim()}`))
-    })
-  })
-}
-
-function parseFinalResponseHeaders(rawHeaders) {
-  const blocks = rawHeaders
-    .replace(/\r\n/gu, '\n')
-    .split(/\n\n+/u)
-    .map(block => block.trim())
-    .filter(block => /^HTTP\/\S+\s+\d+/iu.test(block))
-  const lastBlock = blocks.at(-1)
-  const headers = new Map()
-
-  if (!lastBlock) return headers
-  for (const line of lastBlock.split('\n').slice(1)) {
-    const separator = line.indexOf(':')
-    if (separator < 1) continue
-    headers.set(line.slice(0, separator).trim().toLowerCase(), line.slice(separator + 1).trim())
-  }
-  return headers
-}
-
-async function downloadPdf(entry, temporaryDirectory) {
-  const binaryPath = join(temporaryDirectory, `${randomUUID()}.pdf`)
-  const headersPath = `${binaryPath}.headers`
-  const result = await run('curl', [
-    '-4',
-    '--http1.1',
-    '--fail',
-    '--location',
-    '--silent',
-    '--show-error',
-    '--retry',
-    '2',
-    '--retry-all-errors',
-    '--connect-timeout',
-    '15',
-    '--max-time',
-    '120',
-    '--proto',
-    '=https',
-    '--proto-redir',
-    '=https',
-    '--user-agent',
-    'Mozilla/5.0 (compatible; OpenExpertBankFileImporter/1.0)',
-    '--dump-header',
-    headersPath,
-    '--output',
-    binaryPath,
-    '--write-out',
-    '%{url_effective}',
-    entry.downloadUrl,
-  ])
-
-  const fileStats = await stat(binaryPath)
-  if (fileStats.size < 5 || fileStats.size > MAXIMUM_BYTES) {
+async function readBundledPdf(entry) {
+  const bytes = await readFile(join(assetDirectory, entry.fileName))
+  if (bytes.byteLength < 5 || bytes.byteLength > MAXIMUM_BYTES) {
     throw new Error(
-      `${entry.title}: rozmiar ${fileStats.size} B jest poza dozwolonym zakresem.`,
+      `${entry.title}: rozmiar ${bytes.byteLength} B jest poza dozwolonym zakresem.`,
     )
   }
-
-  const bytes = await readFile(binaryPath)
   if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
-    throw new Error(`${entry.title}: pobrany plik nie rozpoczyna się od sygnatury %PDF-.`)
+    throw new Error(`${entry.title}: asset nie rozpoczyna się od sygnatury %PDF-.`)
   }
-
-  const responseHeaders = parseFinalResponseHeaders(await readFile(headersPath, 'utf8'))
+  const checksum = sha256(bytes)
+  if (checksum !== entry.sha256) {
+    throw new Error(`${entry.title}: suma SHA-256 assetu nie zgadza się z manifestem.`)
+  }
   return {
     bytes,
-    resolvedUrl: result.stdout.trim() || entry.downloadUrl,
-    etag: responseHeaders.get('etag') ?? null,
-    lastModified: responseHeaders.get('last-modified') ?? null,
-    responseContentType: responseHeaders.get('content-type') ?? null,
+    resolvedUrl: entry.downloadUrl,
+    etag: null,
+    lastModified: null,
+    responseContentType: 'application/pdf',
   }
 }
 
@@ -383,7 +373,7 @@ function splitPageText(text, pageNumber, firstChunkIndex) {
   return chunks
 }
 
-async function extractPdf(bytes) {
+async function extractPdf(bytes, entry) {
   ensurePdfJsGlobals()
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const loadingTask = getDocument({
@@ -393,6 +383,11 @@ async function extractPdf(bytes) {
 
   try {
     const document = await loadingTask.promise
+    if (document.numPages !== entry.pageCount) {
+      throw new Error(
+        `${entry.title}: asset ma ${document.numPages} stron, oczekiwano ${entry.pageCount}.`,
+      )
+    }
     const chunks = []
     const pages = []
 
@@ -419,6 +414,9 @@ async function extractPdf(bytes) {
       page.cleanup()
     }
 
+    if (chunks.length === 0) {
+      throw new Error(`${entry.title}: PDF nie zawiera tekstu możliwego do zaindeksowania.`)
+    }
     return {
       pageCount: document.numPages,
       text: pages.filter(Boolean).join('\n\n').slice(0, 250_000),
@@ -449,6 +447,31 @@ function resultData(result, label) {
     throw new Error(`${label}: ${result.error.message}`)
   }
   return result.data
+}
+
+async function ensureCatalogBanks(client, bankCatalog) {
+  const result = await client
+    .from('mortgage_banks')
+    .upsert(
+      bankCatalog.map(bank => ({
+        slug: bank.slug,
+        name: bank.name,
+        website_url: bank.websiteUrl,
+        logo_url: bank.logoUrl ?? null,
+        logo_background_color: bank.logoBackgroundColor ?? null,
+        brand_color: bank.brandColor,
+        brand_foreground_color: bank.brandForegroundColor,
+      })),
+      { onConflict: 'slug' },
+    )
+  resultData(result, 'Nie udało się zsynchronizować katalogu banków hipotecznych')
+}
+
+async function ensureManagedCategories(client) {
+  const result = await client
+    .from('mortgage_bank_file_categories')
+    .upsert(managedCategories, { onConflict: 'category_key' })
+  resultData(result, 'Nie udało się zsynchronizować kategorii plików bankowych')
 }
 
 async function loadCatalog(client) {
@@ -666,7 +689,7 @@ async function importDocument(client, catalog, entry, downloaded) {
       })
     resultData(createVersionResult, `Nie udało się utworzyć wersji „${title}”`)
 
-    const extracted = await extractPdf(downloaded.bytes)
+    const extracted = await extractPdf(downloaded.bytes, entry)
     if (extracted.chunks.length) {
       const chunksResult = await client
         .from('mortgage_bank_file_chunks')
@@ -811,31 +834,34 @@ async function importDocument(client, catalog, entry, downloaded) {
 }
 
 async function main() {
-  const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
+  const bankCatalog = validateBankCatalog(
+    JSON.parse(await readFile(bankCatalogPath, 'utf8')),
+  )
+  const manifest = validateManifest(
+    JSON.parse(await readFile(manifestPath, 'utf8')),
+    bankCatalog,
+  )
   const client = await loadLocalPlatformClient()
+  await ensureCatalogBanks(client, bankCatalog)
+  await ensureManagedCategories(client)
   const catalog = await loadCatalog(client)
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'openexpert-bank-files-'))
   const summary = { imported: 0, unchanged: 0, failed: 0 }
 
-  try {
-    for (const entry of manifest) {
-      try {
-        process.stdout.write(`Pobieranie: ${entry.bankSlug} — ${entry.title}\n`)
-        const downloaded = await downloadPdf(entry, temporaryDirectory)
-        const result = await importDocument(client, catalog, entry, downloaded)
-        summary[result.status] += 1
-        const details = result.status === 'imported'
-          ? `v${result.versionNumber}, ${result.pageCount} str.`
-          : `bez zmian, v${result.versionNumber}`
-        process.stdout.write(`  OK: ${details}\n`)
-      } catch (error) {
-        summary.failed += 1
-        const message = error instanceof Error ? error.message : String(error)
-        process.stderr.write(`  BŁĄD: ${message}\n`)
-      }
+  for (const entry of manifest) {
+    try {
+      process.stdout.write(`Import assetu: ${entry.bankSlug} — ${entry.title}\n`)
+      const downloaded = await readBundledPdf(entry)
+      const result = await importDocument(client, catalog, entry, downloaded)
+      summary[result.status] += 1
+      const details = result.status === 'imported'
+        ? `v${result.versionNumber}, ${result.pageCount} str.`
+        : `bez zmian, v${result.versionNumber}`
+      process.stdout.write(`  OK: ${details}\n`)
+    } catch (error) {
+      summary.failed += 1
+      const message = error instanceof Error ? error.message : String(error)
+      process.stderr.write(`  BŁĄD: ${message}\n`)
     }
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true })
   }
 
   process.stdout.write(

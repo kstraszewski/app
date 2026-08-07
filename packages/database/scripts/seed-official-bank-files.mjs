@@ -10,7 +10,7 @@ const EMBEDDING_MODEL = 'gemini-embedding-2'
 const GATEWAY_EMBEDDING_MODEL = `google/${EMBEDDING_MODEL}`
 const EMBEDDING_DIMENSIONS = 768
 const EMBEDDING_RECIPE = 'search-result-v1'
-const CONFIRMATION = 'IMPORT_15_OFFICIAL_BANK_FILES_TO_PRODUCTION'
+const CONFIRMATION = 'IMPORT_34_OFFICIAL_BANK_FILES_TO_PRODUCTION'
 const SEED_LOCK = 'openexpert.seed.official-bank-files.v1'
 const VERCEL_PROJECT = 'openexpert-crm'
 const BLOB_STORAGE_NAMESPACE = 'mortgage-bank-files'
@@ -22,17 +22,33 @@ const mortgageDataDirectory = join(
   'packages/database/data/mortgages',
 )
 const manifestPath = join(mortgageDataDirectory, 'official-bank-files.json')
+const bankCatalogPath = join(mortgageDataDirectory, 'official-bank-file-banks.json')
 const assetDirectory = join(mortgageDataDirectory, 'official-bank-file-assets')
 
 const crmRequire = createRequire(join(repositoryRoot, 'apps/crm/package.json'))
 const storageRequire = createRequire(join(repositoryRoot, 'packages/storage/package.json'))
 
 const officialBankDomains = new Map([
+  ['alior', ['aliorbank.pl']],
+  ['bank-bps', ['bankbps.pl']],
+  ['bnp-paribas', ['bnpparibas.pl']],
+  ['bos', ['bosbank.pl']],
+  ['credit-agricole', ['credit-agricole.pl']],
   ['erste', ['erste.pl']],
   ['ing', ['ing.pl']],
   ['mbank', ['mbank.pl']],
+  ['millennium', ['bankmillennium.pl']],
   ['pekao', ['pekao.com.pl']],
   ['pko-bp', ['pkobp.pl']],
+  ['velobank', ['velobank.pl']],
+])
+
+const managedCategoryDefinitions = new Map([
+  ['product_rules', {
+    label: 'Regulaminy produktów',
+    icon: 'i-lucide-book-open-check',
+    sortOrder: 45,
+  }],
 ])
 
 const requiredRelations = [
@@ -130,7 +146,7 @@ function productionConfiguration(manifestLength) {
   if (process.env.VERCEL_ENV !== 'production') {
     throw new Error('Apply mode requires VERCEL_ENV=production')
   }
-  if (manifestLength !== 15 || CONFIRMATION !== `IMPORT_${manifestLength}_OFFICIAL_BANK_FILES_TO_PRODUCTION`) {
+  if (CONFIRMATION !== `IMPORT_${manifestLength}_OFFICIAL_BANK_FILES_TO_PRODUCTION`) {
     throw new Error(
       `The manifest contains ${manifestLength} entries; update and review the explicit confirmation first`,
     )
@@ -215,7 +231,50 @@ function assertOfficialUrl(bankSlug, value, label) {
   return parsed
 }
 
-function validateManifest(value) {
+function validateBankCatalog(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('The official mortgage bank catalog is empty or invalid')
+  }
+
+  const slugs = new Set()
+  for (const [index, bank] of value.entries()) {
+    const label = `bankCatalog[${index}]`
+    assertPlainObject(bank, label)
+    for (const field of ['slug', 'name', 'websiteUrl', 'brandColor', 'brandForegroundColor']) {
+      if (typeof bank[field] !== 'string' || !bank[field].trim()) {
+        throw new Error(`${label}.${field} is required`)
+      }
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(bank.slug)) {
+      throw new Error(`${label}.slug has an invalid format`)
+    }
+    if (!officialBankDomains.has(bank.slug)) {
+      throw new Error(`${label}.slug is unsupported: ${bank.slug}`)
+    }
+    if (slugs.has(bank.slug)) throw new Error(`${label}.slug is duplicated`)
+    assertOfficialUrl(bank.slug, bank.websiteUrl, `${label}.websiteUrl`)
+    for (const field of ['logoUrl', 'logoBackgroundColor']) {
+      if (bank[field] !== null && bank[field] !== undefined && typeof bank[field] !== 'string') {
+        throw new Error(`${label}.${field} must be a string or null`)
+      }
+    }
+    if (bank.logoUrl) {
+      const logoUrl = new URL(bank.logoUrl)
+      if (logoUrl.protocol !== 'https:' || logoUrl.username || logoUrl.password) {
+        throw new Error(`${label}.logoUrl must be a credential-free HTTPS URL`)
+      }
+    }
+    for (const field of ['logoBackgroundColor', 'brandColor', 'brandForegroundColor']) {
+      if (bank[field] && !/^#[0-9A-Fa-f]{6}$/u.test(bank[field])) {
+        throw new Error(`${label}.${field} must be a six-digit hex color or null`)
+      }
+    }
+    slugs.add(bank.slug)
+  }
+  return value
+}
+
+function validateManifest(value, bankCatalog) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('The official bank file manifest is empty or invalid')
   }
@@ -229,6 +288,9 @@ function validateManifest(value) {
       if (typeof entry[field] !== 'string' || !entry[field].trim()) {
         throw new Error(`${label}.${field} is required`)
       }
+    }
+    if (!bankCatalog.some(bank => bank.slug === entry.bankSlug)) {
+      throw new Error(`${label}.bankSlug is missing from the mortgage bank catalog`)
     }
     if (!officialBankDomains.has(entry.bankSlug)) {
       throw new Error(`${label}.bankSlug is unsupported: ${entry.bankSlug}`)
@@ -499,7 +561,7 @@ async function assertRequiredSchema(database) {
   }
 }
 
-async function loadCatalog(database, manifest) {
+async function loadCatalog(database, manifest, bankCatalog) {
   const bankSlugs = [...new Set(manifest.map(entry => entry.bankSlug))]
   const categoryKeys = [...new Set(manifest.map(entry => entry.category))]
   const [banks, categories, products] = await Promise.all([
@@ -534,15 +596,57 @@ async function loadCatalog(database, manifest) {
   const banksBySlug = new Map(banks.rows.map(row => [row.slug, row]))
   const categoriesByKey = new Map(categories.rows.map(row => [row.category_key, row.id]))
   const productByBankId = new Map(products.rows.map(row => [row.bank_id, row.id]))
+  const bankSeedBySlug = new Map(bankCatalog.map(bank => [bank.slug, bank]))
+  const missingBanks = []
   for (const slug of bankSlugs) {
-    const bank = banksBySlug.get(slug)
-    if (!bank) throw new Error(`Mortgage bank ${slug} is missing`)
-    if (!productByBankId.has(bank.id)) {
-      throw new Error(`Mortgage bank ${slug} has no active product to link`)
+    if (!banksBySlug.has(slug)) {
+      const seed = bankSeedBySlug.get(slug)
+      if (!seed) throw new Error(`Mortgage bank ${slug} is missing from the seed catalog`)
+      const bank = {
+        id: stableUuid(`bank:${slug}`),
+        slug,
+        name: seed.name,
+      }
+      banksBySlug.set(slug, bank)
+      missingBanks.push(bank)
     }
   }
+  if (missingBanks.length > 0) {
+    const collisions = await database.query(
+      `select id::text, slug
+         from public.mortgage_banks
+        where id = any($1::uuid[])`,
+      [missingBanks.map(bank => bank.id)],
+    )
+    if (collisions.rowCount > 0) {
+      throw new Error(
+        `Deterministic mortgage bank identifier collision: ${collisions.rows.map(row => row.slug).join(', ')}`,
+      )
+    }
+  }
+  const missingCategories = []
   for (const key of categoryKeys) {
-    if (!categoriesByKey.has(key)) throw new Error(`Active bank-file category ${key} is missing`)
+    if (!categoriesByKey.has(key)) {
+      if (!managedCategoryDefinitions.has(key)) {
+        throw new Error(`Active bank-file category ${key} is missing`)
+      }
+      const category = { id: stableUuid(`category:${key}`), key }
+      categoriesByKey.set(key, category.id)
+      missingCategories.push(category)
+    }
+  }
+  if (missingCategories.length > 0) {
+    const collisions = await database.query(
+      `select id::text, category_key
+         from public.mortgage_bank_file_categories
+        where id = any($1::uuid[])`,
+      [missingCategories.map(category => category.id)],
+    )
+    if (collisions.rowCount > 0) {
+      throw new Error(
+        `Deterministic bank-file category identifier collision: ${collisions.rows.map(row => row.category_key).join(', ')}`,
+      )
+    }
   }
   return { banksBySlug, categoriesByKey, productByBankId }
 }
@@ -667,7 +771,7 @@ async function createPlans(database, catalog, documents) {
       document,
       bank,
       categoryId: catalog.categoriesByKey.get(document.entry.category),
-      productId: catalog.productByBankId.get(bank.id),
+      productId: catalog.productByBankId.get(bank.id) ?? null,
       fileId,
       versionId,
       versionNumber,
@@ -785,6 +889,63 @@ async function assertPlanState(database, plan) {
   }
   if (JSON.stringify(current) !== JSON.stringify(plan.initialState)) {
     throw new Error(`Database state changed while preparing “${plan.document.entry.title}”`)
+  }
+}
+
+async function upsertManagedCategories(database, plans) {
+  const plannedCategoryByKey = new Map(
+    plans.map(plan => [plan.document.entry.category, plan.categoryId]),
+  )
+  for (const [key, definition] of managedCategoryDefinitions) {
+    const categoryId = plannedCategoryByKey.get(key)
+    if (!categoryId) continue
+    await database.query(
+      `insert into public.mortgage_bank_file_categories (
+         id, category_key, label, icon, sort_order, is_archived
+       ) values ($1::uuid, $2, $3, $4, $5, false)
+       on conflict (category_key) do update set
+         label = excluded.label,
+         icon = excluded.icon,
+         sort_order = excluded.sort_order,
+         is_archived = false,
+         updated_at = now()`,
+      [categoryId, key, definition.label, definition.icon, definition.sortOrder],
+    )
+  }
+}
+
+async function upsertBankCatalog(database, plans, bankCatalog) {
+  const plannedBankBySlug = new Map(plans.map(plan => [plan.bank.slug, plan.bank]))
+  for (const seed of bankCatalog) {
+    const bank = plannedBankBySlug.get(seed.slug)
+    if (!bank) continue
+    await database.query(
+      `insert into public.mortgage_banks (
+         id, slug, name, website_url, logo_url, logo_background_color,
+         brand_color, brand_foreground_color
+       ) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+       on conflict (slug) do update set
+         name = excluded.name,
+         website_url = excluded.website_url,
+         logo_url = coalesce(excluded.logo_url, mortgage_banks.logo_url),
+         logo_background_color = coalesce(
+           excluded.logo_background_color,
+           mortgage_banks.logo_background_color
+         ),
+         brand_color = excluded.brand_color,
+         brand_foreground_color = excluded.brand_foreground_color,
+         updated_at = now()`,
+      [
+        bank.id,
+        seed.slug,
+        seed.name,
+        seed.websiteUrl,
+        seed.logoUrl ?? null,
+        seed.logoBackgroundColor ?? null,
+        seed.brandColor,
+        seed.brandForegroundColor,
+      ],
+    )
   }
 }
 
@@ -1047,12 +1208,14 @@ async function persistProcessedPlan(database, plan, now) {
       where id = $1::uuid`,
     [plan.fileId, plan.versionId, plan.categoryId, entry.sourcePageUrl],
   )
-  await database.query(
-    `insert into public.mortgage_bank_file_products (file_id, product_id, created_by_user_id)
-     values ($1::uuid, $2::uuid, null)
-     on conflict (file_id, product_id) do nothing`,
-    [plan.fileId, plan.productId],
-  )
+  if (plan.productId) {
+    await database.query(
+      `insert into public.mortgage_bank_file_products (file_id, product_id, created_by_user_id)
+       values ($1::uuid, $2::uuid, null)
+       on conflict (file_id, product_id) do nothing`,
+      [plan.fileId, plan.productId],
+    )
+  }
   await upsertProcessingJobs(database, plan, now)
 
   const eventMetadata = {
@@ -1130,12 +1293,14 @@ async function persistUnchangedPlan(database, plan) {
         )`,
     [plan.fileId, plan.categoryId, entry.notes?.trim() || null, entry.sourcePageUrl],
   )
-  await database.query(
-    `insert into public.mortgage_bank_file_products (file_id, product_id, created_by_user_id)
-     values ($1::uuid, $2::uuid, null)
-     on conflict (file_id, product_id) do nothing`,
-    [plan.fileId, plan.productId],
-  )
+  if (plan.productId) {
+    await database.query(
+      `insert into public.mortgage_bank_file_products (file_id, product_id, created_by_user_id)
+       values ($1::uuid, $2::uuid, null)
+       on conflict (file_id, product_id) do nothing`,
+      [plan.fileId, plan.productId],
+    )
+  }
 }
 
 async function verifyPersistedPlan(database, plan) {
@@ -1182,17 +1347,19 @@ async function verifyPersistedPlan(database, plan) {
     || row.embedding_status !== 'completed'
     || row.chunk_count < 1
     || row.chunk_count !== row.embedding_count
-    || !row.has_product
+    || (plan.productId && !row.has_product)
   ) {
     throw new Error(`Persisted data is incomplete for “${plan.document.entry.title}”`)
   }
 }
 
-async function commitPlans(database, plans) {
+async function commitPlans(database, plans, bankCatalog) {
   await database.query('begin isolation level serializable')
   try {
     await database.query(`set local lock_timeout = '15s'`)
     await database.query(`set local statement_timeout = '180s'`)
+    await upsertManagedCategories(database, plans)
+    await upsertBankCatalog(database, plans, bankCatalog)
     for (const plan of plans) await assertPlanState(database, plan)
 
     const now = new Date().toISOString()
@@ -1215,7 +1382,13 @@ async function main() {
     return
   }
 
-  const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
+  const bankCatalog = validateBankCatalog(
+    JSON.parse(await readFile(bankCatalogPath, 'utf8')),
+  )
+  const manifest = validateManifest(
+    JSON.parse(await readFile(manifestPath, 'utf8')),
+    bankCatalog,
+  )
   if (!arguments_.apply) {
     ensurePdfJsGlobals()
     const pdfjs = await importFrom(crmRequire, 'pdfjs-dist/legacy/build/pdf.mjs')
@@ -1254,7 +1427,7 @@ async function main() {
     await database.query('select pg_advisory_lock(hashtext($1))', [SEED_LOCK])
     lockHeld = true
     await assertRequiredSchema(database)
-    const catalog = await loadCatalog(database, manifest)
+    const catalog = await loadCatalog(database, manifest, bankCatalog)
 
     const documents = []
     for (const [index, entry] of manifest.entries()) {
@@ -1285,7 +1458,7 @@ async function main() {
     }
 
     uploadedPaths = await ensureBlobs(runtime.blob, configuration, plans)
-    await commitPlans(database, plans)
+    await commitPlans(database, plans, bankCatalog)
     committed = true
 
     const counts = plans.reduce((result, plan) => {

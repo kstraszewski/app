@@ -1,0 +1,110 @@
+[
+  {
+    "slug": "alior",
+    "name": "Alior Bank",
+    "websiteUrl": "https://www.aliorbank.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#9E1B32",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "bank-bps",
+    "name": "Bank BPS",
+    "websiteUrl": "https://www.bankbps.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#006B3F",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "bnp-paribas",
+    "name": "Bank BNP Paribas",
+    "websiteUrl": "https://www.bnpparibas.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#00915A",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "bos",
+    "name": "Bank Ochrony Środowiska",
+    "websiteUrl": "https://www.bosbank.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#007A4D",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "credit-agricole",
+    "name": "Credit Agricole Bank Polska",
+    "websiteUrl": "https://www.credit-agricole.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#007A33",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "erste",
+    "name": "Erste Bank Polska",
+    "websiteUrl": "https://www.erste.pl",
+    "logoUrl": "https://cdn0.erstegroup.com/content/dam/at/eh/common/pictures/logos/holding/Holding_Logo_screen_white_404x192.png",
+    "logoBackgroundColor": "#2870ED",
+    "brandColor": "#2870ED",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "ing",
+    "name": "ING Bank Śląski",
+    "websiteUrl": "https://www.ing.pl",
+    "logoUrl": "https://www.ing.pl/_static/img/logo_lsl_new.5800ff4f65b35cf926f5.svg",
+    "logoBackgroundColor": null,
+    "brandColor": "#FF6200",
+    "brandForegroundColor": "#000066"
+  },
+  {
+    "slug": "mbank",
+    "name": "mBank",
+    "websiteUrl": "https://www.mbank.pl",
+    "logoUrl": "https://prowly-prod.s3.eu-west-1.amazonaws.com/uploads/5104/assets/254921/large-6ba0fabffbbded7d5ac20f20c407a62b.jpg",
+    "logoBackgroundColor": null,
+    "brandColor": "#EA0A0A",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "millennium",
+    "name": "Bank Millennium",
+    "websiteUrl": "https://www.bankmillennium.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#D50055",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "pekao",
+    "name": "Bank Pekao",
+    "websiteUrl": "https://www.pekao.com.pl",
+    "logoUrl": "https://www.pekao.com.pl/.resources/pekao-module/webresources/dist_v2/img/logo.svg",
+    "logoBackgroundColor": null,
+    "brandColor": "#D71921",
+    "brandForegroundColor": "#FFFFFF"
+  },
+  {
+    "slug": "pko-bp",
+    "name": "PKO Bank Polski / PKO Bank Hipoteczny",
+    "websiteUrl": "https://www.pkobp.pl",
+    "logoUrl": "https://www.pkobp.pl/api/public/3c663fc2-a8dc-4cb9-ab55-9a4ee64b7c35.svg",
+    "logoBackgroundColor": null,
+    "brandColor": "#FF2038",
+    "brandForegroundColor": "#111111"
+  },
+  {
+    "slug": "velobank",
+    "name": "VeloBank",
+    "websiteUrl": "https://www.velobank.pl",
+    "logoUrl": null,
+    "logoBackgroundColor": null,
+    "brandColor": "#0B7569",
+    "brandForegroundColor": "#FFFFFF"
+  }
+]

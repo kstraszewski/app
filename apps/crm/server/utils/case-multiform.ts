@@ -10,6 +10,7 @@ import {
 import { assertUuid, requireCrmCase } from './case-documents'
 import { filterAuthCookieHeader } from './auth-cookie-header'
 import { getRequiredParam, requireCrmSession, throwDbError } from './crm'
+import { serverDataTokenSigner } from './platform-data'
 
 type JsonRecord = Record<string, unknown>
 
@@ -33,6 +34,7 @@ interface CaseMultiformOfferRow {
 }
 
 export interface CaseMultiformSelection {
+  userId: string
   organizationSlug: string
   caseId: string
   applicationIds: string[]
@@ -166,6 +168,7 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   }))]
 
   return {
+    userId: session.userId,
     organizationSlug: session.organizationSlug,
     caseId,
     applicationIds: selectedApplications.map(application => String(application.submission_id)),
@@ -203,15 +206,16 @@ function authCookieHeader(event: H3Event) {
   return filterAuthCookieHeader(cookieHeader, prefix)
 }
 
-function forwardedHeaders(event: H3Event) {
+function forwardedHeaders(event: H3Event, userId: string) {
   const headers = new Headers({
     accept: 'application/json, application/zip',
     'content-type': 'application/json',
   })
   const authCookies = authCookieHeader(event)
-  const authorization = getHeader(event, 'authorization')
   if (authCookies) headers.set('cookie', authCookies)
-  if (authorization) headers.set('authorization', authorization)
+  headers.set('authorization', `Bearer ${serverDataTokenSigner(event).signUser(userId, {
+    purpose: 'openexpert:multiform-service',
+  })}`)
   return headers
 }
 
@@ -240,13 +244,14 @@ async function upstreamError(response: Response): Promise<never> {
 async function callMultiformService(
   event: H3Event,
   path: string,
+  userId: string,
   options: { method?: 'GET' | 'POST', body?: JsonRecord } = {},
 ) {
   let response: Response
   try {
     response = await fetch(multiformServiceTarget(event, path), {
       method: options.method ?? 'GET',
-      headers: forwardedHeaders(event),
+      headers: forwardedHeaders(event, userId),
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       redirect: 'error',
     })
@@ -273,6 +278,7 @@ export async function loadCaseMultiformContext(
   const response = await callMultiformService(
     event,
     `/api/multiform/crm/context?${query.toString()}`,
+    selection.userId,
   )
   setHeader(event, 'Cache-Control', 'private, no-store')
   return response.json()
@@ -285,7 +291,7 @@ export async function prepareCaseMultiform(
   if (!selection.templateIds.length) {
     throw createError({ statusCode: 409, statusMessage: 'Aktywne wnioski nie mają przypisanych formularzy bankowych.' })
   }
-  const response = await callMultiformService(event, '/api/multiform/bundle/prepare', {
+  const response = await callMultiformService(event, '/api/multiform/bundle/prepare', selection.userId, {
     method: 'POST',
     body: {
       templateIds: selection.templateIds,
@@ -316,7 +322,7 @@ export async function fillCaseMultiform(
   if (!Array.isArray(input.documentIds)) {
     throw createError({ statusCode: 400, statusMessage: 'Lista załączników jest nieprawidłowa.' })
   }
-  const response = await callMultiformService(event, '/api/multiform/bundle/fill', {
+  const response = await callMultiformService(event, '/api/multiform/bundle/fill', selection.userId, {
     method: 'POST',
     body: {
       templateIds: selection.templateIds,

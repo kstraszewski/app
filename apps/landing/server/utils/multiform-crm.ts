@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { serverDataClient, serverDataUser } from './data-api'
+import { serverDataUser } from './data-api'
+import { serverDataTokenSigner, serverUserDataClient } from './platform-data'
 import {
   getTemplate,
   prepareBundle,
@@ -7,7 +8,8 @@ import {
   type DocumentTemplate,
 } from '@openexpert/multiform'
 import { useRuntimeConfig } from '#imports'
-import { createError, setHeader, type H3Event } from 'h3'
+import { createError, getHeader, setHeader, type H3Event } from 'h3'
+import { multiformServiceUserId } from './multiform-service-auth'
 import { resolvePinnedMultiformTemplates } from './multiform-template-repository'
 
 export const CRM_DOCUMENT_BUCKET = 'crm-case-documents'
@@ -799,17 +801,31 @@ export async function loadCrmMultiformContext(
   setHeader(event, 'Cache-Control', 'private, no-store')
   const dataApiConfig = useRuntimeConfig(event).dataApi as {
     url?: string
-    jwt?: { privateKey?: string }
+    jwt?: { audience?: string, issuer?: string, privateKey?: string }
   }
-  if (!dataApiConfig.url || !dataApiConfig.jwt?.privateKey) {
+  if (
+    !dataApiConfig.url
+    || !dataApiConfig.jwt?.audience
+    || !dataApiConfig.jwt.issuer
+    || !dataApiConfig.jwt.privateKey
+  ) {
     throw createError({ statusCode: 503, statusMessage: 'Data API nie jest skonfigurowane.' })
   }
 
   const claims = await serverDataUser(event)
-  const userId = typeof claims?.sub === 'string' ? claims.sub : null
+  const userId = typeof claims?.sub === 'string'
+    ? claims.sub
+    : multiformServiceUserId(
+        getHeader(event, 'authorization') ?? '',
+        {
+          audience: dataApiConfig.jwt.audience,
+          issuer: dataApiConfig.jwt.issuer,
+          publicJwk: serverDataTokenSigner(event).jwks.keys[0]!,
+        },
+      )
   if (!userId) throw createError({ statusCode: 401, statusMessage: 'Zaloguj się w CRM, aby otworzyć sprawę.' })
 
-  const dataApi = await serverDataClient(event) as CrmDataClient
+  const dataApi = serverUserDataClient(event, userId) as CrmDataClient
   const { data: organization, error: organizationError } = await dataApi
     .from('organizations')
     .select('id, name, slug')

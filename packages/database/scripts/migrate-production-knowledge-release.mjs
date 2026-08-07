@@ -10,9 +10,14 @@ const CONFIRMATION = 'MIGRATE_OPENEXPERT_PRODUCTION_KNOWLEDGE_RELEASE'
 const VERCEL_PROJECT = 'openexpert-crm'
 const MIGRATION_LOCK = 'openexpert.migrate.production-knowledge-release.v1'
 const migrationNames = [
+  '0034_experiments_access.sql',
+  '0035_case_group_messaging.sql',
+  '0036_case_message_notification_receipts.sql',
   '0037_experiment_knowledge.sql',
   '0038_experiment_knowledge_institutions.sql',
   '0039_mortgage_bank_brand_colors.sql',
+  '0040_allow_bank_application_status_without_property.sql',
+  '0041_seed_mortgage_bank_file_product_rules_category.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

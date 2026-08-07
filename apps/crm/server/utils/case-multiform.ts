@@ -8,6 +8,7 @@ import {
   type H3Event,
 } from 'h3'
 import { assertUuid, requireCrmCase } from './case-documents'
+import { filterAuthCookieHeader } from './auth-cookie-header'
 import { getRequiredParam, requireCrmSession, throwDbError } from './crm'
 
 type JsonRecord = Record<string, unknown>
@@ -199,15 +200,7 @@ function authCookieHeader(event: H3Event) {
   const cookieHeader = getHeader(event, 'cookie') ?? ''
   const authConfig = useRuntimeConfig(event).auth as { cookiePrefix?: string }
   const prefix = String(authConfig.cookiePrefix || '').trim()
-  if (!cookieHeader || !prefix) return ''
-  return cookieHeader
-    .split(';')
-    .map(cookie => cookie.trim())
-    .filter((cookie) => {
-      const name = cookie.slice(0, cookie.indexOf('='))
-      return name === prefix || name.startsWith(`${prefix}.`)
-    })
-    .join('; ')
+  return filterAuthCookieHeader(cookieHeader, prefix)
 }
 
 function forwardedHeaders(event: H3Event) {

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 const isProduction = process.env.NODE_ENV === 'production'
 const multiformServiceUrl = process.env.NUXT_MULTIFORM_SERVICE_URL
   || process.env.NUXT_PUBLIC_MULTIFORM_EVE_URL?.replace(/\/multiform-eve\/?$/u, '')
-  || (isProduction ? 'https://www.openexpert.app' : 'http://127.0.0.1:3013')
+  || (isProduction ? 'https://openexpert-landing.vercel.app' : 'http://127.0.0.1:3013')
 const storageProvider = process.env.NUXT_STORAGE_PROVIDER
   || (process.env.VERCEL ? 'vercel-blob' : 'minio')
 const dataApiUrl = process.env.NUXT_DATA_API_URL

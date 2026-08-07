@@ -77,6 +77,15 @@ export function serverUserDataClient(
   return clientWithStorage(event, () => token)
 }
 
+export function serverAccessTokenDataClient(
+  event: H3Event,
+  accessToken: string,
+): OpenExpertDataClient {
+  const token = accessToken.trim()
+  if (!token) throw new Error('Data API access token is required')
+  return clientWithStorage(event, () => token)
+}
+
 export function serverBackendDataClient(event: H3Event): OpenExpertDataClient {
   const token = serverDataTokenSigner(event).signBackend()
   return clientWithStorage(event, () => token)

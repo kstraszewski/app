@@ -1,25 +1,40 @@
-import {
-  verifyDataApiToken,
-  type VerifyDataApiTokenOptions,
-} from '@openexpert/data-api/token'
-
 export const MULTIFORM_SERVICE_TOKEN_PURPOSE = 'openexpert:multiform-service'
 
-export function multiformServiceUserId(
+interface MultiformServiceTokenPayload {
+  purpose?: unknown
+  role?: unknown
+  sub?: unknown
+}
+
+export interface MultiformServiceCredentials {
+  token: string
+  userId: string
+}
+
+/**
+ * This only extracts the claimed identity and scope. The Data API verifies the
+ * signature and applies user RLS before the caller is allowed to trust them.
+ */
+export function parseMultiformServiceCredentials(
   authorization: string,
-  verification: Pick<VerifyDataApiTokenOptions, 'audience' | 'issuer' | 'publicJwk'>,
-) {
+): MultiformServiceCredentials | null {
   const match = authorization.match(/^Bearer ([^\s,]+)$/i)
   if (!match) return null
 
   try {
-    const claims = verifyDataApiToken(match[1]!, {
-      ...verification,
-      expectedRole: 'authenticated',
-    })
-    if (claims.purpose !== MULTIFORM_SERVICE_TOKEN_PURPOSE) return null
-    const userId = claims.sub?.trim() ?? ''
-    return userId || null
+    const token = match[1]!
+    const parts = token.split('.')
+    if (parts.length !== 3 || parts.some(part => !part)) return null
+    const claims = JSON.parse(
+      Buffer.from(parts[1]!, 'base64url').toString('utf8'),
+    ) as MultiformServiceTokenPayload
+    if (
+      claims.purpose !== MULTIFORM_SERVICE_TOKEN_PURPOSE
+      || claims.role !== 'authenticated'
+      || typeof claims.sub !== 'string'
+      || !claims.sub.trim()
+    ) return null
+    return { token, userId: claims.sub.trim() }
   }
   catch {
     return null

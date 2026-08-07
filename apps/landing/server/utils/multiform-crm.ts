@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { serverDataUser } from './data-api'
-import { serverDataTokenSigner, serverUserDataClient } from './platform-data'
+import { serverAccessTokenDataClient, serverUserDataClient } from './platform-data'
 import {
   getTemplate,
   prepareBundle,
@@ -9,7 +9,7 @@ import {
 } from '@openexpert/multiform'
 import { useRuntimeConfig } from '#imports'
 import { createError, getHeader, setHeader, type H3Event } from 'h3'
-import { multiformServiceUserId } from './multiform-service-auth'
+import { parseMultiformServiceCredentials } from './multiform-service-auth'
 import { resolvePinnedMultiformTemplates } from './multiform-template-repository'
 
 export const CRM_DOCUMENT_BUCKET = 'crm-case-documents'
@@ -813,19 +813,27 @@ export async function loadCrmMultiformContext(
   }
 
   const claims = await serverDataUser(event)
+  const serviceCredentials = claims?.sub
+    ? null
+    : parseMultiformServiceCredentials(getHeader(event, 'authorization') ?? '')
   const userId = typeof claims?.sub === 'string'
     ? claims.sub
-    : multiformServiceUserId(
-        getHeader(event, 'authorization') ?? '',
-        {
-          audience: dataApiConfig.jwt.audience,
-          issuer: dataApiConfig.jwt.issuer,
-          publicJwk: serverDataTokenSigner(event).jwks.keys[0]!,
-        },
-      )
+    : serviceCredentials?.userId ?? null
   if (!userId) throw createError({ statusCode: 401, statusMessage: 'Zaloguj się w CRM, aby otworzyć sprawę.' })
 
-  const dataApi = serverUserDataClient(event, userId) as CrmDataClient
+  const dataApi = (serviceCredentials
+    ? serverAccessTokenDataClient(event, serviceCredentials.token)
+    : serverUserDataClient(event, userId)) as CrmDataClient
+  if (serviceCredentials) {
+    const { data: profile, error: profileError } = await dataApi
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle()
+    if (profileError || !profile) {
+      throw createError({ statusCode: 401, statusMessage: 'Zaloguj się w CRM, aby otworzyć sprawę.' })
+    }
+  }
   const { data: organization, error: organizationError } = await dataApi
     .from('organizations')
     .select('id, name, slug')

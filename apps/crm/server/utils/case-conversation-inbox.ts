@@ -23,6 +23,7 @@ const conversationSelect = [
   'id',
   'organization_id',
   'case_id',
+  'kind',
   'client_id',
   'client_person_id',
   'last_message_sequence',
@@ -123,8 +124,21 @@ export async function listCrmConversationInbox(
   }
 
   const caseIds = [...new Set(conversations.map(conversation => conversation.caseId))]
-  const personIds = [...new Set(conversations.map(conversation => conversation.clientPersonId))]
   const conversationIds = conversations.map(conversation => conversation.id)
+  const participantResult = await session.dataApi
+    .from('crm_case_conversation_participants')
+    .select('conversation_id, client_id, client_person_id')
+    .eq('organization_id', session.organizationId)
+    .in('conversation_id', conversationIds)
+    .is('removed_at', null)
+  throwDbError(participantResult.error)
+  const participantRows = (participantResult.data ?? []) as Record<string, unknown>[]
+  const personIds = [...new Set([
+    ...conversations.flatMap(conversation => conversation.clientPersonId
+      ? [conversation.clientPersonId]
+      : []),
+    ...participantRows.map(row => String(row.client_person_id)),
+  ])]
 
   const [casesResult, peopleResult, receiptsResult, latestMessages] = await Promise.all([
     session.dataApi
@@ -136,7 +150,9 @@ export async function listCrmConversationInbox(
       .from('crm_client_people')
       .select('id, client_id, display_name, email')
       .eq('organization_id', session.organizationId)
-      .in('id', personIds),
+      .in('id', personIds.length
+        ? personIds
+        : ['00000000-0000-0000-0000-000000000000']),
     session.dataApi
       .from('crm_case_conversation_states')
       .select(receiptSelect)
@@ -177,12 +193,23 @@ export async function listCrmConversationInbox(
   const messageByConversation = new Map<string, Message>(
     latestMessages.map(message => [message.conversationId, message]),
   )
+  const participantIdsByConversation = new Map<string, string[]>()
+  for (const row of participantRows) {
+    const conversationId = String(row.conversation_id)
+    const ids = participantIdsByConversation.get(conversationId) ?? []
+    ids.push(String(row.client_person_id))
+    participantIdsByConversation.set(conversationId, ids)
+  }
 
   const items = sortCrmConversationInboxItems(conversations.flatMap((conversation) => {
     const item = buildCrmConversationInboxItem({
       conversation,
       caseData: caseById.get(conversation.caseId) ?? null,
-      clientPerson: personById.get(conversation.clientPersonId) ?? null,
+      clientPerson: conversation.clientPersonId
+        ? personById.get(conversation.clientPersonId) ?? null
+        : null,
+      participants: (participantIdsByConversation.get(conversation.id) ?? [])
+        .flatMap(personId => personById.get(personId) ?? []),
       lastMessage: messageByConversation.get(conversation.id) ?? null,
       receipt: receiptByConversation.get(conversation.id) ?? null,
       currentUserId: session.userId,

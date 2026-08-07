@@ -58,6 +58,7 @@ const clientAttachmentListSelect = [
   'content_type',
   'size_bytes',
   'attached_at',
+  'uploader_client_person_id',
 ].join(',')
 
 const CLIENT_ATTACHMENT_PAGE_DEFAULT = 50
@@ -122,12 +123,17 @@ interface MappedClientConversationAttachment {
 
 function mapClientConversationAttachmentRow(
   value: unknown,
+  access: CaseConversationAccess,
 ): MappedClientConversationAttachment {
   const row = asRecord(value)
   const attachment = mapMessageAttachmentRow(row)
   const messageId = String(row.message_id ?? '')
   const position = Number(row.position)
   const sentAt = String(row.attached_at ?? '')
+  const uploaderClientPersonId = String(row.uploader_client_person_id ?? '')
+  const uploader = access.participants.find(participant => (
+    participant.clientPersonId === uploaderClientPersonId
+  ))
   if (
     !caseUuidPattern.test(messageId)
     || !Number.isSafeInteger(position)
@@ -146,6 +152,8 @@ function mapClientConversationAttachmentRow(
       messageId: messageId.toLowerCase(),
       position,
       sentAt: new Date(sentAt).toISOString(),
+      uploaderClientPersonId,
+      uploaderName: uploader?.displayName || 'Były uczestnik',
     },
     cursorSentAt: sentAt,
   }
@@ -161,7 +169,6 @@ export async function listClientConversationAttachments(
     .eq('organization_id', access.session.organizationId)
     .eq('conversation_id', access.conversation.id)
     .eq('uploader_kind', 'client')
-    .eq('uploader_client_person_id', access.clientPerson.clientPersonId)
     .not('message_id', 'is', null)
     .not('attached_at', 'is', null)
     .is('discarded_at', null)
@@ -178,7 +185,7 @@ export async function listClientConversationAttachments(
   const result = await request
   throwDbError(result.error)
   const mappedRows: MappedClientConversationAttachment[] = (result.data ?? [])
-    .map((row: unknown) => mapClientConversationAttachmentRow(row))
+    .map((row: unknown) => mapClientConversationAttachmentRow(row, access))
   const hasMore = mappedRows.length > page.limit
   const visibleRows = mappedRows.slice(0, page.limit)
   const last = visibleRows.at(-1)
@@ -314,13 +321,21 @@ async function discardReservationRpc(
   attachmentId: string,
 ): Promise<string | null> {
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('discard_staff_case_message_attachment', {
+  const commonInput = {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
-    p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_attachment_id: attachmentId,
-  })
+  }
+  const result = access.conversation.kind === 'group'
+    ? await backend.rpc('discard_staff_case_group_message_attachment', {
+        ...commonInput,
+        p_conversation_id: access.conversation.id,
+      })
+    : await backend.rpc('discard_staff_case_message_attachment', {
+        ...commonInput,
+        p_client_person_id: access.clientPerson!.clientPersonId,
+      })
   throwAttachmentDbError(result.error)
   const payload = asRecord(result.data)
   const storagePath = payload.storagePath ?? payload.storage_path
@@ -332,24 +347,38 @@ export async function reserveStaffMessageAttachment(
   access: CaseConversationAccess,
   input: ReserveMessageAttachmentInput,
 ) {
-  if (!access.clientPerson.portalEnabled) {
+  if (
+    !access.participants.length
+    || (access.conversation.kind === 'group' && access.participants.length < 2)
+    || access.participants.some(participant => !participant.portalEnabled)
+  ) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Enable the client portal before adding attachments',
+      statusMessage: access.conversation.kind === 'group'
+        ? 'Enable the client portal for every borrower before adding attachments'
+        : 'Enable the client portal before adding attachments',
     })
   }
 
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('reserve_staff_case_message_attachment', {
+  const commonInput = {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
-    p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_client_message_id: input.clientMessageId,
     p_file_name: input.name,
     p_content_type: input.mimeType,
     p_size_bytes: input.sizeBytes,
-  })
+  }
+  const result = access.conversation.kind === 'group'
+    ? await backend.rpc('reserve_staff_case_group_message_attachment', {
+        ...commonInput,
+        p_conversation_id: access.conversation.id,
+      })
+    : await backend.rpc('reserve_staff_case_message_attachment', {
+        ...commonInput,
+        p_client_person_id: access.clientPerson!.clientPersonId,
+      })
   throwAttachmentDbError(result.error)
   const reservation = reservationFromRpc(result.data, access, input)
 

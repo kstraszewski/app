@@ -24,6 +24,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     id: ids.conversation,
     organizationId: ids.organization,
     caseId: ids.case,
+    kind: 'direct',
     clientId: ids.client,
     clientPersonId: ids.clientPerson,
     lastMessageSequence: 7,
@@ -103,6 +104,7 @@ function build(overrides: {
 test('maps a conversation summary and normalizes display values', () => {
   assert.deepEqual(build(), {
     conversationId: ids.conversation,
+    kind: 'direct',
     caseId: ids.case,
     caseTitle: 'Kredyt hipoteczny',
     caseStatusCode: 'active',
@@ -110,14 +112,48 @@ test('maps a conversation summary and normalizes display values', () => {
     clientPersonId: ids.clientPerson,
     clientName: 'Anna Kowalska',
     clientEmail: 'anna@example.com',
+    participants: [],
     lastMessageSequence: 7,
     lastMessageAt: '2026-08-03T10:07:00.000Z',
     lastMessagePreview: 'Dzień dobry Jak możemy pomóc?',
     lastMessageSenderKind: 'staff',
+    lastMessageSenderName: null,
     lastMessageSentByCurrentUser: true,
     readThroughSequence: 3,
     unreadCount: 4,
   })
+})
+
+test('maps a group conversation with participant metadata and client sender label', () => {
+  const item = buildCrmConversationInboxItem({
+    conversation: conversation({
+      kind: 'group',
+      clientId: null,
+      clientPersonId: null,
+    }),
+    caseData: { id: ids.case, title: 'Kredyt wspólny', statusCode: 'active' },
+    clientPerson: null,
+    participants: [
+      { id: ids.clientPerson, clientId: ids.client, displayName: 'Anna Kowalska', email: 'anna@example.com' },
+      { id: 'person-2', clientId: ids.client, displayName: 'Jan Kowalski', email: 'jan@example.com' },
+    ],
+    lastMessage: message({
+      senderKind: 'client',
+      senderUserId: null,
+      senderClientPersonId: ids.clientPerson,
+      senderAuthUserId: 'auth-user-1',
+    }),
+    receipt: receipt(),
+    currentUserId: ids.staff,
+  })
+
+  assert.equal(item?.clientName, 'Wszyscy kredytobiorcy (2)')
+  assert.equal(item?.clientPersonId, null)
+  assert.equal(item?.lastMessageSenderName, 'Anna Kowalska')
+  assert.deepEqual(item?.participants.map(participant => participant.displayName), [
+    'Anna Kowalska',
+    'Jan Kowalski',
+  ])
 })
 
 test('compacts whitespace and truncates a long preview without exceeding the limit', () => {

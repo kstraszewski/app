@@ -56,6 +56,7 @@ export function buildCrmConversationInboxItem(input: {
   conversation: Conversation
   caseData: CrmConversationInboxCase | null
   clientPerson: CrmConversationInboxPerson | null
+  participants?: CrmConversationInboxPerson[]
   lastMessage: Message | null
   receipt: Receipt | null
   currentUserId: string
@@ -70,7 +71,15 @@ export function buildCrmConversationInboxItem(input: {
     && input.clientPerson.clientId === conversation.clientId
     ? input.clientPerson
     : null
+  const participants = (input.participants ?? []).filter((participant, index, values) => (
+    values.findIndex(candidate => candidate.id === participant.id) === index
+  ))
+  const groupName = `Wszyscy kredytobiorcy (${participants.length})`
   const lastMessage = matchingLatestMessage(conversation, input.lastMessage)
+  const lastClientSender = lastMessage?.senderClientPersonId
+    ? participants.find(participant => participant.id === lastMessage.senderClientPersonId)
+      ?? (clientPerson?.id === lastMessage.senderClientPersonId ? clientPerson : null)
+    : null
   const receipt = matchingReceipt(conversation, input.receipt, currentUserId)
   const readThroughSequence = Math.min(
     conversation.lastMessageSequence,
@@ -79,19 +88,33 @@ export function buildCrmConversationInboxItem(input: {
 
   return {
     conversationId: conversation.id,
+    kind: conversation.kind,
     caseId: conversation.caseId,
     caseTitle: caseData?.title.trim() || 'Sprawa bez nazwy',
     caseStatusCode: caseData?.statusCode ?? null,
     clientId: conversation.clientId,
     clientPersonId: conversation.clientPersonId,
-    clientName: clientPerson?.displayName.trim() || 'Klient',
-    clientEmail: clientPerson?.email?.trim() || null,
+    clientName: conversation.kind === 'group'
+      ? groupName
+      : clientPerson?.displayName.trim() || 'Klient',
+    clientEmail: conversation.kind === 'group'
+      ? null
+      : clientPerson?.email?.trim() || null,
+    participants: participants.map(participant => ({
+      clientId: participant.clientId,
+      clientPersonId: participant.id,
+      displayName: participant.displayName.trim() || 'Klient',
+      email: participant.email?.trim() || null,
+    })),
     lastMessageSequence: conversation.lastMessageSequence,
     lastMessageAt: conversation.lastMessageAt,
     lastMessagePreview: lastMessage
       ? buildMessagePreview(lastMessage.body, lastMessage.attachments)
       : null,
     lastMessageSenderKind: lastMessage?.senderKind ?? null,
+    lastMessageSenderName: lastMessage?.senderKind === 'client'
+      ? lastClientSender?.displayName.trim() || 'Klient'
+      : null,
     lastMessageSentByCurrentUser: Boolean(
       lastMessage?.senderKind === 'staff'
       && lastMessage.senderUserId === currentUserId,

@@ -245,7 +245,7 @@ watch(() => props.refreshKey, () => {
                   · {{ formatMessageAttachmentBytes(attachment.sizeBytes) }}
                 </span>
                 <small>
-                  {{ clientName || 'Klient' }} ·
+                  {{ attachment.uploaderName || clientName || 'Klient' }} ·
                   <time :datetime="attachment.sentAt">{{ formatSentAt(attachment.sentAt) }}</time>
                 </small>
               </div>

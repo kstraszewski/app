@@ -14,6 +14,7 @@ type AdminRoleKey =
   | 'consents_admin'
   | 'forum_admin'
   | 'crm_config_admin'
+  | 'experiments_access'
   | 'none'
 type AssignedAdminRoleKey = Exclude<AdminRoleKey, 'none'>
 type UserStatus = 'active' | 'pending' | 'inactive'
@@ -108,6 +109,12 @@ const accessProfiles: Record<AdminRoleKey, {
     summary: 'Założenia zdolności i parametry usług',
     icon: 'i-lucide-sliders-horizontal',
     color: 'info',
+  },
+  experiments_access: {
+    label: 'Dostęp do eksperymentów',
+    summary: 'Prototypowe narzędzia wspierane przez Eve',
+    icon: 'i-lucide-flask-conical',
+    color: 'primary',
   },
   none: {
     label: 'Brak roli administracyjnej',

@@ -41,6 +41,7 @@ const emptyGraph: TeamGraphListPayload = {
       teamAdmin: false,
       facilityAdmin: false,
       canManageTeams: false,
+      canUseExperiments: false,
     },
   },
   teams: [],

@@ -33,6 +33,7 @@ const conversationSelect = [
   'id',
   'organization_id',
   'case_id',
+  'kind',
   'client_id',
   'client_person_id',
   'last_message_sequence',
@@ -61,6 +62,7 @@ const replyMessageSelect = [
   'id',
   'sequence',
   'sender_kind',
+  'sender_client_person_id',
   'body',
   'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
@@ -85,7 +87,7 @@ interface CaseAccess {
   ownerUserId: string | null
 }
 
-interface ClientPersonAccess {
+export interface ClientPersonAccess {
   clientId: string
   clientPersonId: string
   displayName: string
@@ -96,7 +98,8 @@ interface ClientPersonAccess {
 }
 
 export interface CaseConversationAccess extends CaseAccess {
-  clientPerson: ClientPersonAccess
+  clientPerson: ClientPersonAccess | null
+  participants: ClientPersonAccess[]
   conversation: Conversation
 }
 
@@ -267,10 +270,49 @@ async function findConversationByPerson(
     .select(conversationSelect)
     .eq('organization_id', access.session.organizationId)
     .eq('case_id', access.caseId)
+    .eq('kind', 'direct')
     .eq('client_person_id', clientPersonId)
     .maybeSingle()
   throwDbError(result.error)
   return result.data ? mapConversationRow(result.data) : null
+}
+
+async function loadConversationParticipants(
+  event: H3Event,
+  access: CaseAccess,
+  conversation: Conversation,
+): Promise<ClientPersonAccess[]> {
+  if (conversation.kind === 'direct') {
+    if (!conversation.clientPersonId) {
+      throw createError({ statusCode: 500, statusMessage: 'Conversation has no recipient' })
+    }
+    return [await requireClientPersonAccess(
+      event,
+      access,
+      conversation.clientPersonId,
+    )]
+  }
+
+  const backend = serverDataBackend(event) as any
+  const participantResult = await backend
+    .from('crm_case_conversation_participants')
+    .select('client_id, client_person_id')
+    .eq('organization_id', access.session.organizationId)
+    .eq('conversation_id', conversation.id)
+    .is('removed_at', null)
+    .order('joined_at')
+  throwDbError(participantResult.error)
+
+  const participants = await Promise.all((participantResult.data ?? []).map(
+    (row: Record<string, unknown>) => requireClientPersonAccess(
+      event,
+      access,
+      String(row.client_person_id),
+    ),
+  ))
+  return participants.filter(participant => (
+    participant.portalEnabled && participant.portalActivated
+  ))
 }
 
 async function findConversationById(
@@ -306,6 +348,7 @@ async function ensureConversation(
     .upsert({
       organization_id: access.session.organizationId,
       case_id: access.caseId,
+      kind: 'direct',
       client_id: clientPerson.clientId,
       client_person_id: clientPerson.clientPersonId,
     }, {
@@ -328,12 +371,13 @@ export async function requireCaseConversationAccess(
 ): Promise<CaseConversationAccess> {
   const access = await requireCaseAccess(event, caseIdInput)
   const conversation = await findConversationById(access, conversationIdInput)
-  const clientPerson = await requireClientPersonAccess(
-    event,
-    access,
-    conversation.clientPersonId,
-  )
-  return { ...access, conversation, clientPerson }
+  const participants = await loadConversationParticipants(event, access, conversation)
+  return {
+    ...access,
+    conversation,
+    participants,
+    clientPerson: conversation.kind === 'direct' ? participants[0] ?? null : null,
+  }
 }
 
 export async function ensureCaseConversation(
@@ -350,7 +394,37 @@ export async function ensureCaseConversation(
     })
   }
   const conversation = await ensureConversation(event, access, clientPerson)
-  return { ...access, conversation, clientPerson }
+  return { ...access, conversation, clientPerson, participants: [clientPerson] }
+}
+
+export async function ensureCaseGroupConversation(
+  event: H3Event,
+  caseIdInput: unknown,
+): Promise<CaseConversationAccess> {
+  const access = await requireCaseAccess(event, caseIdInput)
+  const backend = serverDataBackend(event) as any
+  const result = await backend.rpc('ensure_case_group_conversation', {
+    p_organization_id: access.session.organizationId,
+    p_case_id: access.caseId,
+  })
+  throwDbError(result.error)
+
+  const payload = asRecord(result.data)
+  const conversationId = payload.conversationId
+    ?? payload.conversation_id
+    ?? payload.id
+  if (!conversationId) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Activate the client portal for at least two borrowers before starting a group conversation',
+    })
+  }
+  const conversation = await findConversationById(access, conversationId)
+  if (conversation.kind !== 'group') {
+    throw createError({ statusCode: 500, statusMessage: 'Group conversation returned an invalid result' })
+  }
+  const participants = await loadConversationParticipants(event, access, conversation)
+  return { ...access, conversation, participants, clientPerson: null }
 }
 
 async function loadMessages(
@@ -457,7 +531,11 @@ function higherReceipt(left: Receipt, right: Receipt): Receipt {
 
 async function loadReceipts(
   access: CaseConversationAccess,
-): Promise<{ receipt: Receipt | null, peerReceipt: Receipt | null }> {
+): Promise<{
+  receipt: Receipt | null
+  peerReceipt: Receipt | null
+  peerReceipts: Receipt[]
+}> {
   const result = await access.session.dataApi
     .from('crm_case_conversation_states')
     .select(receiptSelect)
@@ -470,12 +548,12 @@ async function loadReceipts(
     candidate.participantKind === 'staff'
     && candidate.participantUserId === access.session.userId
   )) ?? null
-  const peerReceipt = receipts
-    .filter(candidate => candidate.participantKind === 'client')
+  const peerReceipts = receipts.filter(candidate => candidate.participantKind === 'client')
+  const peerReceipt = peerReceipts
     .reduce<Receipt | null>((highest, candidate) => (
       highest ? higherReceipt(highest, candidate) : candidate
     ), null)
-  return { receipt, peerReceipt }
+  return { receipt, peerReceipt, peerReceipts }
 }
 
 export async function loadCaseConversationSnapshot(
@@ -483,7 +561,9 @@ export async function loadCaseConversationSnapshot(
   access: CaseConversationAccess,
   page: ConversationPageRequest,
 ): Promise<ConversationSnapshot & {
-  clientPerson: ClientPersonAccess
+  clientPerson: ClientPersonAccess | null
+  participants: ClientPersonAccess[]
+  peerReceipts: Receipt[]
   realtime: ReturnType<typeof conversationRealtime>
 }> {
   const [messagePage, receipts] = await Promise.all([
@@ -493,9 +573,11 @@ export async function loadCaseConversationSnapshot(
   return {
     conversation: access.conversation,
     clientPerson: access.clientPerson,
+    participants: access.participants,
     messages: messagePage.messages,
     receipt: receipts.receipt,
     peerReceipt: receipts.peerReceipt,
+    peerReceipts: receipts.peerReceipts,
     pageInfo: {
       lastSequence: messagePage.lastSequence,
       hasMore: messagePage.hasMore,
@@ -563,7 +645,7 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
   ]))
 
   const summaries = await Promise.all(conversations.map(async (conversation) => {
-    const [messageResult, receiptResult] = await Promise.all([
+    const [messageResult, receiptResult, participants] = await Promise.all([
       access.session.dataApi
         .from('crm_case_messages')
         .select('body, created_at, attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)')
@@ -580,13 +662,17 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
         .eq('participant_kind', 'staff')
         .eq('participant_user_id', access.session.userId)
         .maybeSingle(),
+      loadConversationParticipants(event, access, conversation),
     ])
     throwDbError(messageResult.error)
     throwDbError(receiptResult.error)
     const readThroughSequence = Number(receiptResult.data?.read_through_sequence ?? 0)
     return {
       ...conversation,
-      clientPerson: recipientByPerson.get(conversation.clientPersonId) ?? null,
+      clientPerson: conversation.clientPersonId
+        ? recipientByPerson.get(conversation.clientPersonId) ?? null
+        : null,
+      participants,
       unreadCount: Math.max(0, conversation.lastMessageSequence - readThroughSequence),
       lastMessagePreview: messageResult.data
         ? buildMessagePreview(
@@ -596,10 +682,11 @@ export async function listCaseConversations(event: H3Event, caseIdInput: unknown
         : null,
     }
   }))
-  const conversationByPerson = new Map(conversations.map(conversation => [
-    conversation.clientPersonId,
-    conversation.id,
-  ]))
+  const conversationByPerson = new Map(conversations.flatMap(conversation => (
+    conversation.kind === 'direct' && conversation.clientPersonId
+      ? [[conversation.clientPersonId, conversation.id] as const]
+      : []
+  )))
 
   return {
     conversations: summaries,
@@ -640,6 +727,8 @@ function rpcMessage(input: unknown): Message {
           id: reply.id,
           sequence: reply.sequence,
           sender_kind: reply.senderKind ?? reply.sender_kind,
+          sender_client_person_id:
+            reply.senderClientPersonId ?? reply.sender_client_person_id ?? null,
           body: reply.body,
           attachments: reply.attachments
             ?? reply.crm_case_message_attachments
@@ -760,23 +849,37 @@ export async function sendStaffConversationMessage(
   access: CaseConversationAccess,
   input: SendMessageInput,
 ) {
-  if (!access.clientPerson.portalEnabled) {
+  if (
+    !access.participants.length
+    || (access.conversation.kind === 'group' && access.participants.length < 2)
+    || access.participants.some(participant => !participant.portalEnabled)
+  ) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Enable the client portal before sending a message',
+      statusMessage: access.conversation.kind === 'group'
+        ? 'Enable the client portal for every borrower before sending a group message'
+        : 'Enable the client portal before sending a message',
     })
   }
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_staff_case_message_v3', {
+  const commonInput = {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
-    p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_client_message_id: input.clientMessageId,
     p_reply_to_message_id: input.replyToMessageId ?? null,
     p_body: input.body,
     p_attachment_ids: input.attachmentIds,
-  })
+  }
+  const result = access.conversation.kind === 'group'
+    ? await backend.rpc('send_staff_case_group_message_v1', {
+        ...commonInput,
+        p_conversation_id: access.conversation.id,
+      })
+    : await backend.rpc('send_staff_case_message_v3', {
+        ...commonInput,
+        p_client_person_id: access.clientPerson!.clientPersonId,
+      })
   if (
     result.error
     && String(result.error.message ?? '').includes('case_message_reply_')
@@ -825,17 +928,21 @@ export async function sendStaffConversationMessage(
     const deliveryResults = [realtimeResult]
     if (realtimeResult.published) {
       try {
-        const recipientIds = await clientPushIds(
-          event,
-          access.session.organizationId,
-          access.clientPerson.clientId,
-          access.clientPerson.clientPersonId,
-        )
+        const recipientIds = [...new Set((await Promise.all(
+          access.participants.map(participant => clientPushIds(
+            event,
+            access.session.organizationId,
+            participant.clientId,
+            participant.clientPersonId,
+          )),
+        )).flat())]
         deliveryResults.push(...await Promise.all(recipientIds.map(clientId => (
           publishDirectMessagePush(
             event,
             clientId,
-            `/messages?case=${encodeURIComponent(access.caseId)}`,
+            `/messages?case=${encodeURIComponent(access.caseId)}${
+              access.conversation.kind === 'group' ? '&thread=group' : ''
+            }`,
           )
         ))))
       }
@@ -870,17 +977,46 @@ export async function updateStaffConversationReceipt(
   input: ReceiptUpdateInput,
 ) {
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('update_staff_case_message_receipt', {
+  const commonInput = {
     p_organization_id: access.session.organizationId,
     p_case_id: access.caseId,
-    p_client_person_id: access.clientPerson.clientPersonId,
     p_actor_user_id: access.session.userId,
     p_delivered_through_sequence: input.deliveredThroughSequence ?? null,
     p_read_through_sequence: input.readThroughSequence ?? null,
-  })
+  }
+  const result = access.conversation.kind === 'group'
+    ? await backend.rpc('update_staff_case_group_message_receipt', {
+        ...commonInput,
+        p_conversation_id: access.conversation.id,
+      })
+    : await backend.rpc('update_staff_case_message_receipt', {
+        ...commonInput,
+        p_client_person_id: access.clientPerson!.clientPersonId,
+      })
   throwDbError(result.error)
 
   const payload = asRecord(result.data)
+  let notificationsReadCount = 0
+  if ((input.readThroughSequence ?? 0) > 0) {
+    const notificationResult = await backend.rpc(
+      'mark_staff_case_message_notifications_read',
+      {
+        p_organization_id: access.session.organizationId,
+        p_case_id: access.caseId,
+        p_conversation_id: access.conversation.id,
+        p_actor_user_id: access.session.userId,
+        p_read_through_sequence: input.readThroughSequence,
+      },
+    )
+    throwDbError(notificationResult.error)
+    const notificationPayload = asRecord(notificationResult.data)
+    const rawNotificationsReadCount = Number(
+      notificationPayload.updatedCount ?? notificationPayload.updated_count ?? 0,
+    )
+    notificationsReadCount = Number.isSafeInteger(rawNotificationsReadCount)
+      ? Math.max(0, rawNotificationsReadCount)
+      : 0
+  }
   const changed = payload.changed === true
   if (changed) {
     const sequence = Math.max(
@@ -904,6 +1040,7 @@ export async function updateStaffConversationReceipt(
   return {
     ...receipts,
     changed,
+    notificationsReadCount,
     realtime: conversationRealtime(event, access.conversation.id),
   }
 }
@@ -961,13 +1098,13 @@ async function pushOutboxMessage(
   const [messageResult, conversationResult] = await Promise.all([
     backend
       .from('crm_case_messages')
-      .select('sender_kind')
+      .select('sender_kind, sender_client_person_id')
       .eq('conversation_id', durableEvent.conversationId)
       .eq('id', durableEvent.messageId)
       .maybeSingle(),
     backend
       .from('crm_case_conversations')
-      .select('organization_id, case_id, client_id, client_person_id')
+      .select('organization_id, case_id, kind, client_id, client_person_id')
       .eq('id', durableEvent.conversationId)
       .maybeSingle(),
   ])
@@ -979,19 +1116,64 @@ async function pushOutboxMessage(
   const caseId = String(conversation.case_id)
   const organizationId = String(conversation.organization_id)
   if (String(messageResult.data.sender_kind) === 'staff') {
-    const ids = await clientPushIds(
-      event,
-      organizationId,
-      String(conversation.client_id),
-      String(conversation.client_person_id),
-    )
+    let participantRows: Record<string, unknown>[] = []
+    if (String(conversation.kind) === 'group') {
+      const participantResult = await backend
+        .from('crm_case_conversation_participants')
+        .select('client_id, client_person_id')
+        .eq('organization_id', organizationId)
+        .eq('conversation_id', durableEvent.conversationId)
+        .is('removed_at', null)
+      throwDbError(participantResult.error)
+      participantRows = (participantResult.data ?? []) as Record<string, unknown>[]
+    }
+    else if (conversation.client_id && conversation.client_person_id) {
+      participantRows = [conversation]
+    }
+    const ids = [...new Set((await Promise.all(participantRows.map(participant => (
+      clientPushIds(
+        event,
+        organizationId,
+        String(participant.client_id),
+        String(participant.client_person_id),
+      )
+    )))).flat())]
     const results = await Promise.all(ids.map(clientId => publishDirectMessagePush(
       event,
       clientId,
-      `/messages?case=${encodeURIComponent(caseId)}`,
+      `/messages?case=${encodeURIComponent(caseId)}${
+        String(conversation.kind) === 'group' ? '&thread=group' : ''
+      }`,
     )))
     requireSuccessfulPushes(results)
     return
+  }
+
+  if (String(conversation.kind) === 'group') {
+    const participantResult = await backend
+      .from('crm_case_conversation_participants')
+      .select('client_id, client_person_id')
+      .eq('organization_id', organizationId)
+      .eq('conversation_id', durableEvent.conversationId)
+      .neq('client_person_id', String(messageResult.data.sender_client_person_id))
+      .is('removed_at', null)
+    throwDbError(participantResult.error)
+    const peerIds = [...new Set((await Promise.all(
+      ((participantResult.data ?? []) as Record<string, unknown>[]).map(participant => (
+        clientPushIds(
+          event,
+          organizationId,
+          String(participant.client_id),
+          String(participant.client_person_id),
+        )
+      )),
+    )).flat())]
+    const peerPushes = await Promise.all(peerIds.map(clientId => publishDirectMessagePush(
+      event,
+      clientId,
+      `/messages?case=${encodeURIComponent(caseId)}&thread=group`,
+    )))
+    requireSuccessfulPushes(peerPushes)
   }
 
   const [caseResult, organizationResult] = await Promise.all([
@@ -1019,7 +1201,7 @@ async function pushOutboxMessage(
     const pushResult = await publishDirectMessagePush(
       event,
       `staff:${ownerUserId}`,
-      `/org/${encodeURIComponent(organizationSlug)}/cases/${caseId}?view=messages`,
+      `/org/${encodeURIComponent(organizationSlug)}/cases/${caseId}?view=messages&conversation=${encodeURIComponent(durableEvent.conversationId)}`,
     )
     requireSuccessfulPushes([pushResult])
   }

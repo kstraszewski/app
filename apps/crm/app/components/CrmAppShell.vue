@@ -31,6 +31,9 @@ const {
 } = useCrmMeetingPrototype()
 const user = useAuthUser()
 const route = useRoute()
+const hasEmbeddedEve = computed(() => (
+  /\/experiments\/(?:text-editor|dynamic-content-editor)\/?$/.test(route.path)
+))
 const organizationSlug = computed(() => {
   const raw = route.params.organizationSlug
   return Array.isArray(raw) ? String(raw[0] ?? '') : String(raw ?? '')
@@ -88,6 +91,9 @@ const canViewFacilities = computed(() => (
   || activeOrganization.value?.capabilities?.facilityAdmin === true
 ))
 const isSuperAdmin = computed(() => organizations.value.access.superAdmin)
+const canUseExperiments = computed(() => (
+  activeOrganization.value?.capabilities?.canUseExperiments === true
+))
 const sidebarToggleLabel = computed(() => {
   if (mobileViewport.value) return mobileNavigationOpen.value ? 'Zamknij nawigację' : 'Otwórz nawigację'
   return sidebarCollapsed.value ? 'Rozwiń nawigację' : 'Zwiń nawigację'
@@ -296,6 +302,25 @@ const navGroups = computed<NavigationGroup[]>(() => {
     ],
   }]
 
+  if (canUseExperiments.value) {
+    groups.push({
+      key: 'experiments',
+      label: 'Eksperymenty',
+      items: [
+        {
+          label: 'Edytor tekstu',
+          to: `${organizationBase.value}/experiments/text-editor`,
+          icon: 'i-lucide-file-pen-line',
+        },
+        {
+          label: 'Dynamiczny content',
+          to: `${organizationBase.value}/experiments/dynamic-content-editor`,
+          icon: 'i-lucide-panels-top-left',
+        },
+      ],
+    })
+  }
+
   if (canUseTeamAdministration.value) {
     const limitedScope = !isOrganizationAdmin.value
     const teamAdminItems: NavigationItem[] = []
@@ -369,7 +394,7 @@ const navGroups = computed<NavigationGroup[]>(() => {
 const omnisearchPages = computed(() => {
   const pageGroups = (isOrganizationAdmin.value || isSuperAdmin.value)
     ? [...navGroups.value].sort((left, right) => {
-        const priority = { admin: 0, 'team-admin': 1, overview: 2, expert: 3, calculators: 4 }
+        const priority = { admin: 0, 'team-admin': 1, experiments: 2, overview: 3, expert: 4, calculators: 5 }
         return (priority[left.key as keyof typeof priority] ?? 5)
           - (priority[right.key as keyof typeof priority] ?? 5)
       })
@@ -681,7 +706,7 @@ async function signOut() {
     </section>
 
     <CrmEveAssistant
-      v-if="!props.assistantPage"
+      v-if="!props.assistantPage && !hasEmbeddedEve"
       :key="organizationSlug"
       :inert="mobileNavigationOpen || undefined"
       :aria-hidden="mobileNavigationOpen ? 'true' : undefined"

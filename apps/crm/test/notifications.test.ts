@@ -2,12 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { InAppNotification } from '../shared/types/notifications.ts'
 import {
+  NOTIFICATION_FEED_INVALIDATED_EVENT,
   mergeInAppNotifications,
   mergeNotificationIds,
   normalizeNotificationFeedResponse,
   normalizeNotificationRealtimeEvent,
   normalizeNotificationSnapshotResponse,
   notificationBadgeLabel,
+  notificationFeedInvalidationMatches,
   safeNotificationActionPath,
 } from '../app/utils/notifications.ts'
 
@@ -116,6 +118,15 @@ test('allows navigation only inside the active organization', () => {
   assert.equal(safeNotificationActionPath('//evil.example/org/acme', 'acme'), null)
   assert.equal(safeNotificationActionPath('https://evil.example/org/acme', 'acme'), null)
   assert.equal(safeNotificationActionPath('/org/acme\\@evil.example', 'acme'), null)
+})
+
+test('scopes local notification invalidations to the active organization', () => {
+  const event = new CustomEvent(NOTIFICATION_FEED_INVALIDATED_EVENT, {
+    detail: { organizationSlug: 'acme' },
+  })
+  assert.equal(notificationFeedInvalidationMatches(event, 'acme'), true)
+  assert.equal(notificationFeedInvalidationMatches(event, 'other'), false)
+  assert.equal(notificationFeedInvalidationMatches(new Event('other'), 'acme'), false)
 })
 
 test('normalizes the minimal invalidation-only realtime event', () => {

@@ -1,12 +1,19 @@
-import { createError, getRouterParam, setHeader } from 'h3'
+import { createError, getQuery, getRouterParam, setHeader } from 'h3'
 import { createConversationTokenRequest } from '~~/server/utils/messaging-ably'
-import { requirePortalConversation } from '~~/server/utils/portal-conversation'
+import {
+  parsePortalConversationThread,
+  requirePortalConversation,
+} from '~~/server/utils/portal-conversation'
 import { requiredUuid } from '~~/server/utils/portal-auth'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
   const caseId = requiredUuid(getRouterParam(event, 'caseId'), 'caseId')
-  const context = await requirePortalConversation(event, caseId)
+  const context = await requirePortalConversation(
+    event,
+    caseId,
+    parsePortalConversationThread(getQuery(event).thread),
+  )
   const token = await createConversationTokenRequest(
     event,
     context.conversation.id,

@@ -20,6 +20,7 @@ export function messageReplyReference(message: Message): MessageReplyReference {
     id: message.id,
     sequence: message.sequence,
     senderKind: message.senderKind,
+    senderClientPersonId: message.senderClientPersonId,
     body: message.body,
     attachments: [...message.attachments],
   }

@@ -1,11 +1,13 @@
 export type ConversationParticipantKind = 'staff' | 'client'
+export type ConversationKind = 'direct' | 'group'
 
 export interface Conversation {
   id: string
   organizationId: string
   caseId: string
-  clientId: string
-  clientPersonId: string
+  kind: ConversationKind
+  clientId: string | null
+  clientPersonId: string | null
   lastMessageSequence: number
   lastMessageAt: string | null
   createdAt: string
@@ -16,6 +18,7 @@ export interface MessageReplyReference {
   id: string
   sequence: number
   senderKind: ConversationParticipantKind
+  senderClientPersonId: string | null
   body: string
   attachments: MessageAttachment[]
 }

@@ -3,6 +3,7 @@ import {
   mapMessageRow,
   mapReceiptRows,
   type Conversation,
+  type ConversationKind,
   type ConversationSnapshot,
   type Message,
   type Receipt,
@@ -41,6 +42,7 @@ const conversationSelect = [
   'id',
   'organization_id',
   'case_id',
+  'kind',
   'client_id',
   'client_person_id',
   'last_message_sequence',
@@ -69,6 +71,7 @@ const replyMessageSelect = [
   'id',
   'sequence',
   'sender_kind',
+  'sender_client_person_id',
   'body',
   'attachments:crm_case_message_attachments(id,position,file_name,content_type,size_bytes)',
 ].join(',')
@@ -96,6 +99,23 @@ export interface ConversationPageRequest {
 export interface PortalConversationContext {
   access: PortalCaseAccess
   conversation: Conversation
+  participants: PortalConversationParticipant[]
+}
+
+export interface PortalConversationParticipant {
+  clientId: string
+  clientPersonId: string
+  displayName: string
+  role: string
+}
+
+export function parsePortalConversationThread(input: unknown): ConversationKind {
+  const value = Array.isArray(input) ? input[0] : input
+  if (value === undefined || value === null || value === '' || value === 'direct') {
+    return 'direct'
+  }
+  if (value === 'group') return 'group'
+  throw createError({ statusCode: 400, statusMessage: 'thread must be direct or group' })
 }
 
 interface ConversationScopeQuery {
@@ -103,6 +123,45 @@ interface ConversationScopeQuery {
   clientId: string
   clientPersonId: string
   caseIds: string[]
+}
+
+interface ScopedPortalConversation {
+  conversation: Conversation
+  currentClientPersonId: string
+  participants: PortalConversationParticipant[]
+}
+
+async function ensurePortalGroupConversation(
+  event: H3Event,
+  organizationId: string,
+  caseId: string,
+): Promise<void> {
+  const backend = serverDataBackend(event) as any
+  const result = await backend.rpc('ensure_case_group_conversation', {
+    p_organization_id: organizationId,
+    p_case_id: caseId,
+  })
+  throwPortalDbError(result.error, 'could not initialize group conversation')
+}
+
+async function ensurePortalGroupConversations(
+  event: H3Event,
+  scopes: GrantedScope[],
+): Promise<void> {
+  const cases = new Map<string, { organizationId: string, caseId: string }>()
+  for (const scope of scopes) {
+    const item = {
+      organizationId: scope.grant.organizationId,
+      caseId: scope.grant.caseId,
+    }
+    cases.set(JSON.stringify([item.organizationId, item.caseId]), item)
+  }
+
+  await Promise.all([...cases.values()].map(item => ensurePortalGroupConversation(
+    event,
+    item.organizationId,
+    item.caseId,
+  )))
 }
 
 function conversationScopeQueries(
@@ -136,10 +195,10 @@ function conversationScopeQueries(
 async function loadExistingPortalConversations(
   event: H3Event,
   scopes: GrantedScope[],
-): Promise<Conversation[]> {
+): Promise<ScopedPortalConversation[]> {
   const backend = serverDataBackend(event) as any
   const queries = conversationScopeQueries(scopes)
-  const rowGroups = await runPortalQueryChunks(
+  const directRowGroups = await runPortalQueryChunks(
     queries.map(query => [query]),
     async ([query]) => {
       if (!query) return []
@@ -147,6 +206,7 @@ async function loadExistingPortalConversations(
         .from('crm_case_conversations')
         .select(conversationSelect)
         .eq('organization_id', query.organizationId)
+        .eq('kind', 'direct')
         .eq('client_id', query.clientId)
         .eq('client_person_id', query.clientPersonId)
         .in('case_id', query.caseIds)
@@ -155,11 +215,161 @@ async function loadExistingPortalConversations(
       return (result.data ?? []) as unknown[]
     },
   )
-
-  return filterPortalConversationsInGrantedScopes(
-    rowGroups.flat().map(mapConversationRow),
+  const directConversations = filterPortalConversationsInGrantedScopes(
+    directRowGroups.flat().map(mapConversationRow),
     scopes,
   )
+
+  const membershipGroups = await runPortalQueryChunks(
+    queries.map(query => [query]),
+    async ([query]) => {
+      if (!query) return []
+      const result = await backend
+        .from('crm_case_conversation_participants')
+        .select('organization_id,case_id,conversation_id,client_id,client_person_id')
+        .eq('organization_id', query.organizationId)
+        .in('case_id', query.caseIds)
+        .eq('client_id', query.clientId)
+        .eq('client_person_id', query.clientPersonId)
+        .is('removed_at', null)
+        .limit(query.caseIds.length)
+      throwPortalDbError(result.error, 'could not list group conversation memberships')
+      return (result.data ?? []) as Record<string, unknown>[]
+    },
+  )
+  const membershipRows = membershipGroups.flat()
+  const groupConversationIds = [...new Set(membershipRows.map(row => (
+    String(row.conversation_id)
+  )))]
+  const groupRows = groupConversationIds.length
+    ? await runPortalQueryChunks(
+        chunkPortalQueryValues(groupConversationIds),
+        async (ids) => {
+          const result = await backend
+            .from('crm_case_conversations')
+            .select(conversationSelect)
+            .in('id', ids)
+            .eq('kind', 'group')
+          throwPortalDbError(result.error, 'could not list group conversations')
+          return (result.data ?? []) as unknown[]
+        },
+      )
+    : []
+  const groupsById = new Map(groupRows.flat().map((row) => {
+    const conversation = mapConversationRow(row)
+    return [conversation.id, conversation] as const
+  }))
+  const scopeByTuple = new Map(scopes.map(scope => [
+    JSON.stringify([
+      scope.grant.organizationId,
+      scope.grant.caseId,
+      scope.grant.clientId,
+      scope.link.clientPersonId,
+    ]),
+    scope,
+  ]))
+  const groupScopes = new Map<string, { conversation: Conversation, currentClientPersonId: string }>()
+  for (const membership of membershipRows) {
+    const conversation = groupsById.get(String(membership.conversation_id))
+    if (!conversation) continue
+    const scope = scopeByTuple.get(JSON.stringify([
+      String(membership.organization_id),
+      String(membership.case_id),
+      String(membership.client_id),
+      String(membership.client_person_id),
+    ]))
+    if (
+      !scope
+      || conversation.organizationId !== String(membership.organization_id)
+      || conversation.caseId !== String(membership.case_id)
+    ) continue
+    groupScopes.set(conversation.id, {
+      conversation,
+      currentClientPersonId: scope.link.clientPersonId,
+    })
+  }
+
+  const directEntries = await Promise.all(directConversations.map(async conversation => ({
+    conversation,
+    currentClientPersonId: conversation.clientPersonId!,
+    participants: await loadActiveConversationParticipants(event, conversation),
+  })))
+  const groupEntries = await Promise.all([...groupScopes.values()].map(async entry => ({
+    ...entry,
+    participants: await loadActiveConversationParticipants(event, entry.conversation),
+  })))
+  return [...directEntries, ...groupEntries]
+}
+
+async function loadActiveConversationParticipants(
+  event: H3Event,
+  conversation: Conversation,
+): Promise<PortalConversationParticipant[]> {
+  const backend = serverDataBackend(event) as any
+  let membershipRows: Record<string, unknown>[] = []
+  if (conversation.kind === 'direct') {
+    membershipRows = conversation.clientId && conversation.clientPersonId
+      ? [{
+          client_id: conversation.clientId,
+          client_person_id: conversation.clientPersonId,
+        }]
+      : []
+  }
+  else {
+    const participantResult = await backend
+      .from('crm_case_conversation_participants')
+      .select('client_id,client_person_id,joined_at')
+      .eq('organization_id', conversation.organizationId)
+      .eq('case_id', conversation.caseId)
+      .eq('conversation_id', conversation.id)
+      .is('removed_at', null)
+      .order('joined_at')
+    throwPortalDbError(
+      participantResult.error,
+      'could not load group conversation participants',
+    )
+    membershipRows = (participantResult.data ?? []) as Record<string, unknown>[]
+  }
+  const personIds = [...new Set(membershipRows.map(row => String(row.client_person_id)))]
+  if (!personIds.length) return []
+
+  const [peopleResult, grantsResult] = await Promise.all([
+    backend
+      .from('crm_client_people')
+      .select('id,client_id,display_name,role')
+      .eq('organization_id', conversation.organizationId)
+      .in('id', personIds),
+    backend
+      .from('client_portal_case_grants')
+      .select('client_id,client_person_id')
+      .eq('organization_id', conversation.organizationId)
+      .eq('case_id', conversation.caseId)
+      .in('client_person_id', personIds)
+      .eq('portal_enabled', true)
+      .is('revoked_at', null),
+  ])
+  throwPortalDbError(peopleResult.error, 'could not load conversation participants')
+  throwPortalDbError(grantsResult.error, 'could not validate conversation participants')
+  const activeGrantKeys = new Set((grantsResult.data ?? []).map((row: Record<string, unknown>) => (
+    JSON.stringify([String(row.client_id), String(row.client_person_id)])
+  )))
+  const personByKey = new Map<string, Record<string, unknown>>((peopleResult.data ?? []).map((row: Record<string, unknown>) => [
+    JSON.stringify([String(row.client_id), String(row.id)]),
+    row,
+  ]))
+  return membershipRows.flatMap((membership: Record<string, unknown>) => {
+    const clientId = String(membership.client_id)
+    const clientPersonId = String(membership.client_person_id)
+    const key = JSON.stringify([clientId, clientPersonId])
+    const person = personByKey.get(key)
+    if (!person || !activeGrantKeys.has(key)) return []
+    return [{
+      clientId,
+      clientPersonId,
+      displayName: String(person.display_name ?? ''),
+      role: String(person.role ?? ''),
+    }]
+  })
 }
 
 async function loadPortalConversationLastMessages(
@@ -211,29 +421,31 @@ async function loadPortalConversationLastMessages(
 
 async function loadPortalConversationReceipts(
   event: H3Event,
-  conversations: Conversation[],
+  entries: ScopedPortalConversation[],
 ): Promise<Map<string, Receipt>> {
   const backend = serverDataBackend(event) as any
-  const conversationById = new Map(conversations.map(conversation => [
-    conversation.id,
-    conversation,
+  const entryById = new Map(entries.map(entry => [
+    entry.conversation.id,
+    entry,
   ]))
   const rowsByChunk = await runPortalQueryChunks(
-    chunkPortalQueryValues(conversations, 40),
+    chunkPortalQueryValues(entries, 40),
     async (chunk) => {
+      const personIds = [...new Set(chunk.map(entry => entry.currentClientPersonId))]
       const result = await backend
         .from('crm_case_conversation_states')
         .select(receiptSelect)
-        .in('conversation_id', chunk.map(conversation => conversation.id))
+        .in('conversation_id', chunk.map(entry => entry.conversation.id))
         .eq('participant_kind', 'client')
-        .limit(chunk.length)
+        .in('participant_client_person_id', personIds)
+        .limit(chunk.length * personIds.length)
       throwPortalDbError(result.error, 'could not load conversation read state')
       return mapReceiptRows(result.data ?? []).filter((receipt) => {
-        const conversation = conversationById.get(receipt.conversationId)
+        const entry = entryById.get(receipt.conversationId)
         return Boolean(
-          conversation
-          && receipt.organizationId === conversation.organizationId
-          && receipt.participantClientPersonId === conversation.clientPersonId,
+          entry
+          && receipt.organizationId === entry.conversation.organizationId
+          && receipt.participantClientPersonId === entry.currentClientPersonId,
         )
       })
     },
@@ -253,21 +465,24 @@ export async function listPortalConversationSummaries(
   const scopes = await loadGrantedScopes(event, session)
   if (!scopes.length) return []
 
-  // Unlike a case conversation GET/POST, an inbox read must never create a
-  // conversation merely because the client can access the case.
-  const conversations = await loadExistingPortalConversations(event, scopes)
-  if (!conversations.length) return []
+  await ensurePortalGroupConversations(event, scopes)
+  const entries = await loadExistingPortalConversations(event, scopes)
+  if (!entries.length) return []
+  const conversations = entries.map(entry => entry.conversation)
 
   const [lastMessageByConversation, receiptByConversation] = await Promise.all([
     loadPortalConversationLastMessages(event, conversations),
-    loadPortalConversationReceipts(event, conversations),
+    loadPortalConversationReceipts(event, entries),
   ])
 
-  return conversations
-    .map(conversation => buildPortalConversationSummary(
-      conversation,
-      receiptByConversation.get(conversation.id) ?? null,
-      lastMessageByConversation.get(conversation.id) ?? null,
+  return entries
+    .filter(entry => entry.conversation.kind === 'direct' || entry.participants.length >= 2)
+    .map(entry => buildPortalConversationSummary(
+      entry.conversation,
+      receiptByConversation.get(entry.conversation.id) ?? null,
+      lastMessageByConversation.get(entry.conversation.id) ?? null,
+      entry.currentClientPersonId,
+      entry.participants,
     ))
     .sort((left, right) => {
       const leftTime = left.lastMessageAt ? Date.parse(left.lastMessageAt) : -1
@@ -327,24 +542,49 @@ export function parseConversationPageQuery(
 async function findConversation(
   event: H3Event,
   access: PortalCaseAccess,
+  kind: ConversationKind,
 ): Promise<Conversation | null> {
   const backend = serverDataBackend(event) as any
-  const result = await backend
+  let request = backend
     .from('crm_case_conversations')
     .select(conversationSelect)
     .eq('organization_id', access.grant.organizationId)
     .eq('case_id', access.grant.caseId)
-    .eq('client_person_id', access.link.clientPersonId)
-    .maybeSingle()
+    .eq('kind', kind)
+  if (kind === 'direct') {
+    request = request
+      .eq('client_id', access.grant.clientId)
+      .eq('client_person_id', access.link.clientPersonId)
+  }
+  const result = await request.maybeSingle()
   throwPortalDbError(result.error, 'could not load case conversation')
-  return result.data ? mapConversationRow(result.data) : null
+  if (!result.data) return null
+
+  const conversation = mapConversationRow(result.data)
+  if (kind === 'direct') return conversation
+
+  const participantResult = await backend
+    .from('crm_case_conversation_participants')
+    .select('conversation_id')
+    .eq('organization_id', access.grant.organizationId)
+    .eq('case_id', access.grant.caseId)
+    .eq('conversation_id', conversation.id)
+    .eq('client_id', access.grant.clientId)
+    .eq('client_person_id', access.link.clientPersonId)
+    .is('removed_at', null)
+    .maybeSingle()
+  throwPortalDbError(
+    participantResult.error,
+    'could not validate group conversation membership',
+  )
+  return participantResult.data ? conversation : null
 }
 
 async function ensureConversation(
   event: H3Event,
   access: PortalCaseAccess,
 ): Promise<Conversation> {
-  const existing = await findConversation(event, access)
+  const existing = await findConversation(event, access, 'direct')
   if (existing) return existing
 
   const backend = serverDataBackend(event) as any
@@ -353,6 +593,7 @@ async function ensureConversation(
     .upsert({
       organization_id: access.grant.organizationId,
       case_id: access.grant.caseId,
+      kind: 'direct',
       client_id: access.grant.clientId,
       client_person_id: access.link.clientPersonId,
     }, {
@@ -361,7 +602,7 @@ async function ensureConversation(
     })
   throwPortalDbError(createResult.error, 'could not initialize case conversation')
 
-  const created = await findConversation(event, access)
+  const created = await findConversation(event, access, 'direct')
   if (!created) {
     throw createError({
       statusCode: 500,
@@ -374,10 +615,27 @@ async function ensureConversation(
 export async function requirePortalConversation(
   event: H3Event,
   caseId: string,
+  kind: ConversationKind = 'direct',
 ): Promise<PortalConversationContext> {
   const access = await requirePortalCaseAccess(event, caseId)
-  const conversation = await ensureConversation(event, access)
-  return { access, conversation }
+  if (kind === 'group') {
+    await ensurePortalGroupConversation(
+      event,
+      access.grant.organizationId,
+      access.grant.caseId,
+    )
+  }
+  const conversation = kind === 'direct'
+    ? await ensureConversation(event, access)
+    : await findConversation(event, access, 'group')
+  if (!conversation) {
+    throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
+  }
+  const participants = await loadActiveConversationParticipants(event, conversation)
+  if (kind === 'group' && participants.length < 2) {
+    throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
+  }
+  return { access, conversation, participants }
 }
 
 async function loadMessages(
@@ -517,7 +775,11 @@ export async function loadPortalConversationSnapshot(
   event: H3Event,
   context: PortalConversationContext,
   page: ConversationPageRequest,
-): Promise<ConversationSnapshot & { realtime: ReturnType<typeof conversationRealtime> }> {
+): Promise<ConversationSnapshot & {
+  currentClientPersonId: string
+  participants: PortalConversationParticipant[]
+  realtime: ReturnType<typeof conversationRealtime>
+}> {
   const [messagePage, receipts] = await Promise.all([
     loadMessages(event, context.conversation, page),
     loadReceipts(event, context),
@@ -525,6 +787,8 @@ export async function loadPortalConversationSnapshot(
 
   return {
     conversation: context.conversation,
+    currentClientPersonId: context.access.link.clientPersonId,
+    participants: context.participants,
     messages: messagePage.messages,
     receipt: receipts.receipt,
     peerReceipt: receipts.peerReceipt,
@@ -560,6 +824,8 @@ function rpcMessage(input: unknown): Message {
           id: reply.id,
           sequence: reply.sequence,
           sender_kind: reply.senderKind ?? reply.sender_kind,
+          sender_client_person_id:
+            reply.senderClientPersonId ?? reply.sender_client_person_id ?? null,
           body: reply.body,
           attachments: reply.attachments
             ?? reply.crm_case_message_attachments
@@ -708,9 +974,48 @@ async function portalExpertPushTarget(
   return {
     clientId: ownerUserId ? `staff:${ownerUserId}` : null,
     path: slug
-      ? `/org/${encodeURIComponent(slug)}/cases/${context.access.grant.caseId}?view=messages`
+      ? `/org/${encodeURIComponent(slug)}/cases/${context.access.grant.caseId}?view=messages${
+          context.conversation.kind === 'group'
+            ? `&conversation=${encodeURIComponent(context.conversation.id)}`
+            : ''
+        }`
       : '/',
   }
+}
+
+async function portalGroupPeerPushIds(
+  event: H3Event,
+  context: PortalConversationContext,
+): Promise<string[]> {
+  if (context.conversation.kind !== 'group') return []
+  const peerParticipants = context.participants.filter(participant => (
+    participant.clientPersonId !== context.access.link.clientPersonId
+  ))
+  if (!peerParticipants.length) return []
+
+  const backend = serverDataBackend(event) as any
+  const result = await backend
+    .from('client_account_links')
+    .select('auth_user_id,client_id,client_person_id')
+    .eq('organization_id', context.access.grant.organizationId)
+    .in('client_person_id', peerParticipants.map(participant => participant.clientPersonId))
+    .is('revoked_at', null)
+  if (result.error) throw new Error('Could not resolve group participant push targets')
+
+  const allowed = new Set(peerParticipants.map(participant => JSON.stringify([
+    participant.clientId,
+    participant.clientPersonId,
+  ])))
+  return [...new Set<string>(((result.data ?? []) as Record<string, unknown>[]).flatMap(row => {
+    const authUserId = String(row.auth_user_id ?? '')
+    const key = JSON.stringify([String(row.client_id), String(row.client_person_id)])
+    if (
+      !authUserId
+      || authUserId === context.access.session.identity.userId
+      || !allowed.has(key)
+    ) return []
+    return [`client:${authUserId}`]
+  }))]
 }
 
 export async function sendPortalConversationMessage(
@@ -720,7 +1025,7 @@ export async function sendPortalConversationMessage(
 ) {
   await enforcePortalMessageRateLimit(event, context, input.clientMessageId)
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('send_client_case_message_v3', {
+  const commonInput = {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
@@ -729,7 +1034,13 @@ export async function sendPortalConversationMessage(
     p_reply_to_message_id: input.replyToMessageId ?? null,
     p_body: input.body,
     p_attachment_ids: input.attachmentIds,
-  })
+  }
+  const result = context.conversation.kind === 'group'
+    ? await backend.rpc('send_client_case_group_message_v1', {
+        ...commonInput,
+        p_conversation_id: context.conversation.id,
+      })
+    : await backend.rpc('send_client_case_message_v3', commonInput)
   if (
     result.error
     && String(result.error.message ?? '').includes('case_message_reply_')
@@ -787,6 +1098,14 @@ export async function sendPortalConversationMessage(
           target.clientId,
           target.path,
         ))
+        const peerPushIds = await portalGroupPeerPushIds(event, context)
+        deliveryResults.push(...await Promise.all(peerPushIds.map(clientId => (
+          publishDirectMessagePush(
+            event,
+            clientId,
+            `/messages?case=${encodeURIComponent(context.access.grant.caseId)}&thread=group`,
+          )
+        ))))
       }
       catch (error) {
         deliveryResults.push({
@@ -805,7 +1124,11 @@ export async function sendPortalConversationMessage(
 
   await notificationNudge
 
-  const refreshedConversation = await findConversation(event, context.access)
+  const refreshedConversation = await findConversation(
+    event,
+    context.access,
+    context.conversation.kind,
+  )
   return {
     conversation: refreshedConversation ?? context.conversation,
     message,
@@ -821,14 +1144,20 @@ export async function updatePortalConversationReceipt(
   input: ReceiptUpdateInput,
 ) {
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('update_client_case_message_receipt', {
+  const commonInput = {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
     p_auth_user_id: context.access.session.identity.userId,
     p_delivered_through_sequence: input.deliveredThroughSequence ?? null,
     p_read_through_sequence: input.readThroughSequence ?? null,
-  })
+  }
+  const result = context.conversation.kind === 'group'
+    ? await backend.rpc('update_client_case_group_message_receipt', {
+        ...commonInput,
+        p_conversation_id: context.conversation.id,
+      })
+    : await backend.rpc('update_client_case_message_receipt', commonInput)
   throwPortalDbError(result.error, 'could not update case message receipt')
 
   const payload = asRecord(result.data)

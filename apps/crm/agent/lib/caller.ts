@@ -5,6 +5,7 @@ export interface CrmAgentCaller {
   organizationSlug: string
   role: string
   userId: string
+  canUseExperiments: boolean
 }
 
 export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
@@ -12,12 +13,14 @@ export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
   const organizationId = caller?.attributes.organizationId
   const organizationSlug = caller?.attributes.organizationSlug
   const role = caller?.attributes.role
+  const canUseExperiments = caller?.attributes.canUseExperiments
 
   if (
     caller?.principalType !== 'user'
     || typeof organizationId !== 'string'
     || typeof organizationSlug !== 'string'
     || typeof role !== 'string'
+    || typeof canUseExperiments !== 'boolean'
   ) {
     throw new Error('An authenticated CRM organization user is required.')
   }
@@ -27,5 +30,6 @@ export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
     organizationSlug,
     role,
     userId: caller.principalId,
+    canUseExperiments,
   }
 }

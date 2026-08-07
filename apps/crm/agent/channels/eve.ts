@@ -99,6 +99,17 @@ function dataApiCrmSession(): AuthFn<Request> {
       throw new ForbiddenError({ message: 'Nie masz dostępu do tej organizacji.' })
     }
 
+    const { data: experimentsRole, error: experimentsRoleError } = await dataApi
+      .from('organization_user_admin_roles')
+      .select('role_key')
+      .eq('organization_id', organization.id)
+      .eq('user_id', userId)
+      .eq('role_key', 'experiments_access')
+      .maybeSingle()
+    if (experimentsRoleError) {
+      throw new ForbiddenError({ message: 'Nie można zweryfikować dostępu do eksperymentów.' })
+    }
+
     const sessionId = requestSessionId(request)
     if (sessionId) {
       await requireOwnedSession(dataApi, sessionId, userId, String(organization.id))
@@ -114,6 +125,7 @@ function dataApiCrmSession(): AuthFn<Request> {
         organizationId: String(organization.id),
         organizationSlug: String(organization.slug),
         role: String(membership.role ?? 'expert'),
+        canUseExperiments: Boolean(experimentsRole),
       },
     }
   }

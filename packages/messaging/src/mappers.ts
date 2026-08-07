@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type {
   Conversation,
+  ConversationKind,
   ConversationParticipantKind,
   Message,
   MessageAttachment,
@@ -10,6 +11,7 @@ import type {
 
 const uuidSchema = z.string().uuid()
 const participantKindSchema = z.enum(['staff', 'client'])
+const conversationKindSchema = z.enum(['direct', 'group'])
 
 function numericSequenceSchema(minimum: number) {
   return z.union([
@@ -58,15 +60,29 @@ export type DataApiMessageAttachmentRow = z.input<
 
 export const DataApiConversationRowSchema = z.object({
   case_id: uuidSchema,
-  client_id: uuidSchema,
-  client_person_id: uuidSchema,
+  client_id: uuidSchema.nullable(),
+  client_person_id: uuidSchema.nullable(),
   created_at: timestampSchema,
   id: uuidSchema,
+  kind: conversationKindSchema,
   last_message_at: nullableTimestampSchema,
   last_message_sequence: numericSequenceSchema(0),
   organization_id: uuidSchema,
   updated_at: timestampSchema,
-}).passthrough()
+}).passthrough().superRefine((row, context) => {
+  const isDirectShape = Boolean(row.client_id && row.client_person_id)
+  const isGroupShape = row.client_id === null && row.client_person_id === null
+  if (
+    (row.kind === 'direct' && !isDirectShape)
+    || (row.kind === 'group' && !isGroupShape)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Conversation identifiers do not match kind',
+      path: ['kind'],
+    })
+  }
+})
 
 export type DataApiConversationRow = z.input<
   typeof DataApiConversationRowSchema
@@ -77,9 +93,21 @@ export const DataApiMessageReplyRowSchema = z.object({
   body: z.string(),
   id: uuidSchema,
   sender_kind: participantKindSchema,
+  sender_client_person_id: uuidSchema.nullable().optional().default(null),
   sequence: numericSequenceSchema(1),
   crm_case_message_attachments: z.array(z.unknown()).optional(),
-}).passthrough()
+}).passthrough().superRefine((row, context) => {
+  if (
+    (row.sender_kind === 'client' && !row.sender_client_person_id)
+    || (row.sender_kind === 'staff' && row.sender_client_person_id)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Reply sender identifier does not match sender_kind',
+      path: ['sender_client_person_id'],
+    })
+  }
+})
 
 export type DataApiMessageReplyRow = z.input<
   typeof DataApiMessageReplyRowSchema
@@ -189,6 +217,7 @@ export function mapConversationRow(row: unknown): Conversation {
     id: parsed.id,
     organizationId: parsed.organization_id,
     caseId: parsed.case_id,
+    kind: parsed.kind as ConversationKind,
     clientId: parsed.client_id,
     clientPersonId: parsed.client_person_id,
     lastMessageSequence: parsed.last_message_sequence,
@@ -243,6 +272,7 @@ export function mapMessageReplyRow(row: unknown): MessageReplyReference {
     id: parsed.id,
     sequence: parsed.sequence,
     senderKind: parsed.sender_kind as ConversationParticipantKind,
+    senderClientPersonId: parsed.sender_client_person_id,
     body: parsed.body,
     attachments: mapMessageAttachments(
       parsed.attachments ?? parsed.crm_case_message_attachments ?? [],

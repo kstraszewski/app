@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
   const memberships = ((data ?? []) as MembershipRow[])
     .filter((membership) => membership.organization)
   const organizationIds = memberships.map(membership => membership.organization!.id)
-  const [teamAdminsResult, facilityAdminsResult] = organizationIds.length
+  const [teamAdminsResult, facilityAdminsResult, experimentsAccessResult] = organizationIds.length
     ? await Promise.all([
         session.dataApi
           .from('team_memberships')
@@ -38,19 +38,30 @@ export default defineEventHandler(async (event) => {
           .eq('user_id', session.userId)
           .eq('role', 'admin')
           .in('organization_id', organizationIds),
+        session.dataApi
+          .from('organization_user_admin_roles')
+          .select('organization_id')
+          .eq('user_id', session.userId)
+          .eq('role_key', 'experiments_access')
+          .in('organization_id', organizationIds),
       ])
     : [
+        { data: [], error: null },
         { data: [], error: null },
         { data: [], error: null },
       ]
   throwDbError(teamAdminsResult.error)
   throwDbError(facilityAdminsResult.error)
+  throwDbError(experimentsAccessResult.error)
 
   const teamAdminOrganizationIds = new Set(
     (teamAdminsResult.data ?? []).map((membership: { organization_id: unknown }) => String(membership.organization_id)),
   )
   const facilityAdminOrganizationIds = new Set(
     (facilityAdminsResult.data ?? []).map((membership: { organization_id: unknown }) => String(membership.organization_id)),
+  )
+  const experimentsAccessOrganizationIds = new Set(
+    (experimentsAccessResult.data ?? []).map((assignment: { organization_id: unknown }) => String(assignment.organization_id)),
   )
 
   return {
@@ -71,6 +82,7 @@ export default defineEventHandler(async (event) => {
             teamAdmin,
             facilityAdmin,
             canManageTeams: organizationAdmin || teamAdmin,
+            canUseExperiments: experimentsAccessOrganizationIds.has(organization.id),
           },
         }
       })

@@ -219,6 +219,7 @@ test('maps and normalizes Data API conversation and message rows', () => {
     client_person_id: ids.clientPerson,
     created_at: '2026-08-02 10:00:00+00',
     id: ids.conversation,
+    kind: 'direct',
     last_message_at: '2026-08-02T10:01:00Z',
     last_message_sequence: '12',
     next_sequence: '13',
@@ -227,6 +228,33 @@ test('maps and normalizes Data API conversation and message rows', () => {
   })
   assert.equal(conversation.lastMessageSequence, 12)
   assert.equal(conversation.createdAt, '2026-08-02T10:00:00.000Z')
+
+  const groupConversation = mapConversationRow({
+    case_id: ids.case,
+    client_id: null,
+    client_person_id: null,
+    created_at: '2026-08-02T10:00:00Z',
+    id: '13a1f7be-a94e-4f36-bc92-e37fac28567b',
+    kind: 'group',
+    last_message_at: null,
+    last_message_sequence: 0,
+    organization_id: ids.organization,
+    updated_at: '2026-08-02T10:00:00Z',
+  })
+  assert.equal(groupConversation.kind, 'group')
+  assert.equal(groupConversation.clientPersonId, null)
+  assert.throws(() => mapConversationRow({
+    case_id: ids.case,
+    client_id: ids.client,
+    client_person_id: ids.clientPerson,
+    created_at: '2026-08-02T10:00:00Z',
+    id: '13a1f7be-a94e-4f36-bc92-e37fac28567b',
+    kind: 'group',
+    last_message_at: null,
+    last_message_sequence: 0,
+    organization_id: ids.organization,
+    updated_at: '2026-08-02T10:00:00Z',
+  }))
 
   const rawMessage = {
     attachments: [
@@ -265,6 +293,7 @@ test('maps and normalizes Data API conversation and message rows', () => {
       body: 'Wcześniejsza wiadomość',
       id: ids.receipt,
       sender_kind: 'staff',
+      sender_client_person_id: null,
       sequence: 11,
     },
     sender_auth_user_id: ids.authUser,
@@ -280,6 +309,7 @@ test('maps and normalizes Data API conversation and message rows', () => {
     id: ids.receipt,
     sequence: 11,
     senderKind: 'staff',
+    senderClientPersonId: null,
     body: 'Wcześniejsza wiadomość',
     attachments: [{
       id: '9aeeac92-644c-49a3-b88d-eead0d4ff34f',

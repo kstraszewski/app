@@ -17,6 +17,7 @@ type AdminRoleId =
   | 'consents_admin'
   | 'forum_admin'
   | 'crm_config_admin'
+  | 'experiments_access'
 
 type AdminRoleDefinition = {
   id: AdminRoleId
@@ -364,6 +365,14 @@ const roleDefinitions: AdminRoleDefinition[] = [
     icon: 'i-lucide-sliders-horizontal',
     permissionCount: 2,
     permissions: ['Założenia zdolności', 'Parametry usług'],
+  },
+  {
+    id: 'experiments_access',
+    label: 'Dostęp do eksperymentów',
+    description: 'Udostępnia prototypowe narzędzia, w tym edytor tekstu wspierany przez Eve.',
+    icon: 'i-lucide-flask-conical',
+    permissionCount: 1,
+    permissions: ['Eksperymentalne narzędzia'],
   },
 ]
 const standardRoleDefinitions = roleDefinitions.filter(role => role.emphasis !== 'sensitive')
@@ -829,6 +838,16 @@ const effectiveAreas = computed<EffectiveArea[]>(() => {
       source: effectiveSource('crm_config_admin', 'Administrator ustawień operacyjnych'),
     },
     {
+      id: 'experiments',
+      label: 'Eksperymenty',
+      description: 'Prototypowe narzędzia organizacji wspierane przez Eve',
+      icon: 'i-lucide-flask-conical',
+      granted: draft.roles.experiments_access,
+      source: draft.roles.experiments_access
+        ? 'Dostęp do eksperymentów'
+        : 'Brak przypisanego dostępu',
+    },
+    {
       id: 'audit',
       label: 'Audyt',
       description: 'Historia ról, wyjątków i zmian administracyjnych',
@@ -1072,6 +1091,7 @@ function blankRoles(): Record<AdminRoleId, boolean> {
     consents_admin: false,
     forum_admin: false,
     crm_config_admin: false,
+    experiments_access: false,
   }
 }
 
@@ -1613,6 +1633,7 @@ async function saveChanges() {
       },
     })
     await refreshAccessWorkspace()
+    if (isCurrentUser.value) await refreshNuxtData('openexpert-organizations')
     showValidation.value = false
     toast.add({
       title: 'Dostęp został zapisany',

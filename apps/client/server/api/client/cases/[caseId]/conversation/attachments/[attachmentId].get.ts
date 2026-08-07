@@ -1,6 +1,7 @@
 import { getQuery, getRouterParam } from 'h3'
 import { requiredUuid } from '~~/server/utils/portal-auth'
 import {
+  parsePortalConversationThread,
   requirePortalConversation,
 } from '~~/server/utils/portal-conversation'
 import {
@@ -9,8 +10,13 @@ import {
 
 export default defineEventHandler(async (event) => {
   const caseId = requiredUuid(getRouterParam(event, 'caseId'), 'caseId')
-  const context = await requirePortalConversation(event, caseId)
-  const download = getQuery(event).download
+  const query = getQuery(event)
+  const context = await requirePortalConversation(
+    event,
+    caseId,
+    parsePortalConversationThread(query.thread),
+  )
+  const download = query.download
   return servePortalMessageAttachment(
     event,
     context,

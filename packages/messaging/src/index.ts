@@ -74,6 +74,7 @@ export type {
 export type {
   Conversation,
   ConversationEvent,
+  ConversationKind,
   ConversationPageInfo,
   ConversationParticipantKind,
   ConversationReceipts,

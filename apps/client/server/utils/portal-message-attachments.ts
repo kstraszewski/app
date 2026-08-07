@@ -165,13 +165,19 @@ async function discardReservationRpc(
   id: string,
 ): Promise<string | null> {
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('discard_client_case_message_attachment', {
+  const commonInput = {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
     p_auth_user_id: context.access.session.identity.userId,
     p_attachment_id: id,
-  })
+  }
+  const result = context.conversation.kind === 'group'
+    ? await backend.rpc('discard_client_case_group_message_attachment', {
+        ...commonInput,
+        p_conversation_id: context.conversation.id,
+      })
+    : await backend.rpc('discard_client_case_message_attachment', commonInput)
   throwAttachmentDbError(result.error, 'could not discard message attachment')
   const payload = asRecord(result.data)
   const storagePath = payload.storagePath ?? payload.storage_path
@@ -184,7 +190,7 @@ export async function reservePortalMessageAttachment(
   input: ReserveMessageAttachmentInput,
 ) {
   const backend = serverDataBackend(event) as any
-  const result = await backend.rpc('reserve_client_case_message_attachment', {
+  const commonInput = {
     p_organization_id: context.access.grant.organizationId,
     p_case_id: context.access.grant.caseId,
     p_client_person_id: context.access.link.clientPersonId,
@@ -193,7 +199,13 @@ export async function reservePortalMessageAttachment(
     p_file_name: input.name,
     p_content_type: input.mimeType,
     p_size_bytes: input.sizeBytes,
-  })
+  }
+  const result = context.conversation.kind === 'group'
+    ? await backend.rpc('reserve_client_case_group_message_attachment', {
+        ...commonInput,
+        p_conversation_id: context.conversation.id,
+      })
+    : await backend.rpc('reserve_client_case_message_attachment', commonInput)
   throwAttachmentDbError(result.error, 'could not reserve message attachment')
   const reservation = reservationFromRpc(result.data, context, input)
 

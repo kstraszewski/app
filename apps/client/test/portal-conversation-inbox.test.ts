@@ -21,6 +21,7 @@ const conversation: Conversation = {
   id: ids.conversation,
   organizationId: ids.organization,
   caseId: ids.case,
+  kind: 'direct',
   clientId: ids.client,
   clientPersonId: ids.clientPerson,
   lastMessageSequence: 12,
@@ -104,6 +105,7 @@ describe('client portal conversation inbox summary', () => {
     )
     assert.equal(summary.caseId, ids.case)
     assert.equal(summary.conversationId, ids.conversation)
+    assert.equal(summary.kind, 'direct')
     assert.equal(summary.readThroughSequence, 8)
     assert.equal(summary.unreadCount, 4)
     assert.equal(summary.lastMessageSenderKind, 'staff')
@@ -142,5 +144,51 @@ describe('client portal conversation inbox summary', () => {
       },
     )
     assert.equal(summary.lastMessagePreview, 'Zdjęcie: zdjecie.webp')
+  })
+
+  it('distinguishes the current borrower from another borrower in a group', () => {
+    const otherPersonId = 'a033bac3-6e9b-4cb8-862c-094464c4251f'
+    const groupConversation: Conversation = {
+      ...conversation,
+      kind: 'group',
+      clientId: null,
+      clientPersonId: null,
+    }
+    const otherBorrowerMessage: Message = {
+      ...message,
+      senderKind: 'client',
+      senderClientPersonId: otherPersonId,
+    }
+    const participants = [{
+      clientId: ids.client,
+      clientPersonId: ids.clientPerson,
+      displayName: 'Anna Nowak',
+      role: 'borrower',
+    }, {
+      clientId: ids.client,
+      clientPersonId: otherPersonId,
+      displayName: 'Jan Nowak',
+      role: 'co_borrower',
+    }]
+
+    const otherSummary = buildPortalConversationSummary(
+      groupConversation,
+      receipt,
+      otherBorrowerMessage,
+      ids.clientPerson,
+      participants,
+    )
+    const ownSummary = buildPortalConversationSummary(
+      groupConversation,
+      receipt,
+      { ...otherBorrowerMessage, senderClientPersonId: ids.clientPerson },
+      ids.clientPerson,
+      participants,
+    )
+
+    assert.equal(otherSummary.kind, 'group')
+    assert.equal(otherSummary.lastMessageIsOwn, false)
+    assert.equal(ownSummary.lastMessageIsOwn, true)
+    assert.deepEqual(otherSummary.participants, participants)
   })
 })

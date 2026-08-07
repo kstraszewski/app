@@ -45,6 +45,7 @@ test('builds compact reply previews for text and attachments', () => {
     id: '3dbdc6b0-63c3-4c3c-bd55-32225b7a1ef1',
     sequence: 1,
     senderKind: 'client' as const,
+    senderClientPersonId: 'f4eae239-23de-403a-af91-5c2ddc1ae135',
     attachments: [],
   }
   assert.equal(messageReplyPreviewText({

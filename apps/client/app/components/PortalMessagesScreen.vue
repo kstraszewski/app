@@ -1,17 +1,27 @@
 <script setup lang="ts">
+import type { ConversationKind } from '@openexpert/messaging'
 import type { PortalCase, PortalPayload } from '~/types/portal'
 import { PORTAL_TIME_ZONE } from '~/utils/portal-date'
 
 interface InboxConversationSummary {
   caseId: string
   conversationId: string
+  kind: ConversationKind
   lastMessageAt: string | null
   lastMessageSequence: number
   readThroughSequence: number
   unreadCount: number
   lastMessagePreview: string | null
   lastMessageSenderKind: 'staff' | 'client' | null
+  lastMessageSenderClientPersonId: string | null
+  lastMessageIsOwn: boolean
   lastMessageCreatedAt: string | null
+  participants: Array<{
+    clientId: string
+    clientPersonId: string
+    displayName: string
+    role: string
+  }>
 }
 
 interface InboxResponse {
@@ -22,6 +32,7 @@ interface InboxResponse {
 
 interface MessageThread {
   caseData: PortalCase
+  kind: ConversationKind
   summary: InboxConversationSummary | null
 }
 
@@ -39,6 +50,9 @@ const messagesPath = computed(() => props.preview ? '/preview/messages' : '/mess
 const selectedCaseQuery = computed(() => typeof route.query.case === 'string'
   ? route.query.case
   : '')
+const selectedThreadQuery = computed<ConversationKind>(() => (
+  route.query.thread === 'group' ? 'group' : 'direct'
+))
 
 function previewInboxResponse(): InboxResponse {
   return {
@@ -52,13 +66,22 @@ function previewInboxResponse(): InboxResponse {
         return {
           caseId: caseData.id,
           conversationId: `preview-conversation-${caseData.id}`,
+          kind: 'direct',
           lastMessageAt: lastMessage?.createdAt ?? null,
           lastMessageSequence,
           readThroughSequence: Math.max(0, lastMessageSequence - unreadCount),
           unreadCount,
           lastMessagePreview: lastMessage?.body || null,
           lastMessageSenderKind: lastMessage?.senderKind ?? null,
+          lastMessageSenderClientPersonId: lastMessage?.senderClientPersonId ?? null,
+          lastMessageIsOwn: lastMessage?.senderClientPersonId === 'preview-client',
           lastMessageCreatedAt: lastMessage?.createdAt ?? null,
+          participants: [{
+            clientId: 'preview-client-account',
+            clientPersonId: 'preview-client',
+            displayName: props.payload.user.name || 'Klient',
+            role: 'borrower',
+          }],
         }
       }),
     },
@@ -90,18 +113,28 @@ onBeforeUnmount(() => {
   if (inboxRefreshTimer) clearInterval(inboxRefreshTimer)
 })
 
-const summariesByCase = computed(() => new Map(
-  (inboxResponse.value?.data.conversations || []).map(summary => [summary.caseId, summary]),
+const summariesByThread = computed(() => new Map(
+  (inboxResponse.value?.data.conversations || []).map(summary => [
+    `${summary.caseId}:${summary.kind}`,
+    summary,
+  ]),
 ))
 const isInitialInboxLoading = computed(() => (
   inboxStatus.value === 'pending' && !inboxResponse.value
 ))
 
 const threads = computed<MessageThread[]>(() => props.payload.cases
-  .map(caseData => ({
-    caseData,
-    summary: summariesByCase.value.get(caseData.id) || null,
-  }))
+  .flatMap((caseData) => {
+    const direct: MessageThread = {
+      caseData,
+      kind: 'direct',
+      summary: summariesByThread.value.get(`${caseData.id}:direct`) || null,
+    }
+    const groupSummary = summariesByThread.value.get(`${caseData.id}:group`)
+    return groupSummary
+      ? [direct, { caseData, kind: 'group' as const, summary: groupSummary }]
+      : [direct]
+  })
   .sort((left, right) => {
     const leftTime = left.summary?.lastMessageAt
       ? new Date(left.summary.lastMessageAt).getTime()
@@ -119,6 +152,8 @@ const filteredThreads = computed(() => {
   return threads.value.filter(({ caseData, summary }) => [
     caseData.title,
     caseData.expert.name,
+    summary?.participants.map(participant => participant.displayName).join(' '),
+    summary?.kind === 'group' ? 'czat wspólny kredytobiorcy' : 'ekspert',
     summary?.lastMessagePreview,
   ].some(value => value?.toLocaleLowerCase('pl-PL').includes(query)))
 })
@@ -137,8 +172,14 @@ const totalUnread = computed(() => threads.value.reduce(
   0,
 ))
 
-function threadTo(caseId: string) {
-  return { path: messagesPath.value, query: { case: caseId } }
+function threadTo(caseId: string, kind: ConversationKind) {
+  return {
+    path: messagesPath.value,
+    query: {
+      case: caseId,
+      ...(kind === 'group' ? { thread: 'group' } : {}),
+    },
+  }
 }
 
 function caseTo(caseId: string) {
@@ -170,6 +211,25 @@ function threadTime(summary: InboxConversationSummary | null) {
     minute: '2-digit',
     timeZone: PORTAL_TIME_ZONE,
   }).format(date)
+}
+
+function threadSubtitle(thread: MessageThread) {
+  if (thread.kind === 'direct') return thread.caseData.expert.name
+  const names = thread.summary?.participants
+    .map(participant => participant.displayName)
+    .filter(Boolean)
+    .join(', ')
+  return names ? `Czat wspólny · ${names}` : 'Czat wspólny'
+}
+
+function messagePreviewPrefix(summary: InboxConversationSummary | null) {
+  if (!summary?.lastMessageSenderKind) return ''
+  if (summary.lastMessageIsOwn) return 'Ty: '
+  if (summary.lastMessageSenderKind === 'staff') return ''
+  const author = summary.participants.find(
+    participant => participant.clientPersonId === summary.lastMessageSenderClientPersonId,
+  )
+  return author?.displayName ? `${author.displayName}: ` : 'Kredytobiorca: '
 }
 </script>
 
@@ -230,12 +290,15 @@ function threadTime(summary: InboxConversationSummary | null) {
           <nav v-if="filteredThreads.length" class="portal-inbox__thread-list">
             <NuxtLink
               v-for="thread in filteredThreads"
-              :key="thread.caseData.id"
-              :to="threadTo(thread.caseData.id)"
-              :class="{ 'is-active': selectedCase?.id === thread.caseData.id }"
-              :aria-current="selectedCase?.id === thread.caseData.id ? 'page' : undefined"
+              :key="`${thread.caseData.id}:${thread.kind}`"
+              :to="threadTo(thread.caseData.id, thread.kind)"
+              :class="{ 'is-active': selectedCase?.id === thread.caseData.id && selectedThreadQuery === thread.kind }"
+              :aria-current="selectedCase?.id === thread.caseData.id && selectedThreadQuery === thread.kind ? 'page' : undefined"
             >
-              <span class="portal-inbox__avatar">{{ expertInitials(thread.caseData) }}</span>
+              <span class="portal-inbox__avatar">
+                <UIcon v-if="thread.kind === 'group'" name="i-lucide-users" />
+                <template v-else>{{ expertInitials(thread.caseData) }}</template>
+              </span>
               <span class="portal-inbox__thread-copy">
                 <span>
                   <strong>{{ thread.caseData.title }}</strong>
@@ -243,9 +306,9 @@ function threadTime(summary: InboxConversationSummary | null) {
                     {{ threadTime(thread.summary) }}
                   </time>
                 </span>
-                <small>{{ thread.caseData.expert.name }}</small>
+                <small>{{ threadSubtitle(thread) }}</small>
                 <span class="portal-inbox__preview">
-                  {{ thread.summary?.lastMessageSenderKind === 'client' ? 'Ty: ' : '' }}{{
+                  {{ messagePreviewPrefix(thread.summary) }}{{
                     thread.summary?.lastMessagePreview || 'Rozpocznij bezpieczną rozmowę w tej sprawie.'
                   }}
                 </span>
@@ -271,12 +334,14 @@ function threadTime(summary: InboxConversationSummary | null) {
 
         <section v-if="selectedCase" class="portal-inbox__conversation" aria-label="Wybrana rozmowa">
           <PortalCaseConversation
-            :key="selectedCase.id"
+            :key="`${selectedCase.id}:${selectedThreadQuery}`"
             :case-id="selectedCase.id"
             :case-title="selectedCase.title"
             :case-to="caseTo(selectedCase.id)"
             :back-to="messagesPath"
             :expert-name="selectedCase.expert.name"
+            :expert-avatar-url="selectedCase.expert.avatarUrl"
+            :thread-kind="selectedThreadQuery"
             :preview="preview"
             surface="pane"
             @message-sent="refreshInbox()"

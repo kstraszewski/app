@@ -5,6 +5,7 @@ import {
   updateStaffConversationReceipt,
 } from '~~/server/utils/case-conversations'
 import { getRequiredParam } from '~~/server/utils/crm'
+import { nudgeNotificationOutbox } from '~~/server/utils/notifications'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
@@ -21,5 +22,6 @@ export default defineEventHandler(async (event) => {
     getRequiredParam(event, 'conversationId'),
   )
   const result = await updateStaffConversationReceipt(event, access, parsed.data)
+  if (result.notificationsReadCount > 0) await nudgeNotificationOutbox(event)
   return { data: result }
 })

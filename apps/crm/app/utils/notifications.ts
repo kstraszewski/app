@@ -30,6 +30,27 @@ const defaultPollIntervalMs = 5_000
 const defaultSafetyPollIntervalMs = 45_000
 const notificationTimeZone = 'Europe/Warsaw'
 
+export const NOTIFICATION_FEED_INVALIDATED_EVENT = 'openexpert:notifications-feed-invalidated'
+
+export function dispatchNotificationFeedInvalidated(organizationSlug: string) {
+  if (typeof window === 'undefined' || !organizationSlug) return
+  window.dispatchEvent(new CustomEvent(NOTIFICATION_FEED_INVALIDATED_EVENT, {
+    detail: { organizationSlug },
+  }))
+}
+
+export function notificationFeedInvalidationMatches(
+  event: Event,
+  organizationSlug: string,
+) {
+  if (
+    typeof CustomEvent === 'undefined'
+    || !(event instanceof CustomEvent)
+    || !isNotificationRecord(event.detail)
+  ) return false
+  return event.detail.organizationSlug === organizationSlug
+}
+
 export function isNotificationRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

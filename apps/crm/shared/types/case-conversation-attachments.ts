@@ -4,6 +4,8 @@ export interface CrmClientConversationAttachment extends MessageAttachment {
   messageId: string
   position: number
   sentAt: string
+  uploaderClientPersonId: string
+  uploaderName: string
 }
 
 export interface CrmConversationAttachmentsResponse {

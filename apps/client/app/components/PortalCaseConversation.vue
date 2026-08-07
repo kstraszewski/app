@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   Conversation,
+  ConversationKind,
   Message,
   MessageAttachment,
   MessageReplyReference,
@@ -28,6 +29,8 @@ interface RealtimeConfiguration {
 interface ConversationResponse {
   data: {
     conversation: Conversation
+    currentClientPersonId: string
+    participants: PortalConversationParticipant[]
     messages: Message[]
     receipt: Receipt | null
     peerReceipt: Receipt | null
@@ -37,6 +40,13 @@ interface ConversationResponse {
     }
     realtime: RealtimeConfiguration
   }
+}
+
+interface PortalConversationParticipant {
+  clientId: string
+  clientPersonId: string
+  displayName: string
+  role: string
 }
 
 interface RetryableSend {
@@ -74,12 +84,16 @@ function requestErrorCode(error: unknown): string {
 const props = withDefaults(defineProps<{
   caseId: string
   expertName: string
+  expertAvatarUrl?: string | null
+  threadKind?: ConversationKind
   caseTitle?: string
   caseTo?: string
   backTo?: string
   preview?: boolean
   surface?: 'card' | 'pane'
 }>(), {
+  expertAvatarUrl: null,
+  threadKind: 'direct',
   preview: false,
   surface: 'card',
 })
@@ -94,42 +108,59 @@ const previewConversations = usePortalPreviewConversations(props.preview)
 const apiPath = computed(
   () => `/api/client/cases/${encodeURIComponent(props.caseId)}/conversation`,
 )
+function conversationQuery(extra: Record<string, unknown> = {}) {
+  return {
+    ...(props.threadKind === 'group' ? { thread: 'group' } : {}),
+    ...extra,
+  }
+}
+
+function conversationApiPath(suffix = '') {
+  return `${apiPath.value}${suffix}`
+}
+
 const authenticatedUser = useAuthUser()
+const stateScope = `${props.caseId}:${props.threadKind}`
 const draftClientMessageId = useState<string>(
-  `portal-case-conversation:draft:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
+  `portal-case-conversation:draft:${authenticatedUser.value?.id || 'session'}:${stateScope}`,
   () => crypto.randomUUID(),
 )
-const attachmentApiPaths = new Map<string, string>()
+const attachmentApiPaths = new Map<string, { path: string, thread: ConversationKind }>()
 const attachmentAdapter: MessageAttachmentDraftAdapter = {
   async reserve(input) {
-    const attachmentApiPath = `${apiPath.value}/attachments`
+    const attachmentApiPath = conversationApiPath('/attachments')
+    const thread = props.threadKind
     const response = await $portalFetch<{ data: MessageAttachmentUploadReservation }>(
       attachmentApiPath,
-      { method: 'POST', body: input },
+      { method: 'POST', query: conversationQuery(), body: input },
     )
-    attachmentApiPaths.set(response.data.attachment.id, attachmentApiPath)
+    attachmentApiPaths.set(response.data.attachment.id, { path: attachmentApiPath, thread })
     return response.data
   },
   async complete(id) {
-    const attachmentApiPath = attachmentApiPaths.get(id)
-    if (!attachmentApiPath) {
+    const attachmentTarget = attachmentApiPaths.get(id)
+    if (!attachmentTarget) {
       throw Object.assign(
         new Error('Nie znaleziono przygotowanego załącznika.'),
         { statusCode: 404 },
       )
     }
     const response = await $portalFetch<{ data: { attachment: MessageAttachment } }>(
-      `${attachmentApiPath}/${encodeURIComponent(id)}/complete`,
-      { method: 'POST' },
+      `${attachmentTarget.path}/${encodeURIComponent(id)}/complete`,
+      {
+        method: 'POST',
+        query: attachmentTarget.thread === 'group' ? { thread: 'group' } : {},
+      },
     )
     return response.data.attachment
   },
   async discard(id) {
-    const attachmentApiPath = attachmentApiPaths.get(id)
-    if (!attachmentApiPath) return
+    const attachmentTarget = attachmentApiPaths.get(id)
+    if (!attachmentTarget) return
     try {
-      await $portalFetch(`${attachmentApiPath}/${encodeURIComponent(id)}`, {
+      await $portalFetch(`${attachmentTarget.path}/${encodeURIComponent(id)}`, {
         method: 'DELETE',
+        query: attachmentTarget.thread === 'group' ? { thread: 'group' } : {},
       })
     }
     finally {
@@ -151,6 +182,7 @@ function previewConversationResponse(): ConversationResponse {
         id: conversationId,
         organizationId: 'org-openexpert-local',
         caseId: props.caseId,
+        kind: 'direct',
         clientId: 'preview-client-account',
         clientPersonId: 'preview-client',
         lastMessageSequence: lastMessage?.sequence ?? 0,
@@ -158,6 +190,13 @@ function previewConversationResponse(): ConversationResponse {
         createdAt: '2026-07-29T08:00:00.000Z',
         updatedAt: lastMessage?.createdAt ?? '2026-07-29T08:00:00.000Z',
       },
+      currentClientPersonId: 'preview-client',
+      participants: [{
+        clientId: 'preview-client-account',
+        clientPersonId: 'preview-client',
+        displayName: 'Klient',
+        role: 'borrower',
+      }],
       messages,
       receipt: null,
       peerReceipt: {
@@ -185,14 +224,16 @@ const {
   error: initialError,
   refresh,
 } = useAsyncData<ConversationResponse>(
-  () => `portal-case-conversation:${props.preview ? 'preview:' : ''}${props.caseId}`,
+  () => `portal-case-conversation:${props.preview ? 'preview:' : ''}${props.caseId}:${props.threadKind}`,
   () => props.preview
     ? Promise.resolve(previewConversationResponse())
-    : $portalFetch<ConversationResponse>(apiPath.value),
-  { watch: [apiPath] },
+    : $portalFetch<ConversationResponse>(apiPath.value, { query: conversationQuery() }),
+  { watch: [apiPath, () => props.threadKind] },
 )
 
 const conversation = ref<Conversation | null>(null)
+const currentClientPersonId = ref('')
+const participants = ref<PortalConversationParticipant[]>([])
 const messages = ref<Message[]>([])
 const ownReceipt = ref<Receipt | null>(null)
 const peerReceipt = ref<Receipt | null>(null)
@@ -202,12 +243,12 @@ const realtimeConfiguration = ref<RealtimeConfiguration>({
   ephemeralChannel: null,
 })
 const composer = useState<string>(
-  `portal-case-conversation:composer:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
+  `portal-case-conversation:composer:${authenticatedUser.value?.id || 'session'}:${stateScope}`,
   () => '',
 )
 const retryableSend = ref<RetryableSend | null>(null)
 const replyingTo = useState<MessageReplyReference | null>(
-  `portal-case-conversation:reply:${authenticatedUser.value?.id || 'session'}:${props.caseId}`,
+  `portal-case-conversation:reply:${authenticatedUser.value?.id || 'session'}:${stateScope}`,
   () => null,
 )
 const sending = ref(false)
@@ -275,6 +316,11 @@ const expertInitials = computed(() => {
   const parts = props.expertName.trim().split(/\s+/u)
   return `${parts[0]?.[0] ?? ''}${parts.at(-1)?.[0] ?? ''}`.toUpperCase()
 })
+const isGroupConversation = computed(() => props.threadKind === 'group')
+const groupParticipantNames = computed(() => participants.value
+  .map(participant => participant.displayName.trim())
+  .filter(Boolean)
+  .join(', '))
 const isLoading = computed(() => status.value === 'pending' && !conversation.value)
 const loadError = computed(() => Boolean(initialError.value) && !conversation.value)
 const canSend = computed(() => {
@@ -289,8 +335,48 @@ const canSend = computed(() => {
 })
 
 function messageAttachmentUrl(attachment: MessageAttachment, download: boolean) {
-  const path = `${apiPath.value}/attachments/${encodeURIComponent(attachment.id)}`
-  return download ? `${path}?download=1` : path
+  const path = conversationApiPath(`/attachments/${encodeURIComponent(attachment.id)}`)
+  const query = new URLSearchParams()
+  if (props.threadKind === 'group') query.set('thread', 'group')
+  if (download) query.set('download', '1')
+  const suffix = query.toString()
+  return suffix ? `${path}?${suffix}` : path
+}
+
+function participantByPersonId(clientPersonId: string | null | undefined) {
+  return participants.value.find(
+    participant => participant.clientPersonId === clientPersonId,
+  ) ?? null
+}
+
+function isOwnClientSender(
+  senderKind: Message['senderKind'],
+  senderClientPersonId: string | null,
+) {
+  return senderKind === 'client'
+    && Boolean(currentClientPersonId.value)
+    && senderClientPersonId === currentClientPersonId.value
+}
+
+function isOwnMessage(message: Message) {
+  return isOwnClientSender(message.senderKind, message.senderClientPersonId)
+}
+
+function personInitials(name: string) {
+  const parts = name.trim().split(/\s+/u).filter(Boolean)
+  return `${parts[0]?.[0] ?? ''}${parts.at(-1)?.[0] ?? ''}`.toUpperCase() || 'K'
+}
+
+function messageAuthorName(message: Message) {
+  if (message.senderKind === 'staff') return props.expertName || 'Ekspert'
+  if (isOwnMessage(message)) return 'Ty'
+  return participantByPersonId(message.senderClientPersonId)?.displayName || 'Kredytobiorca'
+}
+
+function messageAuthorInitials(message: Message) {
+  return message.senderKind === 'staff'
+    ? expertInitials.value
+    : personInitials(messageAuthorName(message))
 }
 
 function mergeMessages(incoming: Message[]) {
@@ -310,6 +396,7 @@ function applyResponse(
 ) {
   if (!response?.data?.conversation) return
   if (response.data.conversation.caseId !== props.caseId) return
+  if (response.data.conversation.kind !== props.threadKind) return
   const incomingMessages = response.data.messages ?? []
   const knownMessageIds = new Set(messages.value.map(
     message => message.clientMessageId || message.id,
@@ -323,6 +410,8 @@ function applyResponse(
   const shouldFollowMessages = mode === 'initial'
     || (mode === 'incremental' && listAtEnd.value)
   conversation.value = response.data.conversation
+  currentClientPersonId.value = response.data.currentClientPersonId
+  participants.value = response.data.participants ?? []
   ownReceipt.value = response.data.receipt
   peerReceipt.value = response.data.peerReceipt
   realtimeConfiguration.value = response.data.realtime ?? realtimeConfiguration.value
@@ -354,7 +443,7 @@ watch(
   },
 )
 
-watch(() => props.caseId, () => {
+watch(() => [props.caseId, props.threadKind] as const, () => {
   void attachmentDrafts.clear({ discard: !sending.value })
   retryableSend.value = null
   replyingTo.value = null
@@ -364,6 +453,8 @@ watch(() => props.caseId, () => {
   stopTyping()
   disconnectRealtime()
   conversation.value = null
+  currentClientPersonId.value = ''
+  participants.value = []
   messages.value = []
   ownReceipt.value = null
   peerReceipt.value = null
@@ -392,18 +483,24 @@ function formatMessageTime(value: string) {
 }
 
 function deliveryLabel(message: Message) {
-  if (message.senderKind !== 'client') return ''
+  if (!isOwnMessage(message)) return ''
   if ((peerReceipt.value?.readThroughSequence ?? 0) >= message.sequence) return 'Odczytano'
   if ((peerReceipt.value?.deliveredThroughSequence ?? 0) >= message.sequence) return 'Dostarczono'
   return 'Wysłano'
 }
 
 function replyAuthorLabel(reply: MessageReplyReference) {
-  return reply.senderKind === 'client' ? 'Ty' : props.expertName || 'Ekspert'
+  if (reply.senderKind === 'staff') return props.expertName || 'Ekspert'
+  if (isOwnClientSender(reply.senderKind, reply.senderClientPersonId)) return 'Ty'
+  return participantByPersonId(reply.senderClientPersonId)?.displayName || 'Kredytobiorca'
 }
 
 function replyActionLabel(message: Message) {
-  const author = message.senderKind === 'client' ? 'Ciebie' : props.expertName || 'eksperta'
+  const author = isOwnMessage(message)
+    ? 'Ciebie'
+    : message.senderKind === 'staff'
+      ? props.expertName || 'eksperta'
+      : participantByPersonId(message.senderClientPersonId)?.displayName || 'kredytobiorcy'
   return `Odpowiedz na wiadomość od ${author}`
 }
 
@@ -573,7 +670,7 @@ async function syncMissingMessages() {
       syncRequested = false
       const previousSequence = latestSequence.value
       const response = await $portalFetch<ConversationResponse>(apiPath.value, {
-        query: { afterSequence: previousSequence },
+        query: conversationQuery({ afterSequence: previousSequence }),
       })
       applyResponse(response, 'incremental')
       if (
@@ -613,7 +710,7 @@ async function loadOlderMessages(): Promise<LoadOlderMessagesResult> {
   const previousHeight = list?.scrollHeight ?? 0
   try {
     const response = await $portalFetch<ConversationResponse>(apiPath.value, {
-      query: { beforeSequence: firstSequence },
+      query: conversationQuery({ beforeSequence: firstSequence }),
     })
     if (
       props.caseId !== requestedCaseId
@@ -676,7 +773,7 @@ async function acknowledgeMessages() {
   try {
     const response = await $portalFetch<{ data: { receipt: Receipt } }>(
       `${apiPath.value}/receipt`,
-      { method: 'POST', body: payload },
+      { method: 'POST', query: conversationQuery(), body: payload },
     )
     ownReceipt.value = response.data.receipt
     emit('receiptUpdated')
@@ -723,6 +820,7 @@ async function sendMessage() {
   }
 
   const sendingCaseId = props.caseId
+  const sendingThreadKind = props.threadKind
   const sendingApiPath = apiPath.value
   const attachments = [...attachmentDrafts.readyAttachments.value]
   const attachmentIds = attachments.map(attachment => attachment.id)
@@ -771,6 +869,7 @@ async function sendMessage() {
       sendingApiPath,
       {
         method: 'POST',
+        query: sendingThreadKind === 'group' ? { thread: 'group' } : {},
         body: {
           body,
           clientMessageId: attempt.clientMessageId,
@@ -779,7 +878,7 @@ async function sendMessage() {
         },
       },
     )
-    if (props.caseId !== sendingCaseId) {
+    if (props.caseId !== sendingCaseId || props.threadKind !== sendingThreadKind) {
       for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
       return
     }
@@ -794,7 +893,7 @@ async function sendMessage() {
     void nextTick(scrollToEnd)
   }
   catch (caught: any) {
-    if (props.caseId !== sendingCaseId) {
+    if (props.caseId !== sendingCaseId || props.threadKind !== sendingThreadKind) {
       for (const attachmentId of attachmentIds) attachmentApiPaths.delete(attachmentId)
       return
     }
@@ -831,6 +930,7 @@ async function sendMessage() {
 async function tokenRequest() {
   const payload = await $portalFetch<any>(`${apiPath.value}/token`, {
     headers: { Accept: 'application/json' },
+    query: conversationQuery(),
   })
   return payload.data?.tokenRequest ?? payload.tokenRequest ?? payload
 }
@@ -1070,10 +1170,16 @@ onBeforeUnmount(() => {
         >
           <UIcon name="i-lucide-arrow-left" />
         </NuxtLink>
-        <span class="portal-conversation__avatar">{{ expertInitials }}</span>
+        <span class="portal-conversation__avatar">
+          <UIcon v-if="isGroupConversation" name="i-lucide-users" />
+          <template v-else>{{ expertInitials }}</template>
+        </span>
         <div>
           <p id="portal-conversation-title">{{ caseTitle || 'Wiadomości' }}</p>
-          <strong>{{ expertName }}</strong>
+          <strong>{{ isGroupConversation ? 'Czat wspólny' : expertName }}</strong>
+          <span v-if="isGroupConversation && groupParticipantNames" class="portal-conversation__participants">
+            {{ groupParticipantNames }} · {{ expertName }}
+          </span>
           <span>
             <i
               :class="{
@@ -1187,7 +1293,7 @@ onBeforeUnmount(() => {
             tabindex="-1"
             :class="[
               'portal-message',
-              message.senderKind === 'client' ? 'portal-message--mine' : 'portal-message--theirs',
+              isOwnMessage(message) ? 'portal-message--mine' : 'portal-message--theirs',
               {
                 'is-highlighted': highlightedMessageId === message.id,
                 'is-swiping': replySwipe.messageId === message.id && replySwipe.offset > 0,
@@ -1199,8 +1305,17 @@ onBeforeUnmount(() => {
             @pointerup="onMessagePointerEnd"
             @pointercancel="onMessagePointerCancel"
           >
+            <UAvatar
+              v-if="!isOwnMessage(message)"
+              class="portal-message__avatar"
+              :src="message.senderKind === 'staff' ? expertAvatarUrl || undefined : undefined"
+              :alt="messageAuthorName(message)"
+              :text="messageAuthorInitials(message)"
+              size="xs"
+              :color="message.senderKind === 'staff' ? 'primary' : 'neutral'"
+            />
             <UButton
-              v-if="message.senderKind === 'client'"
+              v-if="isOwnMessage(message)"
               class="portal-message__reply-action"
               type="button"
               color="neutral"
@@ -1215,6 +1330,12 @@ onBeforeUnmount(() => {
               class="portal-message__bubble"
               :style="{ '--portal-message-swipe-offset': `${messageSwipeOffset(message.id)}px` }"
             >
+              <strong
+                v-if="isGroupConversation && !isOwnMessage(message)"
+                class="portal-message__author"
+              >
+                {{ messageAuthorName(message) }}
+              </strong>
               <MessageReplyQuote
                 v-if="message.replyToMessage"
                 :reply="message.replyToMessage"
@@ -1239,7 +1360,7 @@ onBeforeUnmount(() => {
                 <time :datetime="message.createdAt">{{ formatMessageTime(message.createdAt) }}</time>
                 <Transition name="portal-message-status" mode="out-in">
                   <span
-                    v-if="message.senderKind === 'client'"
+                    v-if="isOwnMessage(message)"
                     :key="deliveryLabel(message)"
                   >
                     {{ deliveryLabel(message) }}
@@ -1253,7 +1374,7 @@ onBeforeUnmount(() => {
               </footer>
             </div>
             <UButton
-              v-if="message.senderKind !== 'client'"
+              v-if="!isOwnMessage(message)"
               class="portal-message__reply-action"
               type="button"
               color="neutral"
@@ -1298,7 +1419,7 @@ onBeforeUnmount(() => {
 
           <div v-if="peerTyping" key="peer-typing" class="portal-conversation__typing">
             <span /><span /><span />
-            {{ expertFirstName }} pisze…
+            {{ isGroupConversation ? 'Ktoś pisze…' : `${expertFirstName} pisze…` }}
           </div>
         </TransitionGroup>
         <span ref="readSentinelElement" class="portal-conversation__read-sentinel" aria-hidden="true" />
@@ -1521,6 +1642,14 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.portal-conversation__expert div > .portal-conversation__participants {
+  display: block;
+  overflow: hidden;
+  max-width: min(48vw, 520px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .portal-conversation__expert i {
   width: 7px;
   height: 7px;
@@ -1638,6 +1767,12 @@ onBeforeUnmount(() => {
   transform-origin: left bottom;
 }
 
+.portal-message__avatar {
+  align-self: flex-end;
+  margin-bottom: 2px;
+  border: 1px solid var(--ui-border-muted);
+}
+
 .portal-message__bubble {
   position: relative;
   z-index: 1;
@@ -1651,6 +1786,14 @@ onBeforeUnmount(() => {
     opacity var(--oe-motion-fast),
     transform var(--oe-duration-fast) var(--ease-out),
     box-shadow var(--oe-duration-fast) var(--ease-out);
+}
+
+.portal-message__author {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .portal-message--mine {
@@ -2109,7 +2252,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 0;
   top: 50%;
-  left: 0;
+  left: 28px;
   transform: translateY(-50%) scale(1);
 }
 </style>

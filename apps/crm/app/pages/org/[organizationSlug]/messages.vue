@@ -58,6 +58,10 @@ const visibleConversations = computed(() => {
     return [
       conversation.clientName,
       conversation.clientEmail,
+      ...conversation.participants.flatMap(participant => [
+        participant.displayName,
+        participant.email,
+      ]),
       conversation.caseTitle,
       conversation.lastMessagePreview,
     ].some(value => value?.toLocaleLowerCase('pl').includes(query))
@@ -74,9 +78,20 @@ const selectedClientPersonId = computed(() => {
   return typeof value === 'string' ? value : ''
 })
 
+const selectedConversationId = computed(() => {
+  const value = Array.isArray(route.query.conversation)
+    ? route.query.conversation[0]
+    : route.query.conversation
+  return typeof value === 'string' ? value : ''
+})
+
 const explicitConversation = computed(() => conversations.value.find(conversation => (
-  conversation.caseId === selectedCaseId.value
-  && conversation.clientPersonId === selectedClientPersonId.value
+  conversation.conversationId === selectedConversationId.value
+  || (
+    !selectedConversationId.value
+    && conversation.caseId === selectedCaseId.value
+    && conversation.clientPersonId === selectedClientPersonId.value
+  )
 )) ?? null)
 
 watch(explicitConversation, (conversation) => {
@@ -123,7 +138,7 @@ function conversationLocation(conversation: CrmConversationInboxItem) {
     path: orgPath('/messages'),
     query: {
       case: conversation.caseId,
-      person: conversation.clientPersonId,
+      conversation: conversation.conversationId,
     },
   }
 }
@@ -133,7 +148,7 @@ function caseConversationLocation(conversation: CrmConversationInboxItem) {
     path: orgPath(`/cases/${encodeURIComponent(conversation.caseId)}`),
     query: {
       view: 'messages',
-      person: conversation.clientPersonId,
+      conversation: conversation.conversationId,
     },
   }
 }
@@ -178,6 +193,11 @@ function formatConversationTime(value: string) {
 
 function messagePreview(conversation: CrmConversationInboxItem) {
   const preview = conversation.lastMessagePreview || 'Otwórz rozmowę, aby zobaczyć wiadomość.'
+  if (conversation.lastMessageSenderKind === 'client') {
+    return conversation.kind === 'group'
+      ? `${conversation.lastMessageSenderName || 'Klient'}: ${preview}`
+      : preview
+  }
   if (conversation.lastMessageSenderKind !== 'staff') return preview
   return `${conversation.lastMessageSentByCurrentUser ? 'Ty' : 'Ekspert'}: ${preview}`
 }
@@ -378,7 +398,8 @@ onBeforeUnmount(() => {
           @click="guardConversationChange($event, conversation)"
         >
           <span class="crm-messages-inbox__avatar" aria-hidden="true">
-            {{ clientInitials(conversation.clientName) }}
+            <UIcon v-if="conversation.kind === 'group'" name="i-lucide-users-round" />
+            <template v-else>{{ clientInitials(conversation.clientName) }}</template>
           </span>
 
           <span class="crm-messages-inbox__thread-copy">
@@ -413,7 +434,7 @@ onBeforeUnmount(() => {
         ref="conversationPanel"
         surface="pane"
         :case-id="selectedConversation.caseId"
-        :fixed-client-person-id="selectedConversation.clientPersonId"
+        :fixed-conversation-id="selectedConversation.conversationId"
         :case-title="selectedConversation.caseTitle"
         :case-to="caseConversationLocation(selectedConversation)"
         :back-to="orgPath('/messages')"

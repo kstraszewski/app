@@ -1,7 +1,8 @@
 import { ReserveMessageAttachmentInputSchema } from '@openexpert/messaging'
-import { createError, getRouterParam, readBody, setHeader } from 'h3'
+import { createError, getQuery, getRouterParam, readBody, setHeader } from 'h3'
 import { requiredUuid } from '~~/server/utils/portal-auth'
 import {
+  parsePortalConversationThread,
   requirePortalConversation,
 } from '~~/server/utils/portal-conversation'
 import {
@@ -18,7 +19,11 @@ export default defineEventHandler(async (event) => {
     })
   }
   const caseId = requiredUuid(getRouterParam(event, 'caseId'), 'caseId')
-  const context = await requirePortalConversation(event, caseId)
+  const context = await requirePortalConversation(
+    event,
+    caseId,
+    parsePortalConversationThread(getQuery(event).thread),
+  )
   const result = await reservePortalMessageAttachment(event, context, parsed.data)
   return { data: result }
 })

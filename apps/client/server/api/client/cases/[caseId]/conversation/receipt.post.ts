@@ -1,6 +1,7 @@
 import { ReceiptUpdateInputSchema } from '@openexpert/messaging'
-import { createError, getRouterParam, readBody, setHeader } from 'h3'
+import { createError, getQuery, getRouterParam, readBody, setHeader } from 'h3'
 import {
+  parsePortalConversationThread,
   requirePortalConversation,
   updatePortalConversationReceipt,
 } from '~~/server/utils/portal-conversation'
@@ -17,7 +18,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const context = await requirePortalConversation(event, caseId)
+  const context = await requirePortalConversation(
+    event,
+    caseId,
+    parsePortalConversationThread(getQuery(event).thread),
+  )
   const result = await updatePortalConversationReceipt(event, context, parsed.data)
   return { data: result }
 })

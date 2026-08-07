@@ -1,11 +1,12 @@
 import { SendMessageInputSchema } from '@openexpert/messaging'
 import { randomUUID } from 'node:crypto'
-import { createError, getRouterParam, readBody, setHeader } from 'h3'
+import { createError, getQuery, getRouterParam, readBody, setHeader } from 'h3'
 import {
   asRecord,
   requiredUuid,
 } from '~~/server/utils/portal-auth'
 import {
+  parsePortalConversationThread,
   requirePortalConversation,
   sendPortalConversationMessage,
 } from '~~/server/utils/portal-conversation'
@@ -32,7 +33,11 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Message must contain between 1 and 4000 characters',
     })
   }
-  const context = await requirePortalConversation(event, caseId)
+  const context = await requirePortalConversation(
+    event,
+    caseId,
+    parsePortalConversationThread(getQuery(event).thread),
+  )
   const result = await sendPortalConversationMessage(event, context, parsed.data)
 
   return {

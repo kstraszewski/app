@@ -19,6 +19,7 @@ import {
   type MessageAttachmentDraftAdapter,
   type MessageAttachmentUploadReservation,
 } from '@openexpert/messaging-ui'
+import { dispatchNotificationFeedInvalidated } from '~/utils/notifications'
 
 interface ConversationRecipient {
   clientId: string
@@ -28,7 +29,7 @@ interface ConversationRecipient {
   role: string | null
   portalEnabled: boolean
   portalActivated: boolean
-  conversationId: string | null
+  conversationId?: string | null
 }
 
 interface ConversationPerson {
@@ -39,6 +40,7 @@ interface ConversationPerson {
 
 interface ConversationListItem extends Conversation {
   clientPerson: ConversationPerson | null
+  participants: ConversationRecipient[]
   unreadCount: number
   lastMessagePreview: string | null
 }
@@ -61,9 +63,11 @@ interface ConversationIndexResponse {
 interface ConversationBootstrap {
   conversation: Conversation
   clientPerson?: ConversationPerson | null
+  participants: ConversationRecipient[]
   messages: Message[]
   receipt: Receipt | null
   peerReceipt: Receipt | null
+  peerReceipts: Receipt[]
   pageInfo: {
     lastSequence: number
     hasMore: boolean
@@ -89,6 +93,8 @@ interface ReceiptResponse {
   data: {
     receipt: Receipt | null
     peerReceipt: Receipt | null
+    peerReceipts: Receipt[]
+    notificationsReadCount?: number
   }
 }
 
@@ -146,12 +152,14 @@ function requestErrorCode(error: unknown): string {
 const props = withDefaults(defineProps<{
   caseId: string
   fixedClientPersonId?: string
+  fixedConversationId?: string
   caseTitle?: string
   caseTo?: RouteLocationRaw
   backTo?: RouteLocationRaw
   surface?: 'card' | 'pane'
 }>(), {
   fixedClientPersonId: '',
+  fixedConversationId: '',
   caseTitle: '',
   caseTo: undefined,
   backTo: undefined,
@@ -189,6 +197,7 @@ const conversation = ref<Conversation | null>(null)
 const messages = ref<Message[]>([])
 const ownReceipt = ref<Receipt | null>(null)
 const peerReceipt = ref<Receipt | null>(null)
+const peerReceipts = ref<Receipt[]>([])
 const realtimeConfiguration = ref<RealtimeConfiguration>({
   mode: 'polling',
   channel: null,
@@ -199,6 +208,7 @@ const composer = ref('')
 const composerDrafts = new Map<string, string>()
 const replyDrafts = new Map<string, MessageReplyReference | null>()
 const retryableSends = new Map<string, RetryableSend>()
+const notificationReadThroughByConversation = new Map<string, number>()
 const replyingTo = ref<MessageReplyReference | null>(null)
 const draftClientMessageId = ref('')
 const pendingBody = ref('')
@@ -296,10 +306,40 @@ const attachmentDraftAdapter: MessageAttachmentDraftAdapter = {
 
 const attachmentDrafts = useMessageAttachmentDrafts(attachmentDraftAdapter)
 
+const borrowerRoles = new Set(['primary', 'co_borrower', 'co_applicant'])
+const groupRecipients = computed(() => recipients.value.filter(recipient => (
+  borrowerRoles.has(recipient.role || '')
+)))
+const groupConversationEntry = computed(() => conversationEntries.value.find(
+  entry => entry.kind === 'group',
+) ?? null)
+const groupParticipants = computed(() => groupConversationEntry.value?.participants?.length
+  ? groupConversationEntry.value.participants
+  : groupRecipients.value.filter(recipient => (
+      recipient.portalEnabled && recipient.portalActivated
+    )))
+const selectedThreadIsGroup = computed(() => selectedClientPersonId.value === 'group')
 const selectedRecipient = computed(() => recipients.value.find(
   recipient => recipient.clientPersonId === selectedClientPersonId.value,
-) ?? null)
+) ?? (selectedThreadIsGroup.value
+  ? {
+      clientId: '',
+      clientPersonId: 'group',
+      displayName: `Wszyscy kredytobiorcy (${groupParticipants.value.length})`,
+      email: null,
+      role: 'group',
+      portalEnabled: groupParticipants.value.length >= 2
+        && groupParticipants.value.every(recipient => recipient.portalEnabled),
+      portalActivated: groupParticipants.value.length >= 2
+        && groupParticipants.value.every(recipient => recipient.portalActivated),
+      conversationId: groupConversationEntry.value?.id ?? null,
+    }
+  : null))
+const selectedParticipants = computed(() => selectedThreadIsGroup.value
+  ? groupParticipants.value
+  : selectedRecipient.value ? [selectedRecipient.value] : [])
 const selectedRecipientInitials = computed(() => {
+  if (selectedThreadIsGroup.value) return 'WK'
   const words = (selectedRecipient.value?.displayName || 'Klient')
     .trim()
     .split(/\s+/u)
@@ -348,30 +388,62 @@ const requestedClientPersonId = computed(() => {
     : ''
 })
 
+const requestedConversationId = computed(() => {
+  const raw = props.fixedConversationId
+    || (Array.isArray(route.query.conversation)
+      ? route.query.conversation[0]
+      : route.query.conversation)
+  if (typeof raw !== 'string') return ''
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(raw)
+    ? raw.toLowerCase()
+    : ''
+})
+
+function conversationThreadKey(entry: Pick<Conversation, 'kind' | 'clientPersonId'>) {
+  return entry.kind === 'group' ? 'group' : entry.clientPersonId ?? ''
+}
+
 const unreadByClientPerson = computed(() => new Map(
-  conversationEntries.value.map(entry => [entry.clientPersonId, entry.unreadCount]),
+  conversationEntries.value.flatMap(entry => entry.kind === 'direct' && entry.clientPersonId
+    ? [[entry.clientPersonId, entry.unreadCount] as const]
+    : []),
 ))
 const totalUnreadCount = computed(() => conversationEntries.value.reduce(
   (total, entry) => total + entry.unreadCount,
   0,
 ))
-const recipientItems = computed(() => recipients.value.map((recipient) => {
-  const unreadCount = unreadByClientPerson.value.get(recipient.clientPersonId) ?? 0
-  const status = recipient.email
-    || (recipient.portalActivated ? 'Aktywny panel klienta' : 'Panel nie został jeszcze aktywowany')
-  return {
-    label: unreadCount
-      ? `${recipient.displayName} · nowe: ${unreadCount}`
-      : recipient.displayName,
-    description: unreadCount ? `Nieodczytane: ${unreadCount} · ${status}` : status,
-    value: recipient.clientPersonId,
-    icon: unreadCount
-      ? 'i-lucide-mail-plus'
-      : recipient.portalActivated
-        ? 'i-lucide-user-round-check'
-        : 'i-lucide-user-round',
-  }
-}))
+const recipientItems = computed(() => {
+  const directItems = recipients.value.map((recipient) => {
+    const unreadCount = unreadByClientPerson.value.get(recipient.clientPersonId) ?? 0
+    const status = recipient.email
+      || (recipient.portalActivated ? 'Aktywny panel klienta' : 'Panel nie został jeszcze aktywowany')
+    return {
+      label: unreadCount
+        ? `${recipient.displayName} · nowe: ${unreadCount}`
+        : recipient.displayName,
+      description: unreadCount ? `Nieodczytane: ${unreadCount} · ${status}` : status,
+      value: recipient.clientPersonId,
+      icon: unreadCount
+        ? 'i-lucide-mail-plus'
+        : recipient.portalActivated
+          ? 'i-lucide-user-round-check'
+          : 'i-lucide-user-round',
+    }
+  })
+  if (!groupConversationEntry.value && groupRecipients.value.length < 2) return directItems
+  const groupUnreadCount = groupConversationEntry.value?.unreadCount ?? 0
+  const ready = groupParticipants.value.length >= 2
+  return [{
+    label: groupUnreadCount
+      ? `Wszyscy kredytobiorcy (${groupParticipants.value.length}) · nowe: ${groupUnreadCount}`
+      : `Wszyscy kredytobiorcy (${groupParticipants.value.length})`,
+    description: ready
+      ? groupParticipants.value.map(recipient => recipient.displayName).join(', ')
+      : 'Udostępnij i aktywuj panel wszystkim kredytobiorcom',
+    value: 'group',
+    icon: groupUnreadCount ? 'i-lucide-mail-plus' : 'i-lucide-users-round',
+  }, ...directItems]
+})
 
 const latestSequence = computed(() => (
   messages.value.at(-1)?.sequence
@@ -502,6 +574,7 @@ function updateConversationEntry(updated: Conversation, additions: Partial<Conve
   const next: ConversationListItem = {
     ...updated,
     clientPerson: additions.clientPerson ?? previous?.clientPerson ?? null,
+    participants: additions.participants ?? previous?.participants ?? [],
     unreadCount: additions.unreadCount ?? previous?.unreadCount ?? 0,
     lastMessagePreview: additions.lastMessagePreview ?? previous?.lastMessagePreview ?? null,
   }
@@ -520,7 +593,7 @@ function applyBootstrap(
 ) {
   if (
     selectedClientPersonId.value
-    && bootstrap.conversation.clientPersonId !== selectedClientPersonId.value
+    && conversationThreadKey(bootstrap.conversation) !== selectedClientPersonId.value
   ) return
 
   const incomingMessages = bootstrap.messages ?? []
@@ -540,6 +613,7 @@ function applyBootstrap(
   conversation.value = bootstrap.conversation
   ownReceipt.value = bootstrap.receipt
   peerReceipt.value = bootstrap.peerReceipt
+  peerReceipts.value = bootstrap.peerReceipts ?? (bootstrap.peerReceipt ? [bootstrap.peerReceipt] : [])
   realtimeConfiguration.value = {
     mode: bootstrap.realtime?.mode ?? 'polling',
     channel: bootstrap.realtime?.channel ?? null,
@@ -554,6 +628,7 @@ function applyBootstrap(
 
   updateConversationEntry(bootstrap.conversation, {
     clientPerson: bootstrap.clientPerson,
+    participants: bootstrap.participants ?? [],
     lastMessagePreview: messages.value.at(-1)
       ? buildMessagePreview(
           messages.value.at(-1)!.body,
@@ -599,6 +674,7 @@ function resetConversationState() {
   panelVisible.value = false
   ownReceipt.value = null
   peerReceipt.value = null
+  peerReceipts.value = []
   hasOlderMessages.value = false
   peerTyping.value = false
   clientFilesOpen.value = false
@@ -615,7 +691,7 @@ async function selectRecipientConversation() {
   const revision = ++selectionRevision
   resetConversationState()
   const entry = conversationEntries.value.find(
-    item => item.clientPersonId === selectedClientPersonId.value,
+    item => conversationThreadKey(item) === selectedClientPersonId.value,
   )
   if (!entry) return
 
@@ -658,28 +734,36 @@ watch(indexResponse, (response) => {
   recipients.value = response?.data.recipients ?? []
   conversationEntries.value = response?.data.conversations ?? []
 
-  const selectedStillExists = recipients.value.some(
-    recipient => recipient.clientPersonId === selectedClientPersonId.value,
-  )
+  const selectedStillExists = selectedClientPersonId.value === 'group'
+    ? Boolean(groupConversationEntry.value) || groupRecipients.value.length >= 2
+    : recipients.value.some(
+        recipient => recipient.clientPersonId === selectedClientPersonId.value,
+      )
   if (!selectedStillExists) {
     if (hasAttachmentDrafts.value) return
+    const requestedConversation = conversationEntries.value.find(entry => (
+      entry.id === requestedConversationId.value
+    ))
     const requestedRecipient = recipients.value.find(recipient => (
       recipient.clientPersonId === requestedClientPersonId.value
     ))
     const unreadEntry = conversationEntries.value.find(item => item.unreadCount > 0)
     const preferredRecipient = requestedRecipient
       ?? recipients.value.find(recipient => (
-      recipient.clientPersonId === unreadEntry?.clientPersonId
+        recipient.clientPersonId === unreadEntry?.clientPersonId
       ))
       ?? recipients.value.find(recipient => recipient.role === 'primary')
       ?? recipients.value[0]
-    selectedClientPersonId.value = preferredRecipient?.clientPersonId ?? ''
+    const preferredConversation = requestedConversation ?? unreadEntry
+    selectedClientPersonId.value = preferredConversation
+      ? conversationThreadKey(preferredConversation)
+      : preferredRecipient?.clientPersonId ?? ''
     scheduleRecipientSelection()
     return
   }
 
   const selectedEntry = conversationEntries.value.find(
-    entry => entry.clientPersonId === selectedClientPersonId.value,
+    entry => conversationThreadKey(entry) === selectedClientPersonId.value,
   )
   if (
     (selectedEntry && conversation.value?.id !== selectedEntry.id)
@@ -697,6 +781,16 @@ watch(requestedClientPersonId, (requested) => {
     recipient.clientPersonId === requested
   ))
   if (requestedRecipientExists) selectedClientPersonId.value = requested
+})
+
+watch(requestedConversationId, (requested) => {
+  if (!requested || hasAttachmentDrafts.value) return
+  const requestedEntry = conversationEntries.value.find(entry => entry.id === requested)
+  if (!requestedEntry) return
+  const requestedThread = conversationThreadKey(requestedEntry)
+  if (requestedThread !== selectedClientPersonId.value) {
+    selectedClientPersonId.value = requestedThread
+  }
 })
 
 watch(selectedClientPersonId, (selected, previous) => {
@@ -718,6 +812,7 @@ watch(() => props.caseId, () => {
   composerDrafts.clear()
   replyDrafts.clear()
   retryableSends.clear()
+  notificationReadThroughByConversation.clear()
   composer.value = ''
   replyingTo.value = null
   clearPendingMessage()
@@ -731,6 +826,7 @@ watch(() => props.caseId, () => {
   messages.value = []
   ownReceipt.value = null
   peerReceipt.value = null
+  peerReceipts.value = []
   clientFilesOpen.value = false
   hasOlderMessages.value = false
   connectionState.value = 'idle'
@@ -748,8 +844,49 @@ function formatMessageTime(value: string) {
   }).format(date)
 }
 
+function clientParticipant(clientPersonId: string | null | undefined) {
+  if (!clientPersonId) return null
+  return selectedParticipants.value.find(participant => (
+    participant.clientPersonId === clientPersonId
+  )) ?? recipients.value.find(participant => (
+    participant.clientPersonId === clientPersonId
+  )) ?? null
+}
+
+function clientAuthorName(clientPersonId: string | null | undefined) {
+  return clientParticipant(clientPersonId)?.displayName || 'Klient'
+}
+
+function clientAuthorInitials(clientPersonId: string | null | undefined) {
+  const words = clientAuthorName(clientPersonId).trim().split(/\s+/u).filter(Boolean)
+  return (words.length > 1
+    ? `${words[0]?.[0] ?? ''}${words.at(-1)?.[0] ?? ''}`
+    : words[0]?.slice(0, 2) ?? 'KL').toLocaleUpperCase('pl-PL')
+}
+
 function deliveryLabel(message: Message) {
   if (message.senderKind !== 'staff') return ''
+  if (selectedThreadIsGroup.value) {
+    const participantIds = new Set(selectedParticipants.value.map(
+      participant => participant.clientPersonId,
+    ))
+    const relevantReceipts = peerReceipts.value.filter(receipt => (
+      receipt.participantClientPersonId
+      && participantIds.has(receipt.participantClientPersonId)
+    ))
+    const total = participantIds.size
+    const read = relevantReceipts.filter(receipt => (
+      receipt.readThroughSequence >= message.sequence
+    )).length
+    const delivered = relevantReceipts.filter(receipt => (
+      receipt.deliveredThroughSequence >= message.sequence
+    )).length
+    if (read === total && total > 0) return 'Odczytano przez wszystkich'
+    if (read > 0) return `Odczytano przez ${read} z ${total}`
+    if (delivered === total && total > 0) return 'Dostarczono wszystkim'
+    if (delivered > 0) return `Dostarczono ${delivered} z ${total}`
+    return 'Wysłano'
+  }
   if ((peerReceipt.value?.readThroughSequence ?? 0) >= message.sequence) return 'Odczytano'
   if ((peerReceipt.value?.deliveredThroughSequence ?? 0) >= message.sequence) return 'Dostarczono'
   return 'Wysłano'
@@ -758,13 +895,13 @@ function deliveryLabel(message: Message) {
 function replyAuthorLabel(reply: MessageReplyReference) {
   return reply.senderKind === 'staff'
     ? 'Ty'
-    : selectedRecipient.value?.displayName || 'Klient'
+    : clientAuthorName(reply.senderClientPersonId)
 }
 
 function replyActionLabel(message: Message) {
   const author = message.senderKind === 'staff'
     ? 'Ciebie'
-    : selectedRecipient.value?.displayName || 'klienta'
+    : clientAuthorName(message.senderClientPersonId)
   return `Odpowiedz na wiadomość od ${author}`
 }
 
@@ -929,7 +1066,9 @@ async function ensureConversation() {
   const requestedCaseId = props.caseId
   const response = await $fetch<ConversationBootstrapResponse>(indexApiPath.value, {
     method: 'POST',
-    body: { clientPersonId: selectedRecipient.value.clientPersonId },
+    body: selectedThreadIsGroup.value
+      ? { kind: 'group' }
+      : { kind: 'direct', clientPersonId: selectedRecipient.value.clientPersonId },
   })
   if (props.caseId !== requestedCaseId) {
     throw new Error('Kontekst sprawy zmienił się podczas otwierania rozmowy.')
@@ -1190,14 +1329,19 @@ async function acknowledgeMessages() {
   if (!conversation.value) return
   const payload = receiptPayload()
   if (!payload) return
+  const conversationId = conversation.value.id
   const delivered = ownReceipt.value?.deliveredThroughSequence ?? 0
   const read = ownReceipt.value?.readThroughSequence ?? 0
+  const notificationsReadThrough = notificationReadThroughByConversation.get(conversationId) ?? 0
   if (
     delivered >= payload.deliveredThroughSequence
     && read >= payload.readThroughSequence
+    && (
+      payload.readThroughSequence === 0
+      || notificationsReadThrough >= payload.readThroughSequence
+    )
   ) return
 
-  const conversationId = conversation.value.id
   try {
     const response = await $fetch<ReceiptResponse>(
       conversationApiPath(conversationId, '/receipt'),
@@ -1206,6 +1350,16 @@ async function acknowledgeMessages() {
     if (conversation.value?.id !== conversationId) return
     ownReceipt.value = response.data.receipt
     peerReceipt.value = response.data.peerReceipt
+    peerReceipts.value = response.data.peerReceipts
+    const acknowledgedReadThrough = response.data.receipt?.readThroughSequence
+      ?? payload.readThroughSequence
+    notificationReadThroughByConversation.set(
+      conversationId,
+      Math.max(notificationsReadThrough, acknowledgedReadThrough),
+    )
+    if (acknowledgedReadThrough > 0) {
+      dispatchNotificationFeedInvalidated(organizationSlug.value)
+    }
     updateConversationEntry(conversation.value, { unreadCount: 0 })
     emit('activity')
   }
@@ -1523,7 +1677,8 @@ onBeforeUnmount(() => {
               aria-label="Wróć do listy rozmów"
             />
             <span class="case-conversation__avatar">
-              {{ selectedRecipientInitials }}
+              <UIcon v-if="selectedThreadIsGroup" name="i-lucide-users-round" />
+              <template v-else>{{ selectedRecipientInitials }}</template>
             </span>
             <div>
               <p>{{ props.caseTitle || 'Rozmowa w sprawie' }}</p>
@@ -1532,7 +1687,9 @@ onBeforeUnmount(() => {
               </h2>
               <span class="case-conversation__connection">
                 <i :class="`is-${connectionState}`" />
-                {{ peerTyping ? `${selectedRecipient?.displayName || 'Klient'} pisze…` : connectionLabel }}
+                {{ peerTyping
+                  ? selectedThreadIsGroup ? 'Ktoś pisze…' : `${selectedRecipient?.displayName || 'Klient'} pisze…`
+                  : connectionLabel }}
               </span>
             </div>
           </div>
@@ -1620,7 +1777,7 @@ onBeforeUnmount(() => {
         </div>
 
         <UFormField
-          v-if="recipients.length > 1 && !props.fixedClientPersonId"
+          v-if="recipientItems.length > 1 && !props.fixedClientPersonId && !props.fixedConversationId"
           class="case-conversation__recipient-field"
           label="Rozmowa z"
           name="conversation-recipient"
@@ -1771,8 +1928,10 @@ onBeforeUnmount(() => {
               class="case-conversation__empty"
             >
               <span><UIcon name="i-lucide-message-circle-more" /></span>
-              <strong>Zacznij rozmowę z {{ selectedRecipient?.displayName }}</strong>
-              <p>Napisz krótką wiadomość — klient zobaczy ją w panelu swojej sprawy.</p>
+              <strong>{{ selectedThreadIsGroup
+                ? 'Zacznij rozmowę ze wszystkimi kredytobiorcami'
+                : `Zacznij rozmowę z ${selectedRecipient?.displayName}` }}</strong>
+              <p>Napisz krótką wiadomość — uczestnicy zobaczą ją w panelu swojej sprawy.</p>
             </div>
 
             <TransitionGroup
@@ -1800,6 +1959,14 @@ onBeforeUnmount(() => {
                 @pointerup="onMessagePointerEnd"
                 @pointercancel="onMessagePointerCancel"
               >
+                <UAvatar
+                  v-if="message.senderKind !== 'staff'"
+                  class="case-message__avatar"
+                  :text="clientAuthorInitials(message.senderClientPersonId)"
+                  size="xs"
+                  color="neutral"
+                  aria-hidden="true"
+                />
                 <UButton
                   v-if="message.senderKind === 'staff'"
                   class="case-message__reply-action"
@@ -1816,6 +1983,12 @@ onBeforeUnmount(() => {
                   class="case-message__bubble"
                   :style="{ '--case-message-swipe-offset': `${messageSwipeOffset(message.id)}px` }"
                 >
+                  <strong
+                    v-if="selectedThreadIsGroup && message.senderKind === 'client'"
+                    class="case-message__author"
+                  >
+                    {{ clientAuthorName(message.senderClientPersonId) }}
+                  </strong>
                   <MessageReplyQuote
                     v-if="message.replyToMessage"
                     :reply="message.replyToMessage"
@@ -1843,7 +2016,7 @@ onBeforeUnmount(() => {
                       >
                         {{ deliveryLabel(message) }}
                         <UIcon
-                          :name="deliveryLabel(message) === 'Odczytano'
+                          :name="deliveryLabel(message).startsWith('Odczytano')
                             ? 'i-lucide-check-check'
                             : 'i-lucide-check'"
                         />
@@ -1888,7 +2061,7 @@ onBeforeUnmount(() => {
 
               <div v-if="peerTyping" key="peer-typing" class="case-conversation__typing">
                 <span /><span /><span />
-                {{ selectedRecipient?.displayName }} pisze…
+                {{ selectedThreadIsGroup ? 'Ktoś pisze…' : `${selectedRecipient?.displayName} pisze…` }}
               </div>
             </TransitionGroup>
             <span ref="readSentinelElement" class="case-conversation__read-sentinel" aria-hidden="true" />
@@ -2359,6 +2532,12 @@ onBeforeUnmount(() => {
   transform-origin: left bottom;
 }
 
+.case-message__avatar {
+  align-self: flex-end;
+  margin-bottom: 2px;
+  border: 1px solid var(--ui-border-muted);
+}
+
 .case-message__bubble {
   position: relative;
   z-index: 1;
@@ -2372,6 +2551,14 @@ onBeforeUnmount(() => {
     opacity var(--oe-motion-fast),
     transform var(--oe-duration-fast) var(--ease-out),
     box-shadow var(--oe-duration-fast) var(--ease-out);
+}
+
+.case-message__author {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .case-message--mine {
@@ -2835,7 +3022,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 0;
   top: 50%;
-  left: 0;
+  left: 28px;
   transform: translateY(-50%) scale(1);
 }
 </style>

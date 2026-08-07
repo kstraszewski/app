@@ -3,6 +3,7 @@ export interface OrganizationCapabilities {
   teamAdmin: boolean
   facilityAdmin: boolean
   canManageTeams: boolean
+  canUseExperiments: boolean
 }
 
 export interface OrganizationSummary {
@@ -27,6 +28,7 @@ export interface OrganizationMember {
     | 'consents_admin'
     | 'forum_admin'
     | 'crm_config_admin'
+    | 'experiments_access'
   >
   status?: 'active' | 'pending' | 'inactive'
   teams?: string[]

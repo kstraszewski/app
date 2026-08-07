@@ -334,7 +334,12 @@ function caseActionPath(
   if (!caseId) return null
 
   const base = `/org/${encodeURIComponent(organizationSlug)}/cases/${caseId}`
-  if (eventType === 'crm.case_message.received') return `${base}?view=messages`
+  if (eventType === 'crm.case_message.received') {
+    const conversationId = payloadUuid(payload.conversationId ?? payload.conversation_id)
+    const params = new URLSearchParams({ view: 'messages' })
+    if (conversationId) params.set('conversation', conversationId)
+    return `${base}?${params.toString()}`
+  }
 
   if (eventType.startsWith('crm.task.')) {
     const taskId = payloadUuid(payload.taskId ?? payload.task_id)

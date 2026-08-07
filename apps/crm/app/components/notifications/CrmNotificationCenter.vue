@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { InAppNotification } from '#shared/types/notifications'
 import {
+  NOTIFICATION_FEED_INVALIDATED_EVENT,
   notificationBadgeLabel,
+  notificationFeedInvalidationMatches,
   safeNotificationActionPath,
 } from '~/utils/notifications'
 
@@ -110,6 +112,11 @@ function updateViewport() {
   mobileViewport.value = viewportMedia?.matches ?? false
 }
 
+function handleNotificationFeedInvalidated(event: Event) {
+  if (!notificationFeedInvalidationMatches(event, organizationSlug.value)) return
+  void sync({ silent: true, replace: true }).catch(() => {})
+}
+
 watch(notificationOpen, (open) => {
   if (open) {
     void sync({ silent: true }).catch(() => {})
@@ -134,10 +141,18 @@ onMounted(() => {
   viewportMedia = window.matchMedia('(max-width: 900px)')
   updateViewport()
   viewportMedia.addEventListener('change', updateViewport)
+  window.addEventListener(
+    NOTIFICATION_FEED_INVALIDATED_EVENT,
+    handleNotificationFeedInvalidated,
+  )
 })
 
 onBeforeUnmount(() => {
   viewportMedia?.removeEventListener('change', updateViewport)
+  window.removeEventListener(
+    NOTIFICATION_FEED_INVALIDATED_EVENT,
+    handleNotificationFeedInvalidated,
+  )
   if (pulseTimer) clearTimeout(pulseTimer)
 })
 </script>

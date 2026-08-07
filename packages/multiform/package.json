@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/gateway": "4.0.26",
-    "ai": "7.0.34",
+    "@ai-sdk/gateway": "4.0.29",
+    "ai": "7.0.38",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
     "zod": "4.4.3"

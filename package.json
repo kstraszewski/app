@@ -30,6 +30,7 @@
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
+    "rollup": "4.62.4",
     "turbo": "^2.9.6"
   }
 }

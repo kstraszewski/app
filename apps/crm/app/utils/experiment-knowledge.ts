@@ -76,6 +76,19 @@ export function experimentKnowledgePlainText(source: ExperimentKnowledgeSource) 
   return experimentKnowledgeHtmlToText(source.htmlContent ?? '')
 }
 
+export function experimentKnowledgePreviewMarkdown(title: string, markdown: string) {
+  const leadingHeading = markdown.match(
+    /^(?:\uFEFF)?(?:[ \t]*\r?\n)*[ \t]{0,3}#(?!#)[ \t]+(.+?)[ \t]*#*[ \t]*(?:\r?\n|$)/u,
+  )
+  if (!leadingHeading) return markdown
+
+  const headingTitle = normalizeExperimentKnowledgeText(leadingHeading[1] ?? '')
+  const documentTitle = normalizeExperimentKnowledgeText(title)
+  if (!headingTitle || headingTitle !== documentTitle) return markdown
+
+  return markdown.slice(leadingHeading[0].length).replace(/^(?:\r?\n)+/u, '')
+}
+
 export function splitExperimentKnowledgeText(value: string): ExperimentKnowledgeChunk[] {
   const text = normalizeExperimentKnowledgeText(value)
   if (!text) return []

@@ -52,9 +52,7 @@ const candidateItems = computed(() => availableOffers.value.map(offer => ({
   description: `${offer.product_name} · ${money(offer.first_monthly_outflow, offer.currency)}/mies.`,
   value: offer.id,
 })))
-const canCreateApplication = computed(() => Boolean(
-  candidateOfferId.value && props.caseData.selected_property_id,
-))
+const canCreateApplication = computed(() => Boolean(candidateOfferId.value))
 const finalApplication = computed(() => props.caseData.bank_applications.find(application => (
   application.id === props.caseData.contract_application_id
 )) ?? null)
@@ -110,7 +108,7 @@ function applicationStatus(status: MortgageApplicationStatus) {
 
 function propertyLabel(application: CaseBankApplication) {
   const property = propertyFor(application)
-  if (!property) return 'Nieruchomość zostanie przypisana przed wysłaniem'
+  if (!property) return 'Nieruchomość opcjonalna — możesz ją uzupełnić później'
   return property.listing_title || [property.address, property.city].filter(Boolean).join(', ')
 }
 
@@ -132,7 +130,6 @@ async function addApplication() {
       method: 'POST',
       body: {
         offer_id: offer.id,
-        ...(props.caseData.selected_property_id ? { property_id: props.caseData.selected_property_id } : {}),
       },
     })
     emit('refresh')
@@ -376,7 +373,7 @@ async function signContract() {
       <span><UIcon name="i-lucide-files" /></span>
       <div>
         <strong>Nie uruchomiono jeszcze wniosku bankowego</strong>
-        <small>Zapisane oferty pozostają shortlistą, dopóki nie dodasz ich tutaj.</small>
+        <small>Nowa oferta tworzy szkic automatycznie. Wcześniej zapisaną ofertę możesz dodać poniżej.</small>
       </div>
     </div>
 
@@ -402,12 +399,9 @@ async function signContract() {
       >
         Dodaj do wniosków
       </UButton>
-      <small v-if="candidateItems.length && !caseData.selected_property_id">
-        Najpierw wybierz nieruchomość, aby przeliczyć i zamrozić parametry wniosku.
-      </small>
-      <small v-else-if="!candidateItems.length && incompleteOfferCount">
+      <small v-if="!candidateItems.length && incompleteOfferCount">
         {{ incompleteOfferCount }} {{ incompleteOfferCount === 1 ? 'wariant wymaga' : 'warianty wymagają' }}
-        potwierdzenia warunków i kosztów przed uruchomieniem wniosku.
+        poprawienia warunków oferty przed uruchomieniem wniosku.
       </small>
       <UButton
         v-if="!candidateItems.length"

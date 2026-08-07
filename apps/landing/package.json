@@ -17,7 +17,7 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@ai-sdk/gateway": "4.0.0-canary.103",
+    "@ai-sdk/gateway": "4.0.29",
     "@nuxt/icon": "^2.3.1",
     "@openexpert/auth": "workspace:*",
     "@openexpert/data-api": "workspace:*",
@@ -26,8 +26,8 @@
     "@openexpert/storage": "workspace:*",
     "@pdf-lib/fontkit": "^1.1.1",
     "@rive-app/webgl2": "^2.38.5",
-    "ai": "7.0.34",
-    "eve": "0.27.1",
+    "ai": "7.0.38",
+    "eve": "0.31.1",
     "fflate": "^0.8.3",
     "h3": "1.15.11",
     "mapbox-gl": "3.27.0",

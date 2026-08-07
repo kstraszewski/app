@@ -369,6 +369,35 @@ function mapBankFiles(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
   })
 }
 
+function mapKnowledge(rows: UnknownRecord[], slug: string): CrmOmnisearchHit[] {
+  return rows.flatMap((row) => {
+    const id = uuid(row.document_id ?? row.id)
+    const label = text(row.title ?? row.label)
+    if (!id || !label) return []
+
+    const dynamic = text(row.kind) === 'dynamic_html'
+    const institutionNames = Array.isArray(row.institution_names)
+      ? row.institution_names.map(text).filter((value): value is string => Boolean(value))
+      : []
+
+    return [{
+      id,
+      kind: 'knowledge' as const,
+      label,
+      description: joinDetails(
+        institutionNames.length ? institutionNames.join(', ') : undefined,
+        row.snippet,
+      ) ?? 'Dokument w bibliotece Wiedzy',
+      suffix: dynamic ? 'Interaktywne' : 'Tekst',
+      icon: dynamic ? 'i-lucide-panels-top-left' : 'i-lucide-library-big',
+      to: {
+        path: organizationPath(slug, '/experiments/knowledge'),
+        query: { document: id },
+      },
+    }]
+  })
+}
+
 export function mapCrmOmnisearchResponse(
   payload: unknown,
   organizationSlug: string,
@@ -384,6 +413,7 @@ export function mapCrmOmnisearchResponse(
         recordArray(groups.bankFiles ?? groups.bank_files),
         organizationSlug,
       ),
+      knowledge: mapKnowledge(recordArray(groups.knowledge), organizationSlug),
       cases: mapCases(recordArray(groups.cases), organizationSlug),
       clients: mapClients(recordArray(groups.clients), organizationSlug),
       appointments: mapAppointments(recordArray(groups.appointments), organizationSlug),

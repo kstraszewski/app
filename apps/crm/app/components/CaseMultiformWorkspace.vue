@@ -168,13 +168,6 @@ const prerequisite = computed(() => {
   if (!activeApplications.value.length) {
     return 'Sprawa nie ma aktywnego wniosku bankowego do przygotowania.'
   }
-  if (activeApplications.value.some(application => application.snapshot_status !== 'complete')) {
-    return 'Aktywny wniosek nie ma kompletnego, zamrożonego przeliczenia oferty dla nieruchomości.'
-  }
-  if (props.caseData.properties.length && !activeProperty.value) {
-    return 'Wybierz nieruchomość, której dane mają trafić do wniosków.'
-  }
-  if (!templateIds.value.length) return 'Aktywne wnioski nie mają przypisanych formularzy bankowych.'
   return ''
 })
 
@@ -218,6 +211,16 @@ const contextCanPrepare = computed(() => Boolean(
   && context.value.templateIds.length > 0
   && context.value.selectedApplicationsValidation.templates.every(template => template.found),
 ))
+
+const formPreparationBlocker = computed(() => {
+  if (!templateIds.value.length) {
+    return 'Checklista jest dostępna, ale ten bank nie ma jeszcze przypisanego formularza PDF. Formularze i paczka ZIP odblokują się po dodaniu szablonu banku.'
+  }
+  if (context.value && !context.value.selectedApplicationsValidation.templates.every(template => template.found)) {
+    return 'Co najmniej jeden przypisany formularz PDF banku nie jest dostępny.'
+  }
+  return ''
+})
 
 function requirementAcceptsAttachment(
   requirement: MultiformCrmContext['checklist']['requirements'][number],
@@ -1002,6 +1005,7 @@ const primaryActionDisabled = computed(() => (
   || draftPending.value
   || preparePending.value
   || fillPending.value
+  || (activeStep.value === 2 && Boolean(formPreparationBlocker.value))
   || (activeStep.value === 4 && !contextCanExport.value)
 ))
 
@@ -1187,11 +1191,11 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <span>Nieruchomość</span>
-              <strong>{{ activeProperty ? 'Wybrana' : 'Brak' }}</strong>
+              <strong>{{ activeProperty ? 'Wybrana' : 'Opcjonalna' }}</strong>
               <small>
                 {{ activeProperty
                   ? [activeProperty.address, activeProperty.city].filter(Boolean).join(', ')
-                  : 'Uzupełnij dane nieruchomości' }}
+                  : 'Możesz uzupełnić ją później' }}
               </small>
             </div>
           </div>
@@ -1262,6 +1266,14 @@ onBeforeUnmount(() => {
             :context="context"
             :requirements="resolvedDocumentRequirements"
             @refresh="handleDocumentsRefresh"
+          />
+          <UAlert
+            v-if="formPreparationBlocker"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-file-warning"
+            title="Formularze bankowe wymagają szablonu PDF"
+            :description="formPreparationBlocker"
           />
         </section>
 
@@ -1511,7 +1523,8 @@ onBeforeUnmount(() => {
           >
             {{ primaryActionLabel }}
           </UButton>
-          <small v-if="activeStep < 4">Przejdź do kroku {{ activeStep + 2 }}: {{ workflowSteps[activeStep + 1]?.title }}</small>
+          <small v-if="activeStep === 2 && formPreparationBlocker">Checklista działa niezależnie od formularza PDF</small>
+          <small v-else-if="activeStep < 4">Przejdź do kroku {{ activeStep + 2 }}: {{ workflowSteps[activeStep + 1]?.title }}</small>
           <small v-else>Pobierz jedną paczkę dla wszystkich banków</small>
         </div>
       </div>

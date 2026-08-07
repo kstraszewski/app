@@ -411,7 +411,6 @@ interface CrmCaseBankApplicationRow {
   bank_id: string
   property_id: string | null
   slot: number
-  snapshot_status: string
   scenario_snapshot: unknown
 }
 
@@ -839,7 +838,7 @@ export async function loadCrmMultiformContext(
       .maybeSingle(),
     dataApi
       .from('crm_case_bank_applications')
-      .select('submission_id, case_item_id, offer_id, bank_id, property_id, slot, snapshot_status, scenario_snapshot')
+      .select('submission_id, case_item_id, offer_id, bank_id, property_id, slot, scenario_snapshot')
       .eq('organization_id', organization.id)
       .eq('case_id', input.caseId)
       .order('slot', { ascending: true }),
@@ -900,13 +899,6 @@ export async function loadCrmMultiformContext(
   if (!selectedApplications.length) {
     throw createError({ statusCode: 409, statusMessage: 'Sprawa nie ma aktywnych wniosków do przygotowania.' })
   }
-  if (selectedApplications.some(application => application.snapshot_status !== 'complete')) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Aktywny wniosek nie ma kompletnego, zamrożonego przeliczenia oferty dla nieruchomości.',
-    })
-  }
-
   const currentApplicationIds = selectedApplications.map(application => String(application.submission_id))
   const currentOfferIds = selectedApplications.map(application => String(application.offer_id))
   if (

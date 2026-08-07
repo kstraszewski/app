@@ -147,6 +147,7 @@ const demoMessages: readonly EveMessage[] = [
             kind: 'tool-call',
             name: 'add_case_note',
             inputRequest: {
+              kind: 'tool-approval',
               requestId: 'demo-approval',
               prompt: 'Dodać notatkę do sprawy?',
               display: 'confirmation',

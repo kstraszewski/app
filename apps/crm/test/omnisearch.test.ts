@@ -15,6 +15,7 @@ const documentId = '00000000-0000-4000-8000-000000000006'
 const submissionId = '00000000-0000-4000-8000-000000000007'
 const forumThreadId = '00000000-0000-4000-8000-000000000008'
 const bankFileId = '00000000-0000-4000-8000-000000000009'
+const knowledgeDocumentId = '00000000-0000-4000-8000-000000000010'
 
 test('allows omnisearch only for supported CRM organization roles', () => {
   assert.equal(canAccessCrmOmnisearch('expert'), true)
@@ -62,6 +63,15 @@ test('maps a minimal grouped response to safe deep links', () => {
       storage_path: 'private/bank-files/secret.pdf',
       extracted_text: 'full extracted bank document must not leak',
       download_url: 'https://private.example.test/secret.pdf',
+    }],
+    knowledge: [{
+      document_id: knowledgeDocumentId,
+      kind: 'dynamic_html',
+      title: 'Kalkulator zdolności dla ING',
+      snippet: 'Interaktywny kalkulator pokazuje wymagane źródła dochodu.',
+      institution_names: ['ING Bank Śląski'],
+      plain_text: 'full knowledge document must not leak',
+      javascript_content: 'private source must not leak',
     }],
     cases: [{
       id: caseId,
@@ -127,6 +137,18 @@ test('maps a minimal grouped response to safe deep links', () => {
       query: { file: bankFileId, page: 4 },
     },
   })
+  assert.deepEqual(response.groups.knowledge[0], {
+    id: knowledgeDocumentId,
+    kind: 'knowledge',
+    label: 'Kalkulator zdolności dla ING',
+    description: 'ING Bank Śląski · Interaktywny kalkulator pokazuje wymagane źródła dochodu.',
+    suffix: 'Interaktywne',
+    icon: 'i-lucide-panels-top-left',
+    to: {
+      path: '/org/moja-organizacja/experiments/knowledge',
+      query: { document: knowledgeDocumentId },
+    },
+  })
   assert.equal(response.groups.cases[0]?.to, `/org/moja-organizacja/cases/${caseId}`)
   assert.deepEqual(response.groups.appointments[0]?.to, {
     path: '/org/moja-organizacja/calendar',
@@ -154,6 +176,8 @@ test('maps a minimal grouped response to safe deep links', () => {
   assert.equal(serialized.includes('full extracted bank document must not leak'), false)
   assert.equal(serialized.includes('private/bank-files'), false)
   assert.equal(serialized.includes('private.example.test'), false)
+  assert.equal(serialized.includes('full knowledge document must not leak'), false)
+  assert.equal(serialized.includes('private source must not leak'), false)
   assert.equal(serialized.includes('"metadata"'), false)
 })
 

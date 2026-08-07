@@ -490,7 +490,7 @@ async function sendMessage(message = composer.value) {
   composer.value = ''
   evePanelOpen.value = true
   try {
-    await send({ message: text })
+    await send(text)
   }
   catch {
     // useEveAgent forwards the useful error through onError.
@@ -507,7 +507,7 @@ function retryLastMessage() {
 }
 
 async function cancelTurn(options: { silent?: boolean } = {}) {
-  const sessionId = session.value.sessionId
+  const sessionId = session.value?.sessionId
   try {
     if (sessionId) {
       await $fetch(`/api/assistant/eve/v1/session/${encodeURIComponent(sessionId)}/cancel`, {

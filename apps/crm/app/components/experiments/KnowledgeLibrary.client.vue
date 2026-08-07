@@ -9,7 +9,11 @@ import {
   type DynamicContentSource,
 } from '~/utils/dynamic-content-preview'
 import type { MDCParseOptions } from '@nuxtjs/mdc'
-import type { ExperimentKnowledgeKind } from '~/utils/experiment-knowledge'
+import {
+  experimentKnowledgePreviewMarkdown,
+  type ExperimentKnowledgeKind,
+} from '~/utils/experiment-knowledge'
+import { contrastingTextColor } from '~/utils/color-contrast'
 
 interface KnowledgeInstitution {
   id: string
@@ -128,6 +132,11 @@ const canCreate = computed(() => Boolean(createTitle.value.trim() && createConte
 const selectedKindLabel = computed(() => (
   selectedDocument.value?.kind === 'dynamic_html' ? 'Interaktywna strona' : 'Dokument tekstowy'
 ))
+const selectedMarkdown = computed(() => {
+  const document = selectedDocument.value
+  if (!document || document.kind !== 'text') return ''
+  return experimentKnowledgePreviewMarkdown(document.title, document.textContent ?? '')
+})
 
 function kindIcon(kind: ExperimentKnowledgeKind) {
   return kind === 'dynamic_html' ? 'i-lucide-panels-top-left' : 'i-lucide-file-text'
@@ -137,7 +146,7 @@ function institutionBrandStyle(institution: KnowledgeInstitution) {
   if (!institution.brandColor) return undefined
   return {
     '--institution-brand': institution.brandColor,
-    '--institution-foreground': institution.brandForegroundColor ?? '#FFFFFF',
+    '--institution-foreground': contrastingTextColor(institution.brandColor) ?? '#FFFFFF',
   }
 }
 
@@ -160,7 +169,17 @@ function friendlyError(caught: unknown) {
   return statusMessage || 'Spróbuj ponownie za chwilę.'
 }
 
-async function loadList(options: { preserveSelection?: boolean } = {}) {
+function routeDocumentId() {
+  const value = Array.isArray(route.query.document)
+    ? route.query.document[0]
+    : route.query.document
+  return typeof value === 'string' && value ? value : null
+}
+
+async function loadList(options: {
+  preserveSelection?: boolean
+  preferredDocumentId?: string | null
+} = {}) {
   const sequence = ++requestSequence
   loadingList.value = true
   try {
@@ -178,7 +197,10 @@ async function loadList(options: { preserveSelection?: boolean } = {}) {
 
     const selectionStillVisible = selectedId.value
       && response.data.some(item => item.id === selectedId.value)
-    if (!options.preserveSelection || !selectionStillVisible) {
+    if (options.preferredDocumentId) {
+      selectedId.value = options.preferredDocumentId
+    }
+    else if (!options.preserveSelection || !selectionStillVisible) {
       selectedId.value = response.data[0]?.id ?? null
     }
     if (selectedId.value) await loadDocument(selectedId.value)
@@ -427,10 +449,17 @@ function handlePreviewMessage(event: MessageEvent) {
 watch(searchQuery, scheduleSearch)
 watch(kindFilter, () => void loadList())
 watch(institutionFilter, () => void loadList())
+watch(
+  () => route.query.document,
+  () => {
+    const documentId = routeDocumentId()
+    if (documentId && documentId !== selectedId.value) void loadDocument(documentId)
+  },
+)
 
 onMounted(() => {
   window.addEventListener('message', handlePreviewMessage)
-  void loadList()
+  void loadList({ preferredDocumentId: routeDocumentId() })
 })
 
 onBeforeUnmount(() => {
@@ -605,7 +634,7 @@ onBeforeUnmount(() => {
           <div v-if="selectedDocument.kind === 'text'" class="knowledge-text-preview">
             <MDC
               :key="`${selectedDocument.id}:${selectedDocument.revision}`"
-              :value="selectedDocument.textContent ?? ''"
+              :value="selectedMarkdown"
               :cache-key="`knowledge-markdown:${selectedDocument.id}:${selectedDocument.revision}`"
               :parser-options="knowledgeMarkdownParserOptions"
               tag="article"

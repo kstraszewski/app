@@ -424,7 +424,10 @@ async function saveOffer(offer: typeof calculations.value[number]) {
   if (savingOfferKeys.value.includes(key) || persistedOfferKeys.value.has(key)) return
   savingOfferKeys.value = [...savingOfferKeys.value, key]
   try {
-    await $fetch(crmApiPath(`/cases/${caseId.value}/offers`), {
+    const result = await $fetch<{
+      application_creation_status: 'created' | 'skipped' | 'failed'
+      application_creation_message: string | null
+    }>(crmApiPath(`/cases/${caseId.value}/offers`), {
       method: 'POST',
       body: {
         source_product_id: offer.product.id,
@@ -438,11 +441,23 @@ async function saveOffer(offer: typeof calculations.value[number]) {
     })
     savedOfferKeys.value = [...savedOfferKeys.value, key]
     await refreshCaseContext()
-    toast.add({
-      title: 'Zapisano ofertę w sprawie',
-      description: `${offer.product.bank.name} · ${offer.product.name}`,
-      color: 'success',
-    })
+    if (result.application_creation_status === 'created') {
+      toast.add({
+        title: 'Oferta i roboczy wniosek są gotowe',
+        description: `${offer.product.bank.name} · możesz przejść do checklisty dokumentów`,
+        color: 'success',
+        icon: 'i-lucide-files',
+      })
+    }
+    else {
+      toast.add({
+        title: 'Zapisano ofertę w sprawie',
+        description: result.application_creation_status === 'skipped'
+          ? 'Dla tego banku istnieje już wniosek albo wykorzystano trzy dostępne miejsca.'
+          : result.application_creation_message ?? 'Roboczy wniosek możesz dodać ze sprawy.',
+        color: result.application_creation_status === 'failed' ? 'warning' : 'success',
+      })
+    }
   } catch (caught: any) {
     const statusCode = Number(caught?.statusCode ?? caught?.response?.status ?? 0)
     if (statusCode === 409) await refresh()

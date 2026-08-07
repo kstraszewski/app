@@ -4,6 +4,7 @@ import {
   assertExperimentKnowledgeSource,
   experimentKnowledgeHtmlToText,
   experimentKnowledgePlainText,
+  experimentKnowledgePreviewMarkdown,
   splitExperimentKnowledgeText,
 } from '../app/utils/experiment-knowledge.ts'
 
@@ -31,6 +32,26 @@ describe('experiment knowledge content pipeline', () => {
       cssContent: null,
       javascriptContent: null,
     }), 'Pierwszy akapit\n\nDrugi akapit')
+  })
+
+  it('removes a duplicated leading title only from the Markdown preview', () => {
+    const markdown = '# mBank — dokumentacja nieruchomości: checklista\n\n> Materiał demonstracyjny.\n'
+
+    assert.equal(
+      experimentKnowledgePreviewMarkdown(
+        'mBank — dokumentacja nieruchomości: checklista',
+        markdown,
+      ),
+      '> Materiał demonstracyjny.\n',
+    )
+    assert.equal(
+      experimentKnowledgePreviewMarkdown('Inny tytuł', markdown),
+      markdown,
+    )
+    assert.equal(
+      experimentKnowledgePreviewMarkdown('Sekcja', '## Sekcja\n\nTreść'),
+      '## Sekcja\n\nTreść',
+    )
   })
 
   it('creates ordered, bounded overlapping chunks', () => {

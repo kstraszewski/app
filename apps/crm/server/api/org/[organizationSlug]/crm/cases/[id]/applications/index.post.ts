@@ -7,6 +7,7 @@ import {
 } from '~~/app/utils/mortgage-property-comparison'
 import {
   assertSupportedFields,
+  createDraftCaseBankApplication,
   loadCaseBankApplication,
   loadCaseContractSelection,
   throwBankApplicationDbError,
@@ -43,22 +44,24 @@ export default defineEventHandler(async (event) => {
     propertyId = requiredText(body.property_id, 'property_id')
     assertUuid(propertyId, 'property_id')
   }
-  else {
-    const { data: selection, error: selectionError } = await session.dataApi
-      .from('crm_case_property_selections')
-      .select('property_id')
-      .eq('organization_id', session.organizationId)
-      .eq('case_id', caseId)
-      .maybeSingle()
-    throwDbError(selectionError)
-    propertyId = selection?.property_id ? String(selection.property_id) : null
-  }
 
   if (!propertyId) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: 'Select a property before creating a bank application',
+    const data = await createDraftCaseBankApplication(event, session, caseId, offerId)
+    await recordCrmActivity(session, {
+      case_id: caseId,
+      case_item_id: String(data.case_item_id),
+      submission_id: String(data.id),
+      activity_type: 'mortgage_application_created',
+      title: 'Dodano roboczy wniosek do banku',
+      payload: {
+        application_id: data.id,
+        offer_id: offerId,
+        bank_id: data.bank_id,
+        property_id: null,
+        slot: data.slot,
+      },
     })
+    return { data }
   }
 
   let created

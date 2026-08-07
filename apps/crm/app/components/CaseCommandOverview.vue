@@ -113,7 +113,6 @@ const unverifiedDocumentCount = computed(() => Math.max(
   props.documentProgress.satisfied - props.documentProgress.verified,
 ))
 const blockerCount = computed(() => [
-  !activeProperty.value,
   !finalApplication.value && !bankApplications.value.length,
   unverifiedDocumentCount.value > 0,
   props.multiformBlockers.length > 0,
@@ -157,21 +156,6 @@ const attentionItems = computed(() => {
     })
   }
 
-  if (!activeProperty.value) {
-    const hasCandidates = properties.value.length > 0
-    items.push({
-      key: 'property',
-      title: hasCandidates ? 'Wybierz nieruchomość do finansowania' : 'Dodaj nieruchomość',
-      detail: hasCandidates
-        ? `${properties.value.length} ${properties.value.length === 1 ? 'nieruchomość czeka' : 'nieruchomości czekają'} na wybór`
-        : propertyScenarioValue.value
-          ? `${currency.format(propertyScenarioValue.value)} ze scenariusza oferty`
-          : 'Brakuje adresu i parametrów nieruchomości',
-      icon: 'i-lucide-house',
-      action: hasCandidates ? scrollToPropertyCandidates : props.actions.addProperty,
-    })
-  }
-
   if (!finalApplication.value && !bankApplications.value.length) {
     items.push({
       key: 'applications',
@@ -180,7 +164,7 @@ const attentionItems = computed(() => {
         ? 'Możesz złożyć do trzech wniosków równolegle'
         : 'Zapisz oferty, które chcesz porównać',
       icon: 'i-lucide-files',
-      action: offers.value.length ? scrollToPropertyCandidates : props.actions.addOffer,
+      action: props.actions.addOffer,
     })
   }
 
@@ -193,6 +177,21 @@ const attentionItems = computed(() => {
     icon: 'i-lucide-file-input',
     action: props.actions.goMultiform,
   })
+
+  if (!activeProperty.value) {
+    const hasCandidates = properties.value.length > 0
+    items.push({
+      key: 'property',
+      title: hasCandidates ? 'Opcjonalnie wybierz nieruchomość' : 'Opcjonalnie dodaj nieruchomość',
+      detail: hasCandidates
+        ? `${properties.value.length} ${properties.value.length === 1 ? 'nieruchomość czeka' : 'nieruchomości czekają'} na wybór`
+        : propertyScenarioValue.value
+          ? `${currency.format(propertyScenarioValue.value)} ze scenariusza oferty · nie blokuje wniosku`
+          : 'Nie blokuje przygotowania checklisty ani formularzy',
+      icon: 'i-lucide-house',
+      action: hasCandidates ? scrollToPropertyCandidates : props.actions.addProperty,
+    })
+  }
 
   return items.slice(0, 3)
 })
@@ -601,7 +600,7 @@ function activityIcon(type: string) {
             </header>
 
             <div v-if="financingBaseline && offers.length" class="financing-assumptions">
-              <span><UIcon name="i-lucide-calculator" /></span>
+              <span class="financing-assumptions__icon"><UIcon name="i-lucide-calculator" /></span>
               <div>
                 <strong>Wspólne założenia porównania</strong>
                 <small>
@@ -609,7 +608,7 @@ function activityIcon(type: string) {
                   {{ financingBaseline.installmentType === 'decreasing' ? 'raty malejące' : 'raty równe' }}
                 </small>
               </div>
-              <UBadge color="warning" variant="subtle" size="xs">Szacunek</UBadge>
+              <UBadge class="financing-assumptions__badge" color="warning" variant="subtle" size="xs">Szacunek</UBadge>
             </div>
 
             <div v-if="properties.length" class="property-candidates__grid">
@@ -1450,7 +1449,7 @@ function activityIcon(type: string) {
   background: color-mix(in srgb, var(--ui-warning) 7%, var(--ui-bg));
 }
 
-.financing-assumptions > span {
+.financing-assumptions__icon {
   display: grid;
   place-items: center;
   width: 32px;
@@ -1459,6 +1458,11 @@ function activityIcon(type: string) {
   background: color-mix(in srgb, var(--ui-warning) 13%, var(--ui-bg));
   color: var(--ui-warning);
   font-size: 17px;
+}
+
+.financing-assumptions__badge {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .financing-assumptions > div {

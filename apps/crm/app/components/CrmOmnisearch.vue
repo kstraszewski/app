@@ -130,6 +130,12 @@ const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [
   highlightedIcon: 'i-lucide-corner-down-left',
   items: remoteItems('bankFiles'),
 }, {
+  id: 'crm-knowledge',
+  label: 'Wiedza',
+  ignoreFilter: true,
+  highlightedIcon: 'i-lucide-corner-down-left',
+  items: remoteItems('knowledge'),
+}, {
   id: 'crm-cases',
   label: 'Sprawy',
   ignoreFilter: true,
@@ -199,7 +205,7 @@ const statusMessage = computed(() => {
     }"
     size="md"
     title="Wyszukiwanie w CRM"
-    description="Przeszukaj forum ekspertów, pliki banków, sprawy, klientów, spotkania, zadania, dokumenty, wnioski i strony CRM."
+    description="Przeszukaj forum ekspertów, Wiedzę, pliki banków, sprawy, klientów, spotkania, zadania, dokumenty, wnioski i strony CRM."
     placeholder="Szukaj w całym CRM…"
   >
     <template #empty>
@@ -230,7 +236,7 @@ const statusMessage = computed(() => {
       <div v-else class="grid justify-items-center gap-1 text-center">
         <UIcon name="i-lucide-search-x" class="size-5 text-muted" />
         <span>Nie znaleziono wyników dla „{{ normalizedSearchTerm }}”.</span>
-        <span class="text-xs text-muted">Spróbuj pytania, nazwy banku, treści procedury, nazwiska, numeru telefonu lub tytułu dokumentu.</span>
+        <span class="text-xs text-muted">Spróbuj pytania, nazwy banku, treści z Wiedzy, procedury, nazwiska, numeru telefonu lub tytułu dokumentu.</span>
       </div>
     </template>
 

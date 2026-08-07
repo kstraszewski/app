@@ -44,17 +44,6 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'A signed credit process cannot be changed',
     })
   }
-  if (
-    current.status_code === 'draft'
-    && statusCode !== 'draft'
-    && current.snapshot_status !== 'complete'
-  ) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: 'Complete the property calculation before starting the bank application',
-    })
-  }
-
   const patch = mortgageSubmissionStatusPatch(current, statusCode)
   if ('notes' in body) patch.notes = notesValue(body.notes)
 

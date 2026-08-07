@@ -1,7 +1,7 @@
 import { serverDataBackend } from '~~/server/utils/data-api'
 import { requireCrmSession } from '~~/server/utils/crm'
 
-const assistantPathPattern = /^eve\/v1\/(?:health|info|session(?:\/[^/]+(?:\/(?:stream|cancel))?)?)$/
+const assistantPathPattern = /^eve\/v1\/(?:health|info|session(?:\/[^/]+(?:\/(?:stream|cancel|clear|compact|reset))?)?)$/
 const sessionPathPattern = /^eve\/v1\/session\/([^/]+)/
 
 function responsePayload(text: string): unknown {

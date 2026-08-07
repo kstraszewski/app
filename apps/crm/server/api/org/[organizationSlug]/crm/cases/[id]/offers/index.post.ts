@@ -6,9 +6,11 @@ import {
 import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
+import { createDraftCaseBankApplication } from '~~/server/utils/case-bank-applications'
 import {
   asRecord,
   getRequiredParam,
+  recordCrmActivity,
   requireCrmSession,
   requiredText,
   throwDbError,
@@ -190,5 +192,49 @@ export default defineEventHandler(async (event) => {
     .select('id, case_id, bank_id, mortgage_product_id, mortgage_product_version_id, offer_type, bank_name, product_name, version_key, calculator_version, currency, loan_amount, first_installment, first_monthly_outflow, cost_first_five_years, total_cost, representative_apr_pct, scenario_snapshot, catalog_snapshot, calculation_snapshot, saved_at')
     .single()
   throwDbError(error)
-  return { data: { ...data, calculation_status: calculation.status } }
+
+  let application: Record<string, unknown> | null = null
+  let applicationCreationStatus: 'created' | 'skipped' | 'failed' = 'created'
+  let applicationCreationMessage = ''
+  try {
+    application = await createDraftCaseBankApplication(event, session, caseId, String(data.id))
+  }
+  catch (caught: unknown) {
+    const error = caught as { statusCode?: number, statusMessage?: string, message?: string }
+    const statusCode = Number(error?.statusCode ?? 0)
+    applicationCreationStatus = statusCode === 409 ? 'skipped' : 'failed'
+    applicationCreationMessage = error?.statusMessage ?? error?.message ?? 'Nie udało się utworzyć roboczego wniosku.'
+    if (statusCode !== 409) {
+      console.error('[crm] Automatic mortgage application creation failed', caught)
+    }
+  }
+  if (application) {
+    try {
+      await recordCrmActivity(session, {
+        case_id: caseId,
+        case_item_id: String(application.case_item_id),
+        submission_id: String(application.id),
+        activity_type: 'mortgage_application_created',
+        title: 'Utworzono roboczy wniosek z oferty',
+        payload: {
+          application_id: application.id,
+          offer_id: data.id,
+          bank_id: application.bank_id,
+          property_id: null,
+          slot: application.slot,
+          created_automatically: true,
+        },
+      })
+    }
+    catch (caught: unknown) {
+      console.error('[crm] Automatic mortgage application activity failed', caught)
+    }
+  }
+
+  return {
+    data: { ...data, calculation_status: calculation.status },
+    application,
+    application_creation_status: applicationCreationStatus,
+    application_creation_message: applicationCreationMessage || null,
+  }
 })

@@ -17,13 +17,13 @@
   },
   "dependencies": {
     "@openexpert/multiform": "workspace:*",
-    "ai": "7.0.34",
-    "eve": "0.27.1",
+    "ai": "7.0.38",
+    "eve": "0.31.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@typescript/native-preview": "7.0.0-dev.20260523.1",
     "just-bash": "^3.1.0",
-    "microsandbox": "^0.6.6"
+    "microsandbox": "0.5.10"
   }
 }

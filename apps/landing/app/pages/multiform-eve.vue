@@ -1031,7 +1031,7 @@ async function submitPrompt() {
   const message = prompt.value.trim()
   if (!message || isChatBusy.value) return
   prompt.value = ''
-  await send({ message })
+  await send(message)
   composerEl.value?.focus()
 }
 

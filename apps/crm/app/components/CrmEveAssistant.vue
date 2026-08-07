@@ -101,6 +101,7 @@ const {
   data,
   error,
   reset,
+  respond,
   send,
   session,
   status,
@@ -150,17 +151,17 @@ onMounted(() => {
 async function sendMessage(message: string) {
   open.value = true
   if (availability.value !== 'available') return
-  await send({ message })
+  await send(message)
 }
 
 async function sendInputResponses(responses: readonly InputResponse[]) {
   if (!responses.length) return
   open.value = true
-  await send({ inputResponses: responses })
+  await respond(responses)
 }
 
 async function cancelTurn(options: { silent?: boolean } = {}) {
-  const sessionId = session.value.sessionId
+  const sessionId = session.value?.sessionId
   try {
     if (sessionId) {
       await $fetch(`/api/assistant/eve/v1/session/${encodeURIComponent(sessionId)}/cancel`, {

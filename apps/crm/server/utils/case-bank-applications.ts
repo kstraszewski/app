@@ -1,4 +1,5 @@
-import { createError } from 'h3'
+import { createError, type H3Event } from 'h3'
+import { serverDataBackend } from './data-api'
 import {
   isMortgageApplicationStatus,
   mortgageApplicationStatuses,
@@ -134,6 +135,34 @@ export async function loadCaseBankApplication(
     submission_created_at: submission.created_at,
     updated_at: submission.updated_at,
   }
+}
+
+export async function createDraftCaseBankApplication(
+  event: H3Event,
+  session: CrmSession,
+  caseId: string,
+  offerId: string,
+): Promise<Record<string, unknown>> {
+  const backendData = serverDataBackend(event) as any
+  const { data: created, error } = await backendData.rpc('create_crm_case_bank_application', {
+    target_organization_id: session.organizationId,
+    target_case_id: caseId,
+    target_offer_id: offerId,
+    target_property_id: null,
+  })
+  throwBankApplicationDbError(error)
+
+  const createdApplication = Array.isArray(created) ? created[0] : created
+  const applicationId = String(createdApplication?.submission_id ?? '')
+  if (!applicationId) {
+    throw createError({ statusCode: 500, statusMessage: 'Bank application was not returned' })
+  }
+
+  const application = await loadCaseBankApplication(session, caseId, applicationId)
+  if (!application) {
+    throw createError({ statusCode: 500, statusMessage: 'Created bank application cannot be loaded' })
+  }
+  return application
 }
 
 export async function loadCaseContractSelection(

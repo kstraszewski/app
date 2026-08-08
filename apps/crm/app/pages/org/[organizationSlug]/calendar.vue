@@ -947,13 +947,16 @@ async function deleteSelectedTimeOff() {
           </section>
         </div>
 
-        <div v-if="!appointments.length && !timeOff.length" class="calendar-empty-note">
-          <UIcon name="i-lucide-calendar-check-2" />
-          <div>
-            <strong>Ten tydzień jest wolny</strong>
-            <span>Nie ma spotkań ani urlopów dla wybranego eksperta.</span>
-          </div>
-        </div>
+        <OeEmptyState
+          v-if="!appointments.length && !timeOff.length"
+          kind="success"
+          size="compact"
+          align="start"
+          icon="i-lucide-calendar-check-2"
+          title="Ten tydzień jest wolny"
+          description="Nie ma spotkań ani urlopów dla wybranego eksperta."
+          surface="outline"
+        />
       </template>
     </section>
 

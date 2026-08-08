@@ -547,13 +547,14 @@ function statusColor(statusValue: AppointmentStatus) {
             </tbody>
           </table>
         </div>
-        <div v-else class="team-calendar-empty">
-          <UIcon name="i-lucide-users-round" />
-          <div>
-            <strong>Brak osób w zakresie zespołu</strong>
-            <p>Dodaj członków do zespołu lub jego podzespołów, aby zobaczyć obłożenie.</p>
-          </div>
-        </div>
+        <OeEmptyState
+          v-else
+          size="compact"
+          align="start"
+          icon="i-lucide-users-round"
+          title="Brak osób w zakresie zespołu"
+          description="Dodaj członków do zespołu lub jego podzespołów, aby zobaczyć obłożenie."
+        />
       </UCard>
 
       <div class="team-calendar-details">
@@ -587,10 +588,14 @@ function statusColor(statusValue: AppointmentStatus) {
               </span>
             </li>
           </ol>
-          <div v-else class="team-calendar-empty team-calendar-empty--compact">
-            <UIcon name="i-lucide-user-x" />
-            <p>Brak osób do wyświetlenia.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            size="compact"
+            align="start"
+            icon="i-lucide-user-x"
+            title="Brak osób do wyświetlenia"
+            description="Zmień zakres zespołu, aby zobaczyć podsumowanie."
+          />
         </UCard>
 
         <UCard class="team-calendar-agenda">
@@ -658,13 +663,27 @@ function statusColor(statusValue: AppointmentStatus) {
               </div>
             </section>
           </div>
-          <div v-else class="team-calendar-empty">
-            <UIcon name="i-lucide-calendar-search" />
-            <div>
-              <strong>Brak zdarzeń dla wybranych filtrów</strong>
-              <p>Zmień osobę, status lub przejdź do innego tygodnia.</p>
-            </div>
-          </div>
+          <OeEmptyState
+            v-else
+            kind="filtered"
+            size="compact"
+            align="start"
+            icon="i-lucide-calendar-search"
+            title="Brak zdarzeń dla wybranych filtrów"
+            description="Zmień osobę, status lub przejdź do innego tygodnia."
+          >
+            <template v-if="selectedMemberId !== 'all' || agendaStatus !== 'active'" #actions>
+              <UButton
+                color="neutral"
+                variant="outline"
+                size="sm"
+                icon="i-lucide-filter-x"
+                @click="selectedMemberId = 'all'; agendaStatus = 'active'"
+              >
+                Wyczyść filtry
+              </UButton>
+            </template>
+          </OeEmptyState>
         </UCard>
       </div>
     </template>

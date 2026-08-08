@@ -327,18 +327,17 @@ function aprLabel(offer: ClientMeetingSharedOffer) {
           </small>
         </header>
 
-        <div v-if="!hasSharedContent" class="shared-empty">
-          <span aria-hidden="true"><UIcon name="i-lucide-panels-top-left" /></span>
-          <h3>
-            {{ meeting.status === 'ended'
-              ? 'Podczas spotkania nie udostępniono materiałów'
-              : 'Tutaj zobaczysz wybrane informacje' }}
-          </h3>
-          <p v-if="meeting.status === 'live'">
-            Ekspert udostępni tylko te informacje, które są potrzebne do rozmowy.
-            Pozostałe dane sprawy pozostają niewidoczne.
-          </p>
-        </div>
+        <OeEmptyState
+          v-if="!hasSharedContent"
+          icon="i-lucide-panels-top-left"
+          :title="meeting.status === 'ended'
+            ? 'Podczas spotkania nie udostępniono materiałów'
+            : 'Tutaj zobaczysz wybrane informacje'"
+          :description="meeting.status === 'live'
+            ? 'Ekspert udostępni tylko informacje potrzebne do rozmowy. Pozostałe dane sprawy pozostają niewidoczne.'
+            : 'Materiały pojawią się tutaj, gdy ekspert zdecyduje się je udostępnić.'"
+          surface="outline"
+        />
 
         <div v-else-if="meeting.shared.kind === 'mortgage-process'" class="process-view">
           <div class="process-view__current">

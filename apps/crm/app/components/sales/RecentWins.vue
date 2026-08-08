@@ -75,11 +75,14 @@ function itemLink(item: SalesRecentWin) {
       </table>
     </div>
 
-    <div v-else class="sales-empty">
-      <UIcon name="i-lucide-trophy" aria-hidden="true" />
-      <strong>Brak zakończonych sprzedaży</strong>
-      <span>Po pierwszej wygranej pojawi się tu pełny kontekst klienta, produktu i prowizji.</span>
-    </div>
+    <OeEmptyState
+      v-else
+      size="compact"
+      align="start"
+      icon="i-lucide-trophy"
+      title="Brak zakończonych sprzedaży"
+      description="Po pierwszej wygranej pojawi się tu pełny kontekst klienta, produktu i prowizji."
+    />
   </UCard>
 </template>
 

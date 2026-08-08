@@ -430,23 +430,28 @@ function clearFilters() {
         </section>
       </template>
 
-      <UCard
+      <OeEmptyState
         v-if="!pending && !(showHistory ? visibleHistory.length : visibleDefinitions.length)"
-        class="consent-empty"
+        :kind="definitions.length ? 'filtered' : 'empty'"
+        :icon="definitions.length ? 'i-lucide-search-x' : 'i-lucide-shield-check'"
+        :title="definitions.length ? 'Brak pasujących zgód' : 'Brak definicji zgód'"
+        :description="definitions.length
+          ? 'Zmień wyszukiwanie lub filtry.'
+          : 'Utwórz pierwszą definicję dla procesu dodawania klienta.'"
+        surface="outline"
       >
-        <UIcon :name="definitions.length ? 'i-lucide-search-x' : 'i-lucide-shield-check'" />
-        <h2>{{ definitions.length ? 'Brak pasujących zgód' : 'Brak definicji zgód' }}</h2>
-        <p>{{ definitions.length ? 'Zmień wyszukiwanie lub filtry.' : 'Utwórz pierwszą definicję dla procesu dodawania klienta.' }}</p>
-        <UButton v-if="definitions.length" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
-        <UButton
-          v-else-if="data.canManage"
-          :to="orgPath('/consents/new')"
-          icon="i-lucide-plus"
-          variant="solid"
-        >
-          Nowa zgoda
-        </UButton>
-      </UCard>
+        <template #actions>
+          <UButton v-if="definitions.length" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
+          <UButton
+            v-else-if="data.canManage"
+            :to="orgPath('/consents/new')"
+            icon="i-lucide-plus"
+            variant="solid"
+          >
+            Nowa zgoda
+          </UButton>
+        </template>
+      </OeEmptyState>
     </div>
   </CrmShell>
 </template>

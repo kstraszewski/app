@@ -41,11 +41,14 @@ const maxCount = computed(() => Math.max(...props.stages.map(stage => stage.coun
       </div>
     </div>
 
-    <div v-else class="sales-empty">
-      <UIcon name="i-lucide-list-checks" aria-hidden="true" />
-      <strong>Pipeline jest pusty</strong>
-      <span>Nowe produkty pojawią się po przypisaniu ich do wybranego zakresu.</span>
-    </div>
+    <OeEmptyState
+      v-else
+      size="compact"
+      align="start"
+      icon="i-lucide-list-checks"
+      title="Pipeline jest pusty"
+      description="Nowe produkty pojawią się po przypisaniu ich do wybranego zakresu."
+    />
   </UCard>
 </template>
 

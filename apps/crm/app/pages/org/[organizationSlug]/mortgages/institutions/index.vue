@@ -381,14 +381,20 @@ function clearFilters() {
           </li>
         </ul>
 
-        <section v-else class="institution-empty">
-          <span aria-hidden="true"><UIcon name="i-lucide-search-x" /></span>
-          <h2>Nie znaleziono instytucji</h2>
-          <p>Spróbuj innej pisowni albo wyczyść aktywne filtry.</p>
-          <UButton color="neutral" variant="outline" icon="i-lucide-rotate-ccw" @click="clearFilters">
-            Wyczyść filtry
-          </UButton>
-        </section>
+        <OeEmptyState
+          v-else
+          kind="filtered"
+          icon="i-lucide-landmark"
+          title="Nie znaleziono instytucji"
+          description="Spróbuj innej pisowni albo wyczyść aktywne filtry."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton color="neutral" variant="outline" icon="i-lucide-rotate-ccw" @click="clearFilters">
+              Wyczyść filtry
+            </UButton>
+          </template>
+        </OeEmptyState>
       </div>
     </template>
   </CrmShell>

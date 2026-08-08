@@ -402,23 +402,33 @@ function confirmDisable() {
         </div>
       </section>
 
-      <div v-else-if="widgets.length" class="widget-empty">
-        <span class="widget-empty__icon"><UIcon name="i-lucide-search-x" /></span>
-        <div>
-          <strong>Brak widgetów pasujących do filtrów</strong>
-          <p>Zmień kryteria albo wyczyść wszystkie filtry.</p>
-        </div>
-        <UButton color="neutral" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
-      </div>
+      <OeEmptyState
+        v-else-if="widgets.length"
+        kind="filtered"
+        size="compact"
+        surface="outline"
+        align="start"
+        title="Brak widgetów pasujących do filtrów"
+        description="Zmień kryteria albo wyczyść wszystkie filtry."
+      >
+        <template #actions>
+          <UButton color="neutral" variant="outline" @click="clearFilters">Wyczyść filtry</UButton>
+        </template>
+      </OeEmptyState>
 
-      <div v-if="payload.data.length && !widgets.length && !pending" class="widget-empty">
-        <span class="widget-empty__icon"><UIcon name="i-lucide-panels-top-left" /></span>
-        <div>
-          <strong>Utwórz pierwszy widget</strong>
-          <p>Po utworzeniu przejdziesz do personalizacji, podglądu i kodów osadzenia.</p>
-        </div>
-        <UButton icon="i-lucide-plus" @click="openCreate()">Nowy widget</UButton>
-      </div>
+      <OeEmptyState
+        v-if="payload.data.length && !widgets.length && !pending"
+        icon="i-lucide-panels-top-left"
+        size="compact"
+        surface="outline"
+        align="start"
+        title="Utwórz pierwszy widget"
+        description="Po utworzeniu przejdziesz do personalizacji, podglądu i kodów osadzenia."
+      >
+        <template #actions>
+          <UButton icon="i-lucide-plus" @click="openCreate()">Nowy widget</UButton>
+        </template>
+      </OeEmptyState>
     </template>
 
     <UModal

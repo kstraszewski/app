@@ -361,12 +361,28 @@ function validityLabel(offer: MortgageOfferSummary) {
             </section>
           </div>
 
-          <div v-else class="offer-catalog__empty">
-            <UIcon name="i-lucide-package-search" />
-            <h3>{{ totalOffers ? 'Brak wyników' : 'Katalog jest pusty' }}</h3>
-            <p>{{ totalOffers ? 'Zmień frazę lub filtr statusu.' : 'Dodaj pierwszy produkt, aby rozpocząć konfigurację kalkulatora.' }}</p>
-            <UButton v-if="!totalOffers" icon="i-lucide-plus" @click="openCreate()">Dodaj produkt</UButton>
-          </div>
+          <OeEmptyState
+            v-else
+            :kind="totalOffers ? 'filtered' : 'empty'"
+            icon="i-lucide-package-search"
+            :title="totalOffers ? 'Brak pasujących produktów' : 'Katalog jest pusty'"
+            :description="totalOffers
+              ? 'Zmień frazę lub filtr statusu, aby zobaczyć inne produkty.'
+              : 'Dodaj pierwszy produkt, aby rozpocząć konfigurację kalkulatora.'"
+          >
+            <template #actions>
+              <UButton
+                v-if="totalOffers"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-rotate-ccw"
+                @click="search = ''; lifecycleFilter = 'all'"
+              >
+                Wyczyść filtry
+              </UButton>
+              <UButton v-else icon="i-lucide-plus" @click="openCreate()">Dodaj produkt</UButton>
+            </template>
+          </OeEmptyState>
         </UCard>
       </template>
     </div>

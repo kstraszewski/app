@@ -536,12 +536,29 @@ onBeforeUnmount(() => {
           <USkeleton v-for="index in 5" :key="index" class="h-24 w-full" />
         </div>
 
-        <div v-else-if="!items.length" class="knowledge-empty">
-          <span><UIcon name="i-lucide-library-big" /></span>
-          <strong>{{ searchQuery.trim() ? 'Brak dopasowań' : 'Wiedza jest jeszcze pusta' }}</strong>
-          <p>{{ searchQuery.trim() ? 'Spróbuj innego sformułowania albo zmień filtr.' : 'Dodaj dokument lub zapisz materiał z jednego z edytorów.' }}</p>
-          <UButton v-if="!searchQuery.trim()" variant="soft" icon="i-lucide-plus" label="Dodaj pierwszy dokument" @click="createModalOpen = true" />
-        </div>
+        <OeEmptyState
+          v-else-if="!items.length"
+          :kind="searchQuery.trim() || kindFilter !== 'all' || institutionFilter !== 'all' ? 'filtered' : 'empty'"
+          size="compact"
+          align="start"
+          icon="i-lucide-library-big"
+          :title="searchQuery.trim() || kindFilter !== 'all' || institutionFilter !== 'all' ? 'Brak dopasowań' : 'Wiedza jest jeszcze pusta'"
+          :description="searchQuery.trim() || kindFilter !== 'all' || institutionFilter !== 'all'
+            ? 'Spróbuj innego sformułowania albo wyczyść aktywne filtry.'
+            : 'Dodaj dokument lub zapisz materiał z jednego z edytorów.'"
+        >
+          <template #actions>
+            <UButton
+              v-if="searchQuery.trim() || kindFilter !== 'all' || institutionFilter !== 'all'"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-filter-x"
+              label="Wyczyść filtry"
+              @click="searchQuery = ''; kindFilter = 'all'; institutionFilter = 'all'"
+            />
+            <UButton v-else variant="soft" icon="i-lucide-plus" label="Dodaj pierwszy dokument" @click="createModalOpen = true" />
+          </template>
+        </OeEmptyState>
 
         <div v-else class="knowledge-items">
           <button
@@ -658,11 +675,13 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-else class="knowledge-detail__empty">
-          <span><UIcon name="i-lucide-mouse-pointer-2" /></span>
-          <strong>Wybierz dokument</strong>
-          <p>Treść i stan indeksowania pojawią się tutaj.</p>
-        </div>
+        <OeEmptyState
+          v-else
+          kind="selection"
+          icon="i-lucide-mouse-pointer-2"
+          title="Wybierz dokument"
+          description="Treść i stan indeksowania pojawią się tutaj."
+        />
       </main>
     </div>
 

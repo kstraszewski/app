@@ -508,25 +508,25 @@ function caseBanks(item: CaseListResponse['data'][number]) {
         </div>
       </div>
 
-      <div v-else class="empty-state">
-        <span class="empty-state__icon">
-          <UIcon :name="hasActiveFilters ? 'i-lucide-search-x' : 'i-lucide-folder-plus'" />
-        </span>
-        <h3>{{ hasActiveFilters ? 'Nie znaleźliśmy takich spraw' : 'Utwórz pierwszą sprawę' }}</h3>
-        <p>
-          {{ hasActiveFilters
-            ? 'Zmień wyszukiwanie albo usuń część filtrów.'
-            : 'Nazwij sprawę, przypisz klientów i zapisuj w niej wybrane oferty.' }}
-        </p>
-        <div class="empty-state__actions">
+      <OeEmptyState
+        v-else
+        :kind="hasActiveFilters ? 'filtered' : 'empty'"
+        :icon="hasActiveFilters ? 'i-lucide-search-x' : 'i-lucide-folder-plus'"
+        :title="hasActiveFilters ? 'Nie znaleźliśmy takich spraw' : 'Utwórz pierwszą sprawę'"
+        :description="hasActiveFilters
+          ? 'Zmień wyszukiwanie albo usuń część filtrów.'
+          : 'Nazwij sprawę, przypisz klientów i zapisuj w niej wybrane oferty.'"
+        surface="outline"
+      >
+        <template #actions>
           <UButton v-if="hasActiveFilters" color="neutral" variant="outline" @click="resetFilters">
             Wyczyść filtry
           </UButton>
           <UButton icon="i-lucide-plus" @click="openCreateForm">
             Nowa sprawa
           </UButton>
-        </div>
-      </div>
+        </template>
+      </OeEmptyState>
 
       <div v-if="totalCases > pageSize" class="pagination-row">
         <span>Strona {{ page }} z {{ totalPages }}</span>

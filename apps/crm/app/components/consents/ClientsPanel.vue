@@ -350,11 +350,27 @@ async function sendSmsRequest(item: ConsentInsightClientItem) {
       </UTable>
     </div>
 
-    <div v-else-if="data" class="consent-clients__empty">
-      <UIcon name="i-lucide-user-round-search" />
-      <h3>Brak pasujących osób</h3>
-      <p>Zmień filtry albo wyślij pierwszą prośbę z karty klienta.</p>
-    </div>
+    <OeEmptyState
+      v-else-if="data"
+      :kind="search || statusFilter !== 'all' ? 'filtered' : 'empty'"
+      icon="i-lucide-user-round-search"
+      :title="search || statusFilter !== 'all' ? 'Brak pasujących osób' : 'Brak osób z decyzją'"
+      :description="search || statusFilter !== 'all'
+        ? 'Zmień kryteria lub wyczyść filtry.'
+        : 'Pierwsze osoby pojawią się po wysłaniu prośby z karty klienta.'"
+      surface="outline"
+    >
+      <template v-if="search || statusFilter !== 'all'" #actions>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-filter-x"
+          @click="searchInput = ''; search = ''; statusFilter = 'all'; page = 1"
+        >
+          Wyczyść filtry
+        </UButton>
+      </template>
+    </OeEmptyState>
 
     <footer v-if="data && data.pagination.totalPages > 1" class="consent-clients__pagination">
       <span>Strona {{ data.pagination.page }} z {{ data.pagination.totalPages }}</span>

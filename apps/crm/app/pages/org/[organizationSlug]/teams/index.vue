@@ -345,25 +345,30 @@ async function createTeam() {
           </NuxtLink>
         </div>
 
-        <div v-else class="team-index__empty">
-          <span class="team-index__empty-icon"><UIcon name="i-lucide-users-round" /></span>
-          <h3>{{ graph.teams.length ? 'Brak pasujących zespołów' : 'Nie masz jeszcze dostępnych zespołów' }}</h3>
-          <p>
-            {{ graph.teams.length
-              ? 'Spróbuj wyszukać inną nazwę, osobę lub słowo z opisu.'
-              : graph.access.canCreate
-                ? 'Utwórz pierwszy zespół, przypisz jego lidera i dodaj członków.'
-                : 'Poproś administratora organizacji o przypisanie Cię do zespołu.'
-            }}
-          </p>
-          <UButton
-            v-if="graph.access.canCreate && !graph.teams.length"
-            icon="i-lucide-plus"
-            @click="openCreate"
-          >
-            Utwórz zespół
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          :kind="graph.teams.length ? 'filtered' : 'empty'"
+          :icon="graph.teams.length ? 'i-lucide-search-x' : 'i-lucide-users-round'"
+          :title="graph.teams.length ? 'Brak pasujących zespołów' : 'Nie masz jeszcze dostępnych zespołów'"
+          :description="graph.teams.length
+            ? 'Spróbuj wyszukać inną nazwę, osobę lub słowo z opisu.'
+            : graph.access.canCreate
+              ? 'Utwórz pierwszy zespół, przypisz jego lidera i dodaj członków.'
+              : 'Poproś administratora organizacji o przypisanie Cię do zespołu.'"
+        >
+          <template #actions>
+            <UButton v-if="graph.teams.length" color="neutral" variant="outline" icon="i-lucide-x" @click="search = ''">
+              Wyczyść wyszukiwanie
+            </UButton>
+            <UButton
+              v-if="graph.access.canCreate && !graph.teams.length"
+              icon="i-lucide-plus"
+              @click="openCreate"
+            >
+              Utwórz zespół
+            </UButton>
+          </template>
+        </OeEmptyState>
       </UCard>
     </section>
 

@@ -287,11 +287,14 @@ watch(() => props.refreshKey, () => {
           </UButton>
         </template>
 
-        <div v-else class="conversation-files__empty">
-          <span><UIcon name="i-lucide-files" /></span>
-          <strong>Brak plików od klienta</strong>
-          <p>Pliki przesłane w tej rozmowie pojawią się tutaj automatycznie.</p>
-        </div>
+        <OeEmptyState
+          v-else
+          size="compact"
+          align="start"
+          icon="i-lucide-files"
+          title="Brak plików od klienta"
+          description="Pliki przesłane w tej rozmowie pojawią się tutaj automatycznie."
+        />
       </div>
     </template>
   </USlideover>

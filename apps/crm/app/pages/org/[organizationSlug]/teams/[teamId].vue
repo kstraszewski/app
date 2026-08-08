@@ -579,13 +579,20 @@ async function deleteTeam() {
               </UBadge>
             </article>
           </div>
-          <div v-else class="team-empty team-empty--compact">
-            <UIcon name="i-lucide-user-round-plus" />
-            <div><h3>Brak członków</h3><p>Dodaj pierwszą osobę i określ jej rolę w zespole.</p></div>
-            <UButton v-if="access.canManage" color="neutral" variant="outline" @click="openMemberModal">
-              Dodaj osobę
-            </UButton>
-          </div>
+          <OeEmptyState
+            v-else
+            size="compact"
+            align="start"
+            icon="i-lucide-user-round-plus"
+            title="Brak członków"
+            description="Dodaj pierwszą osobę i określ jej rolę w zespole."
+          >
+            <template #actions>
+              <UButton v-if="access.canManage" color="neutral" variant="outline" @click="openMemberModal">
+                Dodaj osobę
+              </UButton>
+            </template>
+          </OeEmptyState>
         </UCard>
       </section>
 
@@ -658,14 +665,19 @@ async function deleteTeam() {
             />
           </article>
         </div>
-        <div v-else class="team-empty">
-          <UIcon name="i-lucide-users-round" />
-          <h3>Ten zespół nie ma jeszcze członków</h3>
-          <p>Dodaj osoby z organizacji. Co najmniej jedna powinna mieć rolę administratora zespołu.</p>
-          <UButton v-if="access.canManage" icon="i-lucide-user-plus" @click="openMemberModal">
-            Dodaj pierwszą osobę
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          icon="i-lucide-users-round"
+          title="Ten zespół nie ma jeszcze członków"
+          description="Dodaj osoby z organizacji. Co najmniej jedna powinna mieć rolę administratora zespołu."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton v-if="access.canManage" icon="i-lucide-user-plus" @click="openMemberModal">
+              Dodaj pierwszą osobę
+            </UButton>
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-else-if="activeView === 'facilities'" class="team-facilities">
@@ -701,14 +713,19 @@ async function deleteTeam() {
             <UIcon name="i-lucide-arrow-right" />
           </NuxtLink>
         </div>
-        <div v-else class="team-empty">
-          <UIcon name="i-lucide-building-2" />
-          <h3>Brak powiązanych placówek</h3>
-          <p>Połącz zespół z placówką, aby wspólnie zarządzać grafikiem, usługami i spotkaniami.</p>
-          <UButton :to="orgPath('/facilities')" color="neutral" variant="outline">
-            Przejdź do placówek
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          icon="i-lucide-building-2"
+          title="Brak powiązanych placówek"
+          description="Połącz zespół z placówką, aby wspólnie zarządzać grafikiem, usługami i spotkaniami."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton :to="orgPath('/facilities')" color="neutral" variant="outline">
+              Przejdź do placówek
+            </UButton>
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-else class="team-settings">

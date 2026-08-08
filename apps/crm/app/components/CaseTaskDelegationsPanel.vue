@@ -259,16 +259,21 @@ function confirmCancellation() {
       <USkeleton v-for="index in 3" :key="index" class="h-44 w-full" />
     </div>
 
-    <div v-else-if="!sortedTasks.length" class="delegations-empty">
-      <span><UIcon name="i-lucide-send" /></span>
-      <div>
-        <strong>Jeszcze nic nie delegowano</strong>
-        <p>Przekaż pierwsze zadanie i śledź tutaj jego przyjęcie, realizację oraz historię.</p>
-      </div>
-      <UButton color="neutral" variant="outline" @click="emit('delegate')">
-        Deleguj pierwsze zadanie
-      </UButton>
-    </div>
+    <OeEmptyState
+      v-else-if="!sortedTasks.length"
+      size="compact"
+      surface="outline"
+      align="start"
+      icon="i-lucide-send"
+      title="Jeszcze nic nie delegowano"
+      description="Przekaż pierwsze zadanie i śledź tutaj jego przyjęcie, realizację oraz historię."
+    >
+      <template #actions>
+        <UButton color="neutral" variant="outline" @click="emit('delegate')">
+          Deleguj pierwsze zadanie
+        </UButton>
+      </template>
+    </OeEmptyState>
 
     <ol v-else class="delegations-list">
       <li

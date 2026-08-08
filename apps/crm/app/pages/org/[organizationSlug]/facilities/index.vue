@@ -269,14 +269,24 @@ async function createFacility() {
           </NuxtLink>
         </div>
 
-        <div v-else class="facility-index__empty">
-          <UIcon name="i-lucide-map-pinned" />
-          <h3>{{ facilities.length ? 'Brak wyników' : 'Nie ma jeszcze placówek' }}</h3>
-          <p>{{ facilities.length ? 'Zmień wyszukiwaną frazę.' : 'Dodaj pierwszą placówkę i skonfiguruj dostępność zespołu.' }}</p>
-          <UButton v-if="payload.canCreate && !facilities.length" icon="i-lucide-plus" @click="openCreate">
-            Dodaj placówkę
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          :kind="facilities.length ? 'filtered' : 'empty'"
+          :icon="facilities.length ? 'i-lucide-search-x' : 'i-lucide-map-pinned'"
+          :title="facilities.length ? 'Brak pasujących placówek' : 'Nie ma jeszcze placówek'"
+          :description="facilities.length
+            ? 'Zmień wyszukiwaną frazę lub wyczyść wyszukiwanie.'
+            : 'Dodaj pierwszą placówkę i skonfiguruj dostępność zespołu.'"
+        >
+          <template #actions>
+            <UButton v-if="facilities.length" color="neutral" variant="outline" icon="i-lucide-x" @click="search = ''">
+              Wyczyść wyszukiwanie
+            </UButton>
+            <UButton v-if="payload.canCreate && !facilities.length" icon="i-lucide-plus" @click="openCreate">
+              Dodaj placówkę
+            </UButton>
+          </template>
+        </OeEmptyState>
       </UCard>
     </section>
 

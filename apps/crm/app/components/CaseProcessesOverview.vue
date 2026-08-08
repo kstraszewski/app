@@ -171,13 +171,14 @@ watch(
       />
     </div>
 
-    <div v-else class="case-processes__empty">
-      <span aria-hidden="true"><UIcon name="i-lucide-workflow" /></span>
-      <div>
-        <strong>Nie uruchomiono jeszcze żadnego procesu</strong>
-        <p>Proces pojawi się tutaj po dodaniu produktu lub rozpoczęciu obsługi wniosku.</p>
-      </div>
-    </div>
+    <OeEmptyState
+      v-else
+      size="compact"
+      align="start"
+      icon="i-lucide-workflow"
+      title="Nie uruchomiono jeszcze żadnego procesu"
+      description="Proces pojawi się tutaj po dodaniu produktu lub rozpoczęciu obsługi wniosku."
+    />
 
     <CaseProcessTransferSlideover
       v-if="transferItem"

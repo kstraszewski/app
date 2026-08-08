@@ -513,17 +513,21 @@ async function submitMeeting() {
             />
           </article>
         </div>
-        <div v-else class="meeting-empty">
-          <span><UIcon name="i-lucide-calendar-clock" /></span>
-          <h3>Nie masz zaplanowanych spotkań</h3>
-          <p>Utwórz spotkanie na teraz albo wybierz późniejszy termin z kalendarza eksperta.</p>
-          <UButton
-            color="primary"
-            icon="i-lucide-calendar-plus-2"
-            label="Zaplanuj pierwsze spotkanie"
-            @click="initializeScheduler('scheduled')"
-          />
-        </div>
+        <OeEmptyState
+          icon="i-lucide-calendar-clock"
+          title="Nie masz zaplanowanych spotkań"
+          description="Utwórz spotkanie na teraz albo wybierz późniejszy termin z kalendarza eksperta."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton
+              color="primary"
+              icon="i-lucide-calendar-plus-2"
+              label="Zaplanuj pierwsze spotkanie"
+              @click="initializeScheduler('scheduled')"
+            />
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-if="pastMeetings.length" class="meeting-section meeting-section--past">

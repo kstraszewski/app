@@ -73,12 +73,12 @@ const groups = computed(() => {
       </div>
     </div>
 
-    <UAlert
+    <OeEmptyState
       v-else-if="error && !notifications.length"
-      class="notification-list__message"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
+      kind="error"
+      :size="compact ? 'compact' : 'default'"
+      :align="compact ? 'start' : 'center'"
+      surface="subtle"
       title="Nie udało się pobrać powiadomień"
       :description="error"
     >
@@ -87,15 +87,16 @@ const groups = computed(() => {
           Spróbuj ponownie
         </UButton>
       </template>
-    </UAlert>
+    </OeEmptyState>
 
-    <div v-else-if="!notifications.length" class="notification-list__empty">
-      <span class="notification-list__empty-icon" aria-hidden="true">
-        <UIcon name="i-lucide-bell-ring" />
-      </span>
-      <strong>{{ emptyTitle }}</strong>
-      <p>{{ emptyDescription }}</p>
-    </div>
+    <OeEmptyState
+      v-else-if="!notifications.length"
+      :size="compact ? 'compact' : 'default'"
+      :align="compact ? 'start' : 'center'"
+      icon="i-lucide-bell-ring"
+      :title="emptyTitle"
+      :description="emptyDescription"
+    />
 
     <template v-else>
       <UAlert

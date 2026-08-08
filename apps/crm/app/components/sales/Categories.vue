@@ -48,11 +48,14 @@ defineProps<{
       </article>
     </div>
 
-    <div v-else class="sales-empty">
-      <UIcon name="i-lucide-package-open" aria-hidden="true" />
-      <strong>Brak produktów sprzedażowych</strong>
-      <span>Produkty przypisane do wybranego zakresu pojawią się tu automatycznie.</span>
-    </div>
+    <OeEmptyState
+      v-else
+      size="compact"
+      align="start"
+      icon="i-lucide-package-open"
+      title="Brak produktów sprzedażowych"
+      description="Produkty przypisane do wybranego zakresu pojawią się tu automatycznie."
+    />
   </UCard>
 </template>
 

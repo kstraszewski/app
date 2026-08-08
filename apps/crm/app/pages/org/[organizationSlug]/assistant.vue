@@ -92,11 +92,14 @@ function openHistory() {
             <UIcon name="i-lucide-chevron-right" />
           </button>
 
-          <div v-else class="assistant-history__empty">
-            <UIcon name="i-lucide-history" />
-            <strong>Brak zapisanych zadań</strong>
-            <p>Historia pojawi się po rozpoczęciu pierwszej rozmowy z agentem.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            size="compact"
+            align="start"
+            icon="i-lucide-history"
+            title="Brak zapisanych zadań"
+            description="Historia pojawi się po rozpoczęciu pierwszej rozmowy z agentem."
+          />
 
           <UButton
             block

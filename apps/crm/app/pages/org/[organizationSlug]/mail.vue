@@ -759,41 +759,43 @@ function senderInitial(value: string): string {
             </div>
           </div>
 
-          <div v-else-if="threadsError" class="mail-list-state">
-            <UIcon name="i-lucide-cloud-off" />
-            <h2>Nie udało się pobrać wiadomości</h2>
-            <p>{{ apiErrorMessage(threadsError) }}</p>
-            <UButton
-              v-if="connectionPayload.provider.connectPath"
-              color="neutral"
-              variant="solid"
-              icon="i-lucide-rotate-ccw-key"
-              @click="connectGmail"
-            >
-              Połącz ponownie
-            </UButton>
-          </div>
-
-          <div
-            v-else-if="!threadPayload.data.length"
-            class="mail-list-state"
+          <OeEmptyState
+            v-else-if="threadsError"
+            kind="error"
+            title="Nie udało się pobrać wiadomości"
+            :description="apiErrorMessage(threadsError)"
           >
-            <UIcon :name="searchQuery ? 'i-lucide-search-x' : 'i-lucide-mail-open'" />
-            <h2>{{ searchQuery ? 'Brak wyników' : 'Ten folder jest pusty' }}</h2>
-            <p>
-              {{ searchQuery
-                ? 'Spróbuj krótszego zapytania albo użyj składni wyszukiwarki Gmail.'
-                : 'Gdy w Gmailu pojawią się wiadomości, zobaczysz je tutaj.' }}
-            </p>
-            <UButton
-              v-if="searchQuery"
-              color="neutral"
-              variant="outline"
-              @click="clearSearch"
-            >
-              Wyczyść wyszukiwanie
-            </UButton>
-          </div>
+            <template #actions>
+              <UButton
+                v-if="connectionPayload.provider.connectPath"
+                color="neutral"
+                variant="solid"
+                icon="i-lucide-rotate-ccw-key"
+                @click="connectGmail"
+              >
+                Połącz ponownie
+              </UButton>
+              <UButton v-else color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refreshThreads()">
+                Spróbuj ponownie
+              </UButton>
+            </template>
+          </OeEmptyState>
+
+          <OeEmptyState
+            v-else-if="!threadPayload.data.length"
+            :kind="searchQuery ? 'filtered' : 'empty'"
+            :icon="searchQuery ? 'i-lucide-search-x' : 'i-lucide-mail-open'"
+            :title="searchQuery ? 'Brak wyników' : 'Ten folder jest pusty'"
+            :description="searchQuery
+              ? 'Spróbuj krótszego zapytania albo użyj składni wyszukiwarki Gmail.'
+              : 'Gdy w Gmailu pojawią się wiadomości, zobaczysz je tutaj.'"
+          >
+            <template v-if="searchQuery" #actions>
+              <UButton color="neutral" variant="outline" @click="clearSearch">
+                Wyczyść wyszukiwanie
+              </UButton>
+            </template>
+          </OeEmptyState>
 
           <div
             v-else
@@ -868,20 +870,19 @@ function senderInitial(value: string): string {
         </div>
 
         <article class="mail-detail-pane" aria-label="Treść wątku">
-          <div v-if="!selectedThreadId" class="mail-detail-empty">
-            <span class="mail-detail-empty__icon">
-              <UIcon name="i-lucide-mails" />
-            </span>
-            <h2>Wybierz wiadomość</h2>
-            <p>Treść wybranego wątku pojawi się w tym miejscu.</p>
-            <UButton
-              v-if="canSend"
-              icon="i-lucide-square-pen"
-              @click="openNewMessage"
-            >
-              Napisz wiadomość
-            </UButton>
-          </div>
+          <OeEmptyState
+            v-if="!selectedThreadId"
+            kind="selection"
+            icon="i-lucide-mails"
+            title="Wybierz wiadomość"
+            description="Treść wybranego wątku pojawi się w tym miejscu."
+          >
+            <template #actions>
+              <UButton v-if="canSend" icon="i-lucide-square-pen" @click="openNewMessage">
+                Napisz wiadomość
+              </UButton>
+            </template>
+          </OeEmptyState>
 
           <div
             v-else-if="selectedThreadStatus === 'idle' || selectedThreadStatus === 'pending'"
@@ -893,16 +894,19 @@ function senderInitial(value: string): string {
             <USkeleton class="h-40 w-full" />
           </div>
 
-          <div v-else-if="selectedThreadError" class="mail-detail-empty">
-            <span class="mail-detail-empty__icon">
-              <UIcon name="i-lucide-message-circle-x" />
-            </span>
-            <h2>Nie udało się otworzyć wątku</h2>
-            <p>{{ apiErrorMessage(selectedThreadError) }}</p>
-            <UButton color="neutral" variant="outline" @click="refreshSelectedThread()">
-              Spróbuj ponownie
-            </UButton>
-          </div>
+          <OeEmptyState
+            v-else-if="selectedThreadError"
+            kind="error"
+            icon="i-lucide-message-circle-x"
+            title="Nie udało się otworzyć wątku"
+            :description="apiErrorMessage(selectedThreadError)"
+          >
+            <template #actions>
+              <UButton color="neutral" variant="outline" @click="refreshSelectedThread()">
+                Spróbuj ponownie
+              </UButton>
+            </template>
+          </OeEmptyState>
 
           <div v-else-if="selectedThread" class="mail-detail">
             <div class="mail-detail__mobile-back">

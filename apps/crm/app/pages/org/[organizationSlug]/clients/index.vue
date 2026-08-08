@@ -968,24 +968,25 @@ const columns: TableColumn<ClientListItem>[] = [
         </div>
       </template>
 
-      <div v-else class="empty-state">
-        <span class="empty-state__icon"><UIcon name="i-lucide-users" /></span>
-        <h3>{{ hasActiveFilters ? 'Brak pasujących klientów' : 'Dodaj pierwszego klienta' }}</h3>
-        <p v-if="hasActiveFilters">
-          Zmień kryteria wyszukiwania lub wyczyść filtry, aby zobaczyć więcej rekordów.
-        </p>
-        <p v-else>
-          Utwórz kartę klienta wraz z osobą główną i zapisz aktualne decyzje dotyczące zgód.
-        </p>
-        <div class="empty-state__actions">
+      <OeEmptyState
+        v-else
+        :kind="hasActiveFilters ? 'filtered' : 'empty'"
+        :icon="hasActiveFilters ? 'i-lucide-search-x' : 'i-lucide-user-plus'"
+        :title="hasActiveFilters ? 'Brak pasujących klientów' : 'Dodaj pierwszego klienta'"
+        :description="hasActiveFilters
+          ? 'Zmień kryteria wyszukiwania lub wyczyść filtry, aby zobaczyć więcej rekordów.'
+          : 'Utwórz kartę klienta wraz z osobą główną i zapisz aktualne decyzje dotyczące zgód.'"
+        surface="outline"
+      >
+        <template #actions>
           <UButton v-if="hasActiveFilters" color="neutral" variant="outline" @click="resetFilters">
             Wyczyść filtry
           </UButton>
           <UButton icon="i-lucide-user-plus" @click="openCreateForm">
             Dodaj klienta
           </UButton>
-        </div>
-      </div>
+        </template>
+      </OeEmptyState>
 
       <template v-if="totalClients > pageSize" #footer>
         <div class="pagination-row">

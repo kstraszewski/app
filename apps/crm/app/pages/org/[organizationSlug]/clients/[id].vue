@@ -1196,12 +1196,17 @@ const headerMenuItems = computed(() => [
           </NuxtLink>
         </div>
 
-        <div v-else class="client-empty client-empty--workspace">
-          <span><UIcon name="i-lucide-folder-plus" /></span>
-          <h3>Brak spraw tego klienta</h3>
-          <p>Utwórz pierwszą sprawę, a klient zostanie przypisany automatycznie.</p>
-          <UButton icon="i-lucide-folder-plus" @click="openCreateCase">Utwórz sprawę</UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          icon="i-lucide-folder-plus"
+          title="Brak spraw tego klienta"
+          description="Utwórz pierwszą sprawę, a klient zostanie przypisany automatycznie."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton icon="i-lucide-folder-plus" @click="openCreateCase">Utwórz sprawę</UButton>
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-else-if="currentView === 'consents'" class="client-workspace" aria-labelledby="client-consents-title">
@@ -1287,11 +1292,13 @@ const headerMenuItems = computed(() => [
           </article>
         </div>
 
-        <div v-else class="client-empty client-empty--workspace">
-          <span><UIcon name="i-lucide-shield-question" /></span>
-          <h3>Brak aktywnych definicji zgód</h3>
-          <p>Po opublikowaniu zgód ich aktualny stan pojawi się tutaj.</p>
-        </div>
+        <OeEmptyState
+          v-else
+          icon="i-lucide-shield-question"
+          title="Brak aktywnych definicji zgód"
+          description="Po opublikowaniu zgód ich aktualny stan pojawi się tutaj."
+          surface="outline"
+        />
       </section>
 
       <section
@@ -1527,18 +1534,24 @@ const headerMenuItems = computed(() => [
           </aside>
         </div>
 
-        <div v-else class="client-empty client-empty--workspace">
-          <span><UIcon name="i-lucide-shield-check" /></span>
-          <h3>Brak żądania anonimizacji</h3>
-          <p>Dla tego klienta nie zarejestrowano aktywnego procesu usunięcia danych.</p>
-          <UButton
-            v-if="data.privacy_access.can_create_request"
-            icon="i-lucide-shield-plus"
-            @click="openAnonymizationRequest"
-          >
-            Zgłoś żądanie anonimizacji
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          kind="success"
+          icon="i-lucide-shield-check"
+          title="Brak aktywnego żądania anonimizacji"
+          description="Dla tego klienta nie zarejestrowano procesu usunięcia danych."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton
+              v-if="data.privacy_access.can_create_request"
+              icon="i-lucide-shield-plus"
+              @click="openAnonymizationRequest"
+            >
+              Zgłoś żądanie anonimizacji
+            </UButton>
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-else-if="currentView === 'appointments'" class="client-workspace" aria-labelledby="client-appointments-title">
@@ -1576,14 +1589,19 @@ const headerMenuItems = computed(() => [
           </article>
         </div>
 
-        <div v-else class="client-empty client-empty--workspace">
-          <span><UIcon name="i-lucide-calendar-plus" /></span>
-          <h3>Brak wizyt klienta</h3>
-          <p>Umówione spotkania pojawią się tutaj wraz z miejscem, ekspertem i statusem.</p>
-          <UButton :to="orgPath('/calendar')" color="neutral" variant="outline" icon="i-lucide-calendar-days">
-            Otwórz kalendarz
-          </UButton>
-        </div>
+        <OeEmptyState
+          v-else
+          icon="i-lucide-calendar-plus"
+          title="Brak wizyt klienta"
+          description="Umówione spotkania pojawią się tutaj wraz z miejscem, ekspertem i statusem."
+          surface="outline"
+        >
+          <template #actions>
+            <UButton :to="orgPath('/calendar')" color="neutral" variant="outline" icon="i-lucide-calendar-days">
+              Otwórz kalendarz
+            </UButton>
+          </template>
+        </OeEmptyState>
       </section>
 
       <section v-else class="client-history-layout" aria-labelledby="client-history-title">
@@ -1614,11 +1632,13 @@ const headerMenuItems = computed(() => [
             </li>
           </ol>
 
-          <div v-else class="client-empty client-empty--workspace">
-            <span><UIcon name="i-lucide-history" /></span>
-            <h3>Historia jest jeszcze pusta</h3>
-            <p>Pierwsze zmiany danych, sprawy i decyzje zgód utworzą tutaj chronologiczny feed.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            icon="i-lucide-history"
+            title="Historia jest jeszcze pusta"
+            description="Pierwsze zmiany danych, sprawy i decyzje zgód utworzą tutaj chronologiczny feed."
+            surface="outline"
+          />
         </div>
 
         <aside class="client-history-summary">

@@ -267,13 +267,14 @@ async function setCoverImage(image: FacilityImage) {
       </article>
     </div>
 
-    <div v-else class="facility-photos__empty">
-      <span><UIcon name="i-lucide-images" /></span>
-      <div>
-        <strong>Placówka nie ma jeszcze zdjęć</strong>
-        <p>Dodaj zdjęcia wejścia, recepcji lub przestrzeni spotkań.</p>
-      </div>
-    </div>
+    <OeEmptyState
+      v-else
+      size="compact"
+      align="start"
+      icon="i-lucide-images"
+      title="Placówka nie ma jeszcze zdjęć"
+      description="Dodaj zdjęcia wejścia, recepcji lub przestrzeni spotkań."
+    />
 
     <div v-if="canManage && remainingSlots" class="facility-photos__upload">
       <UFileUpload

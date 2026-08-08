@@ -120,19 +120,20 @@ function isClientMeetingUrl(value: string | null) {
       <USkeleton v-for="index in 2" :key="index" class="h-52 w-full" />
     </div>
 
-    <UCard v-else-if="!appointments.length" class="empty-state">
-      <span class="empty-state__icon" aria-hidden="true">
-        <UIcon name="i-lucide-calendar-days" />
-      </span>
-      <h2>Nie masz jeszcze dodanych konsultacji</h2>
-      <p>
-        Po rezerwacji użyj przycisku „Aktywuj panel klienta”. Zweryfikujemy kontakt
-        i dodamy właściwe terminy do tego widoku.
-      </p>
-      <UButton :href="expertsUrl" external icon="i-lucide-search">
-        Znajdź eksperta
-      </UButton>
-    </UCard>
+    <OeEmptyState
+      v-else-if="!appointments.length"
+      icon="i-lucide-calendar-days"
+      title="Nie masz jeszcze dodanych konsultacji"
+      description="Po rezerwacji użyj przycisku „Aktywuj panel klienta”. Zweryfikujemy kontakt i dodamy właściwe terminy do tego widoku."
+      title-tag="h2"
+      surface="outline"
+    >
+      <template #actions>
+        <UButton :href="expertsUrl" external icon="i-lucide-search">
+          Znajdź eksperta
+        </UButton>
+      </template>
+    </OeEmptyState>
 
     <template v-else>
       <section v-if="upcomingAppointments.length" class="appointments-section">

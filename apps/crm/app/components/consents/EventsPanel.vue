@@ -274,11 +274,27 @@ const hasFilters = computed(() => Boolean(
       </li>
     </ol>
 
-    <div v-else-if="data" class="consent-events__empty">
-      <UIcon name="i-lucide-history" />
-      <h3>Brak zdarzeń</h3>
-      <p>Rejestr uzupełni się po wysłaniu pierwszej prośby albo zapisaniu decyzji.</p>
-    </div>
+    <OeEmptyState
+      v-else-if="data"
+      :kind="search || kindFilter !== 'all' || dateFrom || dateTo ? 'filtered' : 'empty'"
+      icon="i-lucide-history"
+      :title="search || kindFilter !== 'all' || dateFrom || dateTo ? 'Brak pasujących zdarzeń' : 'Brak zdarzeń'"
+      :description="search || kindFilter !== 'all' || dateFrom || dateTo
+        ? 'Zmień kryteria lub wyczyść filtry, aby zobaczyć inne zdarzenia.'
+        : 'Rejestr uzupełni się po wysłaniu pierwszej prośby albo zapisaniu decyzji.'"
+      surface="outline"
+    >
+      <template v-if="search || kindFilter !== 'all' || dateFrom || dateTo" #actions>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-filter-x"
+          @click="searchInput = ''; search = ''; kindFilter = 'all'; dateFrom = ''; dateTo = ''; page = 1"
+        >
+          Wyczyść filtry
+        </UButton>
+      </template>
+    </OeEmptyState>
 
     <footer v-if="data && data.pagination.totalPages > 1" class="consent-events__pagination">
       <span>{{ data.pagination.total }} zdarzeń · strona {{ data.pagination.page }} z {{ data.pagination.totalPages }}</span>

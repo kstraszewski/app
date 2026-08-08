@@ -338,51 +338,65 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-else-if="error && !conversations.length" class="crm-messages-inbox__state">
-        <UIcon name="i-lucide-cloud-off" aria-hidden="true" />
-        <strong>Nie udało się pobrać wiadomości</strong>
-        <p>Sprawdź połączenie i spróbuj ponownie.</p>
-        <UButton size="sm" icon="i-lucide-refresh-cw" @click="refreshInbox">
-          Spróbuj ponownie
-        </UButton>
-      </div>
+      <OeEmptyState
+        v-else-if="error && !conversations.length"
+        kind="error"
+        size="compact"
+        align="start"
+        title="Nie udało się pobrać wiadomości"
+        description="Sprawdź połączenie i spróbuj ponownie. Twoje wiadomości nie zostały usunięte."
+      >
+        <template #actions>
+          <UButton size="sm" icon="i-lucide-refresh-cw" @click="refreshInbox">
+            Spróbuj ponownie
+          </UButton>
+        </template>
+      </OeEmptyState>
 
-      <div v-else-if="!conversations.length" class="crm-messages-inbox__state">
-        <UIcon name="i-lucide-message-square-dashed" aria-hidden="true" />
-        <strong>Nie ma jeszcze rozmów</strong>
-        <p>Wiadomości wysłane w sprawach pojawią się tutaj automatycznie.</p>
-        <UButton
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :to="orgPath('/cases')"
-          icon="i-lucide-briefcase-business"
-        >
-          Przejdź do spraw
-        </UButton>
-      </div>
+      <OeEmptyState
+        v-else-if="!conversations.length"
+        size="compact"
+        align="start"
+        icon="i-lucide-message-square-dashed"
+        title="Nie ma jeszcze rozmów"
+        description="Wiadomości wysłane w sprawach pojawią się tutaj automatycznie."
+      >
+        <template #actions>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :to="orgPath('/cases')"
+            icon="i-lucide-briefcase-business"
+          >
+            Przejdź do spraw
+          </UButton>
+        </template>
+      </OeEmptyState>
 
-      <div v-else-if="!visibleConversations.length" class="crm-messages-inbox__state">
-        <UIcon
-          :name="selectedFilter === 'unread' ? 'i-lucide-mail-check' : 'i-lucide-search-x'"
-          aria-hidden="true"
-        />
-        <strong>{{ selectedFilter === 'unread' && !search ? 'Wszystko przeczytane' : 'Brak wyników' }}</strong>
-        <p>
-          {{ selectedFilter === 'unread' && !search
-            ? 'Nie masz teraz żadnych nieprzeczytanych rozmów.'
-            : 'Zmień wyszukiwanie lub filtr, aby zobaczyć inne rozmowy.' }}
-        </p>
-        <UButton
-          color="neutral"
-          variant="outline"
-          size="sm"
-          icon="i-lucide-list-filter"
-          @click="search = ''; selectedFilter = 'all'"
-        >
-          Wyczyść filtry
-        </UButton>
-      </div>
+      <OeEmptyState
+        v-else-if="!visibleConversations.length"
+        kind="filtered"
+        size="compact"
+        align="start"
+        :icon="selectedFilter === 'unread' && !search ? 'i-lucide-mail-check' : 'i-lucide-search-x'"
+        :title="selectedFilter === 'unread' && !search ? 'Wszystko przeczytane' : 'Brak wyników'"
+        :description="selectedFilter === 'unread' && !search
+          ? 'Nie masz teraz żadnych nieprzeczytanych rozmów.'
+          : 'Zmień wyszukiwanie lub filtr, aby zobaczyć inne rozmowy.'"
+      >
+        <template #actions>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-list-filter"
+            @click="search = ''; selectedFilter = 'all'"
+          >
+            Wyczyść filtry
+          </UButton>
+        </template>
+      </OeEmptyState>
 
       <nav v-else class="crm-messages-inbox__list" aria-label="Lista rozmów">
         <NuxtLink

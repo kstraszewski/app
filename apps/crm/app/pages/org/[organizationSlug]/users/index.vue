@@ -498,25 +498,30 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
             </UTable>
           </div>
 
-          <div v-else class="users-empty">
-            <span class="users-empty__icon"><UIcon name="i-lucide-user-round-search" /></span>
-            <h3>{{ users.length ? 'Brak pasujących użytkowników' : 'Brak użytkowników w organizacji' }}</h3>
-            <p>
-              {{ users.length
-                ? 'Zmień wyszukiwaną frazę lub usuń część filtrów.'
-                : 'Dodaj pierwszą osobę przyciskiem w nagłówku strony.'
-              }}
-            </p>
-            <UButton
-              v-if="users.length && hasActiveFilters"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-x"
-              @click="resetFilters"
-            >
-              Wyczyść filtry
-            </UButton>
-          </div>
+          <OeEmptyState
+            v-else
+            :kind="users.length ? 'filtered' : 'empty'"
+            :icon="users.length ? 'i-lucide-user-round-search' : 'i-lucide-user-plus'"
+            :title="users.length ? 'Brak pasujących użytkowników' : 'Brak użytkowników w organizacji'"
+            :description="users.length
+              ? 'Zmień wyszukiwaną frazę lub usuń część filtrów.'
+              : 'Dodaj pierwszą osobę, aby przydzielić jej zespoły i uprawnienia.'"
+          >
+            <template #actions>
+              <UButton
+                v-if="users.length && hasActiveFilters"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-x"
+                @click="resetFilters"
+              >
+                Wyczyść filtry
+              </UButton>
+              <UButton v-if="!users.length" icon="i-lucide-user-plus" @click="inviteOpen = true">
+                Dodaj użytkownika
+              </UButton>
+            </template>
+          </OeEmptyState>
         </UCard>
       </template>
     </section>

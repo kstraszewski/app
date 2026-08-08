@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { serverDataBackend } from './data-api'
 import {
   getTemplate,
@@ -7,6 +8,7 @@ import {
 import { createError, type H3Event } from 'h3'
 
 type DatabaseRecord = Record<string, any>
+const mortgageBankFileBucket = 'mortgage-bank-files'
 
 export interface MultiformTemplateApplicationRef {
   productVersionId: string | null
@@ -54,7 +56,7 @@ export async function resolvePinnedMultiformTemplates(
   const templateDefinitionIds = [...new Set(revisions.map(revision => String(revision.template_id)))]
   const definitionsResult = await backendData
     .from('mortgage_document_templates')
-    .select('id, template_key, bank_id')
+    .select('id, template_key, bank_id, source_file_id, source_file_version_id, source_file_name, source_sha256')
     .in('id', templateDefinitionIds)
   databaseError(definitionsResult.error)
 
@@ -91,12 +93,21 @@ export async function resolvePinnedMultiformTemplates(
       const validation = validateTemplateJson(revision.template_json)
       const template = revision.template_json as DocumentTemplate
       const registered = getTemplate(templateId)
+      const linkedSourceMatches = Boolean(
+        definition?.source_file_id
+        && definition?.source_file_version_id
+        && template.source.fileName === definition.source_file_name
+        && template.source.sha256 === definition.source_sha256,
+      )
+      const registeredSourceMatches = Boolean(
+        registered
+        && template.source.fileName === registered.source.fileName
+        && template.source.sha256 === registered.source.sha256,
+      )
       if (
         !validation.summary.activationReady
         || template.id !== templateId
-        || !registered
-        || template.source.fileName !== registered.source.fileName
-        || template.source.sha256 !== registered.source.sha256
+        || (!linkedSourceMatches && !registeredSourceMatches)
       ) {
         throw createError({
           statusCode: 409,
@@ -116,4 +127,67 @@ export async function resolvePinnedMultiformTemplates(
   }
 
   return [...overrideByTemplateId.values()].map(value => value.template)
+}
+
+export async function readPinnedMultiformTemplateSource(
+  event: H3Event,
+  template: DocumentTemplate,
+): Promise<Uint8Array | null> {
+  const backendData = serverDataBackend(event) as any
+  const definitionResult = await backendData
+    .from('mortgage_document_templates')
+    .select('source_file_id, source_file_version_id, source_file_name, source_sha256')
+    .eq('template_key', template.id)
+    .maybeSingle()
+  databaseError(definitionResult.error)
+  const definition = definitionResult.data as DatabaseRecord | null
+  if (!definition?.source_file_id || !definition.source_file_version_id) return null
+  if (
+    definition.source_file_name !== template.source.fileName
+    || definition.source_sha256 !== template.source.sha256
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `${template.id}: źródło przypiętej rewizji nie odpowiada wersji pliku bankowego.`,
+    })
+  }
+
+  const versionResult = await backendData
+    .from('mortgage_bank_file_versions')
+    .select('id, file_id, storage_path, original_file_name, mime_type, checksum_sha256')
+    .eq('id', definition.source_file_version_id)
+    .eq('file_id', definition.source_file_id)
+    .maybeSingle()
+  databaseError(versionResult.error)
+  const version = versionResult.data as DatabaseRecord | null
+  if (
+    !version
+    || version.mime_type !== 'application/pdf'
+    || version.original_file_name !== template.source.fileName
+    || version.checksum_sha256 !== template.source.sha256
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `${template.id}: źródłowa wersja PDF nie jest dostępna albo ma inne metadane.`,
+    })
+  }
+
+  const downloadResult = await backendData.storage
+    .from(mortgageBankFileBucket)
+    .download(String(version.storage_path))
+  if (downloadResult.error || !downloadResult.data) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: `${template.id}: nie znaleziono źródłowego PDF-u w magazynie plików banku.`,
+    })
+  }
+  const bytes = new Uint8Array(await downloadResult.data.arrayBuffer())
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  if (sha256 !== template.source.sha256) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `${template.id}: źródłowy PDF nie przeszedł weryfikacji integralności.`,
+    })
+  }
+  return bytes
 }

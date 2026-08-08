@@ -11,6 +11,7 @@ import {
   mortgageTemplateText,
   registeredMortgageTemplate,
 } from '~~/server/utils/mortgage-document-templates'
+import { mortgageDocumentTemplateSourceDescriptor } from '~~/server/utils/mortgage-document-template-source'
 import {
   getRequiredParam,
   requireCrmSession,
@@ -34,7 +35,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     backendData
       .from('mortgage_document_templates')
-      .select('id, template_key, label, registry_version, draft_json, draft_validation_report, draft_revision, draft_updated_at, draft_updated_by_user_id, active_json, active_validation_report, active_revision, active_published_at, active_published_by_user_id, current_published_revision_id, created_at, updated_at')
+      .select('id, template_key, label, registry_version, source_file_id, source_file_version_id, source_file_name, source_sha256, draft_json, draft_validation_report, draft_revision, draft_updated_at, draft_updated_by_user_id, active_json, active_validation_report, active_revision, active_published_at, active_published_by_user_id, current_published_revision_id, created_at, updated_at')
       .eq('bank_id', bankId)
       .eq('template_key', templateId)
       .maybeSingle(),
@@ -47,14 +48,18 @@ export default defineEventHandler(async (event) => {
 
   const bank = bankResult.data as DatabaseRecord
   const registered = registeredMortgageTemplate(String(bank.slug), templateId)
-  if (!registered) {
+  const row = templateResult.data as DatabaseRecord | null
+  const sourceDescriptor = mortgageDocumentTemplateSourceDescriptor(String(bank.slug), row, registered)
+  if (!registered && !row?.draft_json && !row?.active_json) {
     throw createError({
       statusCode: 404,
-      statusMessage: 'Nie znaleziono zarejestrowanego formularza PDF tej instytucji.',
+      statusMessage: 'Nie znaleziono szablonu utworzonego z pliku tej instytucji.',
     })
   }
+  if (!sourceDescriptor) {
+    throw createError({ statusCode: 409, statusMessage: 'Szablon nie ma zweryfikowanego źródła PDF.' })
+  }
 
-  const row = templateResult.data as DatabaseRecord | null
   const catalogId = mortgageTemplateText(row?.id)
   const revisionsResult = catalogId
     ? await backendData
@@ -79,11 +84,11 @@ export default defineEventHandler(async (event) => {
 
   const activeTemplate = row?.active_json as DocumentTemplate | undefined
   const draftTemplate = row?.draft_json as DocumentTemplate | undefined
-  const editorTemplate = draftTemplate ?? activeTemplate ?? registered
+  const editorTemplate = draftTemplate ?? activeTemplate ?? registered!
   const editorValidation = row?.draft_validation_report
     ?? (draftTemplate ? validateTemplateJson(draftTemplate) : validateTemplateJson(editorTemplate))
   const activeValidation = row?.active_validation_report
-    ?? validateTemplateJson(activeTemplate ?? registered)
+    ?? validateTemplateJson(activeTemplate ?? registered ?? editorTemplate)
 
   setHeader(event, 'Cache-Control', 'private, no-store')
   return {
@@ -91,8 +96,14 @@ export default defineEventHandler(async (event) => {
     bank: { id: String(bank.id), slug: String(bank.slug), name: String(bank.name) },
     template: {
       id: templateId,
-      label: mortgageTemplateText(row?.label) ?? registered.label,
-      sourceKind: 'registered' as const,
+      label: mortgageTemplateText(row?.label) ?? registered?.label ?? templateId,
+      sourceKind: row?.source_file_version_id ? 'bank-file' as const : 'registered' as const,
+      sourceFile: row?.source_file_id
+        ? {
+            id: String(row.source_file_id),
+            versionId: String(row.source_file_version_id),
+          }
+        : null,
       pdfUrl: `/api/org/${encodeURIComponent(session.organizationSlug)}/mortgages/banks/${encodeURIComponent(bankId)}/templates/${encodeURIComponent(templateId)}/source`,
       editor: {
         template: editorTemplate,
@@ -107,12 +118,12 @@ export default defineEventHandler(async (event) => {
           }
         : null,
       active: {
-        origin: activeTemplate ? 'catalog' as const : 'registry' as const,
+        origin: activeTemplate ? 'catalog' as const : registered ? 'registry' as const : 'missing' as const,
         revision: Number(row?.active_revision ?? 0),
         publishedAt: mortgageTemplateText(row?.active_published_at),
-        template: activeTemplate ?? registered,
+        template: activeTemplate ?? registered ?? editorTemplate,
         validation: activeValidation,
-        summary: mortgageTemplateSummary(activeTemplate ?? registered),
+        summary: mortgageTemplateSummary(activeTemplate ?? registered ?? editorTemplate),
       },
       history: revisions.map((revision) => {
         const actor = actorById.get(String(revision.actor_user_id ?? ''))

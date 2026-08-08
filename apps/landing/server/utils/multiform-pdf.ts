@@ -15,6 +15,7 @@ import {
   type ValueFormat,
 } from '@openexpert/multiform'
 import { zipSync } from 'fflate'
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import {
   AnnotationFlags,
   clip,
@@ -60,12 +61,14 @@ export interface PdfBundleDocument {
   template: DocumentTemplate
   sourceBytes: Uint8Array
   outputName?: string
+  directory?: string
 }
 
 export interface PdfBundleAttachment {
   fileName: string
   bytes: Uint8Array
   mimeType?: string
+  directory?: string
 }
 
 interface PdfRect {
@@ -1360,6 +1363,10 @@ export function safeArchiveBaseName(fileName: string, fallback = 'dokument') {
   return truncateArchiveBaseName(safeName)
 }
 
+export function safeArchiveDirectoryName(directoryName: string, fallback = 'Bank') {
+  return safeArchiveBaseName(directoryName, fallback).replaceAll('/', '-')
+}
+
 function safePdfName(fileName: string) {
   const safeName = safeArchiveBaseName(fileName, 'dokument.pdf')
   return safeName.toLocaleLowerCase('pl-PL').endsWith('.pdf')
@@ -1372,7 +1379,7 @@ function archiveNameKey(value: string) {
 }
 
 export function uniqueArchiveEntryName(
-  directory: '01-wnioski' | '02-zalaczniki',
+  directory: string,
   preferredName: string,
   usedNames: Set<string>,
 ) {
@@ -1400,6 +1407,7 @@ export async function createPdfBundle(
   fontBytes: Uint8Array,
   values: FlatPdfValues,
   attachments: readonly PdfBundleAttachment[] = [],
+  options: { password?: string } = {},
 ) {
   const files: Record<string, Uint8Array> = {}
   const usedNames = new Set<string>()
@@ -1415,7 +1423,10 @@ export async function createPdfBundle(
       ? safePdfName(document.outputName)
       : `uzupelniony-${safePdfName(document.fileName)}`
     const preferredName = safePdfName(requestedName)
-    files[uniqueArchiveEntryName('01-wnioski', preferredName, usedNames)] = filled
+    const directory = document.directory
+      ? `${safeArchiveDirectoryName(document.directory)}/01-wnioski`
+      : '01-wnioski'
+    files[uniqueArchiveEntryName(directory, preferredName, usedNames)] = filled
   }
 
   for (const [index, attachment] of attachments.entries()) {
@@ -1423,7 +1434,22 @@ export async function createPdfBundle(
       attachment.fileName,
       `zalacznik-${index + 1}`,
     )
-    files[uniqueArchiveEntryName('02-zalaczniki', preferredName, usedNames)] = attachment.bytes
+    const directory = attachment.directory
+      ? `${safeArchiveDirectoryName(attachment.directory)}/02-dokumenty`
+      : '02-zalaczniki'
+    files[uniqueArchiveEntryName(directory, preferredName, usedNames)] = attachment.bytes
+  }
+
+  if (options.password) {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), {
+      password: options.password,
+      encryptionStrength: 3,
+      level: 6,
+    })
+    for (const [fileName, bytes] of Object.entries(files)) {
+      await writer.add(fileName, new Uint8ArrayReader(bytes))
+    }
+    return writer.close()
   }
 
   return zipSync(files, { level: 6 })

@@ -25,6 +25,19 @@ import {
   type MultiformIntakeAnswers,
 } from '#shared/multiform-intake'
 
+interface MultiformDeliveryRecipientResult {
+  clientId: string
+  displayName: string
+  email: string
+  alreadySent?: boolean
+}
+
+interface MultiformDeliveryResponse {
+  status: 'complete' | 'partial' | 'failed'
+  sent: MultiformDeliveryRecipientResult[]
+  failed: MultiformDeliveryRecipientResult[]
+}
+
 const props = defineProps<{
   caseData: CaseDetail
 }>()
@@ -40,13 +53,45 @@ const contextPending = ref(false)
 const draftPending = ref(false)
 const preparePending = ref(false)
 const fillPending = ref(false)
+const individualDownloadPending = ref('')
+const templatePreviewOpen = ref(false)
+const templatePreviewDocument = shallowRef<MultiformPrepareResponse['documents'][number] | null>(null)
+const templatePreviewBankId = ref('')
 const contextError = ref('')
 const draftError = ref('')
 const prepareError = ref('')
 const fillError = ref('')
+const individualDownloadError = ref('')
 const context = ref<MultiformCrmContext | null>(null)
 const preparedBundle = ref<MultiformPrepareResponse | null>(null)
 const selectedDocumentIds = ref<string[]>([])
+const excludedPackageDocumentIds = ref<string[]>([])
+const selectedPackageApplicationIds = ref<string[]>([])
+const activePackageApplicationId = ref('')
+const protectZipWithPassword = ref(true)
+const zipPasswordModalOpen = ref(false)
+const zipPassword = ref('')
+const zipPasswordCopied = ref(false)
+const sendModalOpen = ref(false)
+const sendPending = ref(false)
+const sendError = ref('')
+const sendRequestId = ref('')
+const sendApplicationIds = ref<string[]>([])
+const sendResult = ref<MultiformDeliveryResponse | null>(null)
+const zipPasswordModalModel = computed({
+  get: () => zipPasswordModalOpen.value,
+  set: (open: boolean) => {
+    if (open) zipPasswordModalOpen.value = true
+    else closeZipPasswordModal()
+  },
+})
+const sendModalModel = computed({
+  get: () => sendModalOpen.value,
+  set: (open: boolean) => {
+    if (open) sendModalOpen.value = true
+    else closeSendModal()
+  },
+})
 const values = ref<Record<string, MultiformFieldValue>>({})
 const collectionCounts = ref<Record<string, number>>({})
 const activeCollectionTabs = ref<Record<string, string>>({})
@@ -160,6 +205,13 @@ function bankCountLabel(count: number) {
   return `${count} banków`
 }
 
+function formatFileSize(bytes: number | null) {
+  if (!bytes || bytes < 1) return 'Rozmiar zostanie ustalony przy pobraniu'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 const prerequisite = computed(() => {
   if (!props.caseData.clients.length) return 'Najpierw dodaj wnioskodawców do sprawy.'
   if (!props.caseData.bank_applications.length) {
@@ -205,19 +257,36 @@ const mappingsReady = computed(() => Boolean(
   context.value?.selectedApplicationsValidation.valid,
 ))
 
+const missingTemplateWarnings = computed(() => (
+  context.value?.selectedApplicationsValidation.warnings ?? []
+))
+
+const mappingBlockers = computed(() => new Set(
+  context.value?.selectedApplicationsValidation.templates.flatMap(template => (
+    template.warnings.map(warning => `${template.templateId}: ${warning}`)
+  )) ?? [],
+))
+
+const formPreparationBlockers = computed(() => (
+  context.value?.selectedApplicationsValidation.blockers.filter(blocker => (
+    !mappingBlockers.value.has(blocker)
+  )) ?? []
+))
+
 const contextCanPrepare = computed(() => Boolean(
   context.value
   && context.value.applicationIds.length > 0
   && context.value.templateIds.length > 0
-  && context.value.selectedApplicationsValidation.templates.every(template => template.found),
+  && formPreparationBlockers.value.length === 0
 ))
 
 const formPreparationBlocker = computed(() => {
+  if (formPreparationBlockers.value.length) {
+    return formPreparationBlockers.value[0]
+      || 'Aktywne wnioski nie są jeszcze gotowe do przygotowania formularzy bankowych.'
+  }
   if (!templateIds.value.length) {
     return 'Checklista jest dostępna, ale ten bank nie ma jeszcze przypisanego formularza PDF. Formularze i paczka ZIP odblokują się po dodaniu szablonu banku.'
-  }
-  if (context.value && !context.value.selectedApplicationsValidation.templates.every(template => template.found)) {
-    return 'Co najmniej jeden przypisany formularz PDF banku nie jest dostępny.'
   }
   return ''
 })
@@ -259,6 +328,161 @@ const contextCanExport = computed(() => Boolean(
   mappingsReady.value && documentStepComplete.value,
 ))
 const selectedDocumentCount = computed(() => selectedDocumentIds.value.length)
+const selectedDocuments = computed(() => {
+  const selected = new Set(selectedDocumentIds.value)
+  return context.value?.documents.filter(document => selected.has(document.id)) ?? []
+})
+
+const packageApplications = computed(() => (
+  (context.value?.applications ?? [])
+    .slice()
+    .sort((left, right) => left.slot - right.slot)
+))
+
+const activePackageApplication = computed(() => (
+  packageApplications.value.find(application => (
+    application.applicationId === activePackageApplicationId.value
+  )) ?? packageApplications.value[0] ?? null
+))
+
+function packageApplicationIsSelected(applicationId: string) {
+  return selectedPackageApplicationIds.value.includes(applicationId)
+}
+
+function setPackageApplicationSelected(applicationId: string, selected: boolean) {
+  const next = new Set(selectedPackageApplicationIds.value)
+  if (selected) next.add(applicationId)
+  else next.delete(applicationId)
+  selectedPackageApplicationIds.value = packageApplications.value
+    .map(application => application.applicationId)
+    .filter(id => next.has(id))
+}
+
+function initializePackageApplicationSelection(nextContext: MultiformCrmContext) {
+  const applicationIds = nextContext.applications
+    .slice()
+    .sort((left, right) => left.slot - right.slot)
+    .map(application => application.applicationId)
+  selectedPackageApplicationIds.value = applicationIds
+  activePackageApplicationId.value = nextContext.applications.find(application => (
+    application.templateIds.length > 0
+  ))?.applicationId ?? applicationIds[0] ?? ''
+}
+
+function packagePreparedDocuments(applicationId: string) {
+  const application = packageApplications.value.find(item => item.applicationId === applicationId)
+  if (!application) return []
+  const templateIds = new Set(application.templateIds)
+  return (preparedBundle.value?.documents ?? []).filter(document => (
+    templateIds.has(preparedDocumentTemplateId(document))
+  ))
+}
+
+function packageAvailableDocuments(applicationIds: readonly string[]) {
+  const selectedApplications = new Set(applicationIds)
+  const selectedFiles = new Set(selectedDocumentIds.value)
+  return context.value?.documents.filter(document => (
+    selectedFiles.has(document.id)
+    && (document.submission_id === null || selectedApplications.has(document.submission_id))
+  )) ?? []
+}
+
+function packageDocumentIsSelected(documentId: string) {
+  return !excludedPackageDocumentIds.value.includes(documentId)
+}
+
+function setPackageDocumentSelected(documentId: string, selected: boolean) {
+  const available = new Set(packageAvailableDocuments(
+    packageApplications.value.map(application => application.applicationId),
+  ).map(document => document.id))
+  if (!available.has(documentId)) return
+
+  const excluded = new Set(excludedPackageDocumentIds.value)
+  if (selected) excluded.delete(documentId)
+  else excluded.add(documentId)
+  excludedPackageDocumentIds.value = [...excluded]
+}
+
+function packageDocuments(applicationIds: readonly string[]) {
+  const excluded = new Set(excludedPackageDocumentIds.value)
+  return packageAvailableDocuments(applicationIds).filter(document => !excluded.has(document.id))
+}
+
+function packageRequirements(applicationId: string) {
+  return context.value?.checklist.requirements.filter(requirement => (
+    !requirement.applicationId
+    || requirement.applicationId === applicationId
+    || requirement.applicationIds.includes(applicationId)
+  )) ?? []
+}
+
+function packageMissingRequirements(applicationId: string) {
+  const selected = new Set(selectedDocumentIds.value)
+  return packageRequirements(applicationId).filter(requirement => (
+    requirement.required
+    && ['missing', 'manual'].includes(requirement.fulfillment)
+    && !requirement.documentIds.some(documentId => selected.has(documentId))
+  ))
+}
+
+function missingSelectedRequirementsForApplications(applicationIds: readonly string[]) {
+  const selectedApplications = new Set(applicationIds)
+  const selectedFiles = new Set(selectedDocumentIds.value)
+  const requirements = resolvedDocumentRequirements.value.filter(requirement => (
+    requirement.applicationIds.length === 0
+    || requirement.applicationIds.some(applicationId => selectedApplications.has(applicationId))
+  ))
+  return requirements.filter(requirement => (
+    !requirement.documentIds.some(documentId => selectedFiles.has(documentId))
+  ))
+}
+
+const activePackageDocuments = computed(() => activePackageApplication.value
+  ? packageAvailableDocuments([activePackageApplication.value.applicationId])
+  : [])
+
+const activePackageSelectedDocumentCount = computed(() => (
+  activePackageDocuments.value.filter(document => packageDocumentIsSelected(document.id)).length
+))
+
+const activePackageAllDocumentsSelected = computed(() => (
+  activePackageDocuments.value.length > 0
+  && activePackageSelectedDocumentCount.value === activePackageDocuments.value.length
+))
+
+function toggleActivePackageDocuments() {
+  const selected = !activePackageAllDocumentsSelected.value
+  for (const document of activePackageDocuments.value) {
+    setPackageDocumentSelected(document.id, selected)
+  }
+}
+
+const activePackagePreparedDocuments = computed(() => activePackageApplication.value
+  ? packagePreparedDocuments(activePackageApplication.value.applicationId)
+  : [])
+
+const activePackageMissingRequirements = computed(() => activePackageApplication.value
+  ? packageMissingRequirements(activePackageApplication.value.applicationId)
+  : [])
+
+const selectedPackageDocumentCount = computed(() => {
+  const applicationIds = selectedPackageApplicationIds.value
+  const formCount = applicationIds.reduce((count, applicationId) => (
+    count + packagePreparedDocuments(applicationId).length
+  ), 0)
+  return formCount + packageDocuments(applicationIds).length
+})
+
+function bankOffer(applicationId: string) {
+  const application = packageApplications.value.find(item => item.applicationId === applicationId)
+  return application
+    ? props.caseData.offers.find(offer => offer.id === application.offerId) ?? null
+    : null
+}
+
+function applicationDocumentCount(applicationId: string) {
+  return packagePreparedDocuments(applicationId).length + packageDocuments([applicationId]).length
+}
 
 function readableError(error: unknown, fallback: string) {
   return apiErrorMessage(error) || fallback
@@ -301,6 +525,7 @@ async function loadContext(options: { preservePrepared?: boolean } = {}) {
     )
     context.value = response
     initializeDocumentSelection(response, preferredDocumentIds)
+    initializePackageApplicationSelection(response)
   }
   catch (error) {
     contextError.value = readableError(error, 'Nie udało się pobrać kontekstu Multiwniosku.')
@@ -402,6 +627,7 @@ function resetWorkspace() {
   context.value = null
   preparedBundle.value = null
   selectedDocumentIds.value = []
+  excludedPackageDocumentIds.value = []
   values.value = {}
   collectionCounts.value = {}
   activeCollectionTabs.value = {}
@@ -418,6 +644,12 @@ function resetWorkspace() {
   intakeValidationVisible.value = false
   validationVisible.value = false
   exportComplete.value = false
+  sendModalOpen.value = false
+  sendPending.value = false
+  sendError.value = ''
+  sendRequestId.value = ''
+  sendApplicationIds.value = []
+  sendResult.value = null
 }
 
 async function bootstrapWorkspace() {
@@ -840,25 +1072,194 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
-async function fillAndDownload() {
-  if (!preparedBundle.value || fillPending.value) return
-  validationVisible.value = true
-  fillError.value = ''
-  exportComplete.value = false
-  if (!contextCanExport.value) {
-    fillError.value = mappingsReady.value
-      ? `Wybierz pliki dla wszystkich wymaganych pozycji (${missingSelectedRequirements.value.length}).`
-      : 'Eksport czeka na kompletne mapowanie pól formularzy bankowych.'
+function filledPdfFileName(preparedDocument: MultiformPrepareResponse['documents'][number]) {
+  const sourceName = preparedDocument.fileName || 'wniosek.pdf'
+  return `uzupelniony-${sourceName.toLocaleLowerCase('pl-PL').endsWith('.pdf')
+    ? sourceName
+    : `${sourceName}.pdf`}`
+}
+
+function blankPdfFileName(preparedDocument: MultiformPrepareResponse['documents'][number]) {
+  const sourceName = preparedDocument.fileName || 'szablon-wniosku.pdf'
+  return sourceName.toLocaleLowerCase('pl-PL').endsWith('.pdf')
+    ? sourceName
+    : `${sourceName}.pdf`
+}
+
+function preparedDocumentTemplateId(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return preparedDocument.templateId || preparedDocument.id || ''
+}
+
+function templateBankId(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  const templateId = preparedDocumentTemplateId(preparedDocument)
+  if (!templateId) return ''
+  const application = context.value?.applications.find(item => (
+    item.templateIds.includes(templateId)
+  ))
+  if (application?.bankId) return application.bankId
+  if (context.value?.templateIds.includes(templateId)) return context.value.bank.id || ''
+  return ''
+}
+
+function openTemplatePreview(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  const bankId = templateBankId(preparedDocument)
+  if (!bankId) {
+    individualDownloadError.value = 'Nie udało się ustalić banku przypisanego do tego szablonu.'
     return
   }
-  if (invalidFields.value.length) {
+  individualDownloadError.value = ''
+  templatePreviewDocument.value = preparedDocument
+  templatePreviewBankId.value = bankId
+  templatePreviewOpen.value = true
+}
+
+async function handleTemplateSaved() {
+  await loadContext()
+  if (context.value) await prepareForm(false)
+}
+
+async function downloadPreparedDocument(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+  variant: 'filled' | 'blank',
+) {
+  const templateId = preparedDocument.templateId || preparedDocument.id
+  if (!templateId || individualDownloadPending.value) return
+  individualDownloadError.value = ''
+  if (variant === 'filled') validationVisible.value = true
+  if (variant === 'filled' && invalidFields.value.length) {
     fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
     activeStep.value = 3
     await focusFirstInvalidField()
     return
   }
+  individualDownloadPending.value = `template:${variant}:${templateId}`
+  try {
+    const blob = await $fetch<Blob>(
+      crmApiPath(`/cases/${props.caseData.id}/multiform/files/${encodeURIComponent(templateId)}`),
+      {
+        method: 'POST',
+        body: {
+          variant,
+          values: activeValuesPayload(),
+          collectionCounts: collectionCounts.value,
+        },
+        responseType: 'blob',
+      },
+    )
+    downloadBlob(
+      blob,
+      variant === 'blank'
+        ? blankPdfFileName(preparedDocument)
+        : filledPdfFileName(preparedDocument),
+    )
+  }
+  catch (error) {
+    individualDownloadError.value = readableError(
+      error,
+      variant === 'blank'
+        ? 'Nie udało się pobrać pustego szablonu PDF.'
+        : 'Nie udało się pobrać uzupełnionego formularza PDF.',
+    )
+  }
+  finally {
+    individualDownloadPending.value = ''
+  }
+}
+
+async function downloadAttachment(document: MultiformCrmContext['documents'][number]) {
+  if (individualDownloadPending.value) return
+  individualDownloadError.value = ''
+  individualDownloadPending.value = `attachment:${document.id}`
+  try {
+    const blob = await $fetch<Blob>(
+      crmApiPath(`/cases/${props.caseData.id}/documents/${document.id}`),
+      { responseType: 'blob' },
+    )
+    downloadBlob(blob, document.name || 'zalacznik')
+  }
+  catch (error) {
+    individualDownloadError.value = readableError(error, 'Nie udało się pobrać załącznika.')
+  }
+  finally {
+    individualDownloadPending.value = ''
+  }
+}
+
+function generateZipPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const random = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(random, value => alphabet[value % alphabet.length])
+    .join('')
+    .match(/.{1,4}/g)!
+    .join('-')
+}
+
+function closeZipPasswordModal() {
+  zipPasswordModalOpen.value = false
+  zipPassword.value = ''
+  zipPasswordCopied.value = false
+}
+
+async function copyZipPassword() {
+  if (!zipPassword.value) return
+  await navigator.clipboard.writeText(zipPassword.value)
+  zipPasswordCopied.value = true
+  toast.add({ title: 'Hasło skopiowane', color: 'success' })
+}
+
+async function validatePackageForExport(
+  requestedApplicationIds: readonly string[],
+) {
+  if (!preparedBundle.value) {
+    fillError.value = 'Najpierw przygotuj formularze bankowe.'
+    return null
+  }
+  const applicationIds = [...new Set(requestedApplicationIds)]
+  validationVisible.value = true
+  fillError.value = ''
+  if (!applicationIds.length) {
+    fillError.value = 'Wybierz co najmniej jeden wniosek bankowy do paczki.'
+    return null
+  }
+  const selectedApplications = packageApplications.value.filter(application => (
+    applicationIds.includes(application.applicationId)
+  ))
+  if (!selectedApplications.some(application => application.templateIds.length > 0)) {
+    fillError.value = 'Wybrane wnioski nie mają szablonu formularza do wygenerowania.'
+    return null
+  }
+  const missingRequirements = missingSelectedRequirementsForApplications(applicationIds)
+  if (!mappingsReady.value || missingRequirements.length) {
+    fillError.value = mappingsReady.value
+      ? `Wybierz pliki dla wszystkich wymaganych pozycji (${missingRequirements.length}).`
+      : 'Eksport czeka na kompletne mapowanie pól formularzy bankowych.'
+    return null
+  }
+  if (invalidFields.value.length) {
+    fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
+    activeStep.value = 3
+    await focusFirstInvalidField()
+    return null
+  }
+  return applicationIds
+}
+
+async function fillAndDownload(
+  requestedApplicationIds: readonly string[] = selectedPackageApplicationIds.value,
+) {
+  if (fillPending.value || sendPending.value) return
+  const applicationIds = await validatePackageForExport(requestedApplicationIds)
+  if (!applicationIds) return
+  exportComplete.value = false
 
   fillPending.value = true
+  const password = protectZipWithPassword.value ? generateZipPassword() : ''
   try {
     const blob = await $fetch<Blob>(
       crmApiPath(`/cases/${props.caseData.id}/multiform/fill`),
@@ -867,19 +1268,27 @@ async function fillAndDownload() {
         body: {
           values: activeValuesPayload(),
           collectionCounts: collectionCounts.value,
-          documentIds: selectedDocumentIds.value,
+          applicationIds,
+          documentIds: packageDocuments(applicationIds).map(document => document.id),
+          ...(password ? { password } : {}),
         },
         responseType: 'blob',
       },
     )
-    downloadBlob(
-      blob,
-      `wnioski-${props.caseData.title
+    const singleApplication = applicationIds.length === 1
+      ? packageApplications.value.find(application => application.applicationId === applicationIds[0])
+      : null
+    const packageName = singleApplication?.bankName || props.caseData.title
+    downloadBlob(blob, `wnioski-${packageName
         .replace(/[^a-z0-9]+/gi, '-')
         .replace(/^-|-$/g, '')
-        .toLowerCase() || 'sprawa'}.zip`,
-    )
+        .toLowerCase() || 'sprawa'}.zip`)
     exportComplete.value = true
+    if (password) {
+      zipPassword.value = password
+      zipPasswordCopied.value = false
+      zipPasswordModalOpen.value = true
+    }
     toast.add({
       title: 'Paczka dokumentów jest gotowa',
       description: 'Uzupełnione PDF-y i wybrane załączniki zostały pobrane jako ZIP.',
@@ -893,6 +1302,88 @@ async function fillAndDownload() {
     fillPending.value = false
   }
 }
+
+function closeSendModal() {
+  if (sendPending.value) return
+  sendModalOpen.value = false
+  sendError.value = ''
+  sendRequestId.value = ''
+  sendApplicationIds.value = []
+  sendResult.value = null
+}
+
+async function openSendModal() {
+  if (sendPending.value || fillPending.value) return
+  const applicationIds = await validatePackageForExport(selectedPackageApplicationIds.value)
+  if (!applicationIds) return
+  sendApplicationIds.value = applicationIds
+  sendRequestId.value = crypto.randomUUID()
+  sendError.value = ''
+  sendResult.value = null
+  sendModalOpen.value = true
+}
+
+async function sendPackageToClients() {
+  if (
+    sendPending.value
+    || !sendModalOpen.value
+    || !sendRequestId.value
+    || !sendApplicationIds.value.length
+  ) return
+
+  sendPending.value = true
+  sendError.value = ''
+  try {
+    const response = await $fetch<MultiformDeliveryResponse>(
+      crmApiPath(`/cases/${props.caseData.id}/multiform/send`),
+      {
+        method: 'POST',
+        body: {
+          requestId: sendRequestId.value,
+          values: activeValuesPayload(),
+          collectionCounts: collectionCounts.value,
+          applicationIds: sendApplicationIds.value,
+          documentIds: packageDocuments(sendApplicationIds.value).map(document => document.id),
+        },
+      },
+    )
+    sendResult.value = response
+    if (response.status === 'complete') {
+      toast.add({
+        title: 'Paczki wysłane do klientów',
+        description: `Wysłano ${response.sent.length} zabezpieczonych wiadomości.`,
+        color: 'success',
+      })
+    }
+    else {
+      sendError.value = response.status === 'partial'
+        ? `Wysłano ${response.sent.length} z ${response.sent.length + response.failed.length} wiadomości. Możesz ponowić pozostałe.`
+        : 'Nie udało się wysłać paczek. Sprawdź konfigurację poczty i spróbuj ponownie.'
+    }
+  }
+  catch (error) {
+    sendError.value = readableError(
+      error,
+      'Nie udało się wysłać paczek do klientów.',
+    )
+  }
+  finally {
+    sendPending.value = false
+  }
+}
+
+function deliveryResultFor(clientId: string) {
+  if (sendResult.value?.sent.some(recipient => recipient.clientId === clientId)) return 'sent'
+  if (sendResult.value?.failed.some(recipient => recipient.clientId === clientId)) return 'failed'
+  return 'pending'
+}
+
+const sendActionLabel = computed(() => {
+  if (sendPending.value) return 'Wysyłam bezpieczne paczki…'
+  if (sendResult.value?.status === 'complete') return 'Wysłano do klientów'
+  if (sendResult.value?.status === 'partial') return 'Ponów niewysłane'
+  return `Wyślij do klientów (${props.caseData.clients.length})`
+})
 
 function documentTitle(
   preparedDocument: MultiformPrepareResponse['documents'][number],
@@ -963,12 +1454,13 @@ async function handlePrimaryAction() {
       await focusFirstInvalidField()
       return
     }
+    fillError.value = ''
     activeStep.value = 4
     await persistCurrentDraft()
     await focusCurrentStep()
     return
   }
-  await fillAndDownload()
+  await fillAndDownload(selectedPackageApplicationIds.value)
 }
 
 async function requestStep(requestedStep: number) {
@@ -993,7 +1485,9 @@ const primaryActionLabel = computed(() => {
   if (activeStep.value === 1) return 'Wygeneruj checklistę'
   if (activeStep.value === 2) return 'Przejdź do formularzy'
   if (activeStep.value === 3) return 'Przejdź do paczki ZIP'
-  return fillPending.value ? 'Generuję dokumenty…' : 'Uzupełnij i pobierz ZIP'
+  return fillPending.value
+    ? 'Generuję dokumenty…'
+    : `Pobierz całość ZIP (${selectedPackageDocumentCount.value})`
 })
 
 const primaryActionIcon = computed(() => (
@@ -1005,8 +1499,10 @@ const primaryActionDisabled = computed(() => (
   || draftPending.value
   || preparePending.value
   || fillPending.value
+  || sendPending.value
+  || Boolean(individualDownloadPending.value)
   || (activeStep.value === 2 && Boolean(formPreparationBlocker.value))
-  || (activeStep.value === 4 && !contextCanExport.value)
+  || (activeStep.value === 4 && (!contextCanExport.value || !selectedPackageApplicationIds.value.length))
 ))
 
 function formatSavedAt(value: string) {
@@ -1056,6 +1552,13 @@ watch(
   { deep: true },
 )
 
+watch(() => invalidFields.value.length, (count) => {
+  if (!fillError.value.startsWith('Uzupełnij lub popraw oznaczone pola')) return
+  fillError.value = count
+    ? `Uzupełnij lub popraw oznaczone pola (${count}).`
+    : ''
+})
+
 onMounted(() => {
   void bootstrapWorkspace()
 })
@@ -1069,6 +1572,7 @@ onBeforeUnmount(() => {
 <template>
   <UCard
     class="case-multiform"
+    :class="{ 'case-multiform--package': activeStep === 4 }"
     :ui="{
       header: 'p-0 sm:p-0',
       body: 'p-0 sm:p-0',
@@ -1268,6 +1772,20 @@ onBeforeUnmount(() => {
             @refresh="handleDocumentsRefresh"
           />
           <UAlert
+            v-if="prepareError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Nie udało się przygotować formularzy bankowych"
+            :description="prepareError"
+          >
+            <template #actions>
+              <UButton color="error" variant="soft" size="sm" @click="prepareForm(false)">
+                Spróbuj ponownie
+              </UButton>
+            </template>
+          </UAlert>
+          <UAlert
             v-if="formPreparationBlocker"
             color="warning"
             variant="subtle"
@@ -1275,6 +1793,21 @@ onBeforeUnmount(() => {
             title="Formularze bankowe wymagają szablonu PDF"
             :description="formPreparationBlocker"
           />
+          <UAlert
+            v-if="missingTemplateWarnings.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Część banków wymaga obsługi ręcznej"
+          >
+            <template #description>
+              <ul>
+                <li v-for="warning in missingTemplateWarnings" :key="warning">
+                  {{ warning }}
+                </li>
+              </ul>
+            </template>
+          </UAlert>
         </section>
 
         <section
@@ -1354,7 +1887,7 @@ onBeforeUnmount(() => {
               <fieldset v-else class="case-multiform__field-section case-multiform__repeatable">
                 <legend>{{ group.section }}</legend>
                 <div class="case-multiform__repeatable-heading">
-                  <div>
+                  <div class="case-multiform__file-info">
                     <strong>{{ group.collection.label }}</strong>
                     <span>Lista wynika z klientów przypisanych do sprawy.</span>
                   </div>
@@ -1413,32 +1946,292 @@ onBeforeUnmount(() => {
           tabindex="-1"
           aria-labelledby="case-multiform-zip-title"
         >
-          <header class="case-multiform__step-heading">
-            <p>Paczka ZIP</p>
-            <h3 id="case-multiform-zip-title">Sprawdź i pobierz komplet wniosków</h3>
-            <span>
-              Paczka połączy uzupełnione formularze bankowe z dokumentami wybranymi
-              na wspólnej checkliście.
-            </span>
+          <header class="case-multiform__package-heading">
+            <div class="case-multiform__step-heading">
+              <p>Paczka wniosków</p>
+              <h3 id="case-multiform-zip-title">Dokumenty według wniosków bankowych</h3>
+              <span>Wybierz wnioski, sprawdź ich zawartość i pobierz osobną albo zbiorczą paczkę.</span>
+            </div>
+            <div class="case-multiform__package-actions">
+              <label class="case-multiform__password-option">
+                <input v-model="protectZipWithPassword" type="checkbox" :disabled="fillPending || sendPending">
+                <span>
+                  <strong>Zabezpiecz jednorazowym hasłem</strong>
+                  <small>Hasło pokażemy tylko po pobraniu</small>
+                </span>
+              </label>
+              <UButton
+                size="lg"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-send"
+                :loading="sendPending"
+                :disabled="!selectedPackageApplicationIds.length || fillPending || sendPending"
+                @click="openSendModal"
+              >
+                Wyślij do klientów
+              </UButton>
+              <UButton
+                size="lg"
+                icon="i-lucide-download"
+                :loading="fillPending"
+                :disabled="!selectedPackageApplicationIds.length || fillPending || sendPending"
+                @click="fillAndDownload(selectedPackageApplicationIds)"
+              >
+                Pobierz całość ZIP ({{ selectedPackageDocumentCount }})
+              </UButton>
+            </div>
           </header>
 
-          <div class="case-multiform__zip-summary">
-            <div>
-              <span><UIcon name="i-lucide-landmark" /></span>
-              <strong>{{ context.applications.length }}</strong>
-              <small>{{ bankCountLabel(context.applications.length) }}</small>
-            </div>
-            <div>
-              <span><UIcon name="i-lucide-file-pen-line" /></span>
-              <strong>{{ preparedBundle?.documents.length ?? 0 }}</strong>
-              <small>formularzy PDF</small>
-            </div>
-            <div>
-              <span><UIcon name="i-lucide-paperclip" /></span>
-              <strong>{{ selectedDocumentCount }}</strong>
-              <small>załączników</small>
-            </div>
+          <div class="case-multiform__package-layout">
+            <aside class="case-multiform__application-rail" aria-label="Wnioski bankowe">
+              <div class="case-multiform__rail-label">
+                <span>Wnioski</span>
+                <small>{{ selectedPackageApplicationIds.length }}/{{ packageApplications.length }} wybrane</small>
+              </div>
+              <article
+                v-for="application in packageApplications"
+                :key="application.applicationId"
+                class="case-multiform__rail-item"
+                :class="{
+                  'is-active': activePackageApplication?.applicationId === application.applicationId,
+                  'is-unselected': !packageApplicationIsSelected(application.applicationId),
+                }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="packageApplicationIsSelected(application.applicationId)"
+                  :aria-label="`Dodaj ${application.bankName} do paczki zbiorczej`"
+                  @change="setPackageApplicationSelected(application.applicationId, ($event.target as HTMLInputElement).checked)"
+                >
+                <button type="button" class="case-multiform__rail-open" @click="activePackageApplicationId = application.applicationId">
+                  <span class="case-multiform__bank-mark" :style="{ background: bankOffer(application.applicationId)?.bank_logo_background || undefined }">
+                    <img
+                      v-if="bankOffer(application.applicationId)?.bank_logo_url"
+                      :src="bankOffer(application.applicationId)?.bank_logo_url || ''"
+                      :alt="application.bankName"
+                    >
+                    <UIcon v-else name="i-lucide-landmark" />
+                  </span>
+                  <span class="case-multiform__rail-copy">
+                    <strong>{{ application.bankName }}</strong>
+                    <small>{{ application.productName }}</small>
+                    <em :class="application.templateIds.length ? 'is-ready' : 'is-manual'">
+                      {{ application.templateIds.length
+                        ? `${applicationDocumentCount(application.applicationId)} plików`
+                        : 'Brak szablonu · ręcznie' }}
+                    </em>
+                  </span>
+                  <UIcon name="i-lucide-chevron-right" />
+                </button>
+              </article>
+
+              <div class="case-multiform__archive-tree">
+                <span>Struktura pełnej paczki</span>
+                <div v-for="application in packageApplications.filter(item => packageApplicationIsSelected(item.applicationId))" :key="`folder-${application.applicationId}`">
+                  <UIcon name="i-lucide-folder" />
+                  <strong>{{ application.bankName }}/</strong>
+                </div>
+                <div>
+                  <UIcon name="i-lucide-folder" />
+                  <strong>Wspólne/</strong>
+                </div>
+              </div>
+            </aside>
+
+            <section v-if="activePackageApplication" class="case-multiform__bank-workspace">
+              <header class="case-multiform__bank-heading">
+                <div class="case-multiform__bank-identity">
+                  <span class="case-multiform__bank-mark is-large" :style="{ background: bankOffer(activePackageApplication.applicationId)?.bank_logo_background || undefined }">
+                    <img
+                      v-if="bankOffer(activePackageApplication.applicationId)?.bank_logo_url"
+                      :src="bankOffer(activePackageApplication.applicationId)?.bank_logo_url || ''"
+                      :alt="activePackageApplication.bankName"
+                    >
+                    <UIcon v-else name="i-lucide-landmark" />
+                  </span>
+                  <div>
+                    <p>Wniosek {{ activePackageApplication.slot }}</p>
+                    <h4>{{ activePackageApplication.bankName }}</h4>
+                    <span>{{ activePackageApplication.productName }}</span>
+                  </div>
+                </div>
+                <div class="case-multiform__bank-actions">
+                  <span>{{ applicationDocumentCount(activePackageApplication.applicationId) }} dokumentów</span>
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-download"
+                    :loading="fillPending"
+                    :disabled="!activePackageApplication.templateIds.length || fillPending || sendPending"
+                    @click="fillAndDownload([activePackageApplication.applicationId])"
+                  >
+                    Pobierz ZIP banku
+                  </UButton>
+                </div>
+              </header>
+
+              <div v-if="!activePackageApplication.templateIds.length" class="case-multiform__manual-bank">
+                <UIcon name="i-lucide-triangle-alert" />
+                <div>
+                  <strong>Ten bank nie ma jeszcze szablonu Multiwniosku</strong>
+                  <span>Dokumenty wspólne są dostępne poniżej, ale formularz bankowy trzeba przygotować ręcznie.</span>
+                </div>
+              </div>
+
+              <section class="case-multiform__bank-section">
+                <header>
+                  <div>
+                    <UIcon name="i-lucide-file-pen-line" />
+                    <span>
+                      <strong>Formularze bankowe</strong>
+                      <small>Uzupełnione danymi z Multiwniosku</small>
+                    </span>
+                  </div>
+                  <em>{{ activePackagePreparedDocuments.length }}</em>
+                </header>
+                <div v-if="activePackagePreparedDocuments.length" class="case-multiform__file-list">
+                  <article
+                    v-for="(preparedDocument, index) in activePackagePreparedDocuments"
+                    :key="preparedDocument.templateId || preparedDocument.id || index"
+                    class="case-multiform__file-row"
+                  >
+                    <span class="case-multiform__file-icon"><UIcon name="i-lucide-file-type-2" /></span>
+                    <div class="case-multiform__file-info">
+                      <strong>{{ documentTitle(preparedDocument, index) }}</strong>
+                      <small>{{ preparedDocument.fileName || 'Formularz PDF' }}</small>
+                    </div>
+                    <div class="case-multiform__file-actions">
+                      <UButton
+                        color="neutral"
+                        variant="soft"
+                        size="sm"
+                        icon="i-lucide-eye"
+                        :disabled="!templateBankId(preparedDocument) || Boolean(individualDownloadPending)"
+                        @click="openTemplatePreview(preparedDocument)"
+                      >
+                        Podgląd pól
+                      </UButton>
+                      <UButton
+                        color="neutral"
+                        variant="outline"
+                        size="sm"
+                        icon="i-lucide-download"
+                        :loading="individualDownloadPending === `template:filled:${preparedDocument.templateId || preparedDocument.id}`"
+                        :disabled="Boolean(individualDownloadPending)"
+                        @click="downloadPreparedDocument(preparedDocument, 'filled')"
+                      >
+                        Pobierz uzupełniony
+                      </UButton>
+                      <UButton
+                        color="neutral"
+                        variant="ghost"
+                        size="sm"
+                        icon="i-lucide-file"
+                        :loading="individualDownloadPending === `template:blank:${preparedDocument.templateId || preparedDocument.id}`"
+                        :disabled="Boolean(individualDownloadPending)"
+                        @click="downloadPreparedDocument(preparedDocument, 'blank')"
+                      >
+                        Pusty szablon
+                      </UButton>
+                    </div>
+                  </article>
+                </div>
+                <p v-else class="case-multiform__empty-section">Brak automatycznie generowanego formularza dla tego banku.</p>
+              </section>
+
+              <section class="case-multiform__bank-section">
+                <header>
+                  <div>
+                    <UIcon name="i-lucide-paperclip" />
+                    <span>
+                      <strong>Dokumenty do wniosku</strong>
+                      <small>Zaznacz pliki, które mają trafić do ZIP-a</small>
+                    </span>
+                  </div>
+                  <div class="case-multiform__section-actions">
+                    <UButton
+                      v-if="activePackageDocuments.length"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="toggleActivePackageDocuments"
+                    >
+                      {{ activePackageAllDocumentsSelected ? 'Odznacz wszystkie' : 'Zaznacz wszystkie' }}
+                    </UButton>
+                    <em>{{ activePackageSelectedDocumentCount }}/{{ activePackageDocuments.length }}</em>
+                  </div>
+                </header>
+                <div class="case-multiform__file-list">
+                  <article
+                    v-for="document in activePackageDocuments"
+                    :key="document.id"
+                    class="case-multiform__file-row"
+                    :class="{ 'is-unselected': !packageDocumentIsSelected(document.id) }"
+                  >
+                    <input
+                      class="case-multiform__file-checkbox"
+                      type="checkbox"
+                      :checked="packageDocumentIsSelected(document.id)"
+                      :aria-label="`Dodaj ${document.name} do paczki ZIP`"
+                      :disabled="fillPending || sendPending"
+                      @change="setPackageDocumentSelected(document.id, ($event.target as HTMLInputElement).checked)"
+                    >
+                    <span class="case-multiform__file-icon"><UIcon name="i-lucide-file" /></span>
+                    <div class="case-multiform__file-info">
+                      <strong>{{ document.name }}</strong>
+                      <small>
+                        {{ document.submission_id === null ? 'Wspólne dla sprawy · ' : '' }}{{ formatFileSize(document.size_bytes) }}
+                      </small>
+                    </div>
+                    <UBadge v-if="!packageDocumentIsSelected(document.id)" color="neutral" variant="soft">Poza paczką</UBadge>
+                    <UBadge v-else-if="document.submission_id === null" color="neutral" variant="soft">Wspólne</UBadge>
+                    <UButton
+                      color="neutral"
+                      variant="outline"
+                      size="sm"
+                      icon="i-lucide-download"
+                      :loading="individualDownloadPending === `attachment:${document.id}`"
+                      :disabled="Boolean(individualDownloadPending)"
+                      @click="downloadAttachment(document)"
+                    >
+                      Pobierz
+                    </UButton>
+                  </article>
+                </div>
+              </section>
+
+              <section class="case-multiform__missing-section" :class="{ 'is-empty': !activePackageMissingRequirements.length }">
+                <header>
+                  <div>
+                    <UIcon :name="activePackageMissingRequirements.length ? 'i-lucide-circle-alert' : 'i-lucide-circle-check'" />
+                    <span>
+                      <strong>{{ activePackageMissingRequirements.length ? 'Do uzupełnienia ręcznie' : 'Komplet dokumentów' }}</strong>
+                      <small>{{ activePackageMissingRequirements.length ? 'Te pozycje nie trafią automatycznie do paczki' : 'Brak nieuzupełnionych pozycji dla tego wniosku' }}</small>
+                    </span>
+                  </div>
+                  <em>{{ activePackageMissingRequirements.length }}</em>
+                </header>
+                <ul v-if="activePackageMissingRequirements.length">
+                  <li v-for="requirement in activePackageMissingRequirements" :key="requirement.key">
+                    <UIcon name="i-lucide-file-question" />
+                    <span>
+                      <strong>{{ requirement.label }}</strong>
+                      <small>{{ requirement.notes || 'Dokument lub czynność wymaga obsługi eksperta.' }}</small>
+                    </span>
+                  </li>
+                </ul>
+              </section>
+            </section>
           </div>
+
+          <UAlert
+            v-if="individualDownloadError"
+            color="error"
+            variant="subtle"
+            title="Nie udało się pobrać pliku"
+            :description="individualDownloadError"
+          />
 
           <UAlert
             v-if="context.selectedApplicationsValidation.blockers.length"
@@ -1461,12 +2254,32 @@ onBeforeUnmount(() => {
           </UAlert>
 
           <UAlert
-            v-else
+            v-if="missingTemplateWarnings.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Nie wszystkie wnioski trafią do paczki"
+          >
+            <template #description>
+              <ul>
+                <li v-for="warning in missingTemplateWarnings" :key="warning">
+                  {{ warning }}
+                </li>
+              </ul>
+            </template>
+          </UAlert>
+
+          <UAlert
+            v-if="!context.selectedApplicationsValidation.blockers.length"
             color="success"
             variant="subtle"
             icon="i-lucide-shield-check"
-            title="Paczka jest gotowa do wygenerowania"
-            description="Mapowania, formularze i wymagane załączniki są kompletne."
+            :title="missingTemplateWarnings.length
+              ? 'Paczka jest gotowa dla banków z szablonem'
+              : 'Paczka jest gotowa do wygenerowania'"
+            :description="missingTemplateWarnings.length
+              ? 'Wygenerujemy formularze tylko dla banków z gotowym szablonem. Pozostałe wnioski przygotuj ręcznie.'
+              : 'Mapowania, formularze i wymagane załączniki są kompletne.'"
           />
 
           <UAlert
@@ -1517,7 +2330,7 @@ onBeforeUnmount(() => {
             :icon="primaryActionIcon"
             trailing
             size="lg"
-            :loading="preparePending || fillPending"
+            :loading="preparePending || fillPending || sendPending"
             :disabled="primaryActionDisabled"
             @click="handlePrimaryAction"
           >
@@ -1530,6 +2343,144 @@ onBeforeUnmount(() => {
       </div>
     </template>
   </UCard>
+
+  <CaseMultiformTemplatePreviewModal
+    v-if="templatePreviewDocument"
+    v-model:open="templatePreviewOpen"
+    :organization-slug="context?.organization.slug || ''"
+    :bank-id="templatePreviewBankId"
+    :template-id="preparedDocumentTemplateId(templatePreviewDocument)"
+    :title="documentTitle(templatePreviewDocument, 0)"
+    @saved="handleTemplateSaved"
+  />
+
+  <UModal
+    v-model:open="zipPasswordModalModel"
+    title="Jednorazowe hasło do paczki ZIP"
+    description="Skopiuj hasło i przekaż je odbiorcy innym kanałem niż paczkę."
+    :ui="{ content: 'sm:max-w-lg' }"
+  >
+    <template #body>
+      <div class="case-multiform__password-modal">
+        <div class="case-multiform__password-value">
+          <code>{{ zipPassword }}</code>
+          <UButton
+            color="neutral"
+            variant="outline"
+            :icon="zipPasswordCopied ? 'i-lucide-check' : 'i-lucide-copy'"
+            @click="copyZipPassword"
+          >
+            {{ zipPasswordCopied ? 'Skopiowano' : 'Kopiuj hasło' }}
+          </UButton>
+        </div>
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-key-round"
+          title="Po zamknięciu hasło zniknie"
+          description="Nie zapisujemy go i nie można go odzyskać. Kolejne pobranie utworzy nową paczkę z nowym hasłem."
+        />
+      </div>
+    </template>
+    <template #footer>
+      <UButton class="ml-auto" @click="closeZipPasswordModal">Gotowe, zamknij</UButton>
+    </template>
+  </UModal>
+
+  <UModal
+    v-model:open="sendModalModel"
+    title="Wyślij paczki do klientów"
+    description="Każdy klient otrzyma osobną, zabezpieczoną kopię wybranych dokumentów."
+    :dismissible="!sendPending"
+    :ui="{ content: 'sm:max-w-2xl' }"
+  >
+    <template #body>
+      <div class="case-multiform__delivery-modal">
+        <UAlert
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-shield-check"
+          title="Hasłem będzie PESEL odbiorcy"
+          description="Numer PESEL nie trafi do treści wiadomości ani do widoku. Klient zobaczy tylko informację, że hasłem jest jego 11-cyfrowy PESEL."
+        />
+        <UAlert
+          v-if="missingTemplateWarnings.length"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="Część wniosków wymaga obsługi ręcznej"
+        >
+          <template #description>
+            <ul class="case-multiform__delivery-warnings">
+              <li v-for="warning in missingTemplateWarnings" :key="warning">{{ warning }}</li>
+            </ul>
+          </template>
+        </UAlert>
+
+        <div class="case-multiform__delivery-summary">
+          <span><strong>{{ sendApplicationIds.length }}</strong> wnioski bankowe</span>
+          <span><strong>{{ packageDocuments(sendApplicationIds).length }}</strong> załączniki</span>
+          <span><strong>{{ caseData.clients.length }}</strong> odbiorcy</span>
+        </div>
+
+        <div class="case-multiform__recipient-list" aria-label="Odbiorcy paczek">
+          <article v-for="client in caseData.clients" :key="client.id">
+            <span class="case-multiform__recipient-icon"><UIcon name="i-lucide-user-round" /></span>
+            <div>
+              <strong>{{ client.display_name }}</strong>
+              <small>{{ client.primary_email || 'Brak adresu e-mail' }}</small>
+            </div>
+            <UBadge
+              v-if="deliveryResultFor(client.id) !== 'pending'"
+              :color="deliveryResultFor(client.id) === 'sent' ? 'success' : 'error'"
+              variant="subtle"
+            >
+              {{ deliveryResultFor(client.id) === 'sent' ? 'Wysłano' : 'Nie wysłano' }}
+            </UBadge>
+            <UBadge v-else color="neutral" variant="subtle">
+              Oczekuje
+            </UBadge>
+          </article>
+        </div>
+
+        <UAlert
+          v-if="sendError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          title="Wysyłka wymaga uwagi"
+          :description="sendError"
+        />
+        <UAlert
+          v-else-if="sendResult?.status === 'complete'"
+          color="success"
+          variant="subtle"
+          icon="i-lucide-circle-check"
+          title="Wszystkie paczki zostały wysłane"
+          description="Każdy klient otrzymał własny plik ZIP zabezpieczony jego numerem PESEL."
+        />
+      </div>
+    </template>
+    <template #footer>
+      <UButton
+        color="neutral"
+        variant="ghost"
+        :disabled="sendPending"
+        @click="closeSendModal"
+      >
+        {{ sendResult?.status === 'complete' ? 'Zamknij' : 'Anuluj' }}
+      </UButton>
+      <UButton
+        class="ml-auto"
+        icon="i-lucide-send"
+        :loading="sendPending"
+        :disabled="sendResult?.status === 'complete'"
+        @click="sendPackageToClients"
+      >
+        {{ sendActionLabel }}
+      </UButton>
+    </template>
+  </UModal>
 </template>
 
 <style scoped>
@@ -1552,6 +2503,11 @@ onBeforeUnmount(() => {
   max-height: calc(100vh - 230px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.case-multiform--package :deep([data-slot="body"]) {
+  max-height: none;
+  overflow: visible;
 }
 
 .case-multiform__stepper :deep([data-slot="title"]) {
@@ -1882,8 +2838,521 @@ onBeforeUnmount(() => {
 }
 
 .case-multiform__zip {
-  max-width: 980px;
+  width: 100%;
+  max-width: 1320px;
   margin: 0 auto;
+}
+
+.case-multiform__package-heading,
+.case-multiform__package-actions,
+.case-multiform__password-option,
+.case-multiform__bank-heading,
+.case-multiform__bank-identity,
+.case-multiform__bank-actions,
+.case-multiform__bank-section > header,
+.case-multiform__bank-section > header > div,
+.case-multiform__missing-section > header,
+.case-multiform__missing-section > header > div,
+.case-multiform__manual-bank,
+.case-multiform__password-value {
+  display: flex;
+  align-items: center;
+}
+
+.case-multiform__package-heading,
+.case-multiform__bank-heading,
+.case-multiform__bank-section > header,
+.case-multiform__missing-section > header {
+  justify-content: space-between;
+}
+
+.case-multiform__package-heading {
+  gap: 24px;
+}
+
+.case-multiform__package-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.case-multiform__password-option {
+  gap: 10px;
+  min-width: 230px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+  cursor: pointer;
+}
+
+.case-multiform__password-option input,
+.case-multiform__rail-item input,
+.case-multiform__file-checkbox {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ui-primary);
+  cursor: pointer;
+}
+
+.case-multiform__file-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.case-multiform__password-option span,
+.case-multiform__rail-copy,
+.case-multiform__bank-identity > div,
+.case-multiform__bank-section > header span,
+.case-multiform__missing-section > header span,
+.case-multiform__missing-section li > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.case-multiform__password-option strong {
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+}
+
+.case-multiform__password-option small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.case-multiform__package-layout {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: 560px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-bg);
+}
+
+.case-multiform__application-rail {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  border-right: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg-muted) 72%, var(--ui-bg));
+}
+
+.case-multiform__rail-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px 7px;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.case-multiform__rail-label small {
+  font-size: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.case-multiform__rail-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  transition: border-color .15s ease, background .15s ease, opacity .15s ease;
+}
+
+.case-multiform__rail-open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.case-multiform__rail-item:hover,
+.case-multiform__rail-item.is-active {
+  border-color: var(--ui-border);
+  background: var(--ui-bg);
+}
+
+.case-multiform__rail-item.is-active {
+  box-shadow: inset 3px 0 0 var(--ui-primary);
+}
+
+.case-multiform__rail-item.is-unselected {
+  opacity: .56;
+}
+
+.case-multiform__bank-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: 10px;
+  background: var(--ui-bg);
+  color: var(--ui-text-toned);
+}
+
+.case-multiform__bank-mark.is-large {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+}
+
+.case-multiform__bank-mark img {
+  max-width: 78%;
+  max-height: 70%;
+  object-fit: contain;
+}
+
+.case-multiform__rail-copy strong {
+  overflow: hidden;
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-multiform__rail-copy small {
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-multiform__rail-copy em {
+  margin-top: 3px;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.case-multiform__rail-copy em.is-ready {
+  color: var(--ui-success);
+}
+
+.case-multiform__rail-copy em.is-manual {
+  color: var(--ui-warning);
+}
+
+.case-multiform__archive-tree {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 14px 12px;
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+}
+
+.case-multiform__archive-tree > span {
+  margin-bottom: 3px;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.case-multiform__archive-tree > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.case-multiform__archive-tree strong {
+  color: var(--ui-text-toned);
+  font-size: 9px;
+}
+
+.case-multiform__bank-workspace {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+}
+
+.case-multiform__bank-heading {
+  gap: 18px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.case-multiform__bank-identity,
+.case-multiform__bank-actions,
+.case-multiform__bank-section > header > div,
+.case-multiform__missing-section > header > div {
+  gap: 11px;
+}
+
+.case-multiform__bank-identity p,
+.case-multiform__bank-identity h4,
+.case-multiform__bank-identity span {
+  margin: 0;
+}
+
+.case-multiform__bank-identity p {
+  color: var(--ui-primary);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.case-multiform__bank-identity h4 {
+  color: var(--ui-text-highlighted);
+  font-size: 18px;
+}
+
+.case-multiform__bank-identity span,
+.case-multiform__bank-actions > span {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.case-multiform__manual-bank {
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ui-warning) 45%, var(--ui-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-warning) 8%, var(--ui-bg));
+  color: var(--ui-warning);
+}
+
+.case-multiform__manual-bank > div {
+  display: grid;
+  gap: 2px;
+}
+
+.case-multiform__manual-bank strong {
+  font-size: 10px;
+}
+
+.case-multiform__manual-bank span {
+  color: var(--ui-text-toned);
+  font-size: 9px;
+}
+
+.case-multiform__bank-section,
+.case-multiform__missing-section {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-bg);
+}
+
+.case-multiform__bank-section > header,
+.case-multiform__missing-section > header {
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__bank-section > header span strong,
+.case-multiform__missing-section > header span strong {
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+}
+
+.case-multiform__bank-section > header span small,
+.case-multiform__missing-section > header span small {
+  color: var(--ui-text-muted);
+  font-size: 8px;
+}
+
+.case-multiform__bank-section > header em,
+.case-multiform__missing-section > header em {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-bg);
+  color: var(--ui-text-toned);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.case-multiform__section-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.case-multiform__empty-section {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.case-multiform__missing-section {
+  margin-top: 4px;
+  border-color: color-mix(in srgb, var(--ui-warning) 38%, var(--ui-border));
+}
+
+.case-multiform__missing-section.is-empty {
+  border-color: color-mix(in srgb, var(--ui-success) 35%, var(--ui-border));
+}
+
+.case-multiform__missing-section > header > div > svg {
+  color: var(--ui-warning);
+}
+
+.case-multiform__missing-section.is-empty > header > div > svg {
+  color: var(--ui-success);
+}
+
+.case-multiform__missing-section ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case-multiform__missing-section li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+}
+
+.case-multiform__missing-section li + li {
+  border-top: 1px solid var(--ui-border-muted);
+}
+
+.case-multiform__missing-section li strong {
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+}
+
+.case-multiform__missing-section li small {
+  color: var(--ui-text-muted);
+  font-size: 8px;
+}
+
+.case-multiform__password-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.case-multiform__password-value {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__password-value code {
+  color: var(--ui-text-highlighted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.case-multiform__delivery-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.case-multiform__delivery-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.case-multiform__delivery-warnings {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.case-multiform__delivery-summary span {
+  padding: 7px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.case-multiform__delivery-summary strong {
+  color: var(--ui-text-highlighted);
+}
+
+.case-multiform__recipient-list {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+
+.case-multiform__recipient-list article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.case-multiform__recipient-list article + article {
+  border-top: 1px solid var(--ui-border);
+}
+
+.case-multiform__recipient-list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.case-multiform__recipient-list strong,
+.case-multiform__recipient-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-multiform__recipient-list strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+}
+
+.case-multiform__recipient-list small {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.case-multiform__recipient-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-toned);
 }
 
 .case-multiform__zip-summary > div {
@@ -1915,6 +3384,124 @@ onBeforeUnmount(() => {
 .case-multiform__zip-summary small {
   color: var(--ui-text-muted);
   font-size: 10px;
+}
+
+.case-multiform__file-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.case-multiform__file-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-bg);
+}
+
+.case-multiform__file-group > header,
+.case-multiform__file-group > header > div,
+.case-multiform__file-row {
+  display: flex;
+  align-items: center;
+}
+
+.case-multiform__file-group > header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__file-group > header > div {
+  min-width: 0;
+  gap: 8px;
+}
+
+.case-multiform__file-group h4 {
+  margin: 0;
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+}
+
+.case-multiform__file-group > header span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-bg);
+  color: var(--ui-text-toned);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.case-multiform__file-list {
+  display: grid;
+}
+
+.case-multiform__file-row {
+  min-width: 0;
+  gap: 10px;
+  padding: 12px 14px;
+  transition: background-color .15s ease, opacity .15s ease;
+}
+
+.case-multiform__file-row.is-unselected {
+  background: color-mix(in srgb, var(--ui-bg-muted) 62%, transparent);
+  opacity: .62;
+}
+
+.case-multiform__file-row + .case-multiform__file-row {
+  border-top: 1px solid var(--ui-border-muted);
+}
+
+.case-multiform__file-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.case-multiform__file-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.case-multiform__file-row strong,
+.case-multiform__file-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-multiform__file-row strong {
+  color: var(--ui-text-highlighted);
+  font-size: 11px;
+}
+
+.case-multiform__file-row small {
+  color: var(--ui-text-muted);
+  font-size: 9px;
+}
+
+.case-multiform__file-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-primary);
 }
 
 .case-multiform__zip :deep([data-slot="description"] p) {
@@ -2005,6 +3592,23 @@ onBeforeUnmount(() => {
   .case-multiform__application-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .case-multiform__package-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .case-multiform__package-actions {
+    justify-content: space-between;
+  }
+
+  .case-multiform__package-layout {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+
+  .case-multiform__file-actions {
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2025,8 +3629,38 @@ onBeforeUnmount(() => {
   .case-multiform__scope-facts,
   .case-multiform__application-grid,
   .case-multiform__zip-summary,
+  .case-multiform__file-groups,
   .case-multiform__field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .case-multiform__package-actions,
+  .case-multiform__bank-heading,
+  .case-multiform__bank-actions,
+  .case-multiform__password-value {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .case-multiform__password-option {
+    min-width: 0;
+  }
+
+  .case-multiform__package-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .case-multiform__application-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .case-multiform__archive-tree {
+    display: none;
+  }
+
+  .case-multiform__bank-workspace {
+    padding: 14px;
   }
 
   .case-multiform__form-heading,

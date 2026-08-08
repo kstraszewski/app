@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto'
 import {
+  createTemplateSkeleton,
+  MultiformPdfInputError,
+} from '@openexpert/multiform/template-generator'
+import {
   getTemplate,
   getTemplates,
   validateTemplateJson,
@@ -19,6 +23,12 @@ export interface MortgageTemplateReference {
   requirementCode: string
   requirementLabel: string
   source: 'published' | 'draft'
+}
+
+export interface MortgageTemplateSourceDescriptor {
+  bankSlug: string
+  fileName: string
+  sha256: string
 }
 
 export function mortgageTemplateRecord(value: unknown): JsonRecord {
@@ -118,6 +128,7 @@ export function validateMortgageTemplateForBank(
   value: unknown,
   bankSlug: string,
   templateId: string,
+  sourceDescriptor?: MortgageTemplateSourceDescriptor,
 ): { template: DocumentTemplate, validation: TemplateValidationResult } {
   const validation = validateTemplateJson(value)
   if (!validation.valid || validation.kind !== 'document-template') {
@@ -130,13 +141,20 @@ export function validateMortgageTemplateForBank(
 
   const template = value as DocumentTemplate
   const registered = registeredMortgageTemplate(bankSlug, templateId)
-  if (!registered) {
+  const expectedSource = sourceDescriptor ?? (registered
+    ? {
+        bankSlug: registered.bank,
+        fileName: registered.source.fileName,
+        sha256: registered.source.sha256,
+      }
+    : null)
+  if (!expectedSource) {
     throw createError({
       statusCode: 404,
-      statusMessage: 'Template nie należy do tej instytucji albo nie istnieje w rejestrze.',
+      statusMessage: 'Template nie ma zweryfikowanego źródła w plikach banku.',
     })
   }
-  if (template.id !== templateId || template.bank !== registered.bank) {
+  if (template.id !== templateId || template.bank !== expectedSource.bankSlug) {
     throw createError({
       statusCode: 422,
       statusMessage: 'Identyfikator lub instytucja w Template JSON nie odpowiada otwartemu formularzowi.',
@@ -144,8 +162,8 @@ export function validateMortgageTemplateForBank(
     })
   }
   if (
-    template.source.fileName !== registered.source.fileName
-    || template.source.sha256 !== registered.source.sha256
+    template.source.fileName !== expectedSource.fileName
+    || template.source.sha256 !== expectedSource.sha256
   ) {
     throw createError({
       statusCode: 422,
@@ -154,6 +172,31 @@ export function validateMortgageTemplateForBank(
     })
   }
   return { template, validation }
+}
+
+export async function createMortgageDocumentTemplateSkeleton(input: {
+  templateId: string
+  bankSlug: string
+  label: string
+  fileName: string
+  sha256: string
+  bytes: Uint8Array
+}): Promise<DocumentTemplate> {
+  try {
+    return await createTemplateSkeleton({
+      templateId: input.templateId,
+      bank: input.bankSlug,
+      label: input.label,
+      fileName: input.fileName,
+      sha256: input.sha256,
+      bytes: input.bytes,
+    })
+  } catch (caught) {
+    if (caught instanceof MultiformPdfInputError) {
+      throw createError({ statusCode: caught.statusCode, statusMessage: caught.message })
+    }
+    throw caught
+  }
 }
 
 export function mortgageTemplateSummary(

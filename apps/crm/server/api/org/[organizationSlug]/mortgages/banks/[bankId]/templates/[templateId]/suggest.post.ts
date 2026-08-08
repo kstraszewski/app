@@ -17,11 +17,11 @@ import {
   registeredMortgageTemplate,
   validateMortgageTemplateForBank,
 } from '~~/server/utils/mortgage-document-templates'
-import { mergeAiMappingSuggestions } from '~~/server/utils/mortgage-template-ai'
 import {
-  normalizeMortgageTemplatePdfAsset,
-  validateMortgageTemplatePdf,
-} from '~~/server/utils/mortgage-template-source'
+  loadMortgageDocumentTemplateSource,
+  mortgageDocumentTemplateSourceDescriptor,
+} from '~~/server/utils/mortgage-document-template-source'
+import { mergeAiMappingSuggestions } from '~~/server/utils/mortgage-template-ai'
 import {
   getRequiredParam,
   requireCrmSession,
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     backendData
       .from('mortgage_document_templates')
-      .select('draft_revision')
+      .select('source_file_id, source_file_version_id, source_file_name, source_sha256, draft_revision')
       .eq('bank_id', bankId)
       .eq('template_key', templateId)
       .maybeSingle(),
@@ -90,36 +90,24 @@ export default defineEventHandler(async (event) => {
 
   const bankSlug = String(bankResult.data.slug)
   const registered = registeredMortgageTemplate(bankSlug, templateId)
-  if (!registered) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Nie znaleziono zarejestrowanego formularza PDF tej instytucji.',
-    })
-  }
+  const sourceDescriptor = mortgageDocumentTemplateSourceDescriptor(
+    bankSlug,
+    templateResult.data,
+    registered,
+  )
   const { template: currentTemplate } = validateMortgageTemplateForBank(
     body.template,
     bankSlug,
     templateId,
+    sourceDescriptor,
   )
 
-  const rawAsset = await useStorage('assets:mortgage-template-pdfs')
-    .getItemRaw(registered.source.fileName)
-  const bytes = normalizeMortgageTemplatePdfAsset(rawAsset)
-  if (!bytes) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Źródłowy formularz PDF nie został dołączony do wdrożenia CRM.',
-    })
-  }
-  const sourceValidation = validateMortgageTemplatePdf(bytes, registered.source.sha256)
-  if (!sourceValidation.valid) {
-    throw createError({
-      statusCode: sourceValidation.reason === 'too_large' ? 413 : 500,
-      statusMessage: sourceValidation.reason === 'too_large'
-        ? 'Źródłowy PDF przekracza limit 25 MB.'
-        : 'Źródłowy PDF nie przeszedł weryfikacji integralności.',
-    })
-  }
+  const source = await loadMortgageDocumentTemplateSource(
+    backendData,
+    templateResult.data,
+    registered,
+  )
+  const bytes = source.bytes
 
   const config = useRuntimeConfig(event)
   const gatewayApiKey = String(config.aiGatewayApiKey || process.env.AI_GATEWAY_API_KEY || '').trim()
@@ -136,7 +124,7 @@ export default defineEventHandler(async (event) => {
   let generated: Awaited<ReturnType<typeof generateTemplateDraft>>
   try {
     generated = await generateTemplateDraft(
-      registered.source.fileName,
+      source.fileName,
       bytes,
       {
         gatewayApiKey,
@@ -181,6 +169,7 @@ export default defineEventHandler(async (event) => {
     merged.template,
     bankSlug,
     templateId,
+    sourceDescriptor,
   )
 
   setHeader(event, 'Cache-Control', 'private, no-store')

@@ -18,14 +18,24 @@ import {
   loadCrmMultiformContext,
   parseCrmMultiformSelection,
 } from '../../../utils/multiform-crm'
-import { resolvePinnedMultiformTemplates } from '../../../utils/multiform-template-repository'
-import { createPdfBundle } from '../../../utils/multiform-pdf'
+import {
+  readPinnedMultiformTemplateSource,
+  resolvePinnedMultiformTemplates,
+} from '../../../utils/multiform-template-repository'
+import {
+  createPdfBundle,
+  fillPdfTemplate,
+  safeArchiveDirectoryName,
+} from '../../../utils/multiform-pdf'
 
 interface FillBundleBody {
   templateIds?: unknown
   values?: unknown
   collectionCounts?: unknown
   crmContext?: unknown
+  output?: unknown
+  templateId?: unknown
+  password?: unknown
 }
 
 interface ValidationIssue {
@@ -250,6 +260,46 @@ function sameStringSet(left: readonly string[], right: readonly string[]) {
   return left.every(value => rightSet.has(value))
 }
 
+function parseArchivePassword(value: unknown) {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value !== 'string' || value.length < 11 || value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw createError({ statusCode: 400, statusMessage: 'Hasło paczki ZIP jest nieprawidłowe.' })
+  }
+  return value
+}
+
+function applicationArchiveDirectories(context: Awaited<ReturnType<typeof loadCrmMultiformContext>>) {
+  const used = new Set<string>()
+  return new Map(context.applications
+    .slice()
+    .sort((left, right) => left.slot - right.slot)
+    .map((application) => {
+      const base = safeArchiveDirectoryName(application.bankName, 'Bank')
+      let directory = base
+      let suffix = 2
+      while (used.has(directory.toLocaleLowerCase('pl-PL'))) {
+        directory = `${base}-${suffix}`
+        suffix += 1
+      }
+      used.add(directory.toLocaleLowerCase('pl-PL'))
+      return [application.applicationId, directory] as const
+    }))
+}
+
+function pdfAttachmentHeader(fileName: string, prefix = 'uzupelniony-') {
+  const normalized = fileName
+    .normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f/\\]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim() || 'wniosek.pdf'
+  const pdfName = normalized.toLocaleLowerCase('pl-PL').endsWith('.pdf')
+    ? normalized
+    : `${normalized}.pdf`
+  const outputName = `${prefix}${pdfName}`
+  const asciiName = outputName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(outputName)}`
+}
+
 export default defineEventHandler(async (event) => {
   const body = await readBody<FillBundleBody>(event)
   if (!Array.isArray(body?.templateIds) || body.templateIds.length === 0) {
@@ -266,6 +316,18 @@ export default defineEventHandler(async (event) => {
       statusMessage: `Pakiet może zawierać maksymalnie ${MAX_DOCUMENTS} dokumentów.`,
     })
   }
+
+  const output = body.output === undefined ? 'zip' : body.output
+  if (output !== 'zip' && output !== 'pdf' && output !== 'source') {
+    throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowy format eksportu.' })
+  }
+  const requestedTemplateId = typeof body.templateId === 'string'
+    ? body.templateId.trim()
+    : ''
+  if (output !== 'zip' && (!requestedTemplateId || !templateIds.includes(requestedTemplateId))) {
+    throw createError({ statusCode: 400, statusMessage: 'Wybierz formularz PDF do pobrania.' })
+  }
+  const archivePassword = output === 'zip' ? parseArchivePassword(body.password) : undefined
 
   const requestedCrmContext = parseCrmFillContext(body.crmContext)
   const crmContext = requestedCrmContext
@@ -292,6 +354,37 @@ export default defineEventHandler(async (event) => {
   const templates = templateIds.map(id => overrideById.get(id) ?? getTemplate(id))
   if (templates.some(template => !template)) {
     throw createError({ statusCode: 400, statusMessage: 'Wybrano nieznany template dokumentu.' })
+  }
+  const templatesToRender = output !== 'zip'
+    ? templates.filter(template => template?.id === requestedTemplateId)
+    : templates
+  const archiveDirectoryByApplicationId = crmContext
+    ? applicationArchiveDirectories(crmContext)
+    : new Map<string, string>()
+
+  if (output === 'source') {
+    const template = templatesToRender[0]
+    if (!template) throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono szablonu PDF.' })
+    try {
+      const pinnedSourceBytes = crmContext
+        ? await readPinnedMultiformTemplateSource(event, template)
+        : null
+      const sourceBytes = pinnedSourceBytes ?? await readMultiformAsset(
+        'assets:multiform-mocks',
+        template.source.fileName,
+      )
+      if (checksum(sourceBytes) !== template.source.sha256) {
+        throw new Error('PDF source checksum mismatch')
+      }
+      setHeader(event, 'Content-Type', 'application/pdf')
+      setHeader(event, 'Content-Disposition', pdfAttachmentHeader(template.source.fileName, ''))
+      setHeader(event, 'Cache-Control', 'no-store, max-age=0')
+      return sourceBytes
+    }
+    catch (error) {
+      if (error && typeof error === 'object' && 'statusCode' in error) throw error
+      throw createError({ statusCode: 500, statusMessage: 'Nie udało się pobrać pustego szablonu PDF.' })
+    }
   }
 
   const bundle = prepareBundle(templateIds, templateOverrides)
@@ -358,11 +451,14 @@ export default defineEventHandler(async (event) => {
 
   try {
     const [documents, fontBytes, attachments] = await Promise.all([
-      Promise.all(templates.map(async (template) => {
+      Promise.all(templatesToRender.map(async (template) => {
         // The earlier unknown-template check narrows this at runtime.
         if (!template) throw new Error('Unknown template')
 
-        const sourceBytes = await readMultiformAsset(
+        const pinnedSourceBytes = crmContext
+          ? await readPinnedMultiformTemplateSource(event, template)
+          : null
+        const sourceBytes = pinnedSourceBytes ?? await readMultiformAsset(
           'assets:multiform-mocks',
           template.source.fileName,
         )
@@ -374,15 +470,49 @@ export default defineEventHandler(async (event) => {
           fileName: template.source.fileName,
           template,
           sourceBytes,
+          directory: crmContext
+            ? archiveDirectoryByApplicationId.get(
+                crmContext.applications.find(application => (
+                  application.templateIds.includes(template.id)
+                ))?.applicationId ?? '',
+              )
+            : undefined,
         }
       })),
       readMultiformAsset('assets:multiform-fonts', FONT_FILE),
-      crmContext && requestedCrmContext
+      output === 'zip' && crmContext && requestedCrmContext
         ? downloadSelectedCrmAttachments(crmContext, requestedCrmContext.documentIds)
         : Promise.resolve([]),
     ])
 
-    const archive = await createPdfBundle(documents, fontBytes, values, attachments)
+    if (output === 'pdf') {
+      const document = documents[0]
+      if (!document) throw new Error('Requested PDF template is unavailable')
+      const filled = await fillPdfTemplate(
+        document.template,
+        document.sourceBytes,
+        fontBytes,
+        values,
+      )
+      setHeader(event, 'Content-Type', 'application/pdf')
+      setHeader(event, 'Content-Disposition', pdfAttachmentHeader(document.fileName))
+      setHeader(event, 'Cache-Control', 'no-store, max-age=0')
+      return filled
+    }
+
+    const archiveAttachments = attachments.map(attachment => ({
+      ...attachment,
+      directory: attachment.submissionId
+        ? archiveDirectoryByApplicationId.get(attachment.submissionId)
+        : 'Wspólne',
+    }))
+    const archive = await createPdfBundle(
+      documents,
+      fontBytes,
+      values,
+      archiveAttachments,
+      { password: archivePassword },
+    )
     setHeader(event, 'Content-Type', 'application/zip')
     setHeader(event, 'Content-Disposition', 'attachment; filename="uzupelnione-wnioski.zip"')
     setHeader(event, 'Cache-Control', 'no-store, max-age=0')

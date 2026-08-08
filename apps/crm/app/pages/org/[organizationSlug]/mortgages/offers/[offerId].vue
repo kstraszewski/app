@@ -122,6 +122,13 @@ const detail = computed(() => normalizeMortgageOfferDetail<MortgageOfferDraftDat
 const bankPath = computed(() => detail.value?.bank?.id
   ? `/org/${organizationSlug.value}/settings/institutions/${encodeURIComponent(detail.value.bank.id)}`
   : '')
+const publishedTemplateItems = computed(() => [
+  { label: 'Bez szablonu Multiwniosku', value: '' },
+  ...(detail.value?.templates ?? []).map(template => ({
+    label: `${template.label} · r${template.revision}`,
+    value: template.id,
+  })),
+])
 
 const draft = ref<MortgageOfferDraftDataV2>(normalizeMortgageOfferDraftV2(null))
 const revision = ref(0)
@@ -1411,7 +1418,18 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
                         <UFormField :name="`documentation.requirements.${index}.evidence`" label="Pochodzenie"><USelect v-model="requirement.evidence" :items="evidenceItems" class="w-full" /></UFormField>
                         <UFormField :name="`documentation.requirements.${index}.required`" label="Obowiązek"><USwitch v-model="requirement.required" label="Wymagany" /></UFormField>
                         <UFormField :name="`documentation.requirements.${index}.multiple`" label="Liczba plików"><USwitch v-model="requirement.multiple" label="Wiele plików" /></UFormField>
-                        <UFormField :name="`documentation.requirements.${index}.templateId`" label="Szablon MultiForm" hint="Opcjonalnie"><UInput v-model="requirement.templateId" class="w-full" /></UFormField>
+                        <UFormField
+                          v-if="requirement.itemKind === 'bank_document'"
+                          :name="`documentation.requirements.${index}.templateId`"
+                          label="Szablon Multiwniosku"
+                          hint="Tylko opublikowane szablony utworzone z plików banku"
+                        >
+                          <USelect
+                            v-model="requirement.templateId"
+                            :items="publishedTemplateItems"
+                            class="w-full"
+                          />
+                        </UFormField>
                         <UFormField :name="`documentation.requirements.${index}.notes`" label="Uwagi"><UInput v-model="requirement.notes" class="w-full" /></UFormField>
                         <UFormField :name="`documentation.requirements.${index}.allowedMimeTypes`" label="Dozwolone pliki" class="form-grid__wide">
                           <div class="check-row">

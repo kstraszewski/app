@@ -8,8 +8,10 @@ import {
 import {
   mortgageTemplateContentSha256,
   mortgageTemplateKey,
+  registeredMortgageTemplate,
   validateMortgageTemplateForBank,
 } from '~~/server/utils/mortgage-document-templates'
+import { mortgageDocumentTemplateSourceDescriptor } from '~~/server/utils/mortgage-document-template-source'
 import {
   getRequiredParam,
   requireCrmSession,
@@ -28,20 +30,33 @@ export default defineEventHandler(async (event) => {
   }
 
   const backendData = serverDataBackend(event) as any
-  const { data: bank, error: bankError } = await backendData
-    .from('mortgage_banks')
-    .select('id, slug')
-    .eq('id', bankId)
-    .maybeSingle()
+  const [bankResult, templateResult] = await Promise.all([
+    backendData
+      .from('mortgage_banks')
+      .select('id, slug')
+      .eq('id', bankId)
+      .maybeSingle(),
+    backendData
+      .from('mortgage_document_templates')
+      .select('source_file_id, source_file_version_id, source_file_name, source_sha256')
+      .eq('bank_id', bankId)
+      .eq('template_key', templateId)
+      .maybeSingle(),
+  ])
+  const { data: bank, error: bankError } = bankResult
   throwMortgageBackofficeDbError(bankError)
+  throwMortgageBackofficeDbError(templateResult.error)
   if (!bank) {
     throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono instytucji finansowej.' })
   }
 
+  const bankSlug = String(bank.slug)
+  const registered = registeredMortgageTemplate(bankSlug, templateId)
   const { template, validation } = validateMortgageTemplateForBank(
     body.template,
-    String(bank.slug),
+    bankSlug,
     templateId,
+    mortgageDocumentTemplateSourceDescriptor(bankSlug, templateResult.data, registered),
   )
   const contentSha256 = mortgageTemplateContentSha256(template)
   const { data, error } = await backendData.rpc('save_mortgage_document_template_draft', {

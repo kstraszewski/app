@@ -46,6 +46,17 @@ export interface MortgageBankFileMatch {
   score?: number | null
 }
 
+export interface MortgageBankFileTemplate {
+  id: string
+  key: string
+  label: string
+  status: 'draft' | 'published' | 'published_with_draft'
+  draftRevision: number
+  activeRevision: number
+  sourceVersionId: string
+  usesCurrentVersion: boolean
+}
+
 export interface MortgageBankFileSummary {
   id: string
   title: string
@@ -53,6 +64,7 @@ export interface MortgageBankFileSummary {
   categoryId: string | null
   institution: MortgageBankFileInstitution
   products: MortgageBankFileProduct[]
+  template: MortgageBankFileTemplate | null
   currentVersion: MortgageBankFileVersion
   matches: MortgageBankFileMatch[]
   addedBy: string | null
@@ -73,5 +85,6 @@ export interface MortgageBankFileRepositoryPayload {
   permissions: {
     canUpload: boolean
     canManageCategories: boolean
+    canCreateTemplates: boolean
   }
 }

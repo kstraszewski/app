@@ -110,6 +110,7 @@ interface CrmContextResponse {
   selectedOfferValidation: {
     valid: boolean
     blockers: string[]
+    warnings: string[]
     templates: Array<{ templateId: string, found: boolean, ready: boolean, warnings: string[] }>
   }
 }

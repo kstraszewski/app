@@ -7,8 +7,10 @@ import {
 } from '~~/server/utils/mortgage-backoffice'
 import {
   mortgageTemplateKey,
+  registeredMortgageTemplate,
   validateMortgageTemplateForBank,
 } from '~~/server/utils/mortgage-document-templates'
+import { mortgageDocumentTemplateSourceDescriptor } from '~~/server/utils/mortgage-document-template-source'
 import {
   getRequiredParam,
   requireCrmSession,
@@ -32,7 +34,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     backendData
       .from('mortgage_document_templates')
-      .select('draft_json, draft_revision')
+      .select('source_file_id, source_file_version_id, source_file_name, source_sha256, draft_json, draft_revision')
       .eq('bank_id', bankId)
       .eq('template_key', templateId)
       .maybeSingle(),
@@ -52,10 +54,13 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const bankSlug = String(bankResult.data.slug)
+  const registered = registeredMortgageTemplate(bankSlug, templateId)
   const { validation } = validateMortgageTemplateForBank(
     templateResult.data.draft_json,
-    String(bankResult.data.slug),
+    bankSlug,
     templateId,
+    mortgageDocumentTemplateSourceDescriptor(bankSlug, templateResult.data, registered),
   )
   if (!validation.summary.activationReady) {
     throw createError({

@@ -8,10 +8,7 @@ import {
   mortgageTemplateKey,
   registeredMortgageTemplate,
 } from '~~/server/utils/mortgage-document-templates'
-import {
-  normalizeMortgageTemplatePdfAsset,
-  validateMortgageTemplatePdf,
-} from '~~/server/utils/mortgage-template-source'
+import { loadMortgageDocumentTemplateSource } from '~~/server/utils/mortgage-document-template-source'
 import {
   getRequiredParam,
   requireCrmSession,
@@ -28,43 +25,37 @@ export default defineEventHandler(async (event) => {
   const bankId = mortgageBackofficeUuid(getRequiredParam(event, 'bankId'), 'bankId')
   const templateId = mortgageTemplateKey(getRequiredParam(event, 'templateId'))
   const backendData = serverDataBackend(event) as any
-  const { data: bank, error: bankError } = await backendData
-    .from('mortgage_banks')
-    .select('slug')
-    .eq('id', bankId)
-    .maybeSingle()
+  const [bankResult, templateResult] = await Promise.all([
+    backendData
+      .from('mortgage_banks')
+      .select('slug')
+      .eq('id', bankId)
+      .maybeSingle(),
+    backendData
+      .from('mortgage_document_templates')
+      .select('source_file_id, source_file_version_id, source_file_name, source_sha256')
+      .eq('bank_id', bankId)
+      .eq('template_key', templateId)
+      .maybeSingle(),
+  ])
+  const { data: bank, error: bankError } = bankResult
   throwMortgageBackofficeDbError(bankError)
+  throwMortgageBackofficeDbError(templateResult.error)
   const registered = bank
     ? registeredMortgageTemplate(String(bank.slug), templateId)
     : undefined
-  if (!registered) {
+  if (!registered && !templateResult.data?.source_file_version_id) {
     throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono źródłowego formularza PDF.' })
   }
 
-  const rawAsset = await useStorage('assets:mortgage-template-pdfs')
-    .getItemRaw(registered.source.fileName)
-  const bytes = normalizeMortgageTemplatePdfAsset(rawAsset)
-  if (!bytes) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Źródłowy formularz PDF nie został dołączony do wdrożenia CRM.',
-    })
-  }
+  const source = await loadMortgageDocumentTemplateSource(
+    backendData,
+    templateResult.data,
+    registered,
+  )
+  const bytes = source.bytes
 
-  const validation = validateMortgageTemplatePdf(bytes, registered.source.sha256)
-  if (!validation.valid) {
-    if (validation.reason === 'too_large') {
-      throw createError({ statusCode: 413, statusMessage: 'Źródłowy PDF przekracza limit 25 MB.' })
-    }
-    throw createError({
-      statusCode: 500,
-      statusMessage: validation.reason === 'checksum_mismatch'
-        ? 'Źródłowy PDF nie przeszedł weryfikacji integralności.'
-        : 'Źródłowy formularz nie jest poprawnym plikiem PDF.',
-    })
-  }
-
-  const fileName = safeFileName(registered.source.fileName)
+  const fileName = safeFileName(source.fileName)
   setHeader(event, 'Content-Type', 'application/pdf')
   setHeader(event, 'Content-Length', bytes.byteLength)
   setHeader(event, 'Content-Disposition', `inline; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`)

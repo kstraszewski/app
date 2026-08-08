@@ -27,6 +27,11 @@ type InstitutionTemplate = {
   bank: string
   registered: boolean
   editable: boolean
+  sourceKind: 'bank-file' | 'registered' | 'missing'
+  sourceFile: null | {
+    id: string
+    versionId: string
+  }
   source: null | {
     fileName: string
     sha256: string
@@ -67,6 +72,9 @@ const props = defineProps<{
 const apiPath = computed(() => (
   `/api/org/${encodeURIComponent(props.organizationSlug)}/mortgages/banks/${encodeURIComponent(props.bankId)}/templates`
 ))
+const bankFilesPath = computed(() => (
+  `/org/${encodeURIComponent(props.organizationSlug)}/settings/institutions/${encodeURIComponent(props.bankId)}?view=files`
+))
 const { data, status, error, refresh } = await useFetch<TemplatesResponse>(apiPath, {
   key: `institution-pdf-templates:${props.organizationSlug}:${props.bankId}`,
 })
@@ -81,6 +89,12 @@ const summary = computed(() => data.value?.summary ?? {
 
 function editorPath(templateId: string) {
   return `/org/${encodeURIComponent(props.organizationSlug)}/settings/institutions/${encodeURIComponent(props.bankId)}/pdf-templates/${encodeURIComponent(templateId)}`
+}
+
+function sourceFilePath(template: InstitutionTemplate) {
+  return template.sourceFile
+    ? `/org/${encodeURIComponent(props.organizationSlug)}/settings/institution-files?file=${encodeURIComponent(template.sourceFile.id)}`
+    : undefined
 }
 
 function coveragePercent(template: InstitutionTemplate) {
@@ -181,6 +195,10 @@ function formatDate(value: string | null) {
             </div>
 
             <div v-if="template.source" class="template-card__source">
+              <NuxtLink v-if="template.sourceFile" :to="sourceFilePath(template)">
+                <UIcon name="i-lucide-folder-input" />Plik bankowy · otwórz źródło
+              </NuxtLink>
+              <span v-else><UIcon name="i-lucide-package" />Starszy szablon wdrożeniowy</span>
               <span><UIcon name="i-lucide-file-text" />{{ template.source.fileName }}</span>
               <span><UIcon name="i-lucide-copy-check" />{{ template.source.pageCount }} stron</span>
               <span><UIcon name="i-lucide-fingerprint" />SHA-256 potwierdzony</span>
@@ -240,7 +258,7 @@ function formatDate(value: string | null) {
             Brak formularza w rejestrze Multiwniosku
           </span>
           <span v-else>
-            Edycja wizualna i JSON · zapis serwerowy · historia zmian
+            {{ template.sourceFile ? 'Źródło: wersja pliku bankowego' : 'Źródło: rejestr zgodności wstecznej' }} · historia zmian
           </span>
           <UButton
             :to="editorPath(template.id)"
@@ -257,7 +275,10 @@ function formatDate(value: string | null) {
     <div v-else class="template-empty">
       <UIcon name="i-lucide-file-x-2" />
       <h3>Brak formularzy PDF</h3>
-      <p>Ta instytucja nie ma jeszcze zarejestrowanego szablonu Multiwniosku.</p>
+      <p>Przejdź do „Plików banku” i utwórz szablon z aktualnej wersji formularza PDF.</p>
+      <UButton :to="bankFilesPath" icon="i-lucide-folder-input">
+        Otwórz pliki banku
+      </UButton>
     </div>
   </section>
 </template>
@@ -282,7 +303,8 @@ function formatDate(value: string | null) {
 .template-card__badges, .template-card__source, .template-card__facts { display: flex; flex-wrap: wrap; gap: 7px; }
 .template-card__badges { justify-content: flex-end; }
 .template-card__source { margin-top: 12px; color: var(--ui-text-muted); font-size: 11px; }
-.template-card__source span, .template-card__missing { display: inline-flex; align-items: center; gap: 5px; }
+.template-card__source span, .template-card__source a, .template-card__missing { display: inline-flex; align-items: center; gap: 5px; }
+.template-card__source a { color: var(--ui-primary); text-decoration: none; }
 .template-card__coverage { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(180px, 1fr) 46px; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--ui-border); background: var(--ui-bg-muted); }
 .template-card__coverage > div:first-child { display: grid; gap: 3px; }
 .template-card__coverage > div:first-child strong { font-size: 20px; }

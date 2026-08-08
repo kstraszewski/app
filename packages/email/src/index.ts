@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { Resend } from 'resend'
 import { waitlistConfirmationTemplate } from './waitlist-confirmation.ts'
 
@@ -9,6 +10,8 @@ const MAX_REQUEST_TIMEOUT_MS = 30_000
 const MAX_RETRIES = 4
 const MAX_RETRY_DELAY_MS = 10_000
 const MAX_RECIPIENTS = 50
+const MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024
+const MAX_ATTACHMENT_NAME_LENGTH = 255
 const MAX_SUBJECT_LENGTH = 998
 const MAILBOX_MAX_LENGTH = 320
 const EMAIL_MAX_LENGTH = 254
@@ -48,6 +51,13 @@ export interface TransactionalEmailInput {
   text: string
   idempotencyKey: string
   tags?: Array<{ name: string, value: string }>
+  attachments?: TransactionalEmailAttachment[]
+}
+
+export interface TransactionalEmailAttachment {
+  filename: string
+  content: Uint8Array
+  contentType?: string
 }
 
 export interface WaitlistConfirmationInput {
@@ -268,6 +278,53 @@ function normalizeTags(tags?: Array<{ name: string, value: string }>) {
   })
 }
 
+function normalizeAttachments(attachments?: TransactionalEmailAttachment[]) {
+  if (!attachments) return undefined
+  if (!Array.isArray(attachments) || !attachments.length) {
+    throw new EmailDeliveryError('Email attachments must contain at least one file.')
+  }
+
+  let totalBytes = 0
+  return attachments.map((attachment, index) => {
+    const filename = typeof attachment?.filename === 'string'
+      ? attachment.filename.trim()
+      : ''
+    if (
+      !filename
+      || filename.length > MAX_ATTACHMENT_NAME_LENGTH
+      || containsUnsafeHeaderCharacters(filename)
+      || /[/\\]/u.test(filename)
+    ) {
+      throw new EmailDeliveryError(`Email attachment ${index + 1} has an invalid filename.`)
+    }
+    if (!(attachment.content instanceof Uint8Array) || attachment.content.byteLength === 0) {
+      throw new EmailDeliveryError(`Email attachment ${index + 1} must contain file bytes.`)
+    }
+    totalBytes += attachment.content.byteLength
+    if (totalBytes > MAX_ATTACHMENT_BYTES) {
+      throw new EmailDeliveryError('Email attachments may not exceed 40 MB in total.')
+    }
+
+    const contentType = attachment.contentType?.trim()
+    if (
+      contentType
+      && (
+        contentType.length > 127
+        || containsUnsafeHeaderCharacters(contentType)
+        || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu.test(contentType)
+      )
+    ) {
+      throw new EmailDeliveryError(`Email attachment ${index + 1} has an invalid content type.`)
+    }
+
+    return {
+      filename,
+      content: Buffer.from(attachment.content),
+      ...(contentType ? { contentType } : {}),
+    }
+  })
+}
+
 function boundedInteger(
   value: number | undefined,
   fallback: number,
@@ -380,8 +437,13 @@ export function createTransactionalEmailSender(
       const html = validateBody(input.html, 'HTML')
       const text = validateBody(input.text, 'plain-text')
       const tags = normalizeTags(input.tags)
+      const attachments = normalizeAttachments(input.attachments)
 
       if (resend) {
+        const resendAttachments = attachments?.map(attachment => ({
+          ...attachment,
+          content: attachment.content.toString('base64'),
+        }))
         const payload = {
           from,
           to: recipients,
@@ -390,6 +452,7 @@ export function createTransactionalEmailSender(
           html,
           text,
           tags,
+          attachments: resendAttachments,
         }
 
         for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -489,6 +552,7 @@ export function createTransactionalEmailSender(
           subject,
           html,
           text,
+          attachments,
           disableFileAccess: true,
           disableUrlAccess: true,
           // Stable Message-ID makes local retries visible and traceable in

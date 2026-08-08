@@ -791,8 +791,8 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   if (!isPositiveInteger(input.version)) pushIssue(errors, 'version', 'invalid_version', 'Wersja musi być dodatnią liczbą całkowitą.')
 
   if (kind === 'document-template') {
-    if (!['erste', 'pko-bp', 'pekao'].includes(String(input.bank))) {
-      pushIssue(errors, 'bank', 'invalid_bank', 'Aktywny template musi wskazywać bank erste, pko-bp albo pekao.')
+    if (!isNonEmptyString(input.bank) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(input.bank)) {
+      pushIssue(errors, 'bank', 'invalid_bank', 'Aktywny template musi wskazywać poprawny slug banku.')
     }
   }
   else if (input.bank !== null && input.bank !== undefined && !isNonEmptyString(input.bank)) {

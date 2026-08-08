@@ -19,8 +19,10 @@ import {
 import {
   mortgageTemplateJsonBytes,
   mortgageTemplateKey,
+  registeredMortgageTemplate,
   validateMortgageTemplateForBank,
 } from '~~/server/utils/mortgage-document-templates'
+import { mortgageDocumentTemplateSourceDescriptor } from '~~/server/utils/mortgage-document-template-source'
 import {
   generateMortgageFieldSemanticContract,
   mortgageFieldSemanticModel,
@@ -253,7 +255,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     backendData
       .from('mortgage_document_templates')
-      .select('draft_revision')
+      .select('source_file_id, source_file_version_id, source_file_name, source_sha256, draft_revision')
       .eq('bank_id', bankId)
       .eq('template_key', templateId)
       .maybeSingle(),
@@ -271,10 +273,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const bankSlug = String(bankResult.data.slug)
+  const registered = registeredMortgageTemplate(bankSlug, templateId)
   const { template } = validateMortgageTemplateForBank(
     body.template,
     bankSlug,
     templateId,
+    mortgageDocumentTemplateSourceDescriptor(bankSlug, templateResult.data, registered),
   )
   const binding = template.bindings[bindingIndex]
   const definition = binding ? definitionByKey.get(binding.canonicalKey) : undefined

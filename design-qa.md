@@ -1,6 +1,165 @@
+# Design QA — wybór załączników w paczce Multiwniosku
+
+## Wynik
+
+`passed`
+
+Lista dokumentów w aktywnym wniosku ma teraz niezależny checkbox przy każdym pliku, wszystkie pozycje są domyślnie zaznaczone, a ekspert może wyłączyć pojedynczy załącznik lub użyć akcji „Odznacz wszystkie”. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonym stanie.
+
+## Materiał i normalizacja
+
+- Źródło wizualne: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-863ea76a-d337-4e21-a134-3d1cdb96c14a.png`, 2060 × 1492 px.
+- Implementacja: `/private/tmp/multiform-package-checkboxes-final.png`, 1280 × 720 px; CSS viewport 1280 × 720, DPR 2. Przeglądarka zwróciła znormalizowany screenshot w pikselach CSS (1280 × 720).
+- Stan: ciemny motyw OpenExpert, krok „Paczka ZIP”, aktywny Erste Bank Polska, dwa wnioski oraz siedem widocznych załączników wspólnych.
+- Źródło i implementację otwarto razem w jednym wejściu porównawczym. Źródło ma większy viewport i pokazuje dłuższy fragment listy, dlatego ocenę dopasowano do wspólnego regionu: rail wniosków, nagłówek banku, formularz i początek listy załączników.
+- Osobny crop nie był potrzebny: checkboxy, licznik `7/7`, akcja zbiorcza, nazwy plików i badge są czytelne w pełnym widoku implementacji.
+
+## Ocena wymaganych powierzchni
+
+- **Typografia:** zachowano istniejącą rodzinę, wagi i rozmiary; nowy licznik oraz akcja zbiorcza mają hierarchię pomocniczą i nie konkurują z nazwą sekcji.
+- **Spacing i rytm:** checkbox zajmuje osobną, stałą kolumnę przed ikoną pliku. Wiersze zachowują dotychczasową wysokość, odstępy i wyrównanie akcji pobierania.
+- **Kolory i tokeny:** zaznaczenie używa istniejącego `--ui-primary`; wyłączony wiersz korzysta z tokenów tła i kontrolowanego obniżenia opacity, bez nowej palety.
+- **Jakość obrazów i zasoby:** logotypy banków pozostają źródłowymi assetami z danych ofert. Ikony akcji pochodzą z dostępnego zestawu Lucide; brak atrap, własnych SVG i CSS-art.
+- **Copy i treść:** „Zaznacz pliki, które mają trafić do ZIP-a”, `7/7`, „Odznacz wszystkie” oraz badge „Poza paczką” jednoznacznie opisują stan i skutek wyboru.
+- **Dostępność:** każdy checkbox ma nazwę `Dodaj [nazwa pliku] do paczki ZIP`, ma natywny stan checked i pozostaje niezależny od przycisku „Pobierz”.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Po świeżym otwarciu wszystkie siedem dokumentów było zaznaczonych, licznik sekcji pokazywał `7/7`, a pełna paczka `9` dokumentów.
+- Odznaczenie `operat-szacunkowy.pdf` pozostawiło plik na liście, pokazało badge „Poza paczką” i zaktualizowało liczniki do `6/7` oraz `Pobierz całość ZIP (8)`.
+- Ponowne zaznaczenie przywróciło `7/7` i `Pobierz całość ZIP (9)`.
+- Akcja „Zaznacz wszystkie” przywróciła domyślny komplet po odznaczeniu pliku.
+- Checkbox mBanku nadal działa niezależnie: stan zmienił się na `1/2 wybrane`, a ponowne zaznaczenie przywróciło `2/2 wybrane`.
+- Finalny odczyt konsoli po świeżym otwarciu nie zawierał ostrzeżeń ani błędów.
+
+## Historia porównania i poprawki
+
+- **P1 — brak kontroli wyboru przy załącznikach:** źródło pozwalało wybierać wyłącznie wnioski bankowe. Dodano checkbox per plik, stan „Poza paczką”, licznik wybranych i akcję zaznacz/odznacz wszystkie; liczba plików w ZIP-ie reaguje natychmiast.
+- **P2 — trzy ikony akcji nie były dostępne w lokalnym bundlu:** `package-down`, `scan-search` i `file-down` powodowały ostrzeżenia oraz puste miejsca. Zastąpiono je dostępnymi ikonami `download` i `eye`; świeży finalny widok nie raportuje ostrzeżeń ani błędów.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `git diff --check` — zakończone kodem 0.
+
+## Final result
+
+`passed`
+
+---
+
+# Design QA — wysyłka paczek Multiwniosku do klientów
+
+## Wynik
+
+`passed`
+
+Akcja „Wyślij do klientów” została dodana do istniejącego nagłówka paczki wariantu 2. Modal potwierdzenia pokazuje zakres wysyłki i odbiorców, ale nie ujawnia numerów PESEL. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonym stanie.
+
+## Materiał i porównanie
+
+- Źródło produktu: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-4712791d-0c6f-4b7d-8471-c5d9c13297da.png`, 2048 × 1126 px.
+- Implementacja: lokalny widok sprawy `E2E Multiwniosek 2026-08-07`, krok „Paczka ZIP”, modal „Wyślij paczki do klientów”, viewport 1280 × 720 px.
+- Źródło i finalny modal otwarto razem w jednym wejściu porównawczym. Modal zachowuje ciemny motyw, promienie, obramowania, rytm i typografię istniejącego widoku; dodana akcja nie zmienia hierarchii banków ani dokumentów.
+
+## Ocena
+
+- **Hierarchia:** zabezpieczenie PESEL jest pierwszą informacją w modalu, potem widoczny jest zakres `2 wnioski / 8 załączników / 2 odbiorcy`, lista klientów i jednoznaczna akcja końcowa.
+- **Prywatność:** interfejs pokazuje wyłącznie nazwę i adres e-mail. Copy jasno mówi, że PESEL jest hasłem, ale numer nie trafi do wiadomości ani widoku.
+- **Stany:** każdy odbiorca ma status `Oczekuje`, a odpowiedź serwera może zmienić go na `Wysłano` albo `Nie wysłano`; częściowa wysyłka udostępnia retry bez ponownego wysyłania zakończonych pozycji.
+- **Kompletność:** modal powtarza ostrzeżenie o mBanku bez szablonu przed ostatecznym przyciskiem wysyłki, więc ekspert nie musi pamiętać komunikatu widocznego pod listą dokumentów.
+- **Responsywność:** modal mieści pełną listę dwóch klientów przy 1280 × 720 px, przyciski i podsumowanie korzystają z zawijania, a dane klienta mają kontrolowane skracanie.
+- **Dostępność:** modal ma nazwę i opis, lista ma etykietę, komunikaty bezpieczeństwa i błędów są tekstowe, a przyciski zachowują jednoznaczne nazwy.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Przycisk „Wyślij do klientów” jest widoczny obok pobrania pełnej paczki.
+- Otwarcie modalu nie uruchamia wysyłki i pokazuje Jana oraz Annę wraz z ich adresami e-mail.
+- Zamknięcie przez „Anuluj” usuwa modal i stan żądania.
+- Nie klikano końcowego potwierdzenia, aby nie wysyłać wiadomości podczas kontroli UI.
+- Konsola przeglądarki nie zawierała błędów.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/email test` — 8/8 testów zakończonych powodzeniem.
+- `node --test --experimental-strip-types apps/crm/test/multiform-package-email.test.ts` — 4/4 testy zakończone powodzeniem.
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/landing test` — 46/46 testów zakończonych powodzeniem, w tym ZIP zabezpieczony 11-cyfrowym hasłem.
+
+## Final result
+
+`passed`
+
+---
+
 # Design QA — kompaktowy katalog forum
 
 ## Wynik
+
+`passed`
+
+---
+
+# Design QA — paczka Multiwniosku według banków (wariant 2)
+
+## Wynik
+
+`passed`
+
+Wybrany wariant 2 został przeniesiony do istniejącego kroku „Paczka ZIP”: lista wniosków jest po lewej, aktywny bank ma własny obszar roboczy, dokumenty nieuzupełnione są odcięte na dole, a akcje pobierania działają per bank i zbiorczo. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonym stanie.
+
+## Materiał porównawczy
+
+- Źródło wizualne: `/Users/konradstraszewski/.codex/generated_images/019fdc7f-1127-7272-bb65-2f38c021d165/exec-1596a06d-9b16-4001-947f-572b00043ce8.png`, 1672 × 941 px.
+- Implementacja — obszar kroku ZIP: `/Users/konradstraszewski/Documents/GitHub/app/tmp/design-qa-multiform-v2.png`, 1320 × 1201 px; CSS viewport 1672 × 941, DPR 1.
+- Wspólny obraz porównawczy: `/Users/konradstraszewski/Documents/GitHub/app/tmp/design-qa-multiform-v2-comparison.png`, 2640 × 1201 px; źródło po lewej, implementacja po prawej.
+- Stan przed poprawką przewijania: `/Users/konradstraszewski/Documents/GitHub/app/tmp/design-qa-multiform-v2-before-scroll-fix.png`, 1672 × 941 px.
+- Stan modalu jednorazowego hasła: `/Users/konradstraszewski/Documents/GitHub/app/tmp/design-qa-multiform-password-modal.png`, 1672 × 941 px.
+
+Źródło 1672 × 941 px znormalizowano proporcjonalnie do pola 1320 × 1201 px bez zwiększania gęstości; implementację porównano jako rzeczywisty obszar komponentu przy viewporcie 1672 × 941 i DPR 1. Źródło pokazuje osobny ekran, a implementacja pozostaje krokiem istniejącej karty sprawy, dlatego porównanie pełnego widoku obejmuje odpowiadający mu region paczki, bez otaczającego nagłówka sprawy i steppera.
+
+Stan: ciemny motyw OpenExpert, sprawa `E2E Multiwniosek 2026-08-07`, dwa wnioski domyślnie zaznaczone, aktywny Erste Bank Polska, jeden formularz automatyczny, osiem załączników oraz mBank oznaczony do obsługi ręcznej z powodu braku szablonu.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Typografia:** zachowano istniejącą rodzinę, wagi i hierarchię CRM. Nazwy banków, produktu, sekcji i plików mają czytelny kontrast oraz kontrolowane skracanie; małe statusy pozostają pomocnicze względem nazw wniosków i akcji.
+- **Spacing i rytm:** układ ma rail 270 px i elastyczny panel banku, zgodnie z wybranym wariantem. Sekcje formularzy, dokumentów oraz braków mają wspólny rytm, promienie i obramowania. W finalnej iteracji usunięto zagnieżdżone przewijanie kroku ZIP, dzięki czemu nagłówek paczki i zawartość zachowują naturalny przepływ strony.
+- **Kolory i tokeny:** użyto wyłącznie istniejących tokenów `--ui-*`, semantycznych kolorów `success`/`warning` i konfiguracji organizacji. Aktywny wniosek ma subtelny znacznik primary; brak szablonu jest żółty, a gotowość zielona.
+- **Jakość obrazów i zasoby:** logotypy Erste i mBank pochodzą z danych ofert i są wyświetlane z zachowaniem proporcji oraz tła banku. Pozostałe ikony pochodzą z używanej kolekcji Lucide; nie dodano własnych SVG, CSS-art ani atrap.
+- **Copy i treść:** widok mówi językiem eksperta: „Wnioski”, „Formularze bankowe”, „Dokumenty do wniosku”, „Do uzupełnienia ręcznie”, „Pobierz ZIP banku” i „Pobierz całość ZIP (9)”. Dokumenty sprawy są jawnie oznaczone jako „Wspólne”.
+- **Responsywność:** desktop używa raila i panelu obok siebie; poniżej 760 px przechodzi do jednego toru, a drzewo archiwum jest ukrywane, żeby nie dublować informacji. Kontrolki pobierania i hasła układają się pionowo bez poziomego overflow.
+- **Dostępność:** checkboxy mają nazwy banków, lista banków nie zagnieżdża już interaktywnych kontrolek w przyciskach, aktywne akcje są przyciskami, bank bez szablonu ma zablokowane pobranie ZIP, a statusy są przekazywane także tekstem.
+
+## Porównanie detali
+
+- Wspólny obraz porównawczy pozwala ocenić rail banków, aktywny bank, prawdziwe logotypy, formularz i początek listy dokumentów w jednym wejściu.
+- Osobny screenshot modalu potwierdza stan nieuwzględniony w źródle: jednoznaczny kod hasła, akcję „Kopiuj hasło” oraz ostrzeżenie, że po zamknięciu hasła nie można odzyskać.
+- Nie wykonywano kolejnego cropu pojedynczego wiersza, ponieważ nazwy, ikony, badge „Wspólne” i akcje są czytelne w obrazie implementacji przy DPR 1.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Po świeżym załadowaniu oba wnioski były zaznaczone, a aktywny był pierwszy bank z gotowym szablonem — Erste.
+- Odznaczenie mBanku zmieniło etykietę akcji z `Pobierz całość ZIP (9)` na `Pobierz całość ZIP (8)`.
+- Pobranie osobnej paczki Erste działało przy wyłączonej ochronie i nie otworzyło modalu hasła.
+- Chronione pobranie pełnej paczki zakończyło się powodzeniem i otworzyło modal z hasłem w formacie `XXXX-XXXX-XXXX-XXXX`.
+- „Kopiuj hasło” zmieniło stan na „Skopiowano”. Po zamknięciu i ponownym pobraniu system wygenerował inne hasło (`Z23N-Q83U-XJ5A-PYGD` → `VJEX-Z69X-5J6D-99KC`).
+- mBank bez szablonu pozostał widoczny i domyślnie zaznaczony, ale jego akcja „Pobierz ZIP banku” była zablokowana; dokumenty wspólne nadal były dostępne w jego widoku.
+- Konsola przeglądarki nie zawierała błędów.
+
+## Historia porównania i poprawki
+
+- **P2 — zagnieżdżone przewijanie ograniczało widok wariantu 2:** pierwszy przebieg utrzymywał maksymalną wysokość body karty także w kroku ZIP, przez co nagłówek i lista dokumentów były rozdzielone wewnętrznym scrollem. Dla kroku paczki body otrzymało naturalną wysokość i przewijanie dokumentu. Finalny screenshot pokazuje ciągły obszar paczki bez dodatkowego scrolla wewnątrz.
+- **P2 — checkbox był pierwotnie zagnieżdżony w przycisku banku:** rail został rozdzielony na niezależny checkbox wyboru paczki i przycisk otwierający bank. Finalny DOM zachowuje tę samą kompozycję bez nieprawidłowego zagnieżdżenia interaktywnych elementów.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/crm typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/landing typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/landing test -- multiform-pdf.test.ts` — 46/46 testów zakończonych powodzeniem, w tym test folderów banku i szyfrowania każdego wpisu ZIP.
+- `pnpm --filter @openexpert/crm test:multiform-template-editor` — 21/21 testów zakończonych powodzeniem.
+- Przeglądarka: viewport 1672 × 941, DPR 1; sprawdzono wybór wniosków, licznik dokumentów, pobranie per bank, pełny ZIP, modal hasła, kopiowanie i rotację hasła.
+
+## Final result
 
 `passed`
 

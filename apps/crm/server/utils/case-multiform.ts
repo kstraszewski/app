@@ -37,6 +37,12 @@ export interface CaseMultiformSelection {
   userId: string
   organizationSlug: string
   caseId: string
+  applications: Array<{
+    applicationId: string
+    offerId: string
+    bankName: string
+    templateIds: string[]
+  }>
   applicationIds: string[]
   offerIds: string[]
   templateIds: string[]
@@ -160,20 +166,56 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
     throw createError({ statusCode: 409, statusMessage: 'Co najmniej jedna oferta wniosku nie istnieje już w tej sprawie.' })
   }
 
-  const templateIds = [...new Set(selectedApplications.flatMap((application) => {
+  const selectedApplicationDetails = selectedApplications.map((application) => {
     const offer = offerById.get(String(application.offer_id))
-    if (!offer) return []
+    if (!offer) {
+      throw createError({ statusCode: 409, statusMessage: 'Nie znaleziono oferty aktywnego wniosku.' })
+    }
     const label = `${String(offer.bank_name)} — ${String(offer.product_name)}`
-    return parseTemplateIds(offer.catalog_snapshot, label)
-  }))]
+    return {
+      applicationId: String(application.submission_id),
+      offerId: String(application.offer_id),
+      bankName: String(offer.bank_name),
+      templateIds: parseTemplateIds(offer.catalog_snapshot, label),
+    }
+  })
+  const templateIds = [...new Set(selectedApplicationDetails.flatMap(application => application.templateIds))]
 
   return {
     userId: session.userId,
     organizationSlug: session.organizationSlug,
     caseId,
+    applications: selectedApplicationDetails,
     applicationIds: selectedApplications.map(application => String(application.submission_id)),
     offerIds,
     templateIds,
+  }
+}
+
+export function filterCaseMultiformSelection(
+  selection: CaseMultiformSelection,
+  requestedApplicationIds: unknown,
+): CaseMultiformSelection {
+  if (!Array.isArray(requestedApplicationIds) || requestedApplicationIds.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Wybierz co najmniej jeden wniosek bankowy.' })
+  }
+  if (requestedApplicationIds.some(id => typeof id !== 'string' || !id.trim())) {
+    throw createError({ statusCode: 400, statusMessage: 'Lista wniosków bankowych jest nieprawidłowa.' })
+  }
+
+  const requested = [...new Set(requestedApplicationIds.map(id => String(id).trim()))]
+  const available = new Map(selection.applications.map(application => [application.applicationId, application]))
+  if (requested.some(applicationId => !available.has(applicationId))) {
+    throw createError({ statusCode: 404, statusMessage: 'Wybrany wniosek nie należy do tej sprawy.' })
+  }
+
+  const applications = requested.map(applicationId => available.get(applicationId)!)
+  return {
+    ...selection,
+    applications,
+    applicationIds: applications.map(application => application.applicationId),
+    offerIds: [...new Set(applications.map(application => application.offerId))],
+    templateIds: [...new Set(applications.flatMap(application => application.templateIds))],
   }
 }
 
@@ -307,14 +349,17 @@ export async function prepareCaseMultiform(
   return response.json()
 }
 
-export async function fillCaseMultiform(
+export interface CaseMultiformFillInput {
+  values: unknown
+  collectionCounts: unknown
+  documentIds: unknown
+  password?: unknown
+}
+
+async function requestCaseMultiformArchive(
   event: H3Event,
   selection: CaseMultiformSelection,
-  input: {
-    values: unknown
-    collectionCounts: unknown
-    documentIds: unknown
-  },
+  input: CaseMultiformFillInput,
 ) {
   if (!selection.templateIds.length) {
     throw createError({ statusCode: 409, statusMessage: 'Aktywne wnioski nie mają przypisanych formularzy bankowych.' })
@@ -328,6 +373,7 @@ export async function fillCaseMultiform(
       templateIds: selection.templateIds,
       values: input.values,
       collectionCounts: input.collectionCounts,
+      ...(input.password ? { password: input.password } : {}),
       crmContext: {
         organizationSlug: selection.organizationSlug,
         caseId: selection.caseId,
@@ -337,8 +383,68 @@ export async function fillCaseMultiform(
       },
     },
   })
+  return response
+}
+
+export async function createCaseMultiformArchive(
+  event: H3Event,
+  selection: CaseMultiformSelection,
+  input: CaseMultiformFillInput,
+) {
+  const response = await requestCaseMultiformArchive(event, selection, input)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+export async function fillCaseMultiform(
+  event: H3Event,
+  selection: CaseMultiformSelection,
+  input: CaseMultiformFillInput,
+) {
+  const response = await requestCaseMultiformArchive(event, selection, input)
   setHeader(event, 'Content-Type', response.headers.get('content-type') || 'application/zip')
   setHeader(event, 'Content-Disposition', response.headers.get('content-disposition') || 'attachment; filename="uzupelnione-wnioski.zip"')
+  setHeader(event, 'Cache-Control', 'private, no-store')
+  if (!response.body) return new Uint8Array(await response.arrayBuffer())
+  return sendStream(event, response.body)
+}
+
+export async function fillCaseMultiformDocument(
+  event: H3Event,
+  selection: CaseMultiformSelection,
+  input: {
+    templateId: string
+    variant: 'filled' | 'blank'
+    values: unknown
+    collectionCounts: unknown
+  },
+) {
+  if (!selection.templateIds.includes(input.templateId)) {
+    throw createError({ statusCode: 404, statusMessage: 'Formularz nie należy do aktywnych wniosków tej sprawy.' })
+  }
+  const response = await callMultiformService(event, '/api/multiform/bundle/fill', selection.userId, {
+    method: 'POST',
+    body: {
+      templateIds: selection.templateIds,
+      templateId: input.templateId,
+      output: input.variant === 'blank' ? 'source' : 'pdf',
+      values: input.values,
+      collectionCounts: input.collectionCounts,
+      crmContext: {
+        organizationSlug: selection.organizationSlug,
+        caseId: selection.caseId,
+        applicationIds: selection.applicationIds,
+        offerIds: selection.offerIds,
+        documentIds: [],
+      },
+    },
+  })
+  setHeader(event, 'Content-Type', response.headers.get('content-type') || 'application/pdf')
+  setHeader(
+    event,
+    'Content-Disposition',
+    response.headers.get('content-disposition')
+      || `attachment; filename="${input.variant === 'blank' ? 'pusty-szablon.pdf' : 'uzupelniony-wniosek.pdf'}"`,
+  )
   setHeader(event, 'Cache-Control', 'private, no-store')
   if (!response.body) return new Uint8Array(await response.arrayBuffer())
   return sendStream(event, response.body)

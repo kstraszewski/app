@@ -76,10 +76,19 @@ export interface MortgageOfferVersionSummary {
   validTo: string | null
 }
 
+export interface MortgageOfferTemplateSummary {
+  id: string
+  label: string
+  revision: number
+  sourceFileId: string
+  sourceFileVersionId: string
+}
+
 export interface MortgageOfferDetail<TDraft = JsonObject> {
   product: MortgageOfferProductRecord
   draft: MortgageOfferDraftRecord<TDraft>
   versions: MortgageOfferVersionSummary[]
+  templates: MortgageOfferTemplateSummary[]
   bank: Pick<MortgageOfferBankSummary, 'id' | 'slug' | 'name' | 'logoUrl'> | null
 }
 
@@ -266,6 +275,18 @@ export function normalizeMortgageOfferDetail<TDraft = JsonObject>(value: unknown
       validTo: nullableString(version.validTo ?? version.valid_to ?? validity.validTo ?? validity.valid_to),
     }
   })
+  const templates = (Array.isArray(source.templates) ? source.templates : []).flatMap((entry) => {
+    const template = record(entry)
+    const id = string(template.id ?? template.templateKey ?? template.template_key)
+    if (!id) return []
+    return [{
+      id,
+      label: string(template.label, id),
+      revision: number(template.revision ?? template.activeRevision ?? template.active_revision),
+      sourceFileId: string(template.sourceFileId ?? template.source_file_id),
+      sourceFileVersionId: string(template.sourceFileVersionId ?? template.source_file_version_id),
+    }]
+  })
 
   return {
     product,
@@ -284,6 +305,7 @@ export function normalizeMortgageOfferDetail<TDraft = JsonObject>(value: unknown
           : []).filter((warning): warning is string => typeof warning === 'string'),
     },
     versions,
+    templates,
     bank: Object.keys(bankSource).length
       ? {
           id: string(bankSource.id, product.bankId),

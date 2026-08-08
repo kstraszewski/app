@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { PDFDocument } from 'pdf-lib'
 import {
   CANONICAL_COLLECTIONS,
   CANONICAL_FIELDS,
@@ -14,12 +15,35 @@ import {
   templateApplicantCapacityIssues,
   validateTemplateJson,
 } from '../src/index.ts'
+import { createTemplateSkeleton } from '../src/template-generator.ts'
 
 test('uses current public Gemini models for the agent and PDF template generator', () => {
   assert.equal(MULTIFORM_MODEL_DEFINITIONS.agent.gatewayId, 'google/gemini-3.6-flash')
   assert.equal(MULTIFORM_MODEL_DEFINITIONS.templateGenerator.gatewayId, 'google/gemini-3.5-flash-lite')
   assert.equal(MULTIFORM_MODEL_DEFINITIONS.agent.contextWindowTokens, 1_048_576)
   assert.equal(MULTIFORM_MODEL_DEFINITIONS.templateGenerator.contextWindowTokens, 1_048_576)
+})
+
+test('creates a non-publishable template skeleton for any bank slug', async () => {
+  const pdf = await PDFDocument.create()
+  pdf.addPage([420, 595])
+  const bytes = await pdf.save()
+  const template = await createTemplateSkeleton({
+    templateId: 'mbank-wniosek-12345678',
+    bank: 'mbank',
+    label: 'Wniosek mBank',
+    fileName: 'wniosek-mbank.pdf',
+    sha256: 'a'.repeat(64),
+    bytes,
+  })
+  const validation = validateTemplateJson(template)
+
+  assert.equal(template.bank, 'mbank')
+  assert.equal(template.source.pageCount, 1)
+  assert.equal(template.coverage.status, 'incomplete')
+  assert.equal(validation.kind, 'document-template')
+  assert.equal(validation.valid, true)
+  assert.equal(validation.summary.activationReady, false)
 })
 
 const PAGE_GEOMETRY = {
@@ -123,14 +147,24 @@ test('exposes a unique canonical catalog for the MVP form', () => {
   const applicationPlace = CANONICAL_FIELDS.find(field => field.canonicalKey === 'application.place')
   assert.match(applicationPlace?.form.helpText ?? '', /zamieszkania/)
   assert.ok(applicationPlace?.aiMappingHints.exclude.includes('miejscowość nieruchomości'))
-  assert.deepEqual(CANONICAL_COLLECTIONS, [{
-    key: 'applicants',
-    label: 'Wnioskodawcy',
-    itemLabel: 'Wnioskodawca',
-    minItems: 1,
-    maxItems: 5,
-    requiredRelativeKeys: ['firstName', 'lastName', 'pesel'],
-  }])
+  assert.deepEqual(CANONICAL_COLLECTIONS, [
+    {
+      key: 'applicants',
+      label: 'Wnioskodawcy',
+      itemLabel: 'Wnioskodawca',
+      minItems: 1,
+      maxItems: 5,
+      requiredRelativeKeys: ['firstName', 'lastName', 'pesel'],
+    },
+    {
+      key: 'tranches',
+      label: 'Planowane transze',
+      itemLabel: 'Transza',
+      minItems: 1,
+      maxItems: 6,
+      requiredRelativeKeys: ['date', 'amount', 'accountOwner'],
+    },
+  ])
 })
 
 test('registers the three curated PDF templates', () => {
@@ -323,24 +357,29 @@ test('validates optional per-binding semantic contracts without breaking legacy 
   assert.ok(result.errors.some(issue => issue.code === 'conflicting_semantic_hint'))
 })
 
-test('validates every registered template but keeps incomplete coverage out of fill-ready state', () => {
+test('validates registered templates and exposes reviewed Erste as fill-ready', () => {
   for (const template of getTemplates()) {
     const result = validateTemplateJson(template)
+    const isErste = template.id === 'erste-mortgage-2026'
 
     assert.equal(result.kind, 'document-template', template.id)
     assert.equal(result.valid, true, template.id)
-    assert.equal(result.fillReady, false, template.id)
-    assert.equal(result.summary.activationReady, false, template.id)
+    assert.equal(result.fillReady, isErste, template.id)
+    assert.equal(result.summary.activationReady, isErste, template.id)
     assert.equal(result.summary.bindingCount, template.bindings.length, template.id)
     assert.equal(result.summary.mappedBindingCount, template.bindings.length, template.id)
     assert.equal(
       result.summary.needsReviewCount,
-      template.id === 'erste-mortgage-2026' ? 6 : 0,
+      0,
       template.id,
     )
     assert.equal(result.summary.unmappedCount, 0, template.id)
     assert.deepEqual(result.errors, [], template.id)
-    assert.ok(result.warnings.some(issue => issue.code === 'incomplete_coverage'), template.id)
+    assert.equal(
+      result.warnings.some(issue => issue.code === 'incomplete_coverage'),
+      !isErste,
+      template.id,
+    )
   }
 })
 
@@ -622,6 +661,41 @@ test('uses verified AcroForm names and overlay coordinates', () => {
     1,
     { x: 155, y: 499, width: 374, height: 17 },
   ))
+
+  const erste = getTemplate('erste-mortgage-2026')!
+  const bindingsByPage = Object.fromEntries(
+    [...Array.from({ length: 8 }, (_, index) => index + 1)].map(page => [
+      page,
+      erste.bindings.filter(binding => binding.target.kind === 'overlay' && binding.target.page === page).length,
+    ]),
+  )
+  assert.deepEqual(bindingsByPage, {
+    1: 12,
+    2: 15,
+    3: 13,
+    4: 29,
+    5: 16,
+    6: 4,
+    7: 12,
+    8: 5,
+  })
+  assert.equal(erste.bindings.length, 106)
+  assert.equal(erste.bindings.every(binding => binding.reviewStatus === 'ready'), true)
+  const refinancingTarget = erste.bindings.find(binding => (
+    binding.canonicalKey === 'loan.purpose'
+    && binding.condition?.equals === 'refinancing'
+  ))?.target
+  assert.equal(refinancingTarget?.kind, 'overlay')
+  assert.deepEqual(
+    refinancingTarget?.kind === 'overlay'
+      ? { page: refinancingTarget.page, box: refinancingTarget.box }
+      : undefined,
+    { page: 2, box: { x: 63, y: 327, width: 17, height: 17 } },
+  )
+  assert.deepEqual(
+    erste.bindings.find(binding => binding.canonicalKey === 'intermediary.name')?.target,
+    preciseTextTarget(7, { x: 167, y: 525, width: 362, height: 17 }, 8.5),
+  )
 })
 
 test('prepareBundle merges canonical inputs and omits computed presentation fields', () => {
@@ -640,12 +714,12 @@ test('prepareBundle merges canonical inputs and omits computed presentation fiel
   assert.ok(!keys.includes('applicants.0.fullName'))
   assert.ok(!keys.includes('property.address.full'))
   assert.ok(!keys.includes('property.address.houseAndUnit'))
-  assert.deepEqual(bundle.collections.map(collection => collection.key), ['applicants'])
+  assert.deepEqual(bundle.collections.map(collection => collection.key), ['applicants', 'tranches'])
 })
 
-test('resolved bindings do not masquerade as complete source-form coverage', () => {
+test('only fully reviewed source-form coverage is advertised as complete', () => {
   const expectedCoverage = new Map([
-    ['erste-mortgage-2026', { mapped: 33, total: 106 }],
+    ['erste-mortgage-2026', { mapped: 106, total: 106 }],
     ['pko-bp-mortgage-2022', { mapped: 43, total: 144 }],
     ['pekao-mortgage-2025', { mapped: 34, total: 278 }],
   ])
@@ -654,16 +728,17 @@ test('resolved bindings do not masquerade as complete source-form coverage', () 
     const needsReviewCount = template.bindings.filter(binding => binding.reviewStatus === 'needsReview').length
     assert.ok(template.bindings.length > 0)
     assert.ok(template.bindings.every(binding => binding.target.kind !== 'unmapped'))
-    assert.equal(needsReviewCount, template.id === 'erste-mortgage-2026' ? 6 : 0)
-    assert.equal(template.coverage.status, 'incomplete')
+    const isErste = template.id === 'erste-mortgage-2026'
+    assert.equal(needsReviewCount, 0)
+    assert.equal(template.coverage.status, isErste ? 'complete' : 'incomplete')
     assert.equal(template.coverage.mappedTargetCount, expectedCoverage.get(template.id)?.mapped)
     assert.equal(template.coverage.inScopeTargetCount, expectedCoverage.get(template.id)?.total)
 
     const warnings = prepareBundle([template.id]).warnings
-    assert.equal(warnings.length, 1 + needsReviewCount)
-    assert.ok(warnings.some(warning => (
+    assert.equal(warnings.length, isErste ? 0 : 1)
+    assert.equal(warnings.some(warning => (
       warning.canonicalKey === '__templateCoverage__' && warning.status === 'unmapped'
-    )))
+    )), !isErste)
   }
 })
 

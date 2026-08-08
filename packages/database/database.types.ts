@@ -5200,7 +5200,9 @@ export type Database = {
           id: string
           label: string
           registry_version: number
+          source_file_id: string | null
           source_file_name: string
+          source_file_version_id: string | null
           source_sha256: string
           template_key: string
           updated_at: string
@@ -5223,7 +5225,9 @@ export type Database = {
           id?: string
           label: string
           registry_version: number
+          source_file_id?: string | null
           source_file_name: string
+          source_file_version_id?: string | null
           source_sha256: string
           template_key: string
           updated_at?: string
@@ -5246,7 +5250,9 @@ export type Database = {
           id?: string
           label?: string
           registry_version?: number
+          source_file_id?: string | null
           source_file_name?: string
+          source_file_version_id?: string | null
           source_sha256?: string
           template_key?: string
           updated_at?: string
@@ -5285,6 +5291,20 @@ export type Database = {
             columns: ["draft_updated_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_source_file_id_fkey"
+            columns: ["source_file_id"]
+            isOneToOne: false
+            referencedRelation: "mortgage_bank_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mortgage_document_templates_source_file_version_id_fkey"
+            columns: ["source_file_version_id"]
+            isOneToOne: true
+            referencedRelation: "mortgage_bank_file_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -7041,6 +7061,18 @@ export type Database = {
           expert_user_id: string
           starts_at: string
         }[]
+      }
+      create_mortgage_document_template_from_bank_file: {
+        Args: {
+          p_actor_user_id: string
+          p_file_id: string
+          p_label: string
+          p_template_json: Json
+          p_template_key: string
+          p_validation_report: Json
+          p_version_id: string
+        }
+        Returns: Json
       }
       publish_mortgage_document_template_draft: {
         Args: {

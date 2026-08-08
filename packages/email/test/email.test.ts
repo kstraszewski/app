@@ -84,6 +84,56 @@ test('sends a validated Resend payload with plain text and a stable idempotency 
   })
 })
 
+test('sends binary attachments through the single-email Resend endpoint', async () => {
+  const requests: Array<{ url: string, init?: RequestInit }> = []
+  const fetchImplementation: typeof globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), init })
+    return jsonResponse(200, { id: 'email_with_attachment' })
+  }
+
+  const result = await withFetch(fetchImplementation, () => sender().send({
+    ...defaultEmail,
+    attachments: [{
+      filename: 'wnioski.zip',
+      content: new Uint8Array([80, 75, 3, 4]),
+      contentType: 'application/zip',
+    }],
+  }))
+
+  assert.deepEqual(result, { status: 'sent', id: 'email_with_attachment' })
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0]!.url, 'https://api.resend.com/emails')
+  assert.deepEqual(JSON.parse(String(requests[0]!.init?.body)).attachments, [{
+    filename: 'wnioski.zip',
+    content: 'UEsDBA==',
+    content_type: 'application/zip',
+  }])
+})
+
+test('rejects unsafe or oversized email attachments before transport', async () => {
+  await assert.rejects(
+    sender().send({
+      ...defaultEmail,
+      attachments: [{
+        filename: '../wnioski.zip',
+        content: new Uint8Array([1]),
+      }],
+    }),
+    /invalid filename/u,
+  )
+
+  await assert.rejects(
+    sender().send({
+      ...defaultEmail,
+      attachments: [{
+        filename: 'wnioski.zip',
+        content: new Uint8Array(40 * 1024 * 1024 + 1),
+      }],
+    }),
+    /40 MB/u,
+  )
+})
+
 test('retries only transient Resend responses with backoff, jitter and the same key', async () => {
   const statuses = [429, 503, 200]
   const idempotencyKeys: Array<string | null> = []

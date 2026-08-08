@@ -35,7 +35,7 @@ import {
 } from '~/utils/multiform-visual-geometry'
 import { apiErrorMessage } from '~/utils/api-error'
 
-type SourceKind = 'registered' | 'generated'
+type SourceKind = 'registered' | 'generated' | 'bank-file'
 type ResizeHandle = 'move' | 'nw' | 'ne' | 'sw' | 'se'
 type FieldBrowserMode = 'mapped' | 'catalog'
 type MobileStudioPanel = 'fields' | 'pdf' | 'inspector'
@@ -45,6 +45,7 @@ interface Props {
   templateId: string
   sourceKind: SourceKind
   pdfUrl: string
+  layoutOnly?: boolean
   semanticHintsUrl?: string
   semanticHintsExpectedRevision?: number
 }
@@ -1021,8 +1022,14 @@ function commitVisualBox(field: VisualField, visualBox: PdfBox, destinationPage 
   }
   else return
 
-  const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
-  commitTemplate(invalidated, `Zmieniono położenie pola ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  if (props.layoutOnly) {
+    binding.reviewStatus = 'ready'
+    commitTemplate(next, `Zmieniono położenie pola ${field.canonicalKey}.`)
+  }
+  else {
+    const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
+    commitTemplate(invalidated, `Zmieniono położenie pola ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  }
 }
 
 function updateSelectedBoxPart(part: keyof PdfBox, event: Event) {
@@ -1070,8 +1077,14 @@ function updateAppearance(property: string, event: Event) {
     appearance.glyph = element.value as 'x' | 'check' | 'dot' | 'fill'
   }
 
-  const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
-  commitTemplate(invalidated, `Zmieniono wygląd pola ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  if (props.layoutOnly) {
+    binding.reviewStatus = 'ready'
+    commitTemplate(next, `Zmieniono wygląd pola ${field.canonicalKey}.`)
+  }
+  else {
+    const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
+    commitTemplate(invalidated, `Zmieniono wygląd pola ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  }
 }
 
 function updateReviewStatus(event: Event) {
@@ -1111,8 +1124,14 @@ function resetSelectedAcroPlacement() {
   if (!field || field.widgetIndex === undefined || !next || !binding || binding.target.kind !== 'acroform') return
   binding.target.placementOverrides = binding.target.placementOverrides?.filter(item => item.widgetIndex !== field.widgetIndex)
   if (!binding.target.placementOverrides?.length) delete binding.target.placementOverrides
-  const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
-  commitTemplate(invalidated, `Przywrócono źródłową pozycję widgetu ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  if (props.layoutOnly) {
+    binding.reviewStatus = 'ready'
+    commitTemplate(next, `Przywrócono źródłową pozycję widgetu ${field.canonicalKey}.`)
+  }
+  else {
+    const invalidated = setTemplateBindingReviewStatus(next, field.bindingIndex, 'needsReview')
+    commitTemplate(invalidated, `Przywrócono źródłową pozycję widgetu ${field.canonicalKey}. Mapowanie wymaga ponownej weryfikacji.`)
+  }
 }
 
 function removeSelectedMapping() {
@@ -1528,7 +1547,7 @@ function fieldKindLabel(field: VisualField) {
           <UIcon name="i-lucide-file-text" />
         </span>
         <span class="studio-identity__copy">
-          <strong>Studio mapowania</strong>
+          <strong>{{ layoutOnly ? 'Korekta położenia pól' : 'Studio mapowania' }}</strong>
           <small>{{ activeTemplate?.source.fileName || 'Szablon PDF' }}</small>
         </span>
       </div>
@@ -1662,6 +1681,7 @@ function fieldKindLabel(field: VisualField) {
             Na dokumencie
           </button>
           <button
+            v-if="!layoutOnly"
             type="button"
             role="tab"
             :aria-selected="fieldBrowserMode === 'catalog'"
@@ -1891,7 +1911,7 @@ function fieldKindLabel(field: VisualField) {
           </div>
 
           <section
-            v-if="selectedDefinition && selectedSemanticContract"
+            v-if="!layoutOnly && selectedDefinition && selectedSemanticContract"
             class="semantic-contract"
             data-testid="pdf-field-semantic-contract"
           >
@@ -2032,7 +2052,7 @@ function fieldKindLabel(field: VisualField) {
           </section>
 
           <section
-            v-if="selectedBinding.mappingEvidence"
+            v-if="!layoutOnly && selectedBinding.mappingEvidence"
             class="mapping-evidence"
             data-testid="pdf-field-mapping-evidence"
           >
@@ -2050,14 +2070,14 @@ function fieldKindLabel(field: VisualField) {
               </li>
             </ul>
           </section>
-          <section v-else class="mapping-evidence mapping-evidence--legacy">
+          <section v-else-if="!layoutOnly" class="mapping-evidence mapping-evidence--legacy">
             <div class="mapping-evidence__heading">
               <span>Mapowanie historyczne</span>
             </div>
             <p>{{ selectedBinding.notes || 'Brak ustrukturyzowanego dowodu dopasowania. Zatwierdź semantykę i położenie ręcznie.' }}</p>
           </section>
 
-          <fieldset :disabled="!editEnabled || !canPlaceFields">
+          <fieldset v-if="!layoutOnly" :disabled="!editEnabled || !canPlaceFields">
             <legend>Weryfikacja mapowania</legend>
             <label>Status
               <select :value="selectedField.reviewStatus" @change="updateReviewStatus">
@@ -2119,7 +2139,7 @@ function fieldKindLabel(field: VisualField) {
             <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
             Przywróć pozycję z PDF-u
           </button>
-          <button type="button" class="remove-mapping" :disabled="!editEnabled" @click="removeSelectedMapping">
+          <button v-if="!layoutOnly" type="button" class="remove-mapping" :disabled="!editEnabled" @click="removeSelectedMapping">
             <UIcon name="i-lucide-trash-2" aria-hidden="true" />
             Usuń mapowanie
           </button>

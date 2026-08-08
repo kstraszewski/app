@@ -149,6 +149,7 @@ export interface CrmMultiformContext {
   validation: {
     valid: boolean
     blockers: string[]
+    warnings: string[]
     templates: Array<{
       templateId: string
       found: boolean
@@ -172,6 +173,8 @@ export interface CrmMultiformContext {
 }
 
 export interface DownloadedCrmAttachment {
+  documentId: string
+  submissionId: string | null
   fileName: string
   bytes: Uint8Array
   mimeType: string
@@ -658,12 +661,16 @@ function buildTemplateValidation(
       warnings,
     }
   })
+  const warnings = sources.flatMap(source => source.templateIds.length
+    ? []
+    : [
+        `${source.bankName}: brak szablonu Multiwniosku. `
+        + 'Ten wniosek nie zostanie wygenerowany automatycznie i wymaga obsługi ręcznej.',
+      ])
+
   const blockers = [
     ...(templateIds.length === 0 ? ['Aktywne wnioski nie mają skonfigurowanych template’ów Multiform.'] : []),
     ...(templateIds.length > 10 ? ['Pakiet wniosków przekracza limit 10 template’ów Multiform.'] : []),
-    ...sources.flatMap(source => source.templateIds.length
-      ? []
-      : [`${source.bankName}: wniosek nie ma skonfigurowanych template’ów Multiform.`]),
     ...requirements.flatMap(requirement => (
       requirement.required
       && requirement.applicability === 'always'
@@ -689,7 +696,7 @@ function buildTemplateValidation(
       + `wnioskodawców, a sprawa zawiera ${issue.requestedCount}.`
     )),
   ]
-  return { valid: blockers.length === 0, blockers, templates }
+  return { valid: blockers.length === 0, blockers, warnings, templates }
 }
 
 function buildChecklist(
@@ -1303,6 +1310,8 @@ export async function downloadSelectedCrmAttachments(
     }
 
     attachments.push({
+      documentId: document.id,
+      submissionId: document.submission_id,
       fileName: fileNameWithCanonicalExtension(document.name, mimeType),
       bytes,
       mimeType,

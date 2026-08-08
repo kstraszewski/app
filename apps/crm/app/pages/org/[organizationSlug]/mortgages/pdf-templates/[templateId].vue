@@ -35,7 +35,11 @@ type EditorResponse = {
   template: {
     id: string
     label: string
-    sourceKind: 'registered'
+    sourceKind: 'registered' | 'bank-file'
+    sourceFile: null | {
+      id: string
+      versionId: string
+    }
     pdfUrl: string
     editor: {
       template: DocumentTemplate
@@ -48,7 +52,7 @@ type EditorResponse = {
       summary: TemplateSummary
     }
     active: {
-      origin: 'catalog' | 'registry'
+      origin: 'catalog' | 'registry' | 'missing'
       revision: number
       publishedAt: string | null
       template: DocumentTemplate
@@ -679,7 +683,7 @@ async function publishDraft() {
                       <dl class="version-metadata">
                         <div>
                           <dt>Aktywna konfiguracja</dt>
-                          <dd>{{ template.active.origin === 'catalog' ? `CRM · rewizja ${template.active.revision}` : 'Rejestr wdrożeniowy' }}</dd>
+                          <dd>{{ template.active.origin === 'catalog' ? `CRM · rewizja ${template.active.revision}` : template.active.origin === 'registry' ? 'Rejestr wdrożeniowy' : 'Brak publikacji' }}</dd>
                         </div>
                         <div>
                           <dt>Dokument</dt>

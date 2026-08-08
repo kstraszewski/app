@@ -19,7 +19,11 @@ export default defineEventHandler(async (event) => {
   throwMortgageBackofficeDbError(productError)
   if (!product) throw createError({ statusCode: 404, statusMessage: 'Mortgage offer not found' })
 
-  const [{ data: draft, error: draftError }, { data: versions, error: versionsError }] = await Promise.all([
+  const [
+    { data: draft, error: draftError },
+    { data: versions, error: versionsError },
+    { data: templates, error: templatesError },
+  ] = await Promise.all([
     backendData
       .from('mortgage_product_drafts')
       .select('id, revision, draft_data, validation_report, updated_at, updated_by_user_id')
@@ -30,9 +34,17 @@ export default defineEventHandler(async (event) => {
       .select('id, version_number, lifecycle_status, effective_from, effective_to, published_at')
       .eq('product_id', offerId)
       .order('version_number', { ascending: false }),
+    backendData
+      .from('mortgage_document_templates')
+      .select('template_key, label, active_revision, source_file_id, source_file_version_id')
+      .eq('bank_id', product.bank_id)
+      .gt('active_revision', 0)
+      .not('source_file_version_id', 'is', null)
+      .order('label'),
   ])
   throwMortgageBackofficeDbError(draftError)
   throwMortgageBackofficeDbError(versionsError)
+  throwMortgageBackofficeDbError(templatesError)
 
   let resolvedDraftData = draft?.draft_data ?? null
   let seededFromLegacy = false
@@ -135,6 +147,13 @@ export default defineEventHandler(async (event) => {
         publishedAt: version.published_at,
         validFrom: version.effective_from,
         validTo: version.effective_to,
+      })),
+      templates: (templates ?? []).map((template: any) => ({
+        id: String(template.template_key),
+        label: String(template.label),
+        revision: Number(template.active_revision ?? 0),
+        sourceFileId: String(template.source_file_id),
+        sourceFileVersionId: String(template.source_file_version_id),
       })),
     },
   }

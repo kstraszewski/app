@@ -9,6 +9,7 @@ import { MULTIFORM_MODEL_DEFINITIONS } from './model-definitions.ts'
 import type {
   CanonicalComputedBindingDefinition,
   CanonicalFieldDefinition,
+  DocumentTemplate,
   TemplateMappingEvidenceAnchor,
 } from './types.ts'
 import { generateText, Output } from 'ai'
@@ -546,6 +547,48 @@ function generatedOverlayAppearance(
 export interface TemplateGeneratorOptions {
   gatewayApiKey?: string
   abortSignal?: AbortSignal
+}
+
+export async function createTemplateSkeleton(input: {
+  templateId: string
+  bank: string
+  label: string
+  fileName: string
+  sha256: string
+  bytes: Uint8Array
+}): Promise<DocumentTemplate> {
+  const extraction = await extractPdf(input.bytes)
+  return {
+    schemaVersion: 2,
+    id: input.templateId,
+    bank: input.bank,
+    label: input.label,
+    version: 1,
+    source: {
+      fileName: input.fileName,
+      sha256: input.sha256,
+      pageCount: extraction.pages.length,
+      formKind: extraction.hasAcroForm ? 'acroform' : 'overlay',
+      pages: extraction.pages.map(page => ({
+        page: page.page,
+        mediaBox: page.mediaBox,
+        cropBox: page.cropBox,
+        rotation: page.rotation,
+        userUnit: page.userUnit,
+      })),
+    },
+    coverage: {
+      status: 'incomplete',
+      inScopeTargetCount: 0,
+      mappedTargetCount: 0,
+      manualUserActionCount: 0,
+      excludedTargetCount: 0,
+      notes: [
+        'Szkic utworzony z wersji pliku bankowego. Zinwentaryzuj pola klienta i zatwierdź mapowania przed publikacją.',
+      ],
+    },
+    bindings: [],
+  }
 }
 
 export async function generateTemplateDraft(

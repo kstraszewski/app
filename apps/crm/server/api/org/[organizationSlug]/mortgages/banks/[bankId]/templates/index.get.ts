@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
       .order('name'),
     backendData
       .from('mortgage_document_templates')
-      .select('id, template_key, label, source_file_name, source_sha256, registry_version, draft_json, draft_validation_report, draft_revision, draft_updated_at, active_json, active_validation_report, active_revision, active_published_at, current_published_revision_id, updated_at')
+      .select('id, template_key, label, source_file_id, source_file_version_id, source_file_name, source_sha256, registry_version, draft_json, draft_validation_report, draft_revision, draft_updated_at, active_json, active_validation_report, active_revision, active_published_at, current_published_revision_id, updated_at')
       .eq('bank_id', bankId),
   ])
   throwMortgageBackofficeDbError(bankResult.error)
@@ -164,7 +164,18 @@ export default defineEventHandler(async (event) => {
       label: mortgageTemplateText(row?.label) ?? registryTemplate?.label ?? templateId,
       bank: String(bank.name),
       registered: Boolean(registryTemplate),
-      editable: Boolean(registryTemplate),
+      editable: Boolean(registryTemplate || row?.source_file_version_id),
+      sourceKind: row?.source_file_version_id
+        ? 'bank-file' as const
+        : registryTemplate
+          ? 'registered' as const
+          : 'missing' as const,
+      sourceFile: row?.source_file_id
+        ? {
+            id: String(row.source_file_id),
+            versionId: String(row.source_file_version_id),
+          }
+        : null,
       source: effectiveTemplate
         ? {
             fileName: effectiveTemplate.source.fileName,

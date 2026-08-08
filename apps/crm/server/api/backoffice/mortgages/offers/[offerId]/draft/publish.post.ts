@@ -15,6 +15,7 @@ import {
   throwMortgageBackofficeDbError,
 } from '~~/server/utils/mortgage-backoffice'
 import { buildMortgagePublicationScenarioMatrix } from '~~/server/utils/mortgage-publication-scenarios'
+import { mortgageTemplateIdsFromDraft } from '~~/server/utils/mortgage-document-templates'
 import { asRecord, getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
@@ -53,7 +54,31 @@ export default defineEventHandler(async (event) => {
       issues: [{ kind: 'error', code: 'invalid_offer_shape', path: '', message: 'The mortgage offer structure is incomplete.' }],
     }
   }
-  const documentationIssues = mortgageOfferDocumentationIssues(draft.draft_data)
+  const assignedTemplateIds = mortgageTemplateIdsFromDraft(draft.draft_data)
+  const templatesResult = assignedTemplateIds.length
+    ? await backendData
+        .from('mortgage_document_templates')
+        .select('template_key')
+        .eq('bank_id', product.bank_id)
+        .gt('active_revision', 0)
+        .not('source_file_version_id', 'is', null)
+        .in('template_key', assignedTemplateIds)
+    : { data: [], error: null }
+  throwMortgageBackofficeDbError(templatesResult.error)
+  const publishedTemplateIds = new Set((templatesResult.data ?? []).map((template: any) => String(template.template_key)))
+  const documentationIssues = [
+    ...mortgageOfferDocumentationIssues(draft.draft_data),
+    ...assignedTemplateIds.flatMap((templateId) => (
+      publishedTemplateIds.has(templateId)
+        ? []
+        : [{
+            kind: 'error' as const,
+            code: 'unpublished_multiform_template',
+            path: 'documentation.requirements',
+            message: `Szablon Multiwniosku „${templateId}” nie jest opublikowany albo nie pochodzi z plików tego banku.`,
+          }]
+    )),
+  ]
   const today = new Date().toISOString().slice(0, 10)
   const validityIssues: MortgageCalculationIssueV2[] = []
   if (draftData.validity?.effectiveFrom > today) {

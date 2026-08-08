@@ -292,7 +292,8 @@ export interface TemplateCoverage {
 export interface DocumentTemplate {
   schemaVersion: 2
   id: string
-  bank: 'erste' | 'pko-bp' | 'pekao'
+  /** Stable mortgage bank slug from the CRM catalogue. */
+  bank: string
   label: string
   version: number
   source: {

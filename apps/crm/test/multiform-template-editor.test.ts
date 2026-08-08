@@ -18,6 +18,7 @@ import {
   snapVisualBoxToReferenceBoxes,
   viewportPointToVisualPoint,
 } from '../app/utils/multiform-template-editor.ts'
+import { approveTemplateLayoutRevision } from '../app/utils/multiform-template-layout.ts'
 
 function template(
   overrides: Partial<DocumentTemplate['source']> = {},
@@ -393,26 +394,56 @@ test('adding and removing an overlay toggles an AcroForm template through hybrid
   )
 })
 
-test('Erste coverage changes from 33/106 to 34/106 only after approval', () => {
-  const added = addOverlayBinding(ERSTE_TEMPLATE, {
-    canonicalKey: 'property.address.street',
-    page: 9,
-    visualBox: { x: 200, y: 300, width: 180, height: 17 },
-    placementKind: 'text',
-  })
+test('Erste full template invalidates audited completeness while a field awaits review', () => {
+  const bindingIndex = ERSTE_TEMPLATE.bindings.findIndex(binding => (
+    binding.canonicalKey === 'applicants.0.pesel'
+  ))
+  assert.notEqual(bindingIndex, -1)
+  assert.equal(ERSTE_TEMPLATE.coverage.mappedTargetCount, 106)
+  assert.equal(ERSTE_TEMPLATE.coverage.status, 'complete')
 
-  assert.equal(ERSTE_TEMPLATE.coverage.mappedTargetCount, 33)
-  assert.equal(added.template.coverage.mappedTargetCount, 33)
-  assert.equal(added.template.bindings.at(-1)?.reviewStatus, 'needsReview')
+  const pending = setTemplateBindingReviewStatus(ERSTE_TEMPLATE, bindingIndex, 'needsReview')
+  assert.equal(pending.coverage.mappedTargetCount, 105)
+  assert.equal(pending.coverage.inScopeTargetCount, 106)
+  assert.equal(pending.coverage.status, 'incomplete')
 
-  const approved = setTemplateBindingReviewStatus(
-    added.template,
-    added.bindingIndex,
-    'ready',
+  const reviewed = setTemplateBindingReviewStatus(pending, bindingIndex, 'ready')
+  assert.equal(reviewed.coverage.mappedTargetCount, 106)
+  assert.equal(reviewed.coverage.inScopeTargetCount, 106)
+  assert.equal(reviewed.coverage.status, 'incomplete')
+})
+
+test('approves a position-only PESEL correction without changing the audited mapping contract', () => {
+  const submitted = structuredClone(ERSTE_TEMPLATE)
+  const bindingIndex = submitted.bindings.findIndex(binding => (
+    binding.canonicalKey === 'applicants.0.pesel'
+  ))
+  const binding = submitted.bindings[bindingIndex]
+  assert.ok(binding && binding.target.kind === 'overlay' && binding.target.rendererVersion === 2)
+  const originalY = binding.target.box.y
+  binding.target.box.y = originalY + 1
+  binding.reviewStatus = 'needsReview'
+
+  const approved = approveTemplateLayoutRevision(ERSTE_TEMPLATE, submitted)
+  const approvedBinding = approved.bindings[bindingIndex]
+  assert.ok(approvedBinding && approvedBinding.target.kind === 'overlay' && approvedBinding.target.rendererVersion === 2)
+  assert.equal(approvedBinding.target.box.y, originalY + 1)
+  assert.equal(approvedBinding.reviewStatus, 'ready')
+  assert.equal(approved.coverage.status, 'complete')
+  assert.equal(approved.coverage.mappedTargetCount, 106)
+  assert.equal(ERSTE_TEMPLATE.bindings[bindingIndex]?.target.kind, 'overlay')
+  if (ERSTE_TEMPLATE.bindings[bindingIndex]?.target.kind === 'overlay' && ERSTE_TEMPLATE.bindings[bindingIndex].target.rendererVersion === 2) {
+    assert.equal(ERSTE_TEMPLATE.bindings[bindingIndex].target.box.y, originalY)
+  }
+})
+
+test('rejects structural mapping changes in the quick layout editor', () => {
+  const submitted = structuredClone(ERSTE_TEMPLATE)
+  submitted.bindings.pop()
+  assert.throws(
+    () => approveTemplateLayoutRevision(ERSTE_TEMPLATE, submitted),
+    /nie ich liczbę/,
   )
-  assert.equal(approved.coverage.mappedTargetCount, 34)
-  assert.equal(approved.coverage.inScopeTargetCount, 106)
-  assert.equal(approved.coverage.status, 'incomplete')
 })
 
 test('stores a normalized per-binding semantic contract without mutating the template', () => {

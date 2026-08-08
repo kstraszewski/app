@@ -109,6 +109,7 @@ export default defineEventHandler(async (event) => {
   const [
     versionsResult,
     linksResult,
+    templatesResult,
   ] = await Promise.all([
     versionIds.length
       ? backendData
@@ -122,9 +123,17 @@ export default defineEventHandler(async (event) => {
           .select('file_id, product_id')
           .in('file_id', fileIds)
       : Promise.resolve({ data: [], error: null }),
+    fileIds.length
+      ? backendData
+          .from('mortgage_document_templates')
+          .select('id, source_file_id, source_file_version_id, template_key, label, draft_revision, active_revision, updated_at')
+          .in('source_file_id', fileIds)
+          .order('updated_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ])
   if (versionsResult.error) throw versionsResult.error
   if (linksResult.error) throw linksResult.error
+  if (templatesResult.error) throw templatesResult.error
 
   const versions = (versionsResult.data ?? []) as DatabaseRecord[]
   const versionById = new Map(versions.map(version => [String(version.id), version]))
@@ -149,6 +158,14 @@ export default defineEventHandler(async (event) => {
     if (!linkedProduct) continue
     const fileId = String(link.file_id)
     productsByFile.set(fileId, [...(productsByFile.get(fileId) ?? []), linkedProduct])
+  }
+  const templatesByFile = new Map<string, DatabaseRecord[]>()
+  for (const template of (templatesResult.data ?? []) as DatabaseRecord[]) {
+    const sourceFileId = String(template.source_file_id)
+    templatesByFile.set(sourceFileId, [
+      ...(templatesByFile.get(sourceFileId) ?? []),
+      template,
+    ])
   }
 
   files = files.filter((file) => {
@@ -242,6 +259,10 @@ export default defineEventHandler(async (event) => {
     const versionQuery = `versionId=${encodeURIComponent(String(version.id))}`
 
     const actor = actorById.get(String(version.created_by_user_id ?? file.created_by_user_id ?? ''))
+    const fileTemplates = templatesByFile.get(fileId) ?? []
+    const relatedTemplate = fileTemplates.find(template => (
+      String(template.source_file_version_id) === String(version.id)
+    )) ?? fileTemplates[0]
     const rankedMatches = matchByFile.get(fileId) ?? []
     const titleMatchesSearch = searchText
       ? mortgageBankFileSearchMatch(searchText, [file.title, version.original_file_name])
@@ -274,6 +295,22 @@ export default defineEventHandler(async (event) => {
         id: String(product.id),
         name: String(product.name),
       })),
+      template: relatedTemplate
+        ? {
+            id: String(relatedTemplate.id),
+            key: String(relatedTemplate.template_key),
+            label: String(relatedTemplate.label),
+            status: Number(relatedTemplate.active_revision ?? 0) > 0
+              ? Number(relatedTemplate.draft_revision ?? 0) > 0
+                ? 'published_with_draft' as const
+                : 'published' as const
+              : 'draft' as const,
+            draftRevision: Number(relatedTemplate.draft_revision ?? 0),
+            activeRevision: Number(relatedTemplate.active_revision ?? 0),
+            sourceVersionId: String(relatedTemplate.source_file_version_id),
+            usesCurrentVersion: String(relatedTemplate.source_file_version_id) === String(version.id),
+          }
+        : null,
       currentVersion: {
         id: String(version.id),
         version: String(version.version_label),
@@ -348,6 +385,7 @@ export default defineEventHandler(async (event) => {
     permissions: {
       canUpload: true,
       canManageCategories: true,
+      canCreateTemplates: true,
     },
     search: {
       mode: searchText

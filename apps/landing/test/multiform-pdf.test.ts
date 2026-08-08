@@ -12,6 +12,11 @@ import {
   TextAlignment,
 } from 'pdf-lib'
 import { unzipSync } from 'fflate'
+import {
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+} from '@zip.js/zip.js'
 
 import { createPdfBundle, fillPdfTemplate } from '../server/utils/multiform-pdf.ts'
 
@@ -320,4 +325,50 @@ test('PDF bundle uses fixed folders and zip-slip-safe case-insensitive attachmen
   assert.ok(names.every(name => !name.includes('..') && !name.startsWith('/') && !name.includes('\\')))
   assert.deepEqual(files['02-zalaczniki/Dowód.pdf'], firstAttachment)
   assert.deepEqual(files['02-zalaczniki/DOWÓD-2.PDF'], secondAttachment)
+})
+
+test('PDF bundle groups files by bank and encrypts every entry with an AES password', async () => {
+  const sourceBytes = await blankPdf()
+  const fontBytes = await fontBytesPromise
+  const template = templateWithTarget({
+    kind: 'overlay',
+    rendererVersion: 2,
+    page: 1,
+    box: { x: 40, y: 70, width: 220, height: 28 },
+    coordinateSpace: {
+      units: 'pt',
+      referenceBox: 'media',
+      origin: 'bottom-left',
+      orientation: 'unrotated',
+    },
+    appearance: textAppearance,
+  }, 'overlay')
+  const password = '85010112345'
+  const sharedBytes = new Uint8Array([7, 8, 9])
+
+  const archive = await createPdfBundle(
+    [{ fileName: 'wniosek.pdf', template, sourceBytes, directory: 'Erste Bank' }],
+    fontBytes,
+    { 'applicants.0.pesel': '12345678901' },
+    [{ fileName: 'dowod.pdf', bytes: sharedBytes, directory: 'Wspólne' }],
+    { password },
+  )
+  const reader = new ZipReader(new Uint8ArrayReader(archive))
+  const entries = await reader.getEntries()
+  const names = entries.map(entry => entry.filename)
+
+  assert.ok(names.includes('Erste Bank/01-wnioski/uzupelniony-wniosek.pdf'))
+  assert.ok(names.includes('Wspólne/02-dokumenty/dowod.pdf'))
+  assert.ok(entries.every(entry => entry.encrypted))
+
+  const sharedEntry = entries.find(entry => entry.filename === 'Wspólne/02-dokumenty/dowod.pdf')
+  assert.ok(sharedEntry?.getData)
+  await assert.rejects(
+    sharedEntry.getData(new Uint8ArrayWriter(), { password: 'wrong-password' }),
+  )
+  assert.deepEqual(
+    await sharedEntry.getData(new Uint8ArrayWriter(), { password }),
+    sharedBytes,
+  )
+  await reader.close()
 })

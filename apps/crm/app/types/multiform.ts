@@ -133,6 +133,7 @@ export interface MultiformContextApplication {
 export interface MultiformApplicationsValidation {
   valid: boolean
   blockers: string[]
+  warnings: string[]
   templates: Array<{
     templateId: string
     found: boolean

@@ -6,6 +6,7 @@ import type {
   MortgageBankFileStatus,
   MortgageBankFileSummary,
 } from '~/types/mortgage-bank-files'
+import { apiErrorMessage } from '~/utils/api-error'
 
 const props = withDefaults(defineProps<{
   organizationSlug: string
@@ -54,6 +55,7 @@ const requestedPreviewPage = ref<number | null>(positivePage(props.initialPage))
 const uploadExpanded = ref(false)
 const uploadFiles = ref<File[]>([])
 const uploading = ref(false)
+const creatingTemplateForId = ref<string | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 const repositoryEndpoint = computed(() => (
@@ -105,6 +107,7 @@ const {
     permissions: {
       canUpload: false,
       canManageCategories: false,
+      canCreateTemplates: false,
     },
   }),
 })
@@ -350,6 +353,56 @@ function filePrimaryProduct(file: MortgageBankFileSummary) {
   if (!file.products.length) return 'Wszystkie produkty'
   if (file.products.length === 1) return file.products[0]?.name ?? '—'
   return `${file.products[0]?.name ?? 'Produkt'} +${file.products.length - 1}`
+}
+
+function templateEditorPath(file: MortgageBankFileSummary) {
+  if (!file.template) return undefined
+  return `/org/${encodeURIComponent(props.organizationSlug)}/settings/institutions/${encodeURIComponent(file.institution.id)}/pdf-templates/${encodeURIComponent(file.template.key)}`
+}
+
+function templateStatusLabel(file: MortgageBankFileSummary) {
+  if (!file.template) return 'Brak'
+  if (!file.template.usesCurrentVersion) return 'Wymaga nowej wersji'
+  if (file.template.status === 'published_with_draft') return 'Opublikowany + szkic'
+  if (file.template.status === 'published') return 'Opublikowany'
+  return 'Szkic'
+}
+
+function templateStatusColor(file: MortgageBankFileSummary): 'success' | 'warning' | 'neutral' {
+  if (!file.template || !file.template.usesCurrentVersion) return 'neutral'
+  return file.template.status === 'published' ? 'success' : 'warning'
+}
+
+async function createTemplate(file: MortgageBankFileSummary) {
+  if (creatingTemplateForId.value) return
+  creatingTemplateForId.value = file.id
+  try {
+    const response = await $fetch<{ data: { templateKey: string, created: boolean } }>(
+      `${repositoryEndpoint.value}/${encodeURIComponent(file.id)}/template`,
+      { method: 'POST' },
+    )
+    await refresh()
+    toast.add({
+      title: response.data.created ? 'Utworzono szkic Multiwniosku' : 'Szablon już istnieje',
+      description: response.data.created
+        ? 'PDF jest teraz trwale powiązany z wersją pliku bankowego.'
+        : 'Otwieram istniejące mapowanie tego PDF-u.',
+      color: 'success',
+      icon: 'i-lucide-file-check-2',
+    })
+    await navigateTo(
+      `/org/${encodeURIComponent(props.organizationSlug)}/settings/institutions/${encodeURIComponent(file.institution.id)}/pdf-templates/${encodeURIComponent(response.data.templateKey)}`,
+    )
+  } catch (templateError) {
+    toast.add({
+      title: 'Nie udało się utworzyć szablonu',
+      description: apiErrorMessage(templateError),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  } finally {
+    creatingTemplateForId.value = null
+  }
 }
 
 function matchSegments(text: string) {
@@ -662,6 +715,7 @@ async function submitUpload() {
                 <th scope="col">Wersja</th>
                 <th scope="col">Data</th>
                 <th scope="col">Status</th>
+                <th scope="col">Multiwniosek</th>
               </tr>
             </thead>
             <tbody>
@@ -706,6 +760,11 @@ async function submitUpload() {
                     {{ statusLabel(file.currentVersion.status) }}
                   </UBadge>
                 </td>
+                <td>
+                  <UBadge :color="templateStatusColor(file)" variant="subtle">
+                    {{ templateStatusLabel(file) }}
+                  </UBadge>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -747,6 +806,21 @@ async function submitUpload() {
         </header>
 
         <div class="bank-files__preview-actions">
+          <UButton
+            v-if="selectedFile.currentVersion.mimeGroup === 'pdf' && selectedFile.template?.usesCurrentVersion"
+            :to="templateEditorPath(selectedFile)"
+            icon="i-lucide-panels-top-left"
+          >
+            Otwórz szablon
+          </UButton>
+          <UButton
+            v-else-if="selectedFile.currentVersion.mimeGroup === 'pdf' && data.permissions.canCreateTemplates"
+            icon="i-lucide-file-plus-2"
+            :loading="creatingTemplateForId === selectedFile.id"
+            @click="createTemplate(selectedFile)"
+          >
+            {{ selectedFile.template ? 'Utwórz z nowej wersji' : 'Utwórz szablon Multiwniosku' }}
+          </UButton>
           <UButton
             v-if="selectedFile.currentVersion.downloadUrl"
             :to="selectedFile.currentVersion.downloadUrl"
@@ -845,6 +919,18 @@ async function submitUpload() {
           <div>
             <dt>Wersja</dt>
             <dd>{{ selectedFile.currentVersion.version }}</dd>
+          </div>
+          <div>
+            <dt>Multiwniosek</dt>
+            <dd>
+              <NuxtLink
+                v-if="selectedFile.template?.usesCurrentVersion"
+                :to="templateEditorPath(selectedFile)"
+              >
+                {{ templateStatusLabel(selectedFile) }}
+              </NuxtLink>
+              <template v-else>{{ templateStatusLabel(selectedFile) }}</template>
+            </dd>
           </div>
           <div>
             <dt>Obowiązuje od</dt>

@@ -319,17 +319,29 @@ function messagePreviewPrefix(summary: InboxConversationSummary | null) {
             </NuxtLink>
           </nav>
 
-          <div v-else-if="threads.length" class="portal-inbox__empty">
-            <UIcon name="i-lucide-search-x" />
-            <strong>Nie znaleziono rozmowy</strong>
-            <p>Spróbuj wpisać nazwę sprawy albo eksperta.</p>
-          </div>
+          <OeEmptyState
+            v-else-if="threads.length"
+            kind="filtered"
+            compact
+            align="start"
+            title="Nie znaleziono rozmowy"
+            description="Spróbuj wpisać nazwę sprawy albo eksperta."
+          >
+            <template #actions>
+              <UButton color="neutral" variant="outline" size="sm" icon="i-lucide-x" @click="searchQuery = ''">
+                Wyczyść
+              </UButton>
+            </template>
+          </OeEmptyState>
 
-          <div v-else class="portal-inbox__empty">
-            <UIcon name="i-lucide-message-circle-dashed" />
-            <strong>Nie masz jeszcze spraw z rozmową</strong>
-            <p>Gdy ekspert udostępni sprawę, będzie można napisać do niego właśnie tutaj.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            compact
+            align="start"
+            icon="i-lucide-message-circle-dashed"
+            title="Nie masz jeszcze spraw z rozmową"
+            description="Gdy ekspert udostępni sprawę, będzie można napisać do niego właśnie tutaj."
+          />
         </aside>
 
         <section v-if="selectedCase" class="portal-inbox__conversation" aria-label="Wybrana rozmowa">

@@ -1274,11 +1274,14 @@ onBeforeUnmount(() => {
           Pokaż starsze wiadomości
         </UButton>
 
-        <div v-else-if="!messages.length && !visiblePendingMessage" class="portal-conversation__empty">
-          <span><UIcon name="i-lucide-messages-square" /></span>
-          <strong>Zacznij rozmowę</strong>
-          <p>Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu.</p>
-        </div>
+        <OeEmptyState
+          v-else-if="!messages.length && !visiblePendingMessage"
+          compact
+          align="start"
+          icon="i-lucide-messages-square"
+          title="Zacznij rozmowę"
+          description="Wiadomości są przypisane do tej sprawy i zostają w jednym miejscu."
+        />
 
         <TransitionGroup
           tag="div"

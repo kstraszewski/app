@@ -70,14 +70,19 @@ const homeTo = computed(() => props.preview ? '/preview' : '/')
         </div>
       </section>
 
-      <section v-if="!payload.cases.length" class="portal-cases-screen__empty">
-        <span><UIcon name="i-lucide-folder-clock" /></span>
-        <h2>Tu pojawią się Twoje sprawy</h2>
-        <p>Ekspert musi najpierw udostępnić sprawę temu kontu. Nie musisz zakładać kolejnego konta.</p>
-        <UButton :to="homeTo" color="neutral" variant="outline" icon="i-lucide-arrow-left">
-          Wróć na start
-        </UButton>
-      </section>
+      <OeEmptyState
+        v-if="!payload.cases.length"
+        icon="i-lucide-folder-clock"
+        title="Tu pojawią się Twoje sprawy"
+        description="Ekspert musi najpierw udostępnić sprawę temu kontu. Nie musisz zakładać kolejnego konta."
+        title-tag="h2"
+      >
+        <template #actions>
+          <UButton :to="homeTo" color="neutral" variant="outline" icon="i-lucide-arrow-left">
+            Wróć na start
+          </UButton>
+        </template>
+      </OeEmptyState>
     </main>
   </div>
 </template>

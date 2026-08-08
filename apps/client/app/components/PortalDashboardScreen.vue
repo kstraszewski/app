@@ -335,10 +335,15 @@ const meetingModeLabel = computed(() => {
               {{ preparationActionLabel }}
             </UButton>
           </template>
-          <div v-else class="context-card__empty">
-            <h2>Brak zaplanowanych spotkań</h2>
-            <p>Nowy termin pojawi się tutaj, gdy zostanie ustalony.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            compact
+            align="start"
+            icon="i-lucide-calendar-clock"
+            title="Brak zaplanowanych spotkań"
+            description="Nowy termin pojawi się tutaj, gdy zostanie ustalony."
+            title-tag="h2"
+          />
         </article>
 
         <article class="context-card context-card--expert">
@@ -373,10 +378,15 @@ const meetingModeLabel = computed(() => {
               Przejdź do wiadomości
             </UButton>
           </template>
-          <div v-else class="context-card__empty">
-            <h2>Ekspert nie jest jeszcze przypisany</h2>
-            <p>Pokażemy go tutaj, gdy rozpocznie prowadzenie sprawy.</p>
-          </div>
+          <OeEmptyState
+            v-else
+            compact
+            align="start"
+            icon="i-lucide-user-round-clock"
+            title="Ekspert nie jest jeszcze przypisany"
+            description="Pokażemy go tutaj, gdy rozpocznie prowadzenie sprawy."
+            title-tag="h2"
+          />
         </article>
       </section>
 
@@ -397,13 +407,14 @@ const meetingModeLabel = computed(() => {
             compact
           />
         </div>
-        <div v-else class="portal-dashboard__empty-cases">
-          <UIcon name="i-lucide-folder-clock" />
-          <div>
-            <h3>Nie masz jeszcze udostępnionej sprawy</h3>
-            <p>Gdy ekspert ją udostępni, pojawi się tutaj automatycznie.</p>
-          </div>
-        </div>
+        <OeEmptyState
+          v-else
+          compact
+          align="start"
+          icon="i-lucide-folder-clock"
+          title="Nie masz jeszcze udostępnionej sprawy"
+          description="Gdy ekspert ją udostępni, pojawi się tutaj automatycznie."
+        />
       </section>
     </main>
   </div>

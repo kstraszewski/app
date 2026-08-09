@@ -25,6 +25,7 @@ export {
   TEMPLATES,
 } from './templates/index.ts'
 export { validateTemplateJson } from './template-validation.ts'
+export { resolveTemplateFillMethod } from './types.ts'
 export {
   templateApplicantCapacity,
   templateApplicantCapacityIssues,
@@ -57,11 +58,15 @@ export type {
   PdfMarkAppearance,
   PdfPadding,
   PdfPageGeometry,
+  PdfFormKind,
+  PdfTemplateFillMethod,
   PdfTextAppearance,
   PreparedBundle,
   TemplateBinding,
   TemplateBindingSemanticContract,
   TemplateCoverage,
+  DeferredTemplateFillMethod,
+  TemplateFillMethod,
   TemplateMappingEvidence,
   TemplateMappingEvidenceAnchor,
   TemplateTarget,

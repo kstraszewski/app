@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { PDFDocument } from 'pdf-lib'
+import {
+  PDFCheckBox,
+  PDFDocument,
+  PDFTextField,
+  TextAlignment,
+} from 'pdf-lib'
 import {
   CANONICAL_COLLECTIONS,
   CANONICAL_FIELDS,
@@ -11,6 +17,7 @@ import {
   getTemplateBySourceSha256,
   getTemplates,
   prepareBundle,
+  resolveTemplateFillMethod,
   templateApplicantCapacity,
   templateApplicantCapacityIssues,
   validateTemplateJson,
@@ -40,10 +47,34 @@ test('creates a non-publishable template skeleton for any bank slug', async () =
 
   assert.equal(template.bank, 'mbank')
   assert.equal(template.source.pageCount, 1)
+  assert.deepEqual(template.fillMethod, { kind: 'pdf_overlay' })
   assert.equal(template.coverage.status, 'incomplete')
   assert.equal(validation.kind, 'document-template')
   assert.equal(validation.valid, true)
   assert.equal(validation.summary.activationReady, false)
+})
+
+test('creates an AcroForm completion contract when the source has native fields', async () => {
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage([420, 595])
+  pdf.getForm().createTextField('loan_amount').addToPage(page, {
+    x: 40,
+    y: 500,
+    width: 160,
+    height: 20,
+  })
+  const bytes = await pdf.save()
+  const template = await createTemplateSkeleton({
+    templateId: 'native-form-12345678',
+    bank: 'test-bank',
+    label: 'Native form',
+    fileName: 'native-form.pdf',
+    sha256: 'c'.repeat(64),
+    bytes,
+  })
+
+  assert.equal(template.source.formKind, 'acroform')
+  assert.deepEqual(template.fillMethod, { kind: 'pdf_acroform' })
 })
 
 const PAGE_GEOMETRY = {
@@ -89,12 +120,16 @@ const preciseTextTarget = (
   appearance: textAppearance(fontSizePt),
 })
 
-const completeValidationTemplate = (target: unknown, formKind = 'overlay') => ({
+const completeValidationTemplate = (
+  target: unknown,
+  formKind: DocumentTemplate['source']['formKind'] = 'overlay',
+) => ({
   schemaVersion: 2,
   id: 'validation-template',
   bank: 'erste',
   label: 'Template walidacyjny',
   version: 1,
+  fillMethod: resolveTemplateFillMethod({ source: { formKind } }),
   source: {
     fileName: 'validation-template.pdf',
     sha256: 'b'.repeat(64),
@@ -123,7 +158,7 @@ test('exposes a unique canonical catalog for the MVP form', () => {
   assert.ok(keys.includes('loan.amount'))
   assert.ok(keys.includes('property.address.houseNumber'))
   assert.ok(keys.includes('property.landRegisterNumber'))
-  assert.equal(applicantFields.length, 15)
+  assert.equal(applicantFields.length, 31)
   assert.deepEqual(
     [...new Set(applicantFields.map(field => field.collection?.index))],
     [0, 1, 2, 3, 4],
@@ -154,7 +189,14 @@ test('exposes a unique canonical catalog for the MVP form', () => {
       itemLabel: 'Wnioskodawca',
       minItems: 1,
       maxItems: 5,
-      requiredRelativeKeys: ['firstName', 'lastName', 'pesel'],
+      requiredRelativeKeys: [
+        'firstName',
+        'lastName',
+        'pesel',
+        'targetPropertyOwner',
+        'willOccupyFinancedProperty',
+        'lifeInsuranceSelected',
+      ],
     },
     {
       key: 'tranches',
@@ -163,6 +205,44 @@ test('exposes a unique canonical catalog for the MVP form', () => {
       minItems: 1,
       maxItems: 6,
       requiredRelativeKeys: ['date', 'amount', 'accountOwner'],
+    },
+    {
+      key: 'households',
+      label: 'Gospodarstwa domowe',
+      itemLabel: 'Gospodarstwo',
+      minItems: 1,
+      maxItems: 3,
+      requiredRelativeKeys: [
+        'monthlyDebtInstallments',
+        'outstandingDebt',
+        'otherFixedExpenses',
+        'externalCreditLimits',
+        'householdExpenses',
+      ],
+    },
+    {
+      key: 'liabilities',
+      label: 'Zobowiązania przeznaczone do spłaty',
+      itemLabel: 'Zobowiązanie',
+      minItems: 0,
+      maxItems: 11,
+      requiredRelativeKeys: [],
+    },
+    {
+      key: 'mortgageDischarges',
+      label: 'Obciążenia hipoteczne',
+      itemLabel: 'Hipoteka',
+      minItems: 0,
+      maxItems: 4,
+      requiredRelativeKeys: [],
+    },
+    {
+      key: 'collateralProperties',
+      label: 'Nieruchomości pod hipotekę',
+      itemLabel: 'Nieruchomość',
+      minItems: 1,
+      maxItems: 3,
+      requiredRelativeKeys: ['relationshipToFinancedProperty', 'hasLandRegister'],
     },
   ])
 })
@@ -174,18 +254,174 @@ test('registers the three curated PDF templates', () => {
   assert.equal(getTemplate('erste-mortgage-2026')?.source.formKind, 'overlay')
   assert.equal(getTemplate('pko-bp-mortgage-2022')?.source.formKind, 'acroform')
   assert.equal(getTemplate('pekao-mortgage-2025')?.source.pageCount, 6)
+  assert.deepEqual(getTemplate('erste-mortgage-2026')?.fillMethod, { kind: 'pdf_overlay' })
+  assert.deepEqual(getTemplate('pko-bp-mortgage-2022')?.fillMethod, { kind: 'pdf_acroform' })
+  assert.deepEqual(getTemplate('pekao-mortgage-2025')?.fillMethod, { kind: 'pdf_acroform' })
+})
+
+test('resolves legacy source.formKind through one public fill-method contract', () => {
+  const template = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  ))
+  const { fillMethod: _fillMethod, ...legacyTemplate } = template
+
+  assert.deepEqual(resolveTemplateFillMethod(legacyTemplate), { kind: 'pdf_overlay' })
+  assert.deepEqual(resolveTemplateFillMethod({ source: { formKind: 'acroform' } }), { kind: 'pdf_acroform' })
+  assert.deepEqual(resolveTemplateFillMethod({ source: { formKind: 'hybrid' } }), { kind: 'pdf_hybrid' })
+  const result = validateTemplateJson(legacyTemplate)
+  assert.equal(result.valid, true)
+  assert.equal(result.fillReady, true)
+  assert.ok(result.warnings.some(issue => (
+    issue.path === 'fillMethod' && issue.code === 'legacy_fill_method'
+  )))
+})
+
+test('rejects unknown or malformed completion methods at the domain boundary', () => {
+  const template = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  ))
+  const unknown = validateTemplateJson({
+    ...template,
+    fillMethod: { kind: 'email_attachment' },
+  })
+  assert.ok(unknown.errors.some(issue => (
+    issue.path === 'fillMethod.kind' && issue.code === 'invalid_fill_method_kind'
+  )))
+
+  const malformed = validateTemplateJson({
+    ...template,
+    fillMethod: 'pdf_overlay',
+  })
+  assert.ok(malformed.errors.some(issue => (
+    issue.path === 'fillMethod' && issue.code === 'invalid_fill_method'
+  )))
+})
+
+test('keeps future fill methods typed but non-activatable until handlers exist', () => {
+  for (const kind of ['web_form', 'api'] as const) {
+    const template = {
+      ...completeValidationTemplate(preciseTextTarget(
+        1,
+        { x: 120, y: 640, width: 180, height: 17 },
+      )),
+      fillMethod: { kind },
+    }
+    assert.deepEqual(resolveTemplateFillMethod(template), { kind })
+
+    const result = validateTemplateJson(template)
+    assert.equal(result.valid, true, kind)
+    assert.equal(result.fillReady, false, kind)
+    assert.equal(result.summary.activationReady, false, kind)
+    assert.ok(result.warnings.some(issue => (
+      issue.path === 'fillMethod.kind' && issue.code === 'fill_method_handler_unavailable'
+    )), kind)
+  }
+})
+
+test('rejects PDF fill methods that drift from source metadata or target kinds', () => {
+  const overlay = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  ))
+  const sourceMismatch = validateTemplateJson({
+    ...overlay,
+    fillMethod: { kind: 'pdf_acroform' },
+  })
+  assert.ok(sourceMismatch.errors.some(issue => issue.code === 'fill_method_source_mismatch'))
+
+  const acroBinding = {
+    ...overlay.bindings[0],
+    target: {
+      kind: 'acroform' as const,
+      field: 'loan_amount',
+      fieldType: 'text' as const,
+      expectedWidgets: [{
+        index: 0,
+        page: 1,
+        rect: { x: 120, y: 640, width: 180, height: 17 },
+      }],
+      text: { alignment: 'left' as const, multiline: false, comb: false },
+      appearance: textAppearance(),
+    },
+  }
+  const targetMismatch = validateTemplateJson({
+    ...overlay,
+    bindings: [acroBinding],
+  })
+  assert.ok(targetMismatch.errors.some(issue => issue.code === 'fill_method_target_mismatch'))
+
+  const { fillMethod: _fillMethod, ...legacyOverlay } = overlay
+  const legacyTargetMismatch = validateTemplateJson({
+    ...legacyOverlay,
+    bindings: [acroBinding],
+  })
+  assert.equal(legacyTargetMismatch.valid, true)
+  assert.equal(legacyTargetMismatch.fillReady, false)
+  assert.ok(legacyTargetMismatch.warnings.some(issue => (
+    issue.code === 'fill_method_target_mismatch'
+  )))
+})
+
+test('accepts pdf_hybrid only when both native and overlay targets are present', () => {
+  const overlay = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  ))
+  const acroTarget = {
+    kind: 'acroform',
+    field: 'loan_term',
+    fieldType: 'text',
+    expectedWidgets: [{
+      index: 0,
+      page: 1,
+      rect: { x: 120, y: 600, width: 180, height: 17 },
+    }],
+    text: { alignment: 'left', multiline: false, comb: false },
+    appearance: textAppearance(),
+  }
+  const hybrid = {
+    ...overlay,
+    fillMethod: { kind: 'pdf_hybrid' },
+    source: { ...overlay.source, formKind: 'hybrid' },
+    coverage: {
+      ...overlay.coverage,
+      inScopeTargetCount: 2,
+      mappedTargetCount: 2,
+    },
+    bindings: [
+      overlay.bindings[0],
+      {
+        canonicalKey: 'loan.termMonths',
+        reviewStatus: 'ready',
+        target: acroTarget,
+      },
+    ],
+  }
+
+  const valid = validateTemplateJson(hybrid)
+  assert.equal(valid.valid, true)
+  assert.equal(valid.fillReady, true)
+
+  const incompleteHybrid = validateTemplateJson({
+    ...hybrid,
+    coverage: overlay.coverage,
+    bindings: overlay.bindings,
+  })
+  assert.ok(incompleteHybrid.errors.some(issue => issue.code === 'fill_method_target_mismatch'))
 })
 
 test('computes applicant capacity per template without hiding index gaps', () => {
   const erste = getTemplate('erste-mortgage-2026')!
   const pko = getTemplate('pko-bp-mortgage-2022')!
   assert.equal(templateApplicantCapacity(erste), 5)
-  assert.equal(templateApplicantCapacity(pko), 2)
+  assert.equal(templateApplicantCapacity(pko), 4)
   assert.deepEqual(
-    templateApplicantCapacityIssues([erste, pko], 3).map(issue => issue.templateId),
+    templateApplicantCapacityIssues([erste, pko], 5).map(issue => issue.templateId),
     ['pko-bp-mortgage-2022'],
   )
-  assert.deepEqual(templateApplicantCapacityIssues([erste, pko], 2), [])
+  assert.deepEqual(templateApplicantCapacityIssues([erste, pko], 4), [])
 
   const withGap: DocumentTemplate = {
     ...erste,
@@ -357,15 +593,14 @@ test('validates optional per-binding semantic contracts without breaking legacy 
   assert.ok(result.errors.some(issue => issue.code === 'conflicting_semantic_hint'))
 })
 
-test('validates registered templates and exposes reviewed Erste as fill-ready', () => {
+test('validates every reviewed registered template as fill-ready', () => {
   for (const template of getTemplates()) {
     const result = validateTemplateJson(template)
-    const isErste = template.id === 'erste-mortgage-2026'
 
     assert.equal(result.kind, 'document-template', template.id)
     assert.equal(result.valid, true, template.id)
-    assert.equal(result.fillReady, isErste, template.id)
-    assert.equal(result.summary.activationReady, isErste, template.id)
+    assert.equal(result.fillReady, true, template.id)
+    assert.equal(result.summary.activationReady, true, template.id)
     assert.equal(result.summary.bindingCount, template.bindings.length, template.id)
     assert.equal(result.summary.mappedBindingCount, template.bindings.length, template.id)
     assert.equal(
@@ -377,7 +612,7 @@ test('validates registered templates and exposes reviewed Erste as fill-ready', 
     assert.deepEqual(result.errors, [], template.id)
     assert.equal(
       result.warnings.some(issue => issue.code === 'incomplete_coverage'),
-      !isErste,
+      false,
       template.id,
     )
   }
@@ -645,13 +880,19 @@ test('resolves a reviewed template only for an exact source PDF checksum', () =>
 
 test('uses verified AcroForm names and overlay coordinates', () => {
   const pko = getTemplate('pko-bp-mortgage-2022')!
-  const pkoAmount = pko.bindings.find((binding) => binding.canonicalKey === 'loan.amount')
-  assert.deepEqual(pkoAmount?.target, { kind: 'acroform', field: 'wnioskowany_kredyt' })
+  const pkoAmount = pko.bindings.find((binding) => (
+    binding.canonicalKey === 'loan.amount'
+    && binding.target.kind === 'acroform'
+    && binding.target.field === 'wnioskowany_kredyt'
+  ))
+  assert.equal(pkoAmount?.target.kind, 'acroform')
+  assert.equal(pkoAmount?.target.kind === 'acroform' ? pkoAmount.target.field : undefined, 'wnioskowany_kredyt')
 
   const pekaoKw = getTemplate('pekao-mortgage-2025')!.bindings.find(
     (binding) => binding.canonicalKey === 'property.landRegisterNumber',
   )
-  assert.deepEqual(pekaoKw?.target, { kind: 'acroform', field: 'Text Field 40' })
+  assert.equal(pekaoKw?.target.kind, 'acroform')
+  assert.equal(pekaoKw?.target.kind === 'acroform' ? pekaoKw.target.field : undefined, 'Text Field 40')
 
   const ersteApplicant = getTemplate('erste-mortgage-2026')!.bindings.find(
     (binding) => binding.canonicalKey === 'applicants.0.fullName',
@@ -687,7 +928,7 @@ test('uses verified AcroForm names and overlay coordinates', () => {
   ))?.target
   assert.equal(refinancingTarget?.kind, 'overlay')
   assert.deepEqual(
-    refinancingTarget?.kind === 'overlay'
+    refinancingTarget?.kind === 'overlay' && refinancingTarget.rendererVersion === 2
       ? { page: refinancingTarget.page, box: refinancingTarget.box }
       : undefined,
     { page: 2, box: { x: 63, y: 327, width: 17, height: 17 } },
@@ -714,31 +955,36 @@ test('prepareBundle merges canonical inputs and omits computed presentation fiel
   assert.ok(!keys.includes('applicants.0.fullName'))
   assert.ok(!keys.includes('property.address.full'))
   assert.ok(!keys.includes('property.address.houseAndUnit'))
-  assert.deepEqual(bundle.collections.map(collection => collection.key), ['applicants', 'tranches'])
+  assert.deepEqual(bundle.collections.map(collection => collection.key), [
+    'applicants',
+    'tranches',
+    'households',
+    'liabilities',
+    'mortgageDischarges',
+  ])
 })
 
-test('only fully reviewed source-form coverage is advertised as complete', () => {
+test('every curated source form has complete reviewed customer-field coverage', () => {
   const expectedCoverage = new Map([
     ['erste-mortgage-2026', { mapped: 106, total: 106 }],
-    ['pko-bp-mortgage-2022', { mapped: 43, total: 144 }],
-    ['pekao-mortgage-2025', { mapped: 34, total: 278 }],
+    ['pko-bp-mortgage-2022', { mapped: 144, total: 144 }],
+    ['pekao-mortgage-2025', { mapped: 278, total: 278 }],
   ])
 
   for (const template of getTemplates()) {
     const needsReviewCount = template.bindings.filter(binding => binding.reviewStatus === 'needsReview').length
     assert.ok(template.bindings.length > 0)
     assert.ok(template.bindings.every(binding => binding.target.kind !== 'unmapped'))
-    const isErste = template.id === 'erste-mortgage-2026'
     assert.equal(needsReviewCount, 0)
-    assert.equal(template.coverage.status, isErste ? 'complete' : 'incomplete')
+    assert.equal(template.coverage.status, 'complete')
     assert.equal(template.coverage.mappedTargetCount, expectedCoverage.get(template.id)?.mapped)
     assert.equal(template.coverage.inScopeTargetCount, expectedCoverage.get(template.id)?.total)
 
     const warnings = prepareBundle([template.id]).warnings
-    assert.equal(warnings.length, isErste ? 0 : 1)
+    assert.equal(warnings.length, 0)
     assert.equal(warnings.some(warning => (
       warning.canonicalKey === '__templateCoverage__' && warning.status === 'unmapped'
-    )), !isErste)
+    )), false)
   }
 })
 
@@ -761,10 +1007,12 @@ test('merges conditional other descriptions once and maps them in every applicab
   const purposeTargets = getTemplates().map(template => template.bindings.find(binding => (
     binding.canonicalKey === 'loan.purposeOther'
   ))?.target)
-  assert.deepEqual(purposeTargets, [
+  assert.deepEqual(purposeTargets.map(target => (
+    target?.kind === 'acroform' ? target.field : target
+  )), [
     preciseTextTarget(2, { x: 153, y: 383, width: 376, height: 17 }, 8.5),
-    { kind: 'acroform', field: 'inny_cel_opis' },
-    { kind: 'acroform', field: 'Text Field 29' },
+    'inny_cel_opis',
+    'Text Field 29',
   ])
 })
 
@@ -784,10 +1032,19 @@ test('uses one staged own-funds model and computes totals for simpler documents'
   ))
   assert.deepEqual(total?.valueFrom, [
     'investment.ownFundsPaid',
+    'investment.landValue',
+  ])
+  assert.equal(total?.valueFormat, 'currency.sum')
+  const remaining = pko.bindings.find(binding => (
+    binding.computed
+    && binding.target.kind === 'acroform'
+    && binding.target.field === 'wlasne_do_wniesienia_razem'
+  ))
+  assert.deepEqual(remaining?.valueFrom, [
     'investment.ownFundsBeforeDisbursement',
     'investment.ownFundsDuringInvestment',
   ])
-  assert.equal(total?.valueFormat, 'currency.sum')
+  assert.equal(remaining?.valueFormat, 'currency.sum')
 })
 
 test('Pekao requests only concepts present in that PDF and resolves conditional variants', () => {
@@ -805,20 +1062,175 @@ test('Pekao requests only concepts present in that PDF and resolves conditional 
 
   const permitTargets = pekao.bindings
     .filter(binding => binding.canonicalKey === 'loan.renovationPermit')
-    .map(binding => binding.target)
+    .map(binding => binding.target.kind === 'acroform'
+      ? { field: binding.target.field, valueMap: binding.target.valueMap }
+      : undefined)
   assert.deepEqual(permitTargets, [
-    { kind: 'acroform', field: 'C19', valueMap: { required: 'Yes' } },
-    { kind: 'acroform', field: 'C20', valueMap: { not_required: 'Yes' } },
+    { field: 'C19', valueMap: { required: 'Yes' } },
+    { field: 'C20', valueMap: { not_required: 'Yes' } },
   ])
-  assert.deepEqual(pekao.bindings.find(binding => (
+  const otherPurposeTarget = pekao.bindings.find(binding => (
     binding.canonicalKey === 'loan.purpose'
       && binding.target.kind === 'acroform'
       && binding.target.valueMap?.other
-  ))?.target, {
-    kind: 'acroform',
+  ))?.target
+  assert.deepEqual(otherPurposeTarget?.kind === 'acroform' ? {
+    field: otherPurposeTarget.field,
+    valueMap: otherPurposeTarget.valueMap,
+  } : undefined, {
     field: 'C31',
     valueMap: { other: 'Yes' },
   })
+})
+
+test('Pekao inventories every customer-facing AcroForm widget exactly once', async () => {
+  const sourceBytes = await readFile(new URL(
+    '../../../mock-files/pekao-wniosek-o-kredyt-mieszkaniowy.pdf',
+    import.meta.url,
+  ))
+  const source = await PDFDocument.load(sourceBytes, { updateMetadata: false })
+  const pages = source.getPages()
+  const pageByReference = new Map(pages.map((page, index) => [page.ref.toString(), index + 1]))
+  const pageByAnnotationReference = new Map<string, number>()
+  for (const [pageIndex, page] of pages.entries()) {
+    for (const annotation of page.node.Annots()?.asArray() ?? []) {
+      pageByAnnotationReference.set(annotation.toString(), pageIndex + 1)
+    }
+  }
+  const sourceFields = source.getForm().getFields()
+  const sourceFieldNames = sourceFields.map(field => field.getName())
+  const excludedBankFields = new Set([
+    'Text Field 1',
+    'Text Field 3',
+    'Text Field 120',
+    'Text Field 122',
+    'C101',
+    'C102',
+    'Text Field 123',
+    'Text Field 124',
+    'Text Field 125',
+  ])
+  const customerFieldNames = sourceFieldNames.filter(name => !excludedBankFields.has(name))
+  const pekao = getTemplate('pekao-mortgage-2025')!
+  const validation = validateTemplateJson(pekao)
+  const targetNames = pekao.bindings.map((binding) => {
+    assert.equal(binding.target.kind, 'acroform')
+    return binding.target.kind === 'acroform' ? binding.target.field : ''
+  })
+
+  assert.equal(sourceFields.length, 287)
+  assert.equal(sourceFields.reduce((count, field) => (
+    count + field.acroField.getWidgets().length
+  ), 0), 287)
+  assert.equal(customerFieldNames.length, 278)
+  assert.equal(pekao.version, 3)
+  assert.equal(pekao.coverage.status, 'complete')
+  assert.equal(pekao.coverage.mappedTargetCount, 278)
+  assert.equal(validation.valid, true)
+  assert.equal(validation.fillReady, true)
+  assert.equal(validation.summary.activationReady, true)
+  assert.deepEqual(validation.errors, [])
+  assert.deepEqual(validation.warnings, [])
+  assert.equal(targetNames.length, 278)
+  assert.equal(new Set(targetNames).size, 278)
+  assert.deepEqual(
+    [...customerFieldNames].sort((left, right) => left.localeCompare(right)),
+    [...targetNames].sort((left, right) => left.localeCompare(right)),
+  )
+  assert.deepEqual(targetNames.filter(name => excludedBankFields.has(name)), [])
+
+  const targetsByField = new Map(pekao.bindings.map((binding) => {
+    assert.equal(binding.target.kind, 'acroform')
+    return [binding.target.kind === 'acroform' ? binding.target.field : '', binding.target]
+  }))
+  for (const field of sourceFields) {
+    if (excludedBankFields.has(field.getName())) continue
+    const target = targetsByField.get(field.getName())
+    assert.equal(target?.kind, 'acroform')
+    if (target?.kind !== 'acroform') continue
+
+    const expectedType = field instanceof PDFTextField
+      ? 'text'
+      : field instanceof PDFCheckBox
+        ? 'checkbox'
+        : undefined
+    assert.ok(expectedType, `Unsupported source field type: ${field.getName()}`)
+    assert.equal(target.fieldType, expectedType, field.getName())
+    assert.equal(target.expectedWidgets?.length, 1, field.getName())
+
+    const widget = field.acroField.getWidgets()[0]!
+    const annotationReference = source.context.getObjectRef(widget.dict)
+    const page = widget.P()
+      ? pageByReference.get(widget.P()!.toString())
+      : annotationReference
+        ? pageByAnnotationReference.get(annotationReference.toString())
+        : undefined
+    const rect = widget.getRectangle()
+    assert.deepEqual(target.expectedWidgets?.[0], {
+      index: 0,
+      page,
+      rect: {
+        x: Number(rect.x.toFixed(2)),
+        y: Number(rect.y.toFixed(2)),
+        width: Number(rect.width.toFixed(2)),
+        height: Number(rect.height.toFixed(2)),
+      },
+      ...(field instanceof PDFCheckBox && widget.getOnValue()
+        ? { exportValue: widget.getOnValue()!.decodeText() }
+        : {}),
+    }, field.getName())
+
+    if (field instanceof PDFTextField) {
+      const alignment = field.getAlignment() === TextAlignment.Center
+        ? 'center'
+        : field.getAlignment() === TextAlignment.Right
+          ? 'right'
+          : 'left'
+      assert.deepEqual(target.text, {
+        alignment,
+        multiline: field.isMultiline(),
+        comb: field.isCombed(),
+        ...(field.getMaxLength() !== undefined ? { maxLength: field.getMaxLength() } : {}),
+      }, field.getName())
+      assert.equal(target.appearance?.kind, 'text', field.getName())
+      if (target.appearance?.kind === 'text') {
+        assert.equal(target.appearance.horizontalAlign, alignment, field.getName())
+        assert.equal(target.appearance.wrap, field.isMultiline() ? 'word' : 'none', field.getName())
+      }
+    }
+    else {
+      assert.equal(target.appearance?.kind, 'mark', field.getName())
+      if (target.appearance?.kind === 'mark') {
+        assert.equal(target.appearance.role, 'checkbox', field.getName())
+      }
+    }
+  }
+})
+
+test('Pekao checkbox mappings use declared canonical option values', () => {
+  const pekao = getTemplate('pekao-mortgage-2025')!
+  const definitions = new Map<string, (typeof CANONICAL_FIELDS)[number]>(
+    CANONICAL_FIELDS.map(field => [field.canonicalKey, field]),
+  )
+
+  for (const binding of pekao.bindings) {
+    if (binding.computed || binding.target.kind !== 'acroform') continue
+    const definition = definitions.get(binding.canonicalKey)
+    assert.ok(definition, `Missing canonical definition for ${binding.canonicalKey}`)
+    if (!binding.target.valueMap) continue
+
+    const mappedValues = Object.keys(binding.target.valueMap)
+    if (definition.type === 'boolean') {
+      assert.ok(mappedValues.every(value => value === 'true' || value === 'false'))
+      continue
+    }
+
+    assert.equal(definition.type, 'select', binding.canonicalKey)
+    const allowedValues = new Set(definition.options?.map(option => option.value))
+    for (const value of mappedValues) {
+      assert.ok(allowedValues.has(value), `${binding.canonicalKey}: ${value}`)
+    }
+  }
 })
 
 test('prepareBundle de-duplicates template ids and rejects unknown templates', () => {

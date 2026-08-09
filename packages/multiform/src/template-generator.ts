@@ -6,6 +6,7 @@ import {
   type CanonicalBindingKey,
 } from './canonical-fields.ts'
 import { MULTIFORM_MODEL_DEFINITIONS } from './model-definitions.ts'
+import { resolveTemplateFillMethod } from './types.ts'
 import type {
   CanonicalComputedBindingDefinition,
   CanonicalFieldDefinition,
@@ -558,17 +559,19 @@ export async function createTemplateSkeleton(input: {
   bytes: Uint8Array
 }): Promise<DocumentTemplate> {
   const extraction = await extractPdf(input.bytes)
+  const formKind = extraction.hasAcroForm ? 'acroform' as const : 'overlay' as const
   return {
     schemaVersion: 2,
     id: input.templateId,
     bank: input.bank,
     label: input.label,
     version: 1,
+    fillMethod: resolveTemplateFillMethod({ source: { formKind } }),
     source: {
       fileName: input.fileName,
       sha256: input.sha256,
       pageCount: extraction.pages.length,
-      formKind: extraction.hasAcroForm ? 'acroform' : 'overlay',
+      formKind,
       pages: extraction.pages.map(page => ({
         page: page.page,
         mediaBox: page.mediaBox,
@@ -939,6 +942,7 @@ ${compactExtraction(extraction)}`,
     version: 1,
     bank,
     label: baseName.replaceAll('-', ' '),
+    fillMethod: resolveTemplateFillMethod({ source: { formKind } }),
     source: {
       fileName,
       sha256,

@@ -141,6 +141,7 @@ export const ERSTE_TEMPLATE: DocumentTemplate = {
   bank: 'erste',
   label: 'Erste - wniosek o udzielenie kredytu hipotecznego',
   version: 1,
+  fillMethod: { kind: 'pdf_overlay' },
   source: {
     fileName: 'erste-wniosek-o-kredyt-hipoteczny.pdf',
     sha256: '9306c74080327f7114dfb0c55a57db875cbecdad6e8442d0b69f02ceb44a449d',
@@ -294,11 +295,11 @@ export const ERSTE_TEMPLATE: DocumentTemplate = {
     mark('application.submissionChannel', 'agent_or_partner', 7, 342),
     mark('intermediary.kind', 'intermediary_or_partner', 7, 508),
     text('intermediary.name', 7, 167, 525, 362, 8.5),
-    text('intermediary.email', 7, 181, 543, 348, 8.5),
-    text('intermediary.phone', 7, 127, 560, 402, 8.5),
-    text('intermediary.acceptingPerson', 7, 261, 578, 268, 8.5),
+    text('intermediary.email', 7, 252, 543, 277, 8.5),
+    text('intermediary.phone', 7, 134, 560, 395, 8.5),
+    text('intermediary.acceptingPerson', 7, 365, 578, 164, 8.5),
     mark('intermediary.kind', 'bank_agent', 7, 601),
-    text('intermediary.agentName', 7, 178, 619, 351, 8.5),
+    text('intermediary.agentName', 7, 216, 619, 313, 8.5),
     mark('declarations.art17Information', 'true', 7, 738),
     mark('declarations.art17Information', 'false', 7, 761),
 

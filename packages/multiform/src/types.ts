@@ -48,7 +48,15 @@ export interface CanonicalFieldDefinition {
   canonicalKey: string
   label: string
   type: CanonicalFieldType
-  group: 'application' | 'applicants' | 'loan' | 'investment' | 'property'
+  group:
+    | 'application'
+    | 'applicants'
+    | 'loan'
+    | 'investment'
+    | 'property'
+    | 'household'
+    | 'liabilities'
+    | 'declarations'
   form: CanonicalFieldFormDefinition
   semanticDescription: string
   semanticRole: string
@@ -60,6 +68,7 @@ export interface CanonicalFieldDefinition {
   requiredWhen?: FieldCondition
   validation?: {
     pattern?: string
+    maxLength?: number
     min?: number
     max?: number
     integer?: boolean
@@ -225,6 +234,9 @@ export type BindingCondition = FieldCondition
 
 export type ValueFormat =
   | 'date.ddMMyyyy'
+  | 'date.day'
+  | 'date.month'
+  | 'date.year'
   | 'application.placeAndDate'
   | 'currency.sum'
   | 'fullName'
@@ -233,6 +245,9 @@ export type ValueFormat =
   | 'landRegister.part1'
   | 'landRegister.part2'
   | 'landRegister.part3'
+  | 'fraction.numerator'
+  | 'fraction.denominator'
+  | 'bankAccount.nrb'
 
 export interface TemplateMappingEvidenceAnchor {
   kind: 'section' | 'label' | 'ordinal' | 'nearby-text' | 'acroform-name'
@@ -289,6 +304,26 @@ export interface TemplateCoverage {
   notes?: readonly string[]
 }
 
+/**
+ * Domain contract describing how a template is completed.
+ *
+ * The PDF variants are supported by the current renderer. `web_form` and
+ * `api` reserve stable domain identifiers for future handlers; validation
+ * keeps them non-activatable until those handlers exist.
+ */
+export type PdfFormKind = 'acroform' | 'overlay' | 'hybrid'
+
+export type PdfTemplateFillMethod =
+  | { kind: 'pdf_acroform' }
+  | { kind: 'pdf_overlay' }
+  | { kind: 'pdf_hybrid' }
+
+export type DeferredTemplateFillMethod =
+  | { kind: 'web_form' }
+  | { kind: 'api' }
+
+export type TemplateFillMethod = PdfTemplateFillMethod | DeferredTemplateFillMethod
+
 export interface DocumentTemplate {
   schemaVersion: 2
   id: string
@@ -296,16 +331,36 @@ export interface DocumentTemplate {
   bank: string
   label: string
   version: number
+  /**
+   * Explicit completion contract. Optional only for records persisted before
+   * this field existed; their PDF method is derived from `source.formKind`.
+   */
+  fillMethod?: TemplateFillMethod
   source: {
     fileName: string
     sha256: string
     pageCount: number
-    formKind: 'acroform' | 'overlay' | 'hybrid'
+    /** @deprecated Compatibility metadata; use `fillMethod.kind` for routing. */
+    formKind: PdfFormKind
     pages: readonly PdfPageGeometry[]
   }
   coverage: TemplateCoverage
   overlayOrigin?: 'top-left' | 'bottom-left'
   bindings: readonly TemplateBinding[]
+}
+
+/** Resolves legacy PDF metadata to the explicit completion contract. */
+export function resolveTemplateFillMethod(
+  template: {
+    fillMethod?: TemplateFillMethod
+    source: Pick<DocumentTemplate['source'], 'formKind'>
+  },
+): TemplateFillMethod {
+  if (template.fillMethod) return template.fillMethod
+
+  if (template.source.formKind === 'acroform') return { kind: 'pdf_acroform' }
+  if (template.source.formKind === 'hybrid') return { kind: 'pdf_hybrid' }
+  return { kind: 'pdf_overlay' }
 }
 
 export interface BundleWarning {

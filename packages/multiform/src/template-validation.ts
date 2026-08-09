@@ -2,9 +2,12 @@ import {
   CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
 } from './canonical-fields.ts'
+import { resolveTemplateFillMethod } from './types.ts'
 import type {
   CanonicalComputedBindingDefinition,
   CanonicalFieldDefinition,
+  PdfFormKind,
+  PdfTemplateFillMethod,
 } from './types.ts'
 
 export type TemplateJsonKind = 'document-template' | 'generated-draft' | 'unknown'
@@ -74,6 +77,9 @@ const canonicalOptions = new Map<string, Set<string>>(canonicalFields.map(field 
 ]))
 const valueFormats = new Set([
   'date.ddMMyyyy',
+  'date.day',
+  'date.month',
+  'date.year',
   'application.placeAndDate',
   'currency.sum',
   'fullName',
@@ -82,7 +88,25 @@ const valueFormats = new Set([
   'landRegister.part1',
   'landRegister.part2',
   'landRegister.part3',
+  'fraction.numerator',
+  'fraction.denominator',
+  'bankAccount.nrb',
 ])
+const pdfFillMethodKinds = new Set([
+  'pdf_acroform',
+  'pdf_overlay',
+  'pdf_hybrid',
+])
+const deferredFillMethodKinds = new Set([
+  'web_form',
+  'api',
+])
+
+type PdfFillMethodKind = PdfTemplateFillMethod['kind']
+
+function pdfFillMethodForFormKind(formKind: PdfFormKind): PdfFillMethodKind {
+  return resolveTemplateFillMethod({ source: { formKind } }).kind as PdfFillMethodKind
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -790,6 +814,38 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   if (!isNonEmptyString(input.label)) pushIssue(errors, 'label', 'missing_label', 'Template wymaga etykiety.')
   if (!isPositiveInteger(input.version)) pushIssue(errors, 'version', 'invalid_version', 'Wersja musi być dodatnią liczbą całkowitą.')
 
+  let effectivePdfFillMethod: PdfFillMethodKind | undefined
+  let fillMethodRuntimeSupported = false
+  if (input.fillMethod !== undefined) {
+    if (!isRecord(input.fillMethod)) {
+      pushIssue(errors, 'fillMethod', 'invalid_fill_method', 'Metoda uzupełniania musi być obiektem.')
+    }
+    else if (!isNonEmptyString(input.fillMethod.kind)) {
+      pushIssue(errors, 'fillMethod.kind', 'missing_fill_method_kind', 'Metoda uzupełniania wymaga pola kind.')
+    }
+    else if (pdfFillMethodKinds.has(input.fillMethod.kind)) {
+      effectivePdfFillMethod = input.fillMethod.kind as PdfFillMethodKind
+      fillMethodRuntimeSupported = true
+    }
+    else if (deferredFillMethodKinds.has(input.fillMethod.kind)) {
+      pushIssue(
+        warnings,
+        'fillMethod.kind',
+        'fill_method_handler_unavailable',
+        `Metoda ${input.fillMethod.kind} jest zarezerwowana, ale nie ma jeszcze aktywnego handlera.`,
+        'warning',
+      )
+    }
+    else {
+      pushIssue(
+        errors,
+        'fillMethod.kind',
+        'invalid_fill_method_kind',
+        'Obsługiwane metody to pdf_acroform, pdf_overlay, pdf_hybrid, web_form i api.',
+      )
+    }
+  }
+
   if (kind === 'document-template') {
     if (!isNonEmptyString(input.bank) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(input.bank)) {
       pushIssue(errors, 'bank', 'invalid_bank', 'Aktywny template musi wskazywać poprawny slug banku.')
@@ -801,6 +857,7 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
 
   const source = isRecord(input.source) ? input.source : undefined
   let pageCount: number | undefined
+  let sourceFormKind: PdfFormKind | undefined
   const sourcePages = new Map<number, Record<string, unknown>>()
   if (!source) {
     pushIssue(errors, 'source', 'missing_source', 'Template wymaga metadanych źródłowego PDF-u.')
@@ -819,6 +876,7 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     if (!['acroform', 'overlay', 'hybrid'].includes(String(source.formKind))) {
       pushIssue(errors, 'source.formKind', 'invalid_form_kind', 'formKind musi mieć wartość acroform, overlay albo hybrid.')
     }
+    else sourceFormKind = source.formKind as PdfFormKind
     if (!Array.isArray(source.pages)) {
       pushIssue(errors, 'source.pages', 'missing_page_geometry', 'Schema V2 wymaga geometrii każdej strony PDF-u.')
     }
@@ -849,6 +907,30 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
         }
       }
     }
+  }
+
+  if (input.fillMethod === undefined && sourceFormKind) {
+    effectivePdfFillMethod = pdfFillMethodForFormKind(sourceFormKind)
+    fillMethodRuntimeSupported = true
+    pushIssue(
+      warnings,
+      'fillMethod',
+      'legacy_fill_method',
+      'Metodę uzupełniania wyprowadzono ze starszego source.formKind; przy następnym zapisie utrwal fillMethod.',
+      'warning',
+    )
+  }
+  else if (
+    effectivePdfFillMethod
+    && sourceFormKind
+    && effectivePdfFillMethod !== pdfFillMethodForFormKind(sourceFormKind)
+  ) {
+    pushIssue(
+      errors,
+      'fillMethod.kind',
+      'fill_method_source_mismatch',
+      'Metoda uzupełniania PDF nie odpowiada source.formKind.',
+    )
   }
 
   if (input.overlayOrigin !== undefined && !['top-left', 'bottom-left'].includes(String(input.overlayOrigin))) {
@@ -909,6 +991,8 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   let needsReviewCount = 0
   let unmappedCount = 0
   let auditableTargetCount = 0
+  let acroFormTargetCount = 0
+  let overlayTargetCount = 0
   const targetOwners = new Map<string, number>()
   const duplicateSignatures = new Set<string>()
 
@@ -1012,6 +1096,8 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     )
     if (target.kind === 'unmapped') unmappedCount += 1
     if (target.kind === 'acroform' || target.kind === 'overlay') mappedBindingCount += 1
+    if (target.kind === 'acroform') acroFormTargetCount += 1
+    if (target.kind === 'overlay') overlayTargetCount += 1
     if (target.auditable === true) auditableTargetCount += 1
     if (rawBinding.reviewStatus === 'needsReview') needsReviewCount += 1
     if (
@@ -1045,9 +1131,49 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     )
   }
 
+  const fillMethodTargetIssues = input.fillMethod === undefined ? warnings : errors
+  const fillMethodTargetSeverity = input.fillMethod === undefined ? 'warning' as const : 'error' as const
+  let fillMethodTargetsCompatible = true
+
+  if (effectivePdfFillMethod === 'pdf_acroform' && overlayTargetCount > 0) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      fillMethodTargetIssues,
+      input.fillMethod === undefined ? 'source.formKind' : 'fillMethod.kind',
+      'fill_method_target_mismatch',
+      'Metoda pdf_acroform nie może zawierać targetów overlay.',
+      fillMethodTargetSeverity,
+    )
+  }
+  else if (effectivePdfFillMethod === 'pdf_overlay' && acroFormTargetCount > 0) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      fillMethodTargetIssues,
+      input.fillMethod === undefined ? 'source.formKind' : 'fillMethod.kind',
+      'fill_method_target_mismatch',
+      'Metoda pdf_overlay nie może zawierać targetów AcroForm.',
+      fillMethodTargetSeverity,
+    )
+  }
+  else if (
+    effectivePdfFillMethod === 'pdf_hybrid'
+    && (acroFormTargetCount === 0 || overlayTargetCount === 0)
+  ) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      fillMethodTargetIssues,
+      input.fillMethod === undefined ? 'source.formKind' : 'fillMethod.kind',
+      'fill_method_target_mismatch',
+      'Metoda pdf_hybrid wymaga co najmniej jednego targetu AcroForm i jednego targetu overlay.',
+      fillMethodTargetSeverity,
+    )
+  }
+
   const valid = errors.length === 0
   const activationReady = kind === 'document-template'
     && valid
+    && fillMethodRuntimeSupported
+    && fillMethodTargetsCompatible
     && coverageComplete
     && needsReviewCount === 0
     && unmappedCount === 0

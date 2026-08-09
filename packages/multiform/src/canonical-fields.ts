@@ -19,11 +19,106 @@ const PURPOSE_OPTIONS = [
   { value: 'family_construction', label: 'Rodzinny kredyt: budowa domu' },
   { value: 'family_renovation', label: 'Rodzinny kredyt: remont lub wykończenie' },
   { value: 'mortgage_loan', label: 'Pożyczka hipoteczna' },
+  { value: 'finishing', label: 'Wykończenie lub wyposażenie' },
+  { value: 'extension', label: 'Nadbudowa lub rozbudowa' },
+  { value: 'conversion_to_residential', label: 'Przebudowa na cele mieszkalne' },
+  { value: 'purchase_land', label: 'Zakup nieruchomości gruntowej' },
+  { value: 'convert_cooperative_right', label: 'Przekształcenie prawa lokatorskiego w odrębną własność' },
+  { value: 'municipal_purchase', label: 'Wykup mieszkania komunalnego lub zakładowego' },
+  { value: 'garage_purchase', label: 'Zakup garażu lub miejsca postojowego' },
+  { value: 'acquire_rights_from_individual', label: 'Nabycie praw od osoby fizycznej' },
+  { value: 'purchase_share', label: 'Zakup udziału prowadzący do pełnej własności' },
+  { value: 'adaptation_to_residential', label: 'Adaptacja pomieszczenia na cele mieszkalne' },
+  { value: 'purchase_with_renovation', label: 'Zakup wraz z remontem lub modernizacją' },
+  { value: 'acquire_construction_rights', label: 'Nabycie praw do inwestycji w budowie' },
+  { value: 'refinance_with_renovation_no_permit', label: 'Refinansowanie z remontem bez pozwolenia' },
+  { value: 'refinance_with_renovation_permit', label: 'Refinansowanie z remontem wymagającym pozwolenia' },
+  { value: 'share_purchase_with_renovation_no_permit', label: 'Zakup udziału z remontem bez pozwolenia' },
+  { value: 'share_purchase_with_renovation_permit', label: 'Zakup udziału z remontem wymagającym pozwolenia' },
 ] as const
 
 const COMMISSION_OPTIONS = [
   { value: 'financed', label: 'Kredytowana' },
   { value: 'not_financed', label: 'Niekredytowana' },
+  { value: 'not_applicable', label: 'Nie dotyczy' },
+] as const
+
+const LOAN_PRODUCT_OPTIONS = [
+  { value: 'mortgage', label: 'Kredyt hipoteczny lub mieszkaniowy' },
+  { value: 'construction_mortgage', label: 'Kredyt budowlano-hipoteczny' },
+  { value: 'mortgage_loan', label: 'Pożyczka hipoteczna' },
+  { value: 'other', label: 'Inny produkt kredytowy' },
+] as const
+
+const LOAN_PRODUCT_VARIANT_OPTIONS = [
+  { value: 'own_home_mortgage', label: 'PKO BP Własny Kąt hipoteczny' },
+  { value: 'mix_mortgage', label: 'PKO BP MIX' },
+] as const
+
+const REPAYMENT_ACCOUNT_OPTIONS = [
+  { value: 'existing_personal_account', label: 'Posiadany rachunek osobisty' },
+  { value: 'new_personal_account', label: 'Nowy rachunek osobisty' },
+  { value: 'technical_account', label: 'Rachunek techniczny' },
+] as const
+
+const COLLATERAL_RELATIONSHIP_OPTIONS = [
+  { value: 'financed', label: 'Nieruchomość kredytowana' },
+  { value: 'other', label: 'Inna nieruchomość' },
+] as const
+
+const PUBLIC_ROAD_ACCESS_OPTIONS = [
+  { value: 'direct', label: 'Bezpośredni dostęp' },
+  { value: 'easement', label: 'Poprzez służebność drogową' },
+  { value: 'road_property_share', label: 'Poprzez udział w nieruchomości drogowej' },
+] as const
+
+const APPRAISER_OPTIONS = [
+  { value: 'bank_partner_network', label: 'Rzeczoznawca ze współpracującej sieci banku' },
+  { value: 'other', label: 'Inny rzeczoznawca' },
+] as const
+
+const PROPERTY_OWNERSHIP_OPTIONS = [
+  { value: 'apartment_ownership', label: 'Własność lokalu' },
+  { value: 'house_ownership', label: 'Własność domu' },
+  { value: 'land_right', label: 'Prawo do gruntu' },
+  { value: 'cooperative_ownership_right', label: 'Spółdzielcze własnościowe prawo' },
+  { value: 'municipal_or_company', label: 'Prawo komunalne lub zakładowe' },
+] as const
+
+const YES_NO_NOT_APPLICABLE_OPTIONS = [
+  { value: 'yes', label: 'Tak' },
+  { value: 'no', label: 'Nie' },
+  { value: 'not_applicable', label: 'Nie dotyczy' },
+] as const
+
+const PROPERTY_OWNERSHIP_SEQUENCE_OPTIONS = [
+  { value: 'first', label: 'Pierwsza nabywana nieruchomość' },
+  { value: 'next', label: 'Kolejna nabywana nieruchomość' },
+] as const
+
+const MORTGAGE_ESTABLISHMENT_OPTIONS = [
+  { value: 'notarial_deed', label: 'Akt notarialny' },
+  { value: 'banking_law_article_95', label: 'Oświadczenie banku na podstawie art. 95 Prawa bankowego' },
+] as const
+
+const APPRAISAL_SOURCE_OPTIONS = [
+  { value: 'bank_provider', label: 'Wycena zlecona przez bank' },
+  { value: 'self_provided', label: 'Wycena dostarczona przez klienta' },
+] as const
+
+const LOAN_RISK_VARIANT_OPTIONS = [
+  { value: 'variable_interest', label: 'Kredyt ze zmienną stopą procentową' },
+  { value: 'currency_indexed', label: 'Kredyt indeksowany do waluty obcej' },
+  { value: 'periodically_fixed', label: 'Kredyt z okresowo stałą stopą procentową' },
+] as const
+
+const MORTGAGE_SETTLEMENT_OPTIONS = [
+  { value: 'paid_docs_delivered', label: 'Spłacona, dokumenty do wykreślenia dostarczone' },
+  { value: 'paid_docs_not_delivered', label: 'Spłacona, dokumenty do wykreślenia niedostarczone' },
+  { value: 'repay_own_funds', label: 'Spłata ze środków własnych' },
+  { value: 'repay_credit', label: 'Spłata z kredytu' },
+  { value: 'repay_own_and_credit', label: 'Spłata ze środków własnych i kredytu' },
+  { value: 'not_repaid', label: 'Nie zostanie spłacona' },
 ] as const
 
 const SUBMISSION_CHANNEL_OPTIONS = [
@@ -66,6 +161,11 @@ const PROPERTY_TYPE_OPTIONS = [
   { value: 'house', label: 'Dom' },
   { value: 'apartment', label: 'Mieszkanie' },
   { value: 'plot', label: 'Działka' },
+  { value: 'garage', label: 'Garaż' },
+  { value: 'parking_space', label: 'Miejsce postojowe' },
+  { value: 'agricultural_land', label: 'Grunty rolne' },
+  { value: 'multi_family_building', label: 'Dom wielomieszkaniowy' },
+  { value: 'recreational_plot', label: 'Działka rekreacyjna' },
   { value: 'other', label: 'Inna nieruchomość' },
 ] as const
 
@@ -110,9 +210,46 @@ function defineField<TCanonicalKey extends string>(
   }
 }
 
+type CompactFieldInput<TCanonicalKey extends string> = Omit<
+  SemanticFieldInput<TCanonicalKey>,
+  'question' | 'semanticDescription' | 'semanticRole' | 'aliases' | 'exclude'
+> & {
+  question?: string
+  semanticDescription?: string
+  semanticRole?: string
+  aliases?: readonly string[]
+  exclude?: readonly string[]
+}
+
+function defineCompactField<const TCanonicalKey extends string>(
+  input: CompactFieldInput<TCanonicalKey>,
+): CanonicalFieldDefinition & { canonicalKey: TCanonicalKey } {
+  const {
+    question,
+    semanticDescription,
+    semanticRole,
+    aliases,
+    exclude,
+    ...field
+  } = input
+
+  return defineField({
+    ...field,
+    question: question ?? field.label,
+    semanticDescription: semanticDescription ?? `${field.label} podawane przez klienta na potrzeby formularza bankowego.`,
+    semanticRole: semanticRole ?? `mortgageApplication.${field.canonicalKey}`,
+    aliases: aliases ?? [field.label],
+    exclude: exclude ?? [],
+  })
+}
+
 export const APPLICANT_INDEXES = [0, 1, 2, 3, 4] as const
 export const MAX_APPLICANTS = APPLICANT_INDEXES.length
 export const TRANCHE_INDEXES = [0, 1, 2, 3, 4, 5] as const
+export const HOUSEHOLD_INDEXES = [0, 1, 2] as const
+export const LIABILITY_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+export const MORTGAGE_DISCHARGE_INDEXES = [0, 1, 2, 3] as const
+export const COLLATERAL_PROPERTY_INDEXES = [0, 1, 2] as const
 
 type ApplicantIndex = typeof APPLICANT_INDEXES[number]
 type ApplicantRelativeKey = 'firstName' | 'lastName' | 'pesel'
@@ -254,7 +391,14 @@ export const CANONICAL_COLLECTIONS = [
     itemLabel: 'Wnioskodawca',
     minItems: 1,
     maxItems: MAX_APPLICANTS,
-    requiredRelativeKeys: ['firstName', 'lastName', 'pesel'],
+    requiredRelativeKeys: [
+      'firstName',
+      'lastName',
+      'pesel',
+      'targetPropertyOwner',
+      'willOccupyFinancedProperty',
+      'lifeInsuranceSelected',
+    ],
   },
   {
     key: 'tranches',
@@ -263,6 +407,44 @@ export const CANONICAL_COLLECTIONS = [
     minItems: 1,
     maxItems: TRANCHE_INDEXES.length,
     requiredRelativeKeys: ['date', 'amount', 'accountOwner'],
+  },
+  {
+    key: 'households',
+    label: 'Gospodarstwa domowe',
+    itemLabel: 'Gospodarstwo',
+    minItems: 1,
+    maxItems: HOUSEHOLD_INDEXES.length,
+    requiredRelativeKeys: [
+      'monthlyDebtInstallments',
+      'outstandingDebt',
+      'otherFixedExpenses',
+      'externalCreditLimits',
+      'householdExpenses',
+    ],
+  },
+  {
+    key: 'liabilities',
+    label: 'Zobowiązania przeznaczone do spłaty',
+    itemLabel: 'Zobowiązanie',
+    minItems: 0,
+    maxItems: LIABILITY_INDEXES.length,
+    requiredRelativeKeys: [],
+  },
+  {
+    key: 'mortgageDischarges',
+    label: 'Obciążenia hipoteczne',
+    itemLabel: 'Hipoteka',
+    minItems: 0,
+    maxItems: MORTGAGE_DISCHARGE_INDEXES.length,
+    requiredRelativeKeys: [],
+  },
+  {
+    key: 'collateralProperties',
+    label: 'Nieruchomości pod hipotekę',
+    itemLabel: 'Nieruchomość',
+    minItems: 1,
+    maxItems: COLLATERAL_PROPERTY_INDEXES.length,
+    requiredRelativeKeys: ['relationshipToFinancedProperty', 'hasLandRegister'],
   },
 ] as const satisfies readonly CanonicalCollectionDefinition[]
 
@@ -351,6 +533,262 @@ const TRANCHE_FIELDS = TRANCHE_INDEXES.flatMap((index) => {
   ]
 })
 
+const BANK_APPLICANT_INDEXES = [0, 1, 2, 3] as const
+
+const EXTENDED_APPLICANT_FIELDS = BANK_APPLICANT_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'applicants',
+    index,
+    displayIndex,
+    relativeKey,
+    label,
+  })
+  return [
+    defineField({
+      canonicalKey: `applicants.${index}.targetPropertyOwner` as `applicants.${typeof index}.targetPropertyOwner`,
+      label: `Właściciel nieruchomości docelowej — wnioskodawca ${displayIndex}`,
+      type: 'boolean',
+      group: 'applicants',
+      question: `Czy wnioskodawca ${displayIndex} jest lub będzie właścicielem kredytowanej nieruchomości?`,
+      semanticDescription: `Informacja, czy wnioskodawca nr ${displayIndex} jest lub będzie właścicielem przedmiotu kredytowania.`,
+      semanticRole: 'person.property.target.owner',
+      aliases: ['właściciel nieruchomości kredytowanej'],
+      exclude: ['właściciel rachunku'],
+      collection: collection('targetPropertyOwner', 'Właściciel nieruchomości'),
+    }),
+    defineField({
+      canonicalKey: `applicants.${index}.sharedHouseholdWithApplicantNumber` as `applicants.${typeof index}.sharedHouseholdWithApplicantNumber`,
+      label: `Wspólne gospodarstwo — wnioskodawca ${displayIndex}`,
+      type: 'text',
+      group: 'applicants',
+      question: `Podaj numer wnioskodawcy prowadzącego wspólne gospodarstwo z osobą ${displayIndex}`,
+      helpText: 'Pozostaw puste, jeżeli osoba prowadzi odrębne gospodarstwo domowe.',
+      semanticDescription: `Numer innego wnioskodawcy, z którym osoba nr ${displayIndex} prowadzi wspólne gospodarstwo domowe.`,
+      semanticRole: 'person.household.sharedWithApplicantNumber',
+      aliases: ['numer wspólnego gospodarstwa', 'wspólne gospodarstwo z wnioskodawcą'],
+      exclude: ['numer gospodarstwa banku'],
+      collection: collection('sharedHouseholdWithApplicantNumber', 'Wspólne gospodarstwo'),
+    }),
+    defineField({
+      canonicalKey: `applicants.${index}.willOccupyFinancedProperty` as `applicants.${typeof index}.willOccupyFinancedProperty`,
+      label: `Zamieszkanie w nieruchomości — wnioskodawca ${displayIndex}`,
+      type: 'boolean',
+      group: 'applicants',
+      question: `Czy wnioskodawca ${displayIndex} będzie mieszkać w finansowanej nieruchomości?`,
+      semanticDescription: `Deklaracja docelowego zamieszkania wnioskodawcy nr ${displayIndex} w finansowanej nieruchomości.`,
+      semanticRole: 'person.property.financed.willOccupy',
+      aliases: ['wnioskodawca zamieszkujący docelowo'],
+      exclude: ['obecny adres zamieszkania'],
+      collection: collection('willOccupyFinancedProperty', 'Docelowe zamieszkanie'),
+    }),
+    defineField({
+      canonicalKey: `additionalProducts.lifeInsuranceApplicant.${index}` as `additionalProducts.lifeInsuranceApplicant.${typeof index}`,
+      label: `Ubezpieczenie na życie — wnioskodawca ${displayIndex}`,
+      type: 'boolean',
+      group: 'loan',
+      question: `Czy ubezpieczeniem na życie ma zostać objęty wnioskodawca ${displayIndex}?`,
+      semanticDescription: `Wybór wnioskodawcy nr ${displayIndex} jako osoby objętej dodatkowym ubezpieczeniem na życie.`,
+      semanticRole: 'loan.additionalProducts.lifeInsurance.applicant',
+      aliases: ['ubezpieczony wnioskodawca'],
+      exclude: [],
+      collection: collection('lifeInsuranceSelected', 'Ubezpieczenie na życie'),
+      visibleWhen: { canonicalKey: 'additionalProducts.lifeInsurance', equals: 'true' },
+    }),
+  ]
+})
+
+const HOUSEHOLD_FIELDS = HOUSEHOLD_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'households',
+    index,
+    displayIndex,
+    relativeKey,
+    label,
+  })
+  const definitions = [
+    ['monthlyDebtInstallments', 'Łączne miesięczne raty', 'Łączna miesięczna wysokość rat kredytów i pożyczek.', 'currency'],
+    ['outstandingDebt', 'Pozostałe zadłużenie', 'Łączna kwota kapitału pozostałego do spłaty.', 'currency'],
+    ['otherFixedExpenses', 'Inne stałe obciążenia', 'Miesięczna wartość alimentów, polis i innych stałych obciążeń.', 'currency'],
+    ['externalCreditLimits', 'Limity poza Pekao', 'Łączna wysokość limitów kredytowych poza Bankiem Pekao.', 'currency'],
+    ['householdExpenses', 'Wydatki gospodarstwa', 'Łączna miesięczna wysokość wydatków gospodarstwa domowego.', 'currency'],
+  ] as const
+  return definitions.map(([key, label, description, type]) => defineField({
+    canonicalKey: `households.${index}.${key}` as `households.${typeof index}.${typeof key}`,
+    label: `${label} — gospodarstwo ${displayIndex}`,
+    type,
+    group: 'household',
+    question: `Podaj: ${label.toLocaleLowerCase('pl-PL')} dla gospodarstwa ${displayIndex}`,
+    semanticDescription: description,
+    semanticRole: `household.finances.${key}`,
+    aliases: [label],
+    exclude: ['kwota kredytu hipotecznego'],
+    collection: collection(key, label),
+    validation: { min: 0 },
+  }))
+})
+
+const LIABILITY_FIELDS = LIABILITY_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'liabilities',
+    index,
+    displayIndex,
+    relativeKey,
+    label,
+  })
+  const common = {
+    group: 'liabilities' as const,
+    exclude: ['nowy kredyt hipoteczny'],
+  }
+  return [
+    defineField({
+      canonicalKey: `liabilities.${index}.type` as `liabilities.${typeof index}.type`,
+      label: `Rodzaj zobowiązania ${displayIndex}`,
+      type: 'text', ...common,
+      question: `Podaj rodzaj zobowiązania ${displayIndex}`,
+      semanticDescription: 'Rodzaj istniejącego zobowiązania przeznaczonego do spłaty.',
+      semanticRole: 'liability.type', aliases: ['rodzaj zobowiązania'],
+      collection: collection('type', 'Rodzaj'),
+    }),
+    defineField({
+      canonicalKey: `liabilities.${index}.creditor` as `liabilities.${typeof index}.creditor`,
+      label: `Instytucja kredytująca ${displayIndex}`,
+      type: 'text', ...common,
+      question: `Podaj instytucję dla zobowiązania ${displayIndex}`,
+      semanticDescription: 'Nazwa instytucji będącej wierzycielem zobowiązania.',
+      semanticRole: 'liability.creditor', aliases: ['instytucja kredytująca', 'wierzyciel'],
+      collection: collection('creditor', 'Instytucja'),
+    }),
+    defineField({
+      canonicalKey: `liabilities.${index}.contractDate` as `liabilities.${typeof index}.contractDate`,
+      label: `Data umowy ${displayIndex}`,
+      type: 'date', ...common,
+      question: `Podaj datę zawarcia umowy zobowiązania ${displayIndex}`,
+      semanticDescription: 'Data zawarcia umowy istniejącego zobowiązania.',
+      semanticRole: 'liability.contract.date', aliases: ['data zawarcia umowy'],
+      collection: collection('contractDate', 'Data umowy'),
+    }),
+    ...([
+      ['outstandingAmount', 'Aktualne zadłużenie', 'Aktualne saldo albo przyznany limit zobowiązania.'],
+      ['installmentAmount', 'Wysokość raty', 'Miesięczna rata istniejącego zobowiązania.'],
+    ] as const).map(([key, label, description]) => defineField({
+      canonicalKey: `liabilities.${index}.${key}` as `liabilities.${typeof index}.${typeof key}`,
+      label: `${label} ${displayIndex}`,
+      type: 'currency', ...common,
+      question: `Podaj: ${label.toLocaleLowerCase('pl-PL')} dla zobowiązania ${displayIndex}`,
+      semanticDescription: description,
+      semanticRole: `liability.${key}`, aliases: [label],
+      collection: collection(key, label), validation: { min: 0 },
+    })),
+    defineField({
+      canonicalKey: `liabilities.${index}.contractNumber` as `liabilities.${typeof index}.contractNumber`,
+      label: `Numer umowy ${displayIndex}`,
+      type: 'text', ...common,
+      question: `Podaj numer umowy zobowiązania ${displayIndex}`,
+      semanticDescription: 'Numer umowy istniejącego zobowiązania.',
+      semanticRole: 'liability.contract.number', aliases: ['numer umowy'],
+      collection: collection('contractNumber', 'Numer umowy'),
+    }),
+    defineField({
+      canonicalKey: `liabilities.${index}.currency` as `liabilities.${typeof index}.currency`,
+      label: `Waluta zobowiązania ${displayIndex}`,
+      type: 'text', ...common,
+      question: `Podaj walutę zobowiązania ${displayIndex}`,
+      semanticDescription: 'Waluta istniejącego zobowiązania.',
+      semanticRole: 'liability.currency', aliases: ['waluta zobowiązania'],
+      collection: collection('currency', 'Waluta'),
+    }),
+    defineField({
+      canonicalKey: `liabilities.${index}.applicantNumbers` as `liabilities.${typeof index}.applicantNumbers`,
+      label: `Wnioskodawcy zobowiązania ${displayIndex}`,
+      type: 'text', ...common,
+      question: `Podaj numery wnioskodawców związanych ze zobowiązaniem ${displayIndex}`,
+      semanticDescription: 'Numery wnioskodawców, których dotyczy istniejące zobowiązanie.',
+      semanticRole: 'liability.applicantNumbers', aliases: ['wnioskodawca zobowiązania'],
+      collection: collection('applicantNumbers', 'Wnioskodawcy'),
+    }),
+  ]
+})
+
+const MORTGAGE_DISCHARGE_FIELDS = MORTGAGE_DISCHARGE_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'mortgageDischarges', index, displayIndex, relativeKey, label,
+  })
+  return [
+    defineField({
+      canonicalKey: `mortgageDischarges.${index}.mortgageNumber` as `mortgageDischarges.${typeof index}.mortgageNumber`,
+      label: `Numer hipoteki ${displayIndex}`,
+      type: 'text', group: 'liabilities',
+      question: `Podaj numer hipoteki ${displayIndex}`,
+      semanticDescription: 'Numer hipoteki podlegającej wykreśleniu lub spłacie.',
+      semanticRole: 'mortgageDischarge.mortgageNumber', aliases: ['dotyczy hipoteki nr'], exclude: [],
+      collection: collection('mortgageNumber', 'Numer hipoteki'),
+    }),
+    defineField({
+      canonicalKey: `mortgageDischarges.${index}.landRegisterNumber` as `mortgageDischarges.${typeof index}.landRegisterNumber`,
+      label: `Numer KW hipoteki ${displayIndex}`,
+      type: 'text', group: 'liabilities',
+      question: `Podaj numer księgi wieczystej dla hipoteki ${displayIndex}`,
+      semanticDescription: 'Numer księgi wieczystej obciążonej wskazaną hipoteką.',
+      semanticRole: 'mortgageDischarge.landRegisterNumber', aliases: ['KW hipoteki'], exclude: [],
+      collection: collection('landRegisterNumber', 'Numer KW'),
+    }),
+    defineField({
+      canonicalKey: `mortgageDischarges.${index}.settlementStatus` as `mortgageDischarges.${typeof index}.settlementStatus`,
+      label: `Sposób rozliczenia hipoteki ${displayIndex}`,
+      type: 'select', group: 'liabilities',
+      question: `Wybierz sposób rozliczenia hipoteki ${displayIndex}`,
+      semanticDescription: 'Deklarowany sposób spłaty lub wykreślenia istniejącej hipoteki.',
+      semanticRole: 'mortgageDischarge.settlementStatus', aliases: ['deklaracja spłaty hipoteki'], exclude: [],
+      options: MORTGAGE_SETTLEMENT_OPTIONS,
+      collection: collection('settlementStatus', 'Sposób rozliczenia'),
+    }),
+  ]
+})
+
+const COLLATERAL_PROPERTY_FIELDS = COLLATERAL_PROPERTY_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'collateralProperties', index, displayIndex, relativeKey, label,
+  })
+  return [
+    defineField({
+      canonicalKey: `collateralProperties.${index}.relationshipToFinancedProperty` as `collateralProperties.${typeof index}.relationshipToFinancedProperty`,
+      label: `Rodzaj nieruchomości pod hipotekę ${displayIndex}`,
+      type: 'select', group: 'property',
+      question: `Czy nieruchomość pod hipotekę ${displayIndex} jest nieruchomością kredytowaną?`,
+      semanticDescription: 'Relacja nieruchomości stanowiącej zabezpieczenie do przedmiotu kredytowania.',
+      semanticRole: 'property.collateral.relationshipToFinancedProperty',
+      aliases: ['kredytowana lub inna nieruchomość'], exclude: [],
+      options: COLLATERAL_RELATIONSHIP_OPTIONS,
+      collection: collection('relationshipToFinancedProperty', 'Relacja'),
+    }),
+    defineField({
+      canonicalKey: `collateralProperties.${index}.landRegisterNumber` as `collateralProperties.${typeof index}.landRegisterNumber`,
+      label: `Numer KW nieruchomości ${displayIndex}`,
+      type: 'text', group: 'property',
+      question: `Podaj numer księgi wieczystej nieruchomości pod hipotekę ${displayIndex}`,
+      semanticDescription: 'Numer księgi wieczystej nieruchomości stanowiącej zabezpieczenie.',
+      semanticRole: 'property.collateral.landRegisterNumber', aliases: ['KW nieruchomości pod hipotekę'], exclude: [],
+      collection: collection('landRegisterNumber', 'Numer KW'),
+      visibleWhen: { canonicalKey: `collateralProperties.${index}.hasLandRegister`, equals: 'true' },
+      requiredWhen: { canonicalKey: `collateralProperties.${index}.hasLandRegister`, equals: 'true' },
+    }),
+    defineField({
+      canonicalKey: `collateralProperties.${index}.hasLandRegister` as `collateralProperties.${typeof index}.hasLandRegister`,
+      label: `Założona KW nieruchomości ${displayIndex}`,
+      type: 'boolean', group: 'property',
+      question: `Czy nieruchomość pod hipotekę ${displayIndex} ma założoną księgę wieczystą?`,
+      semanticDescription: 'Informacja, czy nieruchomość stanowiąca zabezpieczenie ma założoną księgę wieczystą.',
+      semanticRole: 'property.collateral.hasLandRegister', aliases: ['brak założonej KW'], exclude: [],
+      collection: collection('hasLandRegister', 'Założona KW'),
+    }),
+  ]
+})
+
 const STATIC_COMPUTED_BINDINGS = [
   {
     canonicalKey: 'application.placeAndDate',
@@ -407,6 +845,39 @@ const STATIC_COMPUTED_BINDINGS = [
       'property.address.unitNumber',
     ],
     valueFormat: 'houseAndUnit',
+  },
+  {
+    canonicalKey: 'investment.engagedOwnFundsTotal',
+    label: 'Zaangażowane środki własne razem',
+    type: 'currency',
+    group: 'investment',
+    semanticDescription: 'Suma środków własnych już wniesionych i wartości działki wniesionej do inwestycji.',
+    semanticRole: 'investment.ownFunds.engagedTotal',
+    aiMappingHints: {
+      aliases: ['zaangażowane środki własne razem', 'wkład wniesiony razem'],
+      exclude: ['środki do wniesienia'],
+    },
+    computed: true,
+    valueFrom: ['investment.ownFundsPaid', 'investment.landValue'],
+    valueFormat: 'currency.sum',
+  },
+  {
+    canonicalKey: 'investment.ownFundsToContributeTotal',
+    label: 'Środki własne do wniesienia razem',
+    type: 'currency',
+    group: 'investment',
+    semanticDescription: 'Suma środków własnych planowanych przed wypłatą i w trakcie inwestycji.',
+    semanticRole: 'investment.ownFunds.toContributeTotal',
+    aiMappingHints: {
+      aliases: ['środki własne do wniesienia razem', 'pozostały wkład własny razem'],
+      exclude: ['wkład już wniesiony'],
+    },
+    computed: true,
+    valueFrom: [
+      'investment.ownFundsBeforeDisbursement',
+      'investment.ownFundsDuringInvestment',
+    ],
+    valueFormat: 'currency.sum',
   },
 ] as const satisfies readonly CanonicalComputedBindingDefinition[]
 
@@ -629,6 +1100,7 @@ const DOMAIN_FIELDS = [
     semanticRole: 'investment.ownFunds.contributionSchedule',
     aliases: ['terminy wkładu własnego', 'harmonogram wkładu', 'daty wniesienia środków'],
     exclude: ['harmonogram transz kredytu', 'termin raty'],
+    validation: { maxLength: 25 },
   }),
   defineField({
     canonicalKey: 'investment.ownFunds',
@@ -1073,11 +1545,469 @@ const DOMAIN_FIELDS = [
   }),
 ] as const
 
+const BANK_DOMAIN_FIELDS = [
+  defineCompactField({
+    canonicalKey: 'loan.productType',
+    label: 'Rodzaj produktu kredytowego',
+    type: 'select',
+    group: 'loan',
+    question: 'Wybierz produkt kredytowy, o który składają wniosek klienci',
+    options: LOAN_PRODUCT_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.productTypeOther',
+    label: 'Inny produkt kredytowy',
+    type: 'text',
+    group: 'loan',
+    question: 'Opisz inny produkt kredytowy',
+    visibleWhen: { canonicalKey: 'loan.productType', equals: 'other' },
+    requiredWhen: { canonicalKey: 'loan.productType', equals: 'other' },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.productVariant',
+    label: 'Wariant produktu bankowego',
+    type: 'select',
+    group: 'loan',
+    question: 'Wybierz wariant produktu wskazany w ofercie banku',
+    semanticDescription: 'Bankowy wariant wspólnego typu produktu; używany tylko w formularzach, które rozróżniają nazwane warianty oferty.',
+    options: LOAN_PRODUCT_VARIANT_OPTIONS,
+    visibleWhen: { canonicalKey: 'loan.productType', equals: 'mortgage' },
+    requiredWhen: { canonicalKey: 'loan.productType', equals: 'mortgage' },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.firstTrancheArbitraryPurposeEnabled',
+    label: 'Cel dowolny w pierwszej transzy',
+    type: 'boolean',
+    group: 'loan',
+    question: 'Czy część kredytu na cel dowolny ma zostać wypłacona w pierwszej transzy?',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.firstTrancheArbitraryPurposeAmount',
+    label: 'Kwota celu dowolnego w pierwszej transzy',
+    type: 'currency',
+    group: 'loan',
+    visibleWhen: { canonicalKey: 'loan.firstTrancheArbitraryPurposeEnabled', equals: 'true' },
+    requiredWhen: { canonicalKey: 'loan.firstTrancheArbitraryPurposeEnabled', equals: 'true' },
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'investment.landValue',
+    label: 'Wartość działki jako wkład własny',
+    type: 'currency',
+    group: 'investment',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'investment.financialSurplusEnabled',
+    label: 'Nadwyżki finansowe jako przyszły wkład',
+    type: 'boolean',
+    group: 'investment',
+  }),
+  defineCompactField({
+    canonicalKey: 'investment.financialSurplusAmount',
+    label: 'Kwota nadwyżek finansowych',
+    type: 'currency',
+    group: 'investment',
+    visibleWhen: { canonicalKey: 'investment.financialSurplusEnabled', equals: 'true' },
+    requiredWhen: { canonicalKey: 'investment.financialSurplusEnabled', equals: 'true' },
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.repaymentAccountType',
+    label: 'Rachunek spłaty kredytu',
+    type: 'select',
+    group: 'loan',
+    options: REPAYMENT_ACCOUNT_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.repaymentAccountNumber',
+    label: 'Numer rachunku do spłaty',
+    type: 'text',
+    group: 'loan',
+    visibleWhen: { canonicalKey: 'loan.repaymentAccountType', equals: 'existing_personal_account' },
+    requiredWhen: { canonicalKey: 'loan.repaymentAccountType', equals: 'existing_personal_account' },
+    validation: { pattern: '^(?=(?:\\s*\\d){26}\\s*$)[\\d\\s]+$' },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.totalDisbursementDate',
+    label: 'Termin całkowitej wypłaty kredytu',
+    type: 'date',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'investment.completionDate',
+    label: 'Termin zakończenia inwestycji',
+    type: 'date',
+    group: 'investment',
+  }),
+  ...([
+    ['outstandingAmount', 'Saldo refinansowanego kredytu', 'currency'],
+    ['monthlyInstallment', 'Rata refinansowanego kredytu', 'currency'],
+    ['currency', 'Waluta refinansowanego kredytu', 'text'],
+    ['originationYear', 'Rok udzielenia refinansowanego kredytu', 'number'],
+    ['originationMonth', 'Miesiąc udzielenia refinansowanego kredytu', 'number'],
+  ] as const).map(([key, label, type]) => defineCompactField({
+    canonicalKey: `refinancedLoan.${key}`,
+    label,
+    type,
+    group: 'liabilities',
+    visibleWhen: {
+      canonicalKey: 'loan.purpose',
+      equals: [
+        'refinancing',
+        'refinance_with_renovation_no_permit',
+        'refinance_with_renovation_permit',
+      ],
+    },
+    ...(
+      key === 'originationMonth'
+        ? { validation: { min: 1, max: 12, integer: true } }
+        : key === 'originationYear'
+          ? { validation: { min: 1900, max: 2100, integer: true } }
+          : type === 'currency'
+            ? { validation: { min: 0 } }
+            : {}
+    ),
+  })),
+  defineCompactField({
+    canonicalKey: 'loan.constructionPermitRequired',
+    label: 'Wymagane pozwolenie na budowę',
+    type: 'boolean',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.contractChangeRequested',
+    label: 'Wnioskowana zmiana umowy',
+    type: 'boolean',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.contractChangeDescription',
+    label: 'Opis wnioskowanej zmiany umowy',
+    type: 'textarea',
+    group: 'loan',
+    visibleWhen: { canonicalKey: 'loan.contractChangeRequested', equals: 'true' },
+    requiredWhen: { canonicalKey: 'loan.contractChangeRequested', equals: 'true' },
+  }),
+  ...([
+    ['municipality', 'Gmina nieruchomości'],
+    ['district', 'Dzielnica nieruchomości'],
+  ] as const).map(([key, label]) => defineCompactField({
+    canonicalKey: `property.address.${key}`,
+    label,
+    type: 'text',
+    group: 'property',
+  })),
+  defineCompactField({
+    canonicalKey: 'property.usableArea',
+    label: 'Powierzchnia użytkowa nieruchomości',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.constructionYear',
+    label: 'Rok budowy nieruchomości',
+    type: 'number',
+    group: 'property',
+    validation: { min: 1800, max: 2100, integer: true },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.outdoorParkingSpaces',
+    label: 'Liczba zewnętrznych miejsc postojowych',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0, integer: true },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.indoorParkingSpaces',
+    label: 'Liczba miejsc postojowych w budynku',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0, integer: true },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.ownershipType',
+    label: 'Forma prawna nieruchomości',
+    type: 'select',
+    group: 'property',
+    options: PROPERTY_OWNERSHIP_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.ownershipSequence',
+    label: 'Kolejność nabywanej nieruchomości',
+    type: 'select',
+    group: 'property',
+    options: PROPERTY_OWNERSHIP_SEQUENCE_OPTIONS,
+  }),
+  ...([
+    ['city', 'Miejscowość nieruchomości stanowiącej zabezpieczenie'],
+    ['voivodeship', 'Województwo nieruchomości stanowiącej zabezpieczenie'],
+    ['county', 'Powiat nieruchomości stanowiącej zabezpieczenie'],
+    ['municipality', 'Gmina nieruchomości stanowiącej zabezpieczenie'],
+    ['district', 'Dzielnica nieruchomości stanowiącej zabezpieczenie'],
+    ['postalCode', 'Kod pocztowy nieruchomości stanowiącej zabezpieczenie'],
+    ['street', 'Ulica nieruchomości stanowiącej zabezpieczenie'],
+    ['houseAndUnit', 'Numer domu i lokalu nieruchomości stanowiącej zabezpieczenie'],
+  ] as const).map(([key, label]) => defineCompactField({
+    canonicalKey: `collateralProperty.address.${key}`,
+    label,
+    type: 'text',
+    group: 'property',
+    ...(key === 'postalCode' ? { validation: { pattern: '^\\d{2}-\\d{3}$' } } : {}),
+  })),
+  defineCompactField({
+    canonicalKey: 'collateralProperty.usableArea',
+    label: 'Powierzchnia użytkowa zabezpieczenia',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'collateralProperty.constructionYear',
+    label: 'Rok budowy nieruchomości stanowiącej zabezpieczenie',
+    type: 'number',
+    group: 'property',
+    validation: { min: 1800, max: 2100, integer: true },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.refinancedDepositAmount',
+    label: 'Kwota refinansowanego zadatku',
+    type: 'currency',
+    group: 'loan',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.currency',
+    label: 'Waluta kredytu',
+    type: 'text',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.currencyIndex',
+    label: 'Indeks walutowy kredytu',
+    type: 'text',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.cpiPremiumFinancing',
+    label: 'Finansowanie składki ubezpieczenia CPI',
+    type: 'select',
+    group: 'loan',
+    options: YES_NO_NOT_APPLICABLE_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.paymentGraceMonths',
+    label: 'Karencja w płatności rat w miesiącach',
+    type: 'number',
+    group: 'loan',
+    validation: { min: 0, max: 120, integer: true },
+  }),
+  ...([
+    ['bankAccounts', 'Środki na rachunkach bankowych'],
+    ['investmentFunds', 'Środki w funduszach inwestycyjnych'],
+    ['guaranteePremium', 'Środki na składkę gwarancyjną'],
+    ['other', 'Inne źródło wkładu własnego'],
+  ] as const).flatMap(([key, label]) => [
+    defineCompactField({
+      canonicalKey: `investment.ownFundsSources.${key}.selected`,
+      label: `${label} — wybrane`,
+      type: 'boolean',
+      group: 'investment',
+      question: `Czy źródłem wkładu własnego są: ${label.toLocaleLowerCase('pl-PL')}?`,
+    }),
+    defineCompactField({
+      canonicalKey: `investment.ownFundsSources.${key}.amount`,
+      label: `${label} — kwota`,
+      type: 'currency',
+      group: 'investment',
+      visibleWhen: { canonicalKey: `investment.ownFundsSources.${key}.selected`, equals: 'true' },
+      requiredWhen: { canonicalKey: `investment.ownFundsSources.${key}.selected`, equals: 'true' },
+      validation: { min: 0 },
+    }),
+  ]),
+  ...([
+    ['financedPropertyMortgage', 'Hipoteka na kredytowanej nieruchomości'],
+    ['otherPropertyMortgage', 'Hipoteka na innej nieruchomości'],
+    ['lifeInsurance', 'Ubezpieczenie na życie jako zabezpieczenie'],
+    ['bankInsurance', 'Ubezpieczenie banku jako zabezpieczenie'],
+  ] as const).map(([key, label]) => defineCompactField({
+    canonicalKey: `loan.securities.${key}`,
+    label,
+    type: 'boolean',
+    group: 'loan',
+  })),
+  defineCompactField({
+    canonicalKey: 'loan.securities.otherDescription',
+    label: 'Inne zabezpieczenie kredytu',
+    type: 'textarea',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'loan.mortgageEstablishmentMode',
+    label: 'Sposób ustanowienia hipoteki',
+    type: 'select',
+    group: 'loan',
+    options: MORTGAGE_ESTABLISHMENT_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.publicRoadAccessType',
+    label: 'Dostęp do drogi publicznej',
+    type: 'select',
+    group: 'property',
+    options: PUBLIC_ROAD_ACCESS_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.accessRoadLandRegisterNumber',
+    label: 'Numer KW drogi dojazdowej',
+    type: 'text',
+    group: 'property',
+  }),
+  defineCompactField({
+    canonicalKey: 'property.accessRoadShareMortgage',
+    label: 'Hipoteka na udziale w drodze dojazdowej',
+    type: 'boolean',
+    group: 'property',
+  }),
+  defineCompactField({
+    canonicalKey: 'property.accessRoadShare',
+    label: 'Udział w nieruchomości drogowej',
+    type: 'text',
+    group: 'property',
+    helpText: 'Podaj udział jako ułamek, na przykład 1/8.',
+    validation: { pattern: '^\\s*\\d+\\s*/\\s*\\d+\\s*$' },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.appraiserChoice',
+    label: 'Wybór rzeczoznawcy majątkowego',
+    type: 'select',
+    group: 'property',
+    options: APPRAISER_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.appraiserDetails',
+    label: 'Dane innego rzeczoznawcy',
+    type: 'text',
+    group: 'property',
+    visibleWhen: { canonicalKey: 'property.appraiserChoice', equals: 'other' },
+    requiredWhen: { canonicalKey: 'property.appraiserChoice', equals: 'other' },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.appraisalSource',
+    label: 'Źródło operatu szacunkowego',
+    type: 'select',
+    group: 'property',
+    options: APPRAISAL_SOURCE_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'additionalProducts.systematicAccountInflows',
+    label: 'Systematyczne wpływy na rachunek',
+    type: 'boolean',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'additionalProducts.cpiInterested',
+    label: 'Zainteresowanie ubezpieczeniem CPI',
+    type: 'boolean',
+    group: 'loan',
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.otherEnabled',
+    label: 'Inne wnioski lub deklaracje',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.otherLine1',
+    label: 'Inne wnioski lub deklaracje — wiersz 1',
+    type: 'text',
+    group: 'declarations',
+    visibleWhen: { canonicalKey: 'declarations.otherEnabled', equals: 'true' },
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.otherLine2',
+    label: 'Inne wnioski lub deklaracje — wiersz 2',
+    type: 'text',
+    group: 'declarations',
+    visibleWhen: { canonicalKey: 'declarations.otherEnabled', equals: 'true' },
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.ownContributionFromCredit',
+    label: 'Wkład własny pochodzi z kredytu, pożyczki lub dotacji',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.riskAwareness',
+    label: 'Świadomość ryzyka stopy procentowej i cen zabezpieczeń',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.sellerIsCloseRelative',
+    label: 'Sprzedający jest osobą blisko spokrewnioną',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'declarations.selectedLoanRiskVariant',
+    label: 'Wariant ryzyka kredytowego objęty oświadczeniem',
+    type: 'select',
+    group: 'declarations',
+    question: 'Wybierz wariant kredytu, którego dotyczy oświadczenie o ryzyku',
+    semanticDescription: 'Wariant produktu wskazany w oświadczeniu klienta o ryzyku stopy procentowej albo indeksacji walutowej.',
+    options: LOAN_RISK_VARIANT_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'consents.interbankInformationSharing',
+    label: 'Zgoda na wymianę informacji między bankami grupy',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'consents.receiveContractDraft',
+    label: 'Zgoda na otrzymanie projektu umowy',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'consents.creditDecisionByEmail',
+    label: 'Decyzja kredytowa pocztą elektroniczną',
+    type: 'boolean',
+    group: 'declarations',
+  }),
+  defineCompactField({
+    canonicalKey: 'consents.creditDecisionEmail',
+    label: 'Adres e-mail do decyzji kredytowej',
+    type: 'text',
+    group: 'declarations',
+    visibleWhen: { canonicalKey: 'consents.creditDecisionByEmail', equals: 'true' },
+    requiredWhen: { canonicalKey: 'consents.creditDecisionByEmail', equals: 'true' },
+    validation: { pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' },
+  }),
+  ...([
+    ['pekao24', 'Powiadomienia w Pekao24'],
+    ['email', 'Powiadomienia pocztą elektroniczną'],
+    ['postal', 'Powiadomienia pocztą tradycyjną'],
+  ] as const).map(([key, label]) => defineCompactField({
+    canonicalKey: `notifications.${key}`,
+    label,
+    type: 'boolean',
+    group: 'declarations',
+  })),
+] as const
+
 export const CANONICAL_FIELDS = [
   ...APPLICATION_FIELDS,
   ...APPLICANT_FIELDS,
   ...TRANCHE_FIELDS,
+  ...EXTENDED_APPLICANT_FIELDS,
+  ...HOUSEHOLD_FIELDS,
+  ...LIABILITY_FIELDS,
+  ...MORTGAGE_DISCHARGE_FIELDS,
+  ...COLLATERAL_PROPERTY_FIELDS,
   ...DOMAIN_FIELDS,
+  ...BANK_DOMAIN_FIELDS,
 ] satisfies readonly CanonicalFieldDefinition[]
 
 export type CanonicalFieldKey = typeof CANONICAL_FIELDS[number]['canonicalKey']

@@ -1,4 +1,5 @@
 import {
+  businessCompanyFormKeysForTemplate,
   instantiateTemplate,
   prepareBundle,
   templateApplicantCapacity,
@@ -31,6 +32,7 @@ function templateInputKeys(template: DocumentTemplate) {
       ...(binding.condition ? [binding.condition.canonicalKey] : []),
     ]),
     ...(template.requiredCanonicalKeys ?? []),
+    ...businessCompanyFormKeysForTemplate(template),
   ])
 }
 

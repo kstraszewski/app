@@ -16,6 +16,7 @@ import type {
   MultiformRenderGroup,
   MultiformRepeatableGroup,
 } from '~/types/multiform'
+import type { CeidgCompanyData } from '#shared/types/ceidg-company'
 import {
   canonicalDisbursementTypeFromIntake,
   canonicalLoanPurposeFromIntake,
@@ -32,6 +33,7 @@ import {
   normalizeCollectionCount,
   supportedCollectionItemCount,
 } from '~/utils/multiform-collections'
+import { mergeCeidgCompanyIntoEmptyFields } from '~/utils/ceidg-company-prefill'
 import {
   buildMultiformSubmissionReadinessManifest,
   createEmptyMultiformIntake,
@@ -188,6 +190,9 @@ const activeApplicationDetails = computed(() => activeApplications.value.map((ap
 
 const primaryApplication = computed(() => activeApplicationDetails.value[0] ?? null)
 const primaryOffer = computed(() => primaryApplication.value?.offer ?? null)
+const companyLookupUrl = computed(() => (
+  crmApiPath(`/cases/${props.caseData.id}/multiform/company`)
+))
 const activeProperty = computed(() => (
   primaryApplication.value?.property
   ?? props.caseData.properties.find(property => property.id === props.caseData.selected_property_id)
@@ -1133,6 +1138,40 @@ function activeCollectionFields(group: MultiformRepeatableGroup) {
   return collectionItems(group).find(
     item => item.index === activeCollectionIndex(group),
   )?.fields ?? []
+}
+
+function companyNipKey(group: MultiformRepeatableGroup) {
+  if (!isApplicantCollection(group)) return ''
+  return activeCollectionFields(group).find(
+    field => field.collection?.relativeKey === 'businessNip',
+  )?.key ?? ''
+}
+
+function activeCollectionInputFields(group: MultiformRepeatableGroup) {
+  const nipKey = companyNipKey(group)
+  return nipKey
+    ? activeCollectionFields(group).filter(field => field.key !== nipKey)
+    : activeCollectionFields(group)
+}
+
+function applyCeidgCompany(group: MultiformRepeatableGroup, company: CeidgCompanyData) {
+  const applicantIndex = activeCollectionIndex(group)
+  const availableKeys = new Set(preparedBundle.value?.fields.map(field => field.key) ?? [])
+  const merge = mergeCeidgCompanyIntoEmptyFields(
+    values.value,
+    availableKeys,
+    applicantIndex,
+    company,
+  )
+  values.value = merge.values
+
+  toast.add({
+    title: merge.filledCount ? 'Dane firmy uzupełnione' : 'Dane firmy były już wpisane',
+    description: merge.preservedCount
+      ? `Uzupełniono ${merge.filledCount} pól. Zachowano ${merge.preservedCount} wcześniej wpisanych wartości.`
+      : `Uzupełniono ${merge.filledCount} pól na podstawie CEIDG.`,
+    color: merge.filledCount ? 'success' : 'neutral',
+  })
 }
 
 function collectionItemLabel(group: MultiformRepeatableGroup, index: number) {
@@ -2162,9 +2201,16 @@ onBeforeUnmount(() => {
                       <span>{{ group.collection.label }}</span>
                       <strong>{{ collectionItemLabel(group, activeCollectionIndex(group)) }}</strong>
                     </div>
+                    <CaseMultiformCompanyLookup
+                      v-if="companyNipKey(group)"
+                      :lookup-url="companyLookupUrl"
+                      :model-value="values[companyNipKey(group)]"
+                      @update:model-value="values[companyNipKey(group)] = $event"
+                      @apply="applyCeidgCompany(group, $event)"
+                    />
                     <div class="case-multiform__field-grid">
                       <CaseMultiformField
-                        v-for="field in activeCollectionFields(group)"
+                        v-for="field in activeCollectionInputFields(group)"
                         :key="field.key"
                         :field="field"
                         :model-value="values[field.key]"

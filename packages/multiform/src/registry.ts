@@ -1,4 +1,5 @@
 import { CANONICAL_COLLECTIONS, CANONICAL_FIELDS } from './canonical-fields.ts'
+import { businessCompanyFormKeysForTemplate } from './business-company-fields.ts'
 import { instantiateTemplate } from './template-instances.ts'
 import { TEMPLATES } from './templates/index.ts'
 import type {
@@ -124,6 +125,9 @@ export function prepareBundle(
         requestedFields.add(fieldTemplate.includeWhen.canonicalKey)
       }
       for (const key of fieldTemplate.requiredCanonicalKeys ?? []) {
+        if (FIELD_KEYS.has(key)) requestedFields.add(key)
+      }
+      for (const key of businessCompanyFormKeysForTemplate(fieldTemplate)) {
         if (FIELD_KEYS.has(key)) requestedFields.add(key)
       }
     }

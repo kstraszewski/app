@@ -4,9 +4,11 @@ import test from 'node:test'
 import { createHash } from 'node:crypto'
 
 import {
+  businessCompanyFormKeysForTemplate,
   getTemplate,
   instantiateTemplate,
   MBANK_TEMPLATES,
+  prepareBundle,
   templateMatchesValues,
   validateTemplateJson,
 } from '../src/index.ts'
@@ -58,6 +60,21 @@ test('mBank manual application forms repeat and filter by each applicant income 
   assert.equal(templateMatchesValues(instantiateTemplate(business, 1), values), true)
   assert.equal(templateMatchesValues(instantiateTemplate(business, 2), values), false)
   assert.equal(templateMatchesValues(instantiateTemplate(civil, 2), values), true)
+})
+
+test('business forms expose CEIDG company fields for every applicant without making them bank-required', () => {
+  const business = getTemplate('mbank-business-data-2026')
+  assert.ok(business)
+  const secondApplicant = instantiateTemplate(business, 1)
+  const keys = businessCompanyFormKeysForTemplate(secondApplicant)
+  assert.ok(keys.includes('applicants.1.businessNip'))
+  assert.ok(keys.includes('applicants.1.businessPkdCodes'))
+  assert.equal(keys.some(key => key.startsWith('applicants.0.')), false)
+
+  const bundle = prepareBundle([business.id])
+  assert.ok(bundle.fields.some(field => field.canonicalKey === 'applicants.0.businessNip'))
+  assert.ok(bundle.fields.some(field => field.canonicalKey === 'applicants.4.businessNip'))
+  assert.equal(Boolean(business.requiredCanonicalKeys?.includes('applicants.0.businessNip')), false)
 })
 
 test('mBank distinguishes hand-completed forms from read-only disclosures', () => {

@@ -1,10 +1,14 @@
 export {
   APPLICANT_INDEXES,
+  BUSINESS_COMPANY_CANONICAL_KEYS,
+  BUSINESS_COMPANY_FORM_CANONICAL_KEYS,
+  BUSINESS_COMPANY_RELATIVE_KEYS,
   CANONICAL_COLLECTIONS,
   CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
   MAX_APPLICANTS,
 } from './canonical-fields.ts'
+export { businessCompanyFormKeysForTemplate } from './business-company-fields.ts'
 export type {
   CanonicalBindingKey,
   CanonicalComputedBindingKey,

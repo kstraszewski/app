@@ -4,6 +4,11 @@ import type {
   CanonicalFieldDefinition,
   CanonicalFieldType,
 } from './types.ts'
+export {
+  BUSINESS_COMPANY_CANONICAL_KEYS,
+  BUSINESS_COMPANY_FORM_CANONICAL_KEYS,
+  BUSINESS_COMPANY_RELATIVE_KEYS,
+} from './business-company-fields.ts'
 
 const PURPOSE_OPTIONS = [
   { value: 'purchase_primary', label: 'Zakup na rynku pierwotnym' },
@@ -629,10 +634,26 @@ const KIK_APPLICANT_FIELD_BLUEPRINTS = [
   { relativeKey: 'occupation', label: 'Wykonywany zawód', type: 'text' },
   { relativeKey: 'employmentCategory', label: 'Kategoria zatrudnienia', type: 'select', options: EMPLOYMENT_CATEGORY_OPTIONS },
   { relativeKey: 'incomeSource', label: 'Główne źródło dochodu', type: 'select', options: INCOME_SOURCE_OPTIONS },
-  { relativeKey: 'businessLegalForm', label: 'Forma organizacyjno-prawna działalności', type: 'text', visibleWhen: { relativeKey: 'employmentCategory', equals: 'self_employed' } },
-  { relativeKey: 'pkdCode', label: 'Kod PKD działalności', type: 'text', visibleWhen: { relativeKey: 'employmentCategory', equals: 'self_employed' } },
+  { relativeKey: 'businessName', label: 'Pełna nazwa firmy', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessNip', label: 'NIP firmy', type: 'text', validation: { pattern: '^\\d{10}$', maxLength: 10 }, visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessRegon', label: 'REGON firmy', type: 'text', validation: { pattern: '^(\\d{9}|\\d{14})$', maxLength: 14 }, visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessCeidgId', label: 'Identyfikator wpisu CEIDG', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessLegalForm', label: 'Forma organizacyjno-prawna działalności', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' } },
+  { relativeKey: 'businessStatus', label: 'Status działalności w CEIDG', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessAddress', label: 'Adres wykonywania działalności', type: 'textarea', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessCorrespondenceAddress', label: 'Adres do korespondencji firmy', type: 'textarea', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessStartDate', label: 'Data rozpoczęcia działalności', type: 'date', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessSuspensionDate', label: 'Data zawieszenia działalności', type: 'date', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessResumeDate', label: 'Data wznowienia działalności', type: 'date', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessTerminationDate', label: 'Data zaprzestania działalności', type: 'date', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessRemovalDate', label: 'Data wykreślenia z CEIDG', type: 'date', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'pkdCode', label: 'Główny kod PKD działalności', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' } },
+  { relativeKey: 'businessPkdCodes', label: 'Wszystkie kody PKD', type: 'textarea', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessEmail', label: 'Firmowy adres e-mail', type: 'text', validation: { pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }, visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessPhone', label: 'Firmowy numer telefonu', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
+  { relativeKey: 'businessWebsite', label: 'Strona internetowa firmy', type: 'text', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' }, requiredWhenVisible: false },
   { relativeKey: 'employmentTenure', label: 'Staż pracy', type: 'select', options: EMPLOYMENT_TENURE_OPTIONS },
-  { relativeKey: 'businessActiveOrRecentlySuspended', label: 'Prowadzi lub niedawno zawiesił działalność gospodarczą', type: 'boolean' },
+  { relativeKey: 'businessActiveOrRecentlySuspended', label: 'Prowadzi lub niedawno zawiesił działalność gospodarczą', type: 'boolean', visibleWhen: { relativeKey: 'incomeSource', equals: 'business' } },
   { relativeKey: 'monthlyMaintenanceCosts', label: 'Miesięczne koszty utrzymania', type: 'currency', validation: { min: 0 } },
   { relativeKey: 'alimonyAndLegalBurdens', label: 'Alimenty i inne miesięczne obciążenia prawne', type: 'currency', validation: { min: 0 } },
   { relativeKey: 'collectionProceedings', label: 'Postępowanie windykacyjne', type: 'boolean' },
@@ -653,6 +674,9 @@ function materializeKikApplicantField(
         equals: blueprint.visibleWhen.equals,
       }
     : undefined
+  const requiredWhenVisible = 'requiredWhenVisible' in blueprint
+    ? blueprint.requiredWhenVisible
+    : true
 
   return defineCompactField({
     canonicalKey: `applicants.${index}.${blueprint.relativeKey}` as KikApplicantCanonicalFieldKey,
@@ -672,7 +696,12 @@ function materializeKikApplicantField(
     },
     ...('options' in blueprint ? { options: blueprint.options } : {}),
     ...('validation' in blueprint ? { validation: blueprint.validation } : {}),
-    ...(visibleWhen ? { visibleWhen, requiredWhen: visibleWhen } : {}),
+    ...(visibleWhen
+      ? {
+          visibleWhen,
+          ...(requiredWhenVisible ? { requiredWhen: visibleWhen } : {}),
+        }
+      : {}),
   })
 }
 

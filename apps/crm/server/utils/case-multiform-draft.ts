@@ -15,6 +15,8 @@ interface CaseMultiformDraftRow {
   collection_counts: unknown
   selected_document_ids: unknown
   updated_by_user_id: string | null
+  updated_by_client_person_id: string | null
+  client_portal_completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -30,6 +32,8 @@ export interface CaseMultiformDraft {
   collectionCounts: Record<string, number>
   selectedDocumentIds: string[]
   updatedByUserId: string | null
+  updatedByClientPersonId: string | null
+  clientPortalCompletedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -45,6 +49,8 @@ const draftSelect = [
   'collection_counts',
   'selected_document_ids',
   'updated_by_user_id',
+  'updated_by_client_person_id',
+  'client_portal_completed_at',
   'created_at',
   'updated_at',
 ].join(', ')
@@ -81,6 +87,12 @@ function mapDraft(row: CaseMultiformDraftRow): CaseMultiformDraft {
     collectionCounts: rowCollectionCounts(row.collection_counts),
     selectedDocumentIds: rowDocumentIds(row.selected_document_ids),
     updatedByUserId: row.updated_by_user_id ? String(row.updated_by_user_id) : null,
+    updatedByClientPersonId: row.updated_by_client_person_id
+      ? String(row.updated_by_client_person_id)
+      : null,
+    clientPortalCompletedAt: row.client_portal_completed_at
+      ? String(row.client_portal_completed_at)
+      : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   }

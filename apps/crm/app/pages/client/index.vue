@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AccountContexts, ClientAppointment } from '~/types/account'
+import type { ClientMultiformCasesResponse } from '~/types/client-multiform'
 
 definePageMeta({ middleware: 'client-auth', layout: false })
 
@@ -24,8 +25,18 @@ const {
 const { data: contexts } = await useFetch<AccountContexts>('/api/me/contexts', {
   key: `account-contexts:${accountCacheScope}`,
 })
+const {
+  data: multiformPayload,
+  status: multiformStatus,
+  error: multiformError,
+  refresh: refreshMultiform,
+} = await useFetch<ClientMultiformCasesResponse>('/api/client/multiform', {
+  key: `client-multiform-cases:${accountCacheScope}`,
+  default: () => ({ data: [] }),
+})
 
 const appointments = computed(() => appointmentPayload.value.data)
+const multiformCases = computed(() => multiformPayload.value.data)
 const now = Date.now()
 const upcomingAppointments = computed(() => appointments.value
   .filter(appointment => appointment.status !== 'cancelled'
@@ -37,7 +48,7 @@ const previousAppointments = computed(() => appointments.value
   .sort((left, right) => right.startsAt.localeCompare(left.startsAt)))
 
 useHead({
-  title: 'Moje konsultacje — OpenExpert',
+  title: 'Panel klienta — OpenExpert',
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
@@ -72,6 +83,13 @@ function statusLabel(statusValue: string) {
   return 'Oczekuje'
 }
 
+function multiformDate(value: string) {
+  return new Intl.DateTimeFormat('pl-PL', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
 function isClientMeetingUrl(value: string | null) {
   if (!value) return false
   try {
@@ -86,8 +104,8 @@ function isClientMeetingUrl(value: string | null) {
 
 <template>
   <ClientPortalShell
-    title="Moje konsultacje"
-    description="Terminy zarezerwowane na potwierdzony kontakt Twojego konta."
+    title="Twój panel"
+    description="Udostępnione sprawy, formularze Multiwniosku i terminy przypisane do Twojego potwierdzonego konta."
     :show-account-switcher="Boolean(contexts?.hasStaff)"
   >
     <UAlert
@@ -115,6 +133,86 @@ function isClientMeetingUrl(value: string | null) {
         </UButton>
       </template>
     </UAlert>
+
+    <UAlert
+      v-if="multiformError"
+      class="mb-6"
+      role="alert"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      title="Nie udało się pobrać formularzy"
+    >
+      <template #actions>
+        <UButton color="error" variant="soft" @click="refreshMultiform()">
+          Spróbuj ponownie
+        </UButton>
+      </template>
+    </UAlert>
+
+    <section
+      v-if="multiformStatus === 'pending' || multiformCases.length"
+      id="multiwnioski"
+      class="appointments-section client-multiform-section"
+      aria-labelledby="client-multiform-title"
+    >
+      <div class="client-section-heading">
+        <div>
+          <p>Udostępnione przez eksperta</p>
+          <h2 id="client-multiform-title">Multiwnioski do uzupełnienia</h2>
+        </div>
+        <UBadge v-if="multiformCases.length" color="primary" variant="subtle">
+          {{ multiformCases.length }}
+        </UBadge>
+      </div>
+
+      <div v-if="multiformStatus === 'pending'" class="appointments-grid">
+        <USkeleton v-for="index in 2" :key="index" class="h-48 w-full" />
+      </div>
+      <div v-else class="appointments-grid">
+        <UCard
+          v-for="multiformCase in multiformCases"
+          :key="multiformCase.id"
+          class="appointment-card client-multiform-card"
+        >
+          <div class="appointment-card__top">
+            <span class="appointment-card__date">{{ multiformCase.organization.name }}</span>
+            <UBadge
+              :color="multiformCase.completedAt ? 'success' : 'warning'"
+              variant="subtle"
+              :icon="multiformCase.completedAt ? 'i-lucide-circle-check' : 'i-lucide-pencil-line'"
+            >
+              {{ multiformCase.completedAt ? 'Przekazany' : 'Do uzupełnienia' }}
+            </UBadge>
+          </div>
+          <h3>{{ multiformCase.title }}</h3>
+          <p class="client-multiform-card__person">
+            <UIcon name="i-lucide-user-round" />
+            {{ multiformCase.applicantLabel }}
+          </p>
+          <small v-if="multiformCase.updatedAt">
+            Ostatni zapis: {{ multiformDate(multiformCase.updatedAt) }}
+          </small>
+          <small v-else>
+            Udostępniono: {{ multiformDate(multiformCase.sharedAt) }}
+          </small>
+          <UButton
+            :to="`/client/multiform/${multiformCase.id}`"
+            :icon="multiformCase.completedAt ? 'i-lucide-file-pen-line' : 'i-lucide-arrow-right'"
+            trailing
+          >
+            {{ multiformCase.completedAt ? 'Sprawdź lub popraw' : 'Uzupełnij formularz' }}
+          </UButton>
+        </UCard>
+      </div>
+    </section>
+
+    <div id="konsultacje" class="client-section-heading client-section-heading--appointments">
+      <div>
+        <p>Twój kalendarz</p>
+        <h2>Moje konsultacje</h2>
+      </div>
+    </div>
 
     <div v-if="status === 'pending'" class="appointments-grid" aria-label="Ładowanie konsultacji">
       <USkeleton v-for="index in 2" :key="index" class="h-52 w-full" />
@@ -250,6 +348,53 @@ function isClientMeetingUrl(value: string | null) {
   display: grid;
   gap: 16px;
   margin-bottom: 42px;
+}
+
+.client-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.client-section-heading--appointments {
+  margin: 38px 0 16px;
+}
+
+.client-section-heading p,
+.client-section-heading h2 {
+  margin: 0;
+}
+
+.client-section-heading p {
+  color: var(--ui-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.client-section-heading h2 {
+  margin-top: 3px;
+  color: var(--ui-text-highlighted);
+  font-size: 20px;
+}
+
+.client-multiform-section {
+  margin-bottom: 12px;
+}
+
+.client-multiform-card__person {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-text-toned);
+  font-size: 14px;
+}
+
+.client-multiform-card small {
+  color: var(--ui-text-muted);
+  font-size: 12px;
 }
 
 .appointment-expert {

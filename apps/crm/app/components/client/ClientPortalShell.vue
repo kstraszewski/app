@@ -29,6 +29,7 @@ async function signOut() {
   await signOutAuthenticatedUser()
   clearNuxtData(key => (
     key.startsWith('client-appointments:')
+    || key.startsWith('client-multiform:')
     || key.startsWith('account-contexts:')
   ))
   await navigateTo('/client/login')
@@ -50,13 +51,23 @@ async function signOut() {
       <nav v-if="showNavigation || showLogout" class="client-shell__nav" aria-label="Panel klienta">
         <NuxtLink
           v-if="showNavigation"
-          to="/client"
+          to="/client#konsultacje"
           class="client-shell__nav-link client-shell__nav-link--appointments"
           aria-label="Moje konsultacje"
           title="Moje konsultacje"
         >
           <UIcon class="client-shell__appointments-icon" name="i-lucide-calendar-days" aria-hidden="true" />
           <span class="client-shell__appointments-label">Moje konsultacje</span>
+        </NuxtLink>
+        <NuxtLink
+          v-if="showNavigation"
+          to="/client#multiwnioski"
+          class="client-shell__nav-link client-shell__nav-link--multiform"
+          aria-label="Multiwnioski"
+          title="Multiwnioski"
+        >
+          <UIcon class="client-shell__multiform-icon" name="i-lucide-files" aria-hidden="true" />
+          <span class="client-shell__multiform-label">Multiwnioski</span>
         </NuxtLink>
         <NuxtLink
           v-if="showNavigation && showAccountSwitcher"
@@ -164,6 +175,7 @@ async function signOut() {
 }
 
 .client-shell__appointments-icon,
+.client-shell__multiform-icon,
 .client-shell__switch-icon {
   display: none;
 }
@@ -225,6 +237,7 @@ async function signOut() {
   }
 
   .client-shell__nav-link--appointments,
+  .client-shell__nav-link--multiform,
   .client-shell__nav-link--switcher,
   .client-shell__nav :deep(.client-shell__logout) {
     display: inline-flex;
@@ -236,6 +249,7 @@ async function signOut() {
   }
 
   .client-shell__appointments-icon,
+  .client-shell__multiform-icon,
   .client-shell__switch-icon {
     display: block;
     width: 18px;
@@ -243,6 +257,7 @@ async function signOut() {
   }
 
   .client-shell__appointments-label,
+  .client-shell__multiform-label,
   .client-shell__switch-label,
   .client-shell__logout-label {
     position: absolute;

@@ -222,6 +222,8 @@ export interface CaseMultiformDraft {
   collectionCounts: Record<string, number>
   selectedDocumentIds: string[]
   updatedByUserId: string | null
+  updatedByClientPersonId: string | null
+  clientPortalCompletedAt: string | null
   createdAt: string
   updatedAt: string
 }

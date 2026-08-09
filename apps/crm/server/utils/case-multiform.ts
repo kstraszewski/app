@@ -13,6 +13,7 @@ import { getRequiredParam, requireCrmSession, throwDbError } from './crm'
 import { serverDataTokenSigner } from './platform-data'
 
 type JsonRecord = Record<string, unknown>
+type CrmDataClient = any
 
 interface CaseMultiformApplicationRow {
   submission_id: string
@@ -88,23 +89,25 @@ function parseTemplateIds(catalogSnapshot: unknown, offerLabel: string): string[
   return [...new Set([...(configured as string[]), ...requirementIds])]
 }
 
-export async function requireCaseMultiformSelection(event: H3Event): Promise<CaseMultiformSelection> {
-  const session = await requireCrmSession(event)
-  const caseId = getRequiredParam(event, 'id')
-  assertUuid(caseId, 'case id')
-  await requireCrmCase(session, caseId)
-
+export async function resolveCaseMultiformSelection(input: {
+  dataApi: CrmDataClient
+  organizationId: string
+  organizationSlug: string
+  caseId: string
+  userId: string
+}): Promise<CaseMultiformSelection> {
+  const { dataApi, organizationId, organizationSlug, caseId, userId } = input
   const [applicationsResult, contractResult] = await Promise.all([
-    session.dataApi
+    dataApi
       .from('crm_case_bank_applications')
       .select('submission_id, case_item_id, offer_id, slot')
-      .eq('organization_id', session.organizationId)
+      .eq('organization_id', organizationId)
       .eq('case_id', caseId)
       .order('slot', { ascending: true }),
-    session.dataApi
+    dataApi
       .from('crm_case_contract_selections')
       .select('application_id')
-      .eq('organization_id', session.organizationId)
+      .eq('organization_id', organizationId)
       .eq('case_id', caseId)
       .maybeSingle(),
   ])
@@ -120,10 +123,10 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   }
 
   const allApplicationIds = applications.map(application => String(application.submission_id))
-  const { data: submissions, error: submissionsError } = await session.dataApi
+  const { data: submissions, error: submissionsError } = await dataApi
     .from('crm_item_submissions')
     .select('id, status_code')
-    .eq('organization_id', session.organizationId)
+    .eq('organization_id', organizationId)
     .in('id', allApplicationIds)
   throwDbError(submissionsError)
   const statusByApplicationId = new Map(
@@ -152,10 +155,10 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   }
 
   const offerIds = selectedApplications.map(application => String(application.offer_id))
-  const { data: offers, error: offersError } = await session.dataApi
+  const { data: offers, error: offersError } = await dataApi
     .from('crm_case_offer_snapshots')
     .select('id, bank_name, product_name, catalog_snapshot')
-    .eq('organization_id', session.organizationId)
+    .eq('organization_id', organizationId)
     .eq('case_id', caseId)
     .in('id', offerIds)
   throwDbError(offersError)
@@ -182,14 +185,28 @@ export async function requireCaseMultiformSelection(event: H3Event): Promise<Cas
   const templateIds = [...new Set(selectedApplicationDetails.flatMap(application => application.templateIds))]
 
   return {
-    userId: session.userId,
-    organizationSlug: session.organizationSlug,
+    userId,
+    organizationSlug,
     caseId,
     applications: selectedApplicationDetails,
     applicationIds: selectedApplications.map(application => String(application.submission_id)),
     offerIds,
     templateIds,
   }
+}
+
+export async function requireCaseMultiformSelection(event: H3Event): Promise<CaseMultiformSelection> {
+  const session = await requireCrmSession(event)
+  const caseId = getRequiredParam(event, 'id')
+  assertUuid(caseId, 'case id')
+  await requireCrmCase(session, caseId)
+  return resolveCaseMultiformSelection({
+    dataApi: session.dataApi,
+    organizationId: session.organizationId,
+    organizationSlug: session.organizationSlug,
+    caseId,
+    userId: session.userId,
+  })
 }
 
 export function filterCaseMultiformSelection(
@@ -248,12 +265,12 @@ function authCookieHeader(event: H3Event) {
   return filterAuthCookieHeader(cookieHeader, prefix)
 }
 
-function forwardedHeaders(event: H3Event, userId: string) {
+function forwardedHeaders(event: H3Event, userId: string, includeAuthCookies = true) {
   const headers = new Headers({
     accept: 'application/json, application/zip',
     'content-type': 'application/json',
   })
-  const authCookies = authCookieHeader(event)
+  const authCookies = includeAuthCookies ? authCookieHeader(event) : ''
   if (authCookies) headers.set('cookie', authCookies)
   headers.set('authorization', `Bearer ${serverDataTokenSigner(event).signUser(userId, {
     purpose: 'openexpert:multiform-service',
@@ -287,13 +304,13 @@ async function callMultiformService(
   event: H3Event,
   path: string,
   userId: string,
-  options: { method?: 'GET' | 'POST', body?: JsonRecord } = {},
+  options: { method?: 'GET' | 'POST', body?: JsonRecord, includeAuthCookies?: boolean } = {},
 ) {
   let response: Response
   try {
     response = await fetch(multiformServiceTarget(event, path), {
       method: options.method ?? 'GET',
-      headers: forwardedHeaders(event, userId),
+      headers: forwardedHeaders(event, userId, options.includeAuthCookies !== false),
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       redirect: 'error',
     })
@@ -329,12 +346,14 @@ export async function loadCaseMultiformContext(
 export async function prepareCaseMultiform(
   event: H3Event,
   selection: CaseMultiformSelection,
+  options: { includeAuthCookies?: boolean } = {},
 ) {
   if (!selection.templateIds.length) {
     throw createError({ statusCode: 409, statusMessage: 'Aktywne wnioski nie mają przypisanych formularzy bankowych.' })
   }
   const response = await callMultiformService(event, '/api/multiform/bundle/prepare', selection.userId, {
     method: 'POST',
+    includeAuthCookies: options.includeAuthCookies,
     body: {
       templateIds: selection.templateIds,
       crmContext: {

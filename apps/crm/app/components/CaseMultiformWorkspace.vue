@@ -131,6 +131,7 @@ const draftRevision = ref(0)
 const draftReady = ref(false)
 const draftSaving = ref(false)
 const draftSavedAt = ref('')
+const clientCompletedAt = ref('')
 const draftDirty = ref(false)
 const restoringDraft = ref(false)
 let draftSaveTimer: ReturnType<typeof setTimeout> | undefined
@@ -708,6 +709,7 @@ async function loadDraft() {
       selectedDocumentIds.value = [...response.draft.selectedDocumentIds]
       activeStep.value = Math.max(0, Math.min(4, response.draft.activeStep - 1))
       draftSavedAt.value = response.draft.updatedAt
+      clientCompletedAt.value = response.draft.clientPortalCompletedAt ?? ''
     }
     else {
       intakeAnswers.value = defaults.answers
@@ -716,6 +718,7 @@ async function loadDraft() {
       selectedDocumentIds.value = []
       activeStep.value = 1
       draftSavedAt.value = ''
+      clientCompletedAt.value = ''
     }
     draftReady.value = true
   }
@@ -748,6 +751,7 @@ function resetWorkspace() {
   draftRevision.value = 0
   draftReady.value = false
   draftSavedAt.value = ''
+  clientCompletedAt.value = ''
   draftDirty.value = false
   intakeValidationVisible.value = false
   validationVisible.value = false
@@ -822,6 +826,7 @@ async function saveDraftNow() {
       )
       draftRevision.value = response.draft.revision
       draftSavedAt.value = response.draft.updatedAt
+      clientCompletedAt.value = response.draft.clientPortalCompletedAt ?? ''
     }
   }
   catch (error) {
@@ -1922,6 +1927,16 @@ onBeforeUnmount(() => {
         icon="i-lucide-cloud-off"
         title="Automatyczny zapis jest chwilowo niedostępny"
         :description="draftError"
+        class="case-multiform__draft-alert"
+      />
+
+      <UAlert
+        v-if="clientCompletedAt"
+        color="success"
+        variant="subtle"
+        icon="i-lucide-user-round-check"
+        title="Klient przekazał swoją część Multiwniosku"
+        :description="`Dane zapisano we wspólnym szkicu ${formatSavedAt(clientCompletedAt)}. Możesz je teraz zweryfikować i uzupełnić pozostałą część.`"
         class="case-multiform__draft-alert"
       />
 

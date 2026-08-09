@@ -10,10 +10,21 @@ const EMBEDDING_MODEL = 'gemini-embedding-2'
 const GATEWAY_EMBEDDING_MODEL = `google/${EMBEDDING_MODEL}`
 const EMBEDDING_DIMENSIONS = 768
 const EMBEDDING_RECIPE = 'search-result-v1'
-const CONFIRMATION = 'IMPORT_34_OFFICIAL_BANK_FILES_TO_PRODUCTION'
+const CONFIRMATION = 'IMPORT_OFFICIAL_BANK_FILES_TO_PRODUCTION'
 const SEED_LOCK = 'openexpert.seed.official-bank-files.v1'
 const VERCEL_PROJECT = 'openexpert-crm'
 const BLOB_STORAGE_NAMESPACE = 'mortgage-bank-files'
+const SUPPORTED_FILE_TYPES = new Map([
+  ['application/pdf', { extension: '.pdf', mimeGroup: 'pdf' }],
+  [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    { extension: '.xlsx', mimeGroup: 'spreadsheet' },
+  ],
+])
+
+function requiresTextExtraction(entry) {
+  return entry.mimeType === 'application/pdf' && entry.textExtraction !== 'unsupported'
+}
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '../../..')
@@ -39,15 +50,80 @@ const officialBankDomains = new Map([
   ['mbank', ['mbank.pl']],
   ['millennium', ['bankmillennium.pl']],
   ['pekao', ['pekao.com.pl']],
-  ['pko-bp', ['pkobp.pl']],
+  ['pko-bp', ['pkobp.pl', 'pkobh.pl']],
   ['velobank', ['velobank.pl']],
 ])
 
 const managedCategoryDefinitions = new Map([
+  ['application', {
+    label: 'Wnioski bankowe',
+    icon: 'i-lucide-file-pen-line',
+    sortOrder: 10,
+  }],
+  ['application_attachment', {
+    label: 'Załączniki do wniosku',
+    icon: 'i-lucide-files',
+    sortOrder: 15,
+  }],
+  ['application_supplement', {
+    label: 'Uzupełnienia wniosku',
+    icon: 'i-lucide-file-plus-2',
+    sortOrder: 18,
+  }],
+  ['income_form', {
+    label: 'Formularze dochodowe',
+    icon: 'i-lucide-badge-dollar-sign',
+    sortOrder: 20,
+  }],
+  ['valuation_form', {
+    label: 'Formularze wyceny',
+    icon: 'i-lucide-house-search',
+    sortOrder: 25,
+  }],
+  ['valuation_guidelines', {
+    label: 'Wytyczne do wyceny',
+    icon: 'i-lucide-ruler',
+    sortOrder: 28,
+  }],
+  ['risk_information', {
+    label: 'Informacje o ryzyku',
+    icon: 'i-lucide-shield-alert',
+    sortOrder: 30,
+  }],
+  ['general_information', {
+    label: 'Informacje ogólne',
+    icon: 'i-lucide-info',
+    sortOrder: 35,
+  }],
+  ['insurance_security', {
+    label: 'Ubezpieczenia i zabezpieczenia',
+    icon: 'i-lucide-shield-check',
+    sortOrder: 40,
+  }],
   ['product_rules', {
     label: 'Regulaminy produktów',
     icon: 'i-lucide-book-open-check',
     sortOrder: 45,
+  }],
+  ['promotion_rules', {
+    label: 'Warunki promocji',
+    icon: 'i-lucide-badge-percent',
+    sortOrder: 48,
+  }],
+  ['disbursement_form', {
+    label: 'Uruchomienie i transze',
+    icon: 'i-lucide-landmark',
+    sortOrder: 50,
+  }],
+  ['pricing', {
+    label: 'Oprocentowanie i ceny',
+    icon: 'i-lucide-calculator',
+    sortOrder: 55,
+  }],
+  ['other', {
+    label: 'Pozostałe',
+    icon: 'i-lucide-folder',
+    sortOrder: 90,
   }],
 ])
 
@@ -77,9 +153,9 @@ Persistent writes are accepted only inside a Vercel production build and require
   NUXT_VERCEL_BLOB_PRIVATE_STORE_ID
   VERCEL_OIDC_TOKEN
 
-The apply mode reads only bundled PDF snapshots whose SHA-256 checksums are pinned in
-the manifest. It preserves their official HTTPS source URLs as provenance, extracts
-the PDFs, generates 768-dimensional Gemini embeddings through Vercel AI Gateway,
+The apply mode reads only bundled official PDF/XLSX snapshots whose SHA-256 checksums
+are pinned in the manifest. It preserves their official HTTPS source URLs as
+provenance, extracts searchable PDFs, generates 768-dimensional Gemini embeddings,
 uploads binaries to the private Vercel Blob store, and commits all database records
 in one transaction. It never creates users or changes roles.`
 }
@@ -139,19 +215,13 @@ function decodeJwtPayload(value) {
   }
 }
 
-function productionConfiguration(manifestLength) {
+function productionConfiguration() {
   if (process.env.VERCEL !== '1') {
     throw new Error('Apply mode is restricted to a Vercel build (VERCEL=1)')
   }
   if (process.env.VERCEL_ENV !== 'production') {
     throw new Error('Apply mode requires VERCEL_ENV=production')
   }
-  if (CONFIRMATION !== `IMPORT_${manifestLength}_OFFICIAL_BANK_FILES_TO_PRODUCTION`) {
-    throw new Error(
-      `The manifest contains ${manifestLength} entries; update and review the explicit confirmation first`,
-    )
-  }
-
   const databaseUrl = String(process.env.DATABASE_URL_UNPOOLED ?? '').trim()
     || requiredEnvironment('DATABASE_URL')
   const privateStoreId = requiredEnvironment('NUXT_VERCEL_BLOB_PRIVATE_STORE_ID')
@@ -295,14 +365,33 @@ function validateManifest(value, bankCatalog) {
     if (!officialBankDomains.has(entry.bankSlug)) {
       throw new Error(`${label}.bankSlug is unsupported: ${entry.bankSlug}`)
     }
-    if (entry.mimeType !== 'application/pdf' || !entry.fileName.endsWith('.pdf')) {
-      throw new Error(`${label} must describe a PDF file`)
+    const fileType = SUPPORTED_FILE_TYPES.get(entry.mimeType)
+    if (!fileType || !entry.fileName.endsWith(fileType.extension)) {
+      throw new Error(`${label} must describe a supported PDF or XLSX file`)
     }
     if (basename(entry.fileName) !== entry.fileName) {
       throw new Error(`${label}.fileName must not contain a directory path`)
     }
     if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(entry.sha256)) {
       throw new Error(`${label}.sha256 must be a lowercase SHA-256 checksum`)
+    }
+    if (entry.originalSourceSha256 !== undefined) {
+      if (!/^[a-f0-9]{64}$/u.test(entry.originalSourceSha256)) {
+        throw new Error(`${label}.originalSourceSha256 must be a lowercase SHA-256 checksum`)
+      }
+      if (entry.originalSourceSha256 === entry.sha256) {
+        throw new Error(`${label}.originalSourceSha256 must differ from the derived file checksum`)
+      }
+    }
+    if (
+      entry.derivation !== undefined
+      && (
+        !['sanitized_static', 'sanitized_interactive'].includes(entry.derivation)
+        || !entry.originalSourceSha256
+        || entry.mimeType !== 'application/pdf'
+      )
+    ) {
+      throw new Error(`${label}.derivation requires a supported sanitized PDF and originalSourceSha256`)
     }
     assertOfficialUrl(entry.bankSlug, entry.downloadUrl, `${label}.downloadUrl`)
     assertOfficialUrl(entry.bankSlug, entry.sourcePageUrl, `${label}.sourcePageUrl`)
@@ -315,11 +404,21 @@ function validateManifest(value, bankCatalog) {
     ) {
       throw new Error(`${label}.effectiveTo cannot precede effectiveFrom`)
     }
-    if (!Number.isInteger(entry.pageCount) || entry.pageCount < 1) {
-      throw new Error(`${label}.pageCount must be a positive integer`)
+    if (entry.mimeType === 'application/pdf') {
+      if (!Number.isInteger(entry.pageCount) || entry.pageCount < 1) {
+        throw new Error(`${label}.pageCount must be a positive integer for PDF files`)
+      }
+    } else if (entry.pageCount !== null) {
+      throw new Error(`${label}.pageCount must be null for spreadsheet files`)
     }
     if (entry.notes !== undefined && typeof entry.notes !== 'string') {
       throw new Error(`${label}.notes must be a string when present`)
+    }
+    if (
+      entry.textExtraction !== undefined
+      && (entry.mimeType !== 'application/pdf' || entry.textExtraction !== 'unsupported')
+    ) {
+      throw new Error(`${label}.textExtraction supports only PDF value “unsupported”`)
     }
 
     const identity = `${entry.bankSlug}\u0000${normalizedTitle(entry.title)}`
@@ -379,17 +478,25 @@ async function loadRuntimeDependencies() {
   return { blob, embedMany: ai.embedMany, gateway: gateway.gateway, pdfjs }
 }
 
-async function readBundledPdf(entry) {
+async function readBundledFile(entry) {
   const bytes = await readFile(join(assetDirectory, entry.fileName))
   if (bytes.byteLength > MAXIMUM_BYTES) {
     throw new Error(`${entry.title}: bundled file exceeds 50 MiB`)
   }
-  if (bytes.byteLength < 5 || bytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
-    throw new Error(`${entry.title}: bundled content is not a PDF`)
+  const isPdf = entry.mimeType === 'application/pdf'
+  const validSignature = isPdf
+    ? bytes.byteLength >= 5 && bytes.subarray(0, 5).toString('ascii') === '%PDF-'
+    : bytes.byteLength >= 4
+      && bytes[0] === 0x50
+      && bytes[1] === 0x4b
+      && bytes[2] === 0x03
+      && bytes[3] === 0x04
+  if (!validSignature) {
+    throw new Error(`${entry.title}: bundled content signature does not match ${entry.mimeType}`)
   }
   const checksum = sha256(bytes)
   if (checksum !== entry.sha256) {
-    throw new Error(`${entry.title}: bundled PDF checksum does not match the manifest`)
+    throw new Error(`${entry.title}: bundled file checksum does not match the manifest`)
   }
   return {
     bytes,
@@ -397,7 +504,17 @@ async function readBundledPdf(entry) {
     resolvedUrl: entry.downloadUrl,
     etag: null,
     lastModified: null,
-    responseContentType: 'application/pdf',
+    responseContentType: entry.mimeType,
+  }
+}
+
+function unsupportedExtraction(entry) {
+  return {
+    pageCount: entry.mimeType === 'application/pdf' ? entry.pageCount : null,
+    text: null,
+    chunks: [],
+    extractor: 'unsupported',
+    reason: `${entry.mimeType} is preserved byte-for-byte without text extraction`,
   }
 }
 
@@ -714,15 +831,18 @@ async function readLogicalFileState(database, bankId, title, checksum) {
   }
 }
 
-function isCompleteVersion(version) {
-  return Boolean(
-    version
-    && ['current', 'archived'].includes(version.status)
-    && version.extraction_status === 'completed'
+function isCompleteVersion(version, entry) {
+  if (!version || !['current', 'archived'].includes(version.status)) return false
+  if (!requiresTextExtraction(entry)) {
+    return version.extraction_status === 'unsupported'
+      && version.embedding_status === 'disabled'
+      && Number(version.chunk_count) === 0
+      && Number(version.embedding_count) === 0
+  }
+  return version.extraction_status === 'completed'
     && version.embedding_status === 'completed'
     && version.chunk_count > 0
-    && version.chunk_count === version.embedding_count,
-  )
+    && version.chunk_count === version.embedding_count
 }
 
 async function createPlans(database, catalog, documents) {
@@ -746,7 +866,7 @@ async function createPlans(database, catalog, documents) {
     const storagePath = exactVersion?.storage_path
       ?? `${bank.id}/${fileId}/${versionId}/${safeFileName(document.entry.fileName)}`
     const mode = exactVersion
-      ? (isCompleteVersion(exactVersion) ? 'unchanged' : 'repair')
+      ? (isCompleteVersion(exactVersion, document.entry) ? 'unchanged' : 'repair')
       : 'insert'
 
     if (mode === 'repair' && state.logicalFile.current_version_id !== exactVersion.id) {
@@ -819,7 +939,7 @@ async function putPlanBlob(blob, configuration, plan, pathname) {
       oidcToken: configuration.oidcToken,
       addRandomSuffix: false,
       allowOverwrite: false,
-      contentType: 'application/pdf',
+      contentType: plan.document.entry.mimeType,
       cacheControlMaxAge: 3_600,
       maximumSizeInBytes: MAXIMUM_BYTES,
       multipart: plan.document.download.bytes.byteLength > 5 * 1024 * 1024,
@@ -951,13 +1071,16 @@ async function upsertBankCatalog(database, plans, bankCatalog) {
 
 async function upsertProcessingJobs(database, plan, now) {
   const common = [plan.versionId, now]
+  const searchablePdf = requiresTextExtraction(plan.document.entry)
+  const extractionJobStatus = searchablePdf ? 'completed' : 'cancelled'
+  const embeddingJobStatus = searchablePdf ? 'completed' : 'cancelled'
   await database.query(
     `insert into public.mortgage_bank_file_processing_jobs (
        version_id, job_type, status, attempts, started_at, finished_at, last_error, metadata
      ) values
-       ($1::uuid, 'extract', 'completed', 1, $2::timestamptz, $2::timestamptz, null, $3::jsonb),
-       ($1::uuid, 'embed', 'completed', 1, $2::timestamptz, $2::timestamptz, null, $4::jsonb),
-       ($1::uuid, 'refresh_source', 'completed', 1, $2::timestamptz, $2::timestamptz, null, $5::jsonb)
+       ($1::uuid, 'extract', $3, 1, $2::timestamptz, $2::timestamptz, null, $5::jsonb),
+       ($1::uuid, 'embed', $4, 1, $2::timestamptz, $2::timestamptz, null, $6::jsonb),
+       ($1::uuid, 'refresh_source', 'completed', 1, $2::timestamptz, $2::timestamptz, null, $7::jsonb)
      on conflict (version_id, job_type) do update set
        status = excluded.status,
        attempts = greatest(mortgage_bank_file_processing_jobs.attempts, excluded.attempts),
@@ -968,14 +1091,17 @@ async function upsertProcessingJobs(database, plan, now) {
        updated_at = now()`,
     [
       ...common,
+      extractionJobStatus,
+      embeddingJobStatus,
       JSON.stringify({
-        extractor: 'pdfjs-dist',
+        extractor: searchablePdf ? 'pdfjs-dist' : 'unsupported',
         chunkCount: plan.document.extracted.chunks.length,
         importer: 'seed-official-bank-files.mjs',
       }),
       JSON.stringify({
-        model: EMBEDDING_MODEL,
-        dimensions: EMBEDDING_DIMENSIONS,
+        model: searchablePdf ? EMBEDDING_MODEL : null,
+        dimensions: searchablePdf ? EMBEDDING_DIMENSIONS : null,
+        status: searchablePdf ? 'completed' : 'disabled',
         recipeVersion: EMBEDDING_RECIPE,
         chunkCount: plan.document.extracted.chunks.length,
         importer: 'seed-official-bank-files.mjs',
@@ -1072,6 +1198,12 @@ async function insertChunksAndEmbeddings(database, plan) {
 
 async function persistProcessedPlan(database, plan, now) {
   const entry = plan.document.entry
+  const fileType = SUPPORTED_FILE_TYPES.get(entry.mimeType)
+  const searchablePdf = requiresTextExtraction(entry)
+  const extractionStatus = searchablePdf ? 'completed' : 'unsupported'
+  const embeddingStatus = searchablePdf ? 'completed' : 'disabled'
+  const embeddingModel = searchablePdf ? EMBEDDING_MODEL : null
+  const embeddingDimensions = searchablePdf ? EMBEDDING_DIMENSIONS : null
   if (!plan.initialState.logicalFileId) {
     await database.query(
       `insert into public.mortgage_bank_files (
@@ -1101,11 +1233,16 @@ async function persistProcessedPlan(database, plan, now) {
   }
 
   const extractionMetadata = {
-    extraction: 'pdfjs-dist',
+    extraction: searchablePdf ? 'pdfjs-dist' : 'unsupported',
+    ...(plan.document.extracted.reason
+      ? { reason: plan.document.extracted.reason }
+      : {}),
     chunkCount: plan.document.extracted.chunks.length,
     manifestPageCount: entry.pageCount,
     pageCountMatchesManifest: entry.pageCount === plan.document.extracted.pageCount,
     responseContentType: plan.document.download.responseContentType,
+    originalSourceSha256: entry.originalSourceSha256 ?? null,
+    derivation: entry.derivation ?? null,
     importer: 'seed-official-bank-files.mjs',
     seedIdentity: `${entry.bankSlug}:${entry.fileName}`,
   }
@@ -1120,10 +1257,10 @@ async function persistProcessedPlan(database, plan, now) {
          embedding_dimensions, created_by_user_id
        ) values (
          $1::uuid, $2::uuid, $3, $4, $5, $6,
-         'application/pdf', 'pdf', $7, $8, $9,
-         $10, $11, $12, $13::date,
-         $14::date, null, 'current', 'completed', 'completed',
-         $15, $16, $17::jsonb, $18, $19, null
+         $7, $8, $9, $10, $11,
+         $12, $13, $14, $15::date,
+         $16::date, null, 'current', $17, $18,
+         $19, $20, $21::jsonb, $22, $23, null
        )`,
       [
         plan.versionId,
@@ -1132,6 +1269,8 @@ async function persistProcessedPlan(database, plan, now) {
         `${plan.versionNumber}.0`,
         plan.storagePath,
         safeFileName(entry.fileName),
+        entry.mimeType,
+        fileType.mimeGroup,
         plan.document.download.bytes.byteLength,
         plan.document.download.checksum,
         entry.downloadUrl,
@@ -1140,11 +1279,13 @@ async function persistProcessedPlan(database, plan, now) {
         plan.document.download.lastModified,
         entry.effectiveFrom ?? null,
         entry.effectiveTo ?? null,
+        extractionStatus,
+        embeddingStatus,
         plan.document.extracted.pageCount,
         plan.document.extracted.text,
         JSON.stringify(extractionMetadata),
-        EMBEDDING_MODEL,
-        EMBEDDING_DIMENSIONS,
+        embeddingModel,
+        embeddingDimensions,
       ],
     )
   } else {
@@ -1155,28 +1296,34 @@ async function persistProcessedPlan(database, plan, now) {
     await database.query(
       `update public.mortgage_bank_file_versions
           set status = 'current',
-              extraction_status = 'completed',
-              embedding_status = 'completed',
-              page_count = $2,
-              extracted_text = $3,
-              extraction_metadata = $4::jsonb,
-              embedding_model = $5,
-              embedding_dimensions = $6,
-              source_download_url = $7,
-              resolved_download_url = $8,
-              source_etag = $9,
-              source_last_modified = $10,
-              effective_from = $11::date,
-              effective_to = $12::date,
+              mime_type = $2,
+              mime_group = $3,
+              extraction_status = $4,
+              embedding_status = $5,
+              page_count = $6,
+              extracted_text = $7,
+              extraction_metadata = $8::jsonb,
+              embedding_model = $9,
+              embedding_dimensions = $10,
+              source_download_url = $11,
+              resolved_download_url = $12,
+              source_etag = $13,
+              source_last_modified = $14,
+              effective_from = $15::date,
+              effective_to = $16::date,
               updated_at = now()
         where id = $1::uuid`,
       [
         plan.versionId,
+        entry.mimeType,
+        fileType.mimeGroup,
+        extractionStatus,
+        embeddingStatus,
         plan.document.extracted.pageCount,
         plan.document.extracted.text,
         JSON.stringify(extractionMetadata),
-        EMBEDDING_MODEL,
-        EMBEDDING_DIMENSIONS,
+        embeddingModel,
+        embeddingDimensions,
         entry.downloadUrl,
         plan.document.download.resolvedUrl,
         plan.document.download.etag,
@@ -1187,7 +1334,7 @@ async function persistProcessedPlan(database, plan, now) {
     )
   }
 
-  await insertChunksAndEmbeddings(database, plan)
+  if (searchablePdf) await insertChunksAndEmbeddings(database, plan)
   if (
     plan.initialState.currentVersionId
     && plan.initialState.currentVersionId !== plan.versionId
@@ -1227,6 +1374,8 @@ async function persistProcessedPlan(database, plan, now) {
     sizeBytes: plan.document.download.bytes.byteLength,
     sourceDownloadUrl: entry.downloadUrl,
     resolvedDownloadUrl: plan.document.download.resolvedUrl,
+    originalSourceSha256: entry.originalSourceSha256 ?? null,
+    derivation: entry.derivation ?? null,
   }
   await database.query(
     `insert into public.mortgage_bank_file_events (
@@ -1249,7 +1398,7 @@ async function persistProcessedPlan(database, plan, now) {
       JSON.stringify({ seedIdentity: eventMetadata.seedIdentity }),
     ],
   )
-  await database.query(
+  if (searchablePdf) await database.query(
     `insert into public.mortgage_bank_file_events (
        file_id, version_id, actor_user_id, action, metadata
      )
@@ -1342,13 +1491,17 @@ async function verifyPersistedPlan(database, plan) {
     throw new Error(`Persisted version verification failed for “${plan.document.entry.title}”`)
   }
   const row = result.rows[0]
-  if (
-    row.extraction_status !== 'completed'
-    || row.embedding_status !== 'completed'
-    || row.chunk_count < 1
-    || row.chunk_count !== row.embedding_count
-    || (plan.productId && !row.has_product)
-  ) {
+  const searchablePdf = requiresTextExtraction(plan.document.entry)
+  const contentReady = searchablePdf
+    ? row.extraction_status === 'completed'
+      && row.embedding_status === 'completed'
+      && row.chunk_count > 0
+      && row.chunk_count === row.embedding_count
+    : row.extraction_status === 'unsupported'
+      && row.embedding_status === 'disabled'
+      && Number(row.chunk_count) === 0
+      && Number(row.embedding_count) === 0
+  if (!contentReady || (plan.productId && !row.has_product)) {
     throw new Error(`Persisted data is incomplete for “${plan.document.entry.title}”`)
   }
 }
@@ -1393,15 +1546,22 @@ async function main() {
     ensurePdfJsGlobals()
     const pdfjs = await importFrom(crmRequire, 'pdfjs-dist/legacy/build/pdf.mjs')
     let chunkCount = 0
+    let spreadsheetCount = 0
+    let nonSearchablePdfCount = 0
     for (const entry of manifest) {
-      const bundled = await readBundledPdf(entry)
-      const extracted = await extractPdf(pdfjs, bundled.bytes, entry)
-      chunkCount += extracted.chunks.length
+      const bundled = await readBundledFile(entry)
+      if (requiresTextExtraction(entry)) {
+        const extracted = await extractPdf(pdfjs, bundled.bytes, entry)
+        chunkCount += extracted.chunks.length
+      } else {
+        if (entry.mimeType === 'application/pdf') nonSearchablePdfCount += 1
+        else spreadsheetCount += 1
+      }
     }
     const banks = new Map()
     for (const entry of manifest) banks.set(entry.bankSlug, (banks.get(entry.bankSlug) ?? 0) + 1)
     process.stdout.write(
-      `DRY RUN: validated ${manifest.length} official PDF entries, bundled checksums, page counts, and ${chunkCount} extractable chunks across ${banks.size} banks.\n`,
+      `DRY RUN: validated ${manifest.length} official files (${spreadsheetCount} XLSX, ${nonSearchablePdfCount} non-searchable PDF), bundled checksums, PDF page counts, and ${chunkCount} extractable chunks across ${banks.size} banks.\n`,
     )
     for (const [bank, count] of banks) process.stdout.write(`  ${bank}: ${count}\n`)
     process.stdout.write(
@@ -1410,7 +1570,7 @@ async function main() {
     return
   }
 
-  const configuration = productionConfiguration(manifest.length)
+  const configuration = productionConfiguration()
   const runtime = await loadRuntimeDependencies()
   const database = new Client({
     connectionString: configuration.databaseUrl,
@@ -1432,7 +1592,7 @@ async function main() {
     const documents = []
     for (const [index, entry] of manifest.entries()) {
       process.stdout.write(`[${index + 1}/${manifest.length}] Verifying ${entry.bankSlug}: ${entry.title}\n`)
-      const download = await readBundledPdf(entry)
+      const download = await readBundledFile(entry)
       documents.push({ entry, download, extracted: null })
     }
 
@@ -1442,11 +1602,13 @@ async function main() {
       process.stdout.write(
         `[${index + 1}/${requiringProcessing.length}] Extracting ${plan.document.entry.title}\n`,
       )
-      plan.document.extracted = await extractPdf(
-        runtime.pdfjs,
-        plan.document.download.bytes,
-        plan.document.entry,
-      )
+      plan.document.extracted = requiresTextExtraction(plan.document.entry)
+        ? await extractPdf(
+            runtime.pdfjs,
+            plan.document.download.bytes,
+            plan.document.entry,
+          )
+        : unsupportedExtraction(plan.document.entry)
     }
     if (requiringProcessing.length > 0) {
       process.stdout.write(

@@ -18,7 +18,14 @@ const BANK_FILES_COMMAND = [
   resolve(dirname(fileURLToPath(import.meta.url)), 'seed-official-bank-files.mjs'),
   '--apply',
   '--confirm',
-  'IMPORT_34_OFFICIAL_BANK_FILES_TO_PRODUCTION',
+  'IMPORT_OFFICIAL_BANK_FILES_TO_PRODUCTION',
+]
+const MULTIFORM_TEMPLATES_COMMAND = [
+  '--experimental-strip-types',
+  resolve(dirname(fileURLToPath(import.meta.url)), 'seed-official-multiform-templates.mjs'),
+  '--apply',
+  '--confirm',
+  'PUBLISH_OFFICIAL_MULTIFORM_TEMPLATES_TO_PRODUCTION',
 ]
 const runMode = String(process.env.OPENEXPERT_RUN_PRODUCTION_SEEDS ?? '').trim()
 const isProductionBuild = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production'
@@ -50,8 +57,8 @@ if (!runMode) {
 }
 
 const commands = {
-  'bank-files': [BANK_FILES_COMMAND],
-  'showcase-and-bank-files': [SHOWCASE_COMMAND, BANK_FILES_COMMAND],
+  'bank-files': [BANK_FILES_COMMAND, MULTIFORM_TEMPLATES_COMMAND],
+  'showcase-and-bank-files': [BANK_FILES_COMMAND, MULTIFORM_TEMPLATES_COMMAND, SHOWCASE_COMMAND],
 }[runMode]
 if (!commands) {
   throw new Error(

@@ -209,6 +209,57 @@ export function semanticVersionDigest(version) {
     .digest('hex')
 }
 
+export function catalogCalculatorSchemaVersion(version, { offline = false } = {}) {
+  const configured = version.calculatorSchemaVersion ?? 1
+  if (!Number.isInteger(configured) || configured < 1) {
+    throw new Error(`${version.versionKey}: calculatorSchemaVersion must be a positive integer`)
+  }
+  // The local offline catalogue intentionally remains a legacy registry fixture.
+  // Production/current-source synchronization must use the reviewed DB-pinned policy.
+  return offline ? 1 : configured
+}
+
+export function templatePinRequirements(version) {
+  const configuredIds = [...new Set(version.multiformTemplateIds ?? [])]
+  const requirements = (version.documentRequirements ?? []).flatMap((requirement) => (
+    requirement.templateId
+      ? [{ code: requirement.code, templateId: requirement.templateId }]
+      : []
+  ))
+  if (new Set(requirements.map(requirement => requirement.code)).size !== requirements.length) {
+    throw new Error(`${version.versionKey}: template requirement codes must be unique`)
+  }
+  const requirementIds = [...new Set(requirements.map(requirement => requirement.templateId))]
+  if (
+    configuredIds.length !== requirementIds.length
+    || configuredIds.some(templateId => !requirementIds.includes(templateId))
+  ) {
+    throw new Error(
+      `${version.versionKey}: multiformTemplateIds must exactly match documentRequirements templateId values`,
+    )
+  }
+  return requirements
+}
+
+async function assertPinnedProductVersion(client, productVersionId, version) {
+  const expected = templatePinRequirements(version)
+  if (!expected.length) return
+  const { data, error } = await client
+    .from('mortgage_product_version_document_templates')
+    .select('requirement_code, template_revision_id')
+    .eq('product_version_id', productVersionId)
+  assertResult(error, `Reading template pins for ${version.versionKey}`)
+  const actualCodes = new Set((data ?? []).map(pin => String(pin.requirement_code)))
+  if (
+    actualCodes.size !== expected.length
+    || expected.some(requirement => !actualCodes.has(requirement.code))
+  ) {
+    throw new Error(
+      `${version.versionKey}: immutable product version is missing published template pins`,
+    )
+  }
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -396,6 +447,11 @@ export async function syncMortgageCatalog(
 
   for (const item of manifest.products) {
     const version = item.version
+    const calculatorSchemaVersion = catalogCalculatorSchemaVersion(version, { offline })
+    const expectedTemplatePins = templatePinRequirements(version)
+    if (calculatorSchemaVersion >= 2 && expectedTemplatePins.length === 0) {
+      throw new Error(`${version.versionKey}: DB-pinned catalogue version has no templates`)
+    }
     const sourceSnapshot = sourceSnapshots.get(item.sourceKey)
     if (!sourceSnapshot) {
       throw new Error(`Source snapshot is missing for ${item.sourceKey}`)
@@ -404,7 +460,7 @@ export async function syncMortgageCatalog(
       `${version.versionKey}-${semanticVersionDigest(version).slice(0, 16)}`
     const { data: existingVersion, error: existingVersionError } = await client
       .from('mortgage_product_versions')
-      .select('id, version_key, product_id')
+      .select('id, version_key, product_id, calculator_schema_version')
       .eq('version_key', semanticVersionKey)
       .maybeSingle()
     assertResult(existingVersionError, `Reading version snapshot ${semanticVersionKey}`)
@@ -413,9 +469,17 @@ export async function syncMortgageCatalog(
       throw new Error(`Product version snapshot key collision for ${semanticVersionKey}`)
     }
 
-    if (existingVersion) continue
+    if (existingVersion) {
+      if (calculatorSchemaVersion >= 2) {
+        if (Number(existingVersion.calculator_schema_version) < 2) {
+          throw new Error(`${semanticVersionKey}: existing version does not enforce DB template pins`)
+        }
+        await assertPinnedProductVersion(client, existingVersion.id, version)
+      }
+      continue
+    }
 
-    const { error } = await client.from('mortgage_product_versions').insert({
+    const { data: insertedVersion, error } = await client.from('mortgage_product_versions').insert({
       version_key: semanticVersionKey,
       product_id: productId,
       source_document_id: sourceSnapshot.id,
@@ -443,11 +507,21 @@ export async function syncMortgageCatalog(
       requirements: version.requirements,
       document_requirements: version.documentRequirements ?? [],
       multiform_template_ids: version.multiformTemplateIds ?? [],
+      calculator_schema_version: calculatorSchemaVersion,
+      multiform_template_policy: calculatorSchemaVersion >= 2
+        ? 'database_pinned'
+        : 'registry_legacy',
       representative_example: version.representativeExample,
       assumptions: version.assumptions,
       unknown_fields: version.unknownFields,
-    })
+    }).select('id').single()
     assertResult(error, `Inserting version snapshot ${semanticVersionKey}`)
+    if (calculatorSchemaVersion >= 2) {
+      if (expectedTemplatePins.length === 0) {
+        throw new Error(`${semanticVersionKey}: DB-pinned version has no pin requirements`)
+      }
+      await assertPinnedProductVersion(client, insertedVersion.id, version)
+    }
   }
 
   console.log(`[mortgages] synchronized ${manifest.products.length} products as of ${manifest.asOf}`)

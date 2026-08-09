@@ -18,6 +18,8 @@ const migrationNames = [
   '0039_mortgage_bank_brand_colors.sql',
   '0040_allow_bank_application_status_without_property.sql',
   '0041_seed_mortgage_bank_file_product_rules_category.sql',
+  '0042_link_mortgage_templates_to_bank_files.sql',
+  '0043_require_database_pinned_multiform_templates.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

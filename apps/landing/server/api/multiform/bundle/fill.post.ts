@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
 import {
   getTemplate,
+  instantiateTemplate,
   prepareBundle,
+  resolveTemplateFillMethod,
   templateApplicantCapacityIssues,
+  templateInstanceIndexes,
+  templateMatchesValues,
   type DocumentTemplate,
 } from '@openexpert/multiform'
 import { createError, readBody, setHeader } from 'h3'
@@ -26,12 +30,13 @@ import {
   resolvePinnedMultiformTemplates,
 } from '../../../utils/multiform-template-repository'
 import {
-  createPdfBundle,
-  fillPdfTemplate,
+  createDocumentBundle,
+  fillDocumentTemplate,
   MultiformPdfValueError,
   UnsupportedMultiformFillMethodError,
   safeArchiveDirectoryName,
 } from '../../../utils/multiform-pdf'
+import { MultiformSpreadsheetValueError } from '../../../utils/multiform-xlsx'
 
 interface FillBundleBody {
   templateIds?: unknown
@@ -40,6 +45,7 @@ interface FillBundleBody {
   crmContext?: unknown
   output?: unknown
   templateId?: unknown
+  instanceIndex?: unknown
   password?: unknown
 }
 
@@ -48,7 +54,13 @@ interface ValidationIssue {
   message: string
 }
 
-const MAX_DOCUMENTS = 10
+interface TemplateRenderEntry {
+  sourceTemplate: DocumentTemplate
+  template: DocumentTemplate
+  instanceIndex?: number
+}
+
+const MAX_DOCUMENTS = 50
 const FONT_FILE = 'DMSans-VariableFont_opsz,wght.ttf'
 
 type BundleFields = ReturnType<typeof prepareBundle>['fields']
@@ -79,6 +91,7 @@ function validateValues(
   collections: BundleCollections,
   values: NormalizedValues,
   collectionCounts: Readonly<Record<string, number>>,
+  additionalRequiredKeys: ReadonlySet<string> = new Set(),
 ) {
   const issues: ValidationIssue[] = []
   const collectionByKey = new Map(collections.map(collection => [collection.key, collection]))
@@ -102,7 +115,7 @@ function validateValues(
         && field.collection
         && collection.requiredRelativeKeys.includes(field.collection.relativeKey),
       )
-      if (isCanonicalFieldRequired(field, values) || requiredByCollection) {
+      if (isCanonicalFieldRequired(field, values, additionalRequiredKeys) || requiredByCollection) {
         issues.push({ key: field.canonicalKey, message: 'Pole jest wymagane.' })
       }
       continue
@@ -300,18 +313,64 @@ function applicationArchiveDirectories(context: Awaited<ReturnType<typeof loadCr
     }))
 }
 
-function pdfAttachmentHeader(fileName: string, prefix = 'uzupelniony-') {
+function documentAttachmentHeader(fileName: string, prefix = 'uzupelniony-') {
   const normalized = fileName
     .normalize('NFC')
     .replace(/[\u0000-\u001f\u007f/\\]/g, '-')
     .replace(/\s+/g, ' ')
-    .trim() || 'wniosek.pdf'
-  const pdfName = normalized.toLocaleLowerCase('pl-PL').endsWith('.pdf')
-    ? normalized
-    : `${normalized}.pdf`
-  const outputName = `${prefix}${pdfName}`
+    .trim() || 'dokument'
+  const outputName = `${prefix}${normalized}`
   const asciiName = outputName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
   return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(outputName)}`
+}
+
+function repeatDocumentOutputName(
+  template: DocumentTemplate,
+  instanceIndex: number,
+  values: NormalizedValues,
+) {
+  const extension = template.source.fileName.toLocaleLowerCase('pl-PL').endsWith('.xlsx')
+    ? '.xlsx'
+    : '.pdf'
+  const sourceStem = template.source.fileName.replace(/\.(?:pdf|xlsx)$/i, '')
+  const applicantName = [
+    values[`applicants.${instanceIndex}.firstName`],
+    values[`applicants.${instanceIndex}.lastName`],
+  ]
+    .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
+    .map(value => String(value).trim())
+    .filter(Boolean)
+    .join('-')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLocaleLowerCase('pl-PL')
+    || `wnioskodawca-${instanceIndex + 1}`
+  const prefix = ['pdf_manual', 'pdf_readonly', 'xlsx_manual'].includes(resolveTemplateFillMethod(template).kind)
+    ? ''
+    : 'uzupelniony-'
+  return `${prefix}${sourceStem}-${applicantName}${extension}`
+}
+
+function templateContentType(template: DocumentTemplate) {
+  return template.source.mimeType ?? 'application/pdf'
+}
+
+function templateInputKeys(entries: readonly TemplateRenderEntry[]) {
+  const keys = new Set<string>()
+  for (const { template } of entries) {
+    if (template.includeWhen) keys.add(template.includeWhen.canonicalKey)
+    for (const key of template.requiredCanonicalKeys ?? []) keys.add(key)
+    for (const binding of template.bindings) {
+      if (!binding.computed && binding.target.kind !== 'unmapped') {
+        keys.add(binding.canonicalKey)
+      }
+      for (const dependency of binding.valueFrom ?? []) keys.add(dependency)
+      if (binding.condition) keys.add(binding.condition.canonicalKey)
+    }
+  }
+  return keys
 }
 
 export default defineEventHandler(async (event) => {
@@ -339,7 +398,17 @@ export default defineEventHandler(async (event) => {
     ? body.templateId.trim()
     : ''
   if (output !== 'zip' && (!requestedTemplateId || !templateIds.includes(requestedTemplateId))) {
-    throw createError({ statusCode: 400, statusMessage: 'Wybierz formularz PDF do pobrania.' })
+    throw createError({ statusCode: 400, statusMessage: 'Wybierz dokument do pobrania.' })
+  }
+  const requestedInstanceIndex = body.instanceIndex === undefined
+    ? undefined
+    : typeof body.instanceIndex === 'number'
+      && Number.isSafeInteger(body.instanceIndex)
+      && body.instanceIndex >= 0
+      ? body.instanceIndex
+      : null
+  if (requestedInstanceIndex === null || (output === 'zip' && requestedInstanceIndex !== undefined)) {
+    throw createError({ statusCode: 400, statusMessage: 'Indeks formularza dla wnioskodawcy jest nieprawidłowy.' })
   }
   const archivePassword = output === 'zip' ? parseArchivePassword(body.password) : undefined
 
@@ -361,15 +430,18 @@ export default defineEventHandler(async (event) => {
   if (templates.some(template => !template)) {
     throw createError({ statusCode: 400, statusMessage: 'Wybrano nieznany template dokumentu.' })
   }
+  const resolvedTemplates = templates.filter(
+    (template): template is DocumentTemplate => Boolean(template),
+  )
   const unsupportedTemplate = firstUnsupportedTemplateFillMethod(
-    templates.filter((template): template is DocumentTemplate => Boolean(template)),
+    resolvedTemplates,
   )
   if (unsupportedTemplate) {
     throw createError(unsupportedTemplateFillMethodHttpDetails(unsupportedTemplate))
   }
-  const templatesToRender = output !== 'zip'
-    ? templates.filter(template => template?.id === requestedTemplateId)
-    : templates
+  const selectedTemplates = output !== 'zip'
+    ? resolvedTemplates.filter(template => template.id === requestedTemplateId)
+    : resolvedTemplates
   if (crmContext && !crmContext.validation.valid) {
     throw createError({
       statusCode: 409,
@@ -382,8 +454,8 @@ export default defineEventHandler(async (event) => {
     : new Map<string, string>()
 
   if (output === 'source') {
-    const template = templatesToRender[0]
-    if (!template) throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono szablonu PDF.' })
+    const template = selectedTemplates[0]
+    if (!template) throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono szablonu dokumentu.' })
     try {
       const pinnedSourceBytes = crmContext
         ? await readPinnedMultiformTemplateSource(event, template)
@@ -393,16 +465,16 @@ export default defineEventHandler(async (event) => {
         template.source.fileName,
       )
       if (checksum(sourceBytes) !== template.source.sha256) {
-        throw new Error('PDF source checksum mismatch')
+        throw new Error('Document source checksum mismatch')
       }
-      setHeader(event, 'Content-Type', 'application/pdf')
-      setHeader(event, 'Content-Disposition', pdfAttachmentHeader(template.source.fileName, ''))
+      setHeader(event, 'Content-Type', templateContentType(template))
+      setHeader(event, 'Content-Disposition', documentAttachmentHeader(template.source.fileName, ''))
       setHeader(event, 'Cache-Control', 'no-store, max-age=0')
       return sourceBytes
     }
     catch (error) {
       if (error && typeof error === 'object' && 'statusCode' in error) throw error
-      throw createError({ statusCode: 500, statusMessage: 'Nie udało się pobrać pustego szablonu PDF.' })
+      throw createError({ statusCode: 500, statusMessage: 'Nie udało się pobrać pustego szablonu dokumentu.' })
     }
   }
 
@@ -438,7 +510,7 @@ export default defineEventHandler(async (event) => {
     })
   }
   const applicantCapacityIssues = templateApplicantCapacityIssues(
-    templates.filter((template): template is DocumentTemplate => Boolean(template)),
+    resolvedTemplates,
     collectionCounts.applicants ?? 0,
   )
   if (applicantCapacityIssues.length > 0) {
@@ -453,12 +525,58 @@ export default defineEventHandler(async (event) => {
       },
     })
   }
-  const values = activeCollectionValues(bundle.fields, normalizedValues, collectionCounts)
+  const candidateRenderEntries = selectedTemplates.flatMap<TemplateRenderEntry>((sourceTemplate) => {
+    if (!sourceTemplate.repeatFor) {
+      if (requestedInstanceIndex !== undefined) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Wybrany formularz nie jest generowany osobno dla wnioskodawców.',
+        })
+      }
+      return [{ sourceTemplate, template: sourceTemplate }]
+    }
+
+    const indexes = templateInstanceIndexes(sourceTemplate, collectionCounts)
+    const selectedIndexes = output === 'zip'
+      ? indexes
+      : [requestedInstanceIndex ?? indexes[0] ?? 0]
+    if (selectedIndexes.some(index => !indexes.includes(index))) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Wybrany wnioskodawca nie należy do aktywnego formularza.',
+      })
+    }
+    return selectedIndexes.map(instanceIndex => ({
+      sourceTemplate,
+      template: instantiateTemplate(sourceTemplate, instanceIndex),
+      instanceIndex,
+    }))
+  })
+  const renderEntries = candidateRenderEntries.filter(({ template }) => (
+    templateMatchesValues(template, normalizedValues)
+  ))
+  if (output === 'pdf' && renderEntries.length === 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Wybrany formularz nie ma zastosowania do danych tej sprawy.',
+    })
+  }
+
+  const activeKeys = templateInputKeys(renderEntries)
+  for (const { template } of candidateRenderEntries) {
+    if (template.includeWhen) activeKeys.add(template.includeWhen.canonicalKey)
+  }
+  const activeFields = bundle.fields.filter(field => activeKeys.has(field.canonicalKey))
+  const values = activeCollectionValues(activeFields, normalizedValues, collectionCounts)
+  const activeRequiredKeys = new Set(renderEntries.flatMap(({ template }) => (
+    template.requiredCanonicalKeys ?? []
+  )))
   const validationIssues = validateValues(
-    bundle.fields,
+    activeFields,
     bundle.collections,
     values,
     collectionCounts,
+    activeRequiredKeys,
   )
   if (validationIssues.length > 0) {
     throw createError({
@@ -468,31 +586,32 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+
   try {
     const [documents, fontBytes, attachments] = await Promise.all([
-      Promise.all(templatesToRender.map(async (template) => {
-        // The earlier unknown-template check narrows this at runtime.
-        if (!template) throw new Error('Unknown template')
-
+      Promise.all(renderEntries.map(async ({ sourceTemplate, template, instanceIndex }) => {
         const pinnedSourceBytes = crmContext
-          ? await readPinnedMultiformTemplateSource(event, template)
+          ? await readPinnedMultiformTemplateSource(event, sourceTemplate)
           : null
         const sourceBytes = pinnedSourceBytes ?? await readMultiformAsset(
           'assets:multiform-mocks',
-          template.source.fileName,
+          sourceTemplate.source.fileName,
         )
-        if (checksum(sourceBytes) !== template.source.sha256) {
-          throw new Error('PDF source checksum mismatch')
+        if (checksum(sourceBytes) !== sourceTemplate.source.sha256) {
+          throw new Error('Document source checksum mismatch')
         }
 
         return {
-          fileName: template.source.fileName,
+          fileName: sourceTemplate.source.fileName,
           template,
           sourceBytes,
+          ...(instanceIndex !== undefined
+            ? { outputName: repeatDocumentOutputName(sourceTemplate, instanceIndex, values) }
+            : {}),
           directory: crmContext
             ? archiveDirectoryByApplicationId.get(
                 crmContext.applications.find(application => (
-                  application.templateIds.includes(template.id)
+                  application.templateIds.includes(sourceTemplate.id)
                 ))?.applicationId ?? '',
               )
             : undefined,
@@ -506,15 +625,26 @@ export default defineEventHandler(async (event) => {
 
     if (output === 'pdf') {
       const document = documents[0]
-      if (!document) throw new Error('Requested PDF template is unavailable')
-      const filled = await fillPdfTemplate(
+      if (!document) throw new Error('Requested document template is unavailable')
+      const filled = await fillDocumentTemplate(
         document.template,
         document.sourceBytes,
         fontBytes,
         values,
       )
-      setHeader(event, 'Content-Type', 'application/pdf')
-      setHeader(event, 'Content-Disposition', pdfAttachmentHeader(document.fileName))
+      setHeader(event, 'Content-Type', templateContentType(document.template))
+      setHeader(
+        event,
+        'Content-Disposition',
+        document.outputName
+          ? documentAttachmentHeader(document.outputName, '')
+          : documentAttachmentHeader(
+              document.fileName,
+              ['pdf_manual', 'pdf_readonly', 'xlsx_manual'].includes(resolveTemplateFillMethod(document.template).kind)
+                ? ''
+                : 'uzupelniony-',
+            ),
+      )
       setHeader(event, 'Cache-Control', 'no-store, max-age=0')
       return filled
     }
@@ -525,7 +655,7 @@ export default defineEventHandler(async (event) => {
         ? archiveDirectoryByApplicationId.get(attachment.submissionId)
         : 'Wspólne',
     }))
-    const archive = await createPdfBundle(
+    const archive = await createDocumentBundle(
       documents,
       fontBytes,
       values,
@@ -558,8 +688,17 @@ export default defineEventHandler(async (event) => {
         },
       })
     }
+    if (error instanceof MultiformSpreadsheetValueError) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'Uzupełnij lub popraw dane arkusza bankowego.',
+        data: {
+          errors: [{ key: error.canonicalKey, message: error.message }],
+        },
+      })
+    }
     console.error(
-      'Multiform PDF bundle rendering failed:',
+      'Multiform document bundle rendering failed:',
       error instanceof Error ? error.name : 'UnknownError',
     )
     throw createError({

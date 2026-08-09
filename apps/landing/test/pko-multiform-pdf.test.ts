@@ -23,7 +23,7 @@ import {
 import { MULTIFORM_COUPLE_FIXTURE } from './fixtures/multiform-scenarios.ts'
 
 const sourceUrl = new URL(
-  '../../../mock-files/pko-bp-wniosek-o-kredyt-hipoteczny.pdf',
+  '../../../mock-files/pko-bp-wniosek-o-kredyt-hipoteczny-2025-09-30.pdf',
   import.meta.url,
 )
 const fontUrl = new URL('../public/fonts/DMSans-VariableFont_opsz,wght.ttf', import.meta.url)
@@ -282,10 +282,10 @@ test('PKO + Pekao full bundle renders the unchanged couple fixture with formatte
   const names = Object.keys(files).sort((left, right) => left.localeCompare(right, 'pl'))
   assert.deepEqual(names, [
     'Pekao/01-wnioski/uzupelniony-pekao-wniosek-o-kredyt-mieszkaniowy.pdf',
-    'PKO BP/01-wnioski/uzupelniony-pko-bp-wniosek-o-kredyt-hipoteczny.pdf',
+    'PKO BP/01-wnioski/uzupelniony-pko-bp-wniosek-o-kredyt-hipoteczny-2025-09-30.pdf',
   ])
 
-  const pkoBytes = files['PKO BP/01-wnioski/uzupelniony-pko-bp-wniosek-o-kredyt-hipoteczny.pdf']
+  const pkoBytes = files['PKO BP/01-wnioski/uzupelniony-pko-bp-wniosek-o-kredyt-hipoteczny-2025-09-30.pdf']
   const pekaoBytes = files['Pekao/01-wnioski/uzupelniony-pekao-wniosek-o-kredyt-mieszkaniowy.pdf']
   assert.ok(pkoBytes)
   assert.ok(pekaoBytes)

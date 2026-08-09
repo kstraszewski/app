@@ -129,6 +129,10 @@ const initializedFor = ref('')
 
 const template = computed(() => data.value?.template ?? null)
 const bank = computed(() => data.value?.bank ?? null)
+const isSpreadsheetTemplate = computed(() => {
+  const kind = template.value?.editor.template.fillMethod?.kind
+  return kind === 'xlsx_native' || kind === 'xlsx_manual'
+})
 const dirty = computed(() => editorText.value !== savedSnapshot.value)
 const validationStale = computed(() => Boolean(validation.value) && validatedSnapshot.value !== editorText.value)
 const issueList = computed<TemplateValidationIssue[]>(() => validation.value
@@ -164,12 +168,15 @@ const saveStateDetailLabel = computed(() => {
   return template.value?.draft ? `Szkic r${template.value.draft.revision}` : 'Nowy szkic'
 })
 const studioDescription = computed(() => {
-  if (!template.value) return bank.value?.name ?? 'Szablon PDF'
-  return `${bank.value?.name ?? 'Instytucja'} · ${template.value.editor.template.source.pageCount} stron`
+  if (!template.value) return bank.value?.name ?? 'Szablon dokumentu'
+  const source = template.value.editor.template.source
+  return isSpreadsheetTemplate.value
+    ? `${bank.value?.name ?? 'Instytucja'} · arkusz XLSX`
+    : `${bank.value?.name ?? 'Instytucja'} · ${source.pageCount} stron`
 })
 
 useHead(() => ({
-  title: `${template.value?.label ?? 'Szablon PDF'} — ${bank.value?.name ?? 'Instytucja'} — OpenExpert`,
+  title: `${template.value?.label ?? 'Szablon dokumentu'} — ${bank.value?.name ?? 'Instytucja'} — OpenExpert`,
 }))
 
 watch(data, (payload) => {
@@ -183,6 +190,10 @@ watch(data, (payload) => {
   validatedSnapshot.value = text
   aiUndoState.value = null
   initializedFor.value = key
+  if (payload.template.editor.template.fillMethod?.kind === 'xlsx_native'
+    || payload.template.editor.template.fillMethod?.kind === 'xlsx_manual') {
+    editorMode.value = 'json'
+  }
 }, { immediate: true })
 
 watch(editorText, (text) => {
@@ -235,6 +246,10 @@ function handleSaveShortcut(event: KeyboardEvent) {
   if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== 's') return
   event.preventDefault()
   void saveDraft()
+}
+
+function openVisualEditor() {
+  if (!isSpreadsheetTemplate.value) editorMode.value = 'visual'
 }
 
 function formatDate(value: string | null) {
@@ -584,7 +599,7 @@ async function publishDraft() {
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      title="Nie udało się otworzyć edytora PDF"
+      title="Nie udało się otworzyć edytora dokumentu"
       :description="apiErrorMessage(error)"
       :actions="[{ label: 'Ponów', onClick: () => refresh() }]"
     />
@@ -598,11 +613,11 @@ async function publishDraft() {
       v-else-if="template"
       class="template-editor-page"
       :class="{
-        'template-editor-page--visual': editorMode === 'visual',
-        'template-editor-page--json': editorMode === 'json',
+        'template-editor-page--visual': editorMode === 'visual' && !isSpreadsheetTemplate,
+        'template-editor-page--json': editorMode === 'json' || isSpreadsheetTemplate,
       }"
     >
-      <ClientOnly v-if="editorMode === 'visual'">
+      <ClientOnly v-if="editorMode === 'visual' && !isSpreadsheetTemplate">
         <div class="studio-workspace">
           <MortgagesPdfTemplateVisualEditor
             v-model:template-text="editorText"
@@ -770,13 +785,14 @@ async function publishDraft() {
             </UBadge>
             <UFieldGroup aria-label="Tryb edytora szablonu">
               <UButton
+                v-if="!isSpreadsheetTemplate"
                 type="button"
                 color="neutral"
                 variant="outline"
                 icon="i-lucide-panels-top-left"
                 size="sm"
                 title="Wróć do widoku wizualnego"
-                @click="editorMode = 'visual'"
+                @click="openVisualEditor"
               >
                 Widok
               </UButton>
@@ -800,11 +816,11 @@ async function publishDraft() {
             aria-label="Template JSON"
             aria-describedby="json-editor-help"
             class="json-editor__input"
-            @keydown.esc.stop="editorMode = 'visual'"
+            @keydown.esc.stop="openVisualEditor"
           />
         </div>
         <p id="json-editor-help" class="json-editor__help">
-          Edytujesz roboczą wersję szablonu. Naciśnij Esc albo wybierz „Widok”, aby wrócić bez utraty zmian.
+          Edytujesz roboczą wersję szablonu. {{ isSpreadsheetTemplate ? 'Mapowania XLSX są opisane adresami komórek w JSON.' : 'Naciśnij Esc albo wybierz „Widok”, aby wrócić bez utraty zmian.' }}
         </p>
         <UAlert
           v-if="!syntax.valid"

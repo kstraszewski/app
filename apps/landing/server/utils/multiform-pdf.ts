@@ -18,6 +18,7 @@ import {
 } from '@openexpert/multiform'
 import { zipSync } from 'fflate'
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
+import { fillXlsxTemplate } from './multiform-xlsx.ts'
 import {
   AnnotationFlags,
   clip,
@@ -335,6 +336,11 @@ function applyValueFormat(
       return fullAddress(values)
     case 'houseAndUnit':
       return houseAndUnit(sourceValues)
+    case 'streetHouseAndUnit':
+      return meaningfulParts([
+        sourceValues[0],
+        houseAndUnit(sourceValues.slice(1)),
+      ]).join(' ')
     case 'date.ddMMyyyy':
       return formatPolishDate(sourceValues[0])
     case 'date.day':
@@ -1500,15 +1506,29 @@ export async function fillPdfTemplate(
   if (fillMethod.kind === 'web_form' || fillMethod.kind === 'api') {
     throw new UnsupportedMultiformFillMethodError(fillMethod.kind)
   }
+  if (fillMethod.kind === 'xlsx_native' || fillMethod.kind === 'xlsx_manual') {
+    throw new Error(`Metoda „${fillMethod.kind}” wymaga renderera XLSX.`)
+  }
+  if (
+    (fillMethod.kind === 'pdf_manual' || fillMethod.kind === 'pdf_readonly')
+    && template.bindings.length > 0
+  ) {
+    throw new Error(`Metoda „${fillMethod.kind}” nie może zawierać automatycznych mapowań pól.`)
+  }
   const acceptsAcroForm = fillMethod.kind === 'pdf_acroform' || fillMethod.kind === 'pdf_hybrid'
   const acceptsOverlay = fillMethod.kind === 'pdf_overlay' || fillMethod.kind === 'pdf_hybrid'
 
   const pdf = await PDFDocument.load(sourceBytes, { updateMetadata: false })
-  pdf.registerFontkit(fontkit)
-  const font = await pdf.embedFont(fontBytes, { subset: true })
   const form = pdf.getForm()
   form.deleteXFA()
   sanitizeInteractiveFormActions(pdf, form)
+
+  if (fillMethod.kind === 'pdf_manual' || fillMethod.kind === 'pdf_readonly') {
+    return pdf.save({ updateFieldAppearances: false })
+  }
+
+  pdf.registerFontkit(fontkit)
+  const font = await pdf.embedFont(fontBytes, { subset: true })
 
   const pages = pdf.getPages()
   const pagesByRef = new Map(pages.map(page => [page.ref.toString(), page]))
@@ -1597,6 +1617,10 @@ export async function fillPdfTemplate(
         rethrowPdfValueError(binding.canonicalKey, error)
       }
       continue
+    }
+
+    if (binding.target.kind === 'xlsx_cell') {
+      throw new Error(`Metoda „${fillMethod.kind}” nie obsługuje targetu XLSX „${binding.canonicalKey}”.`)
     }
 
     const target = binding.target
@@ -1700,6 +1724,17 @@ function safePdfName(fileName: string) {
     : truncateArchiveBaseName(`${safeName}.pdf`)
 }
 
+function safeTemplateDocumentName(fileName: string, template: DocumentTemplate) {
+  const method = resolveTemplateFillMethod(template)
+  if (method.kind === 'xlsx_native' || method.kind === 'xlsx_manual') {
+    const safeName = safeArchiveBaseName(fileName, 'dokument.xlsx')
+    return safeName.toLocaleLowerCase('pl-PL').endsWith('.xlsx')
+      ? safeName
+      : truncateArchiveBaseName(`${safeName}.xlsx`)
+  }
+  return safePdfName(fileName)
+}
+
 function archiveNameKey(value: string) {
   return value.normalize('NFC').toLocaleLowerCase('pl-PL')
 }
@@ -1728,7 +1763,20 @@ export function uniqueArchiveEntryName(
   return entryName
 }
 
-export async function createPdfBundle(
+export async function fillDocumentTemplate(
+  template: DocumentTemplate,
+  sourceBytes: Uint8Array,
+  fontBytes: Uint8Array,
+  values: FlatPdfValues,
+) {
+  const method = resolveTemplateFillMethod(template)
+  if (method.kind === 'xlsx_native' || method.kind === 'xlsx_manual') {
+    return fillXlsxTemplate(template, sourceBytes, values)
+  }
+  return fillPdfTemplate(template, sourceBytes, fontBytes, values)
+}
+
+export async function createDocumentBundle(
   documents: readonly PdfBundleDocument[],
   fontBytes: Uint8Array,
   values: FlatPdfValues,
@@ -1739,16 +1787,20 @@ export async function createPdfBundle(
   const usedNames = new Set<string>()
 
   for (const document of documents) {
-    const filled = await fillPdfTemplate(
+    const filled = await fillDocumentTemplate(
       document.template,
       document.sourceBytes,
       fontBytes,
       values,
     )
+    const fillMethod = resolveTemplateFillMethod(document.template)
     const requestedName = document.outputName
-      ? safePdfName(document.outputName)
-      : `uzupelniony-${safePdfName(document.fileName)}`
-    const preferredName = safePdfName(requestedName)
+      ? safeTemplateDocumentName(document.outputName, document.template)
+      : ['pdf_manual', 'pdf_readonly'].includes(resolveTemplateFillMethod(document.template).kind)
+        || fillMethod.kind === 'xlsx_manual'
+        ? safeTemplateDocumentName(document.fileName, document.template)
+        : `uzupelniony-${safeTemplateDocumentName(document.fileName, document.template)}`
+    const preferredName = safeTemplateDocumentName(requestedName, document.template)
     const directory = document.directory
       ? `${safeArchiveDirectoryName(document.directory)}/01-wnioski`
       : '01-wnioski'
@@ -1780,3 +1832,6 @@ export async function createPdfBundle(
 
   return zipSync(files, { level: 6 })
 }
+
+/** @deprecated Use createDocumentBundle; retained for existing callers and tests. */
+export const createPdfBundle = createDocumentBundle

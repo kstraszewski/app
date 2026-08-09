@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildMultiformSubmissionReadinessManifest,
   createEmptyMultiformIntake,
   getMultiformApplicantIntakeProgress,
   getMultiformIntakeProgress,
@@ -12,6 +13,8 @@ import {
   validateMultiformIntake,
   type MultiformIntakeAnswers,
   type MultiformIntakeRequirement,
+  type MultiformSubmissionReadinessDocument,
+  type MultiformSubmissionReadinessRequirement,
 } from '../shared/multiform-intake.ts'
 
 const clientIds = ['client-jan', 'client-anna']
@@ -35,6 +38,7 @@ function completeAnswers(): MultiformIntakeAnswers {
       },
     },
     case: {
+      loanProgram: 'standard',
       loanPurpose: 'refinance',
       preliminaryAgreement: false,
       landRegister: true,
@@ -118,6 +122,8 @@ test('strictly normalizes untrusted JSON to current client IDs and exact values'
     liabilities: false,
   })
   assert.deepEqual(normalized.case, {
+    loanProgram: null,
+    rkmGuarantee: null,
     loanPurpose: 'purchase_secondary',
     preliminaryAgreement: true,
     landRegister: null,
@@ -157,15 +163,15 @@ test('counts false answers as complete and employment type only for employment',
     ...progress,
     applicants: { ...progress.applicants },
   }, {
-    completed: 14,
-    total: 14,
+    completed: 15,
+    total: 15,
     percentage: 100,
     complete: true,
     applicants: {
       'client-jan': { completed: 5, total: 5, percentage: 100, complete: true },
       'client-anna': { completed: 4, total: 4, percentage: 100, complete: true },
     },
-    case: { completed: 5, total: 5, percentage: 100, complete: true },
+    case: { completed: 6, total: 6, percentage: 100, complete: true },
   })
 })
 
@@ -184,6 +190,7 @@ test('validation reports missing answers with the responsible client IDs', () =>
       },
     },
     case: {
+      loanProgram: 'standard',
       loanPurpose: 'purchase_primary',
       preliminaryAgreement: false,
       landRegister: true,
@@ -193,8 +200,8 @@ test('validation reports missing answers with the responsible client IDs', () =>
   }, clientIds)
 
   assert.equal(validation.valid, false)
-  assert.equal(validation.progress.completed, 8)
-  assert.equal(validation.progress.total, 14)
+  assert.equal(validation.progress.completed, 9)
+  assert.equal(validation.progress.total, 15)
   assert.deepEqual(
     validation.issues.map(issue => [issue.clientId, issue.field]),
     [
@@ -288,4 +295,219 @@ test('resolves refinance and tranche documents while distinguishing later stages
     stage: 'analysis',
     phase: 'analysis',
   })
+})
+
+test('resolves Erste investor and RKM documents from Multiwniosek intake answers', () => {
+  const primaryMarket = completeAnswers()
+  primaryMarket.case.loanPurpose = 'purchase_primary'
+  primaryMarket.case.loanProgram = 'standard'
+  assert.equal(resolveMultiformIntakeRequirementStatus(requirement({
+    code: 'erste_investor_statement',
+    applicability: 'case_requested',
+  }), primaryMarket), 'required')
+  assert.equal(resolveMultiformIntakeRequirementStatus(requirement({
+    code: 'erste_rkm_credit_and_family_repayment_conditions',
+  }), primaryMarket), 'not_applicable')
+
+  const rkm = completeAnswers()
+  rkm.case.loanProgram = 'rkm'
+  rkm.case.rkmGuarantee = true
+  assert.equal(resolveMultiformIntakeRequirementStatus(requirement({
+    code: 'erste_rkm_guarantee_conditions',
+  }), rkm), 'required')
+  assert.equal(resolveMultiformIntakeRequirementStatus(requirement({
+    code: 'erste_rkm_credit_and_family_repayment_conditions',
+  }), rkm), 'required')
+})
+
+function readinessRequirement(
+  overrides: Partial<MultiformSubmissionReadinessRequirement> = {},
+): MultiformSubmissionReadinessRequirement {
+  return {
+    key: 'application-1:identity_document:client-jan',
+    code: 'identity_document',
+    label: 'Dokument tożsamości',
+    category: 'identity',
+    itemKind: 'client_document',
+    stage: 'analysis',
+    applicability: 'always',
+    required: true,
+    ownerClientId: 'client-jan',
+    applicationIds: ['application-1'],
+    documentIds: ['document-1'],
+    fulfillment: 'attached',
+    ...overrides,
+  }
+}
+
+function readinessDocument(
+  overrides: Partial<MultiformSubmissionReadinessDocument> = {},
+): MultiformSubmissionReadinessDocument {
+  return {
+    id: 'document-1',
+    status_code: 'verified',
+    readiness: {
+      issuedAt: '2026-08-01T10:00:00.000Z',
+      validUntil: null,
+      deliveryEvidenceAt: null,
+    },
+    ...overrides,
+  }
+}
+
+test('marks a verified and current working set ready while leaving bank employee action non-blocking', () => {
+  const manifest = buildMultiformSubmissionReadinessManifest({
+    applicationId: 'application-1',
+    requirements: [
+      readinessRequirement({
+        readiness: {
+          requiresExpertVerification: true,
+          maxAgeDays: 30,
+        },
+      }),
+      readinessRequirement({
+        key: 'application-1:credit_application:case',
+        code: 'credit_application',
+        label: 'Wniosek kredytowy',
+        itemKind: 'bank_document',
+        ownerClientId: null,
+        templateId: 'erste-mortgage',
+        documentIds: [],
+        fulfillment: 'generated',
+        readiness: { signatures: ['bank_employee'] },
+      }),
+    ],
+    documents: [readinessDocument()],
+    selectedDocumentIds: ['document-1'],
+    intakeAnswers: completeAnswers(),
+    now: '2026-08-09T12:00:00.000Z',
+  })
+
+  assert.equal(manifest.version, '1.0')
+  assert.equal(manifest.status, 'ready_for_submission')
+  assert.equal(manifest.readyForSubmission, true)
+  assert.equal(manifest.blockingIssues.length, 0)
+  assert.deepEqual(manifest.issues.map(issue => [issue.code, issue.blocking]), [
+    ['bank_action_required', false],
+  ])
+})
+
+test('keeps a downloadable package in working state until checks, delivery and applicant signatures are done', () => {
+  const manifest = buildMultiformSubmissionReadinessManifest({
+    applicationId: 'application-1',
+    requirements: [
+      readinessRequirement({
+        key: 'application-1:credit_application:case',
+        code: 'credit_application',
+        label: 'Wniosek kredytowy',
+        itemKind: 'bank_document',
+        ownerClientId: null,
+        templateId: 'erste-mortgage',
+        documentIds: [],
+        fulfillment: 'generated',
+        readiness: { signatures: ['each_applicant'] },
+      }),
+      readinessRequirement({
+        key: 'application-1:bik_check:case',
+        code: 'bik_check',
+        label: 'Weryfikacja zewnętrzna',
+        itemKind: 'external_check',
+        ownerClientId: null,
+        documentIds: [],
+        fulfillment: 'manual',
+      }),
+      readinessRequirement({
+        key: 'application-1:client_information:case',
+        code: 'client_information',
+        label: 'Karta informacyjna klienta',
+        itemKind: 'bank_document',
+        ownerClientId: null,
+        templateId: 'erste-client-information',
+        documentIds: [],
+        fulfillment: 'generated',
+        readiness: { deliveryEvidenceRequired: true },
+      }),
+    ],
+    documents: [],
+    selectedDocumentIds: [],
+    intakeAnswers: completeAnswers(),
+  })
+
+  assert.equal(manifest.status, 'working_package')
+  assert.equal(manifest.readyForSubmission, false)
+  assert.deepEqual(new Set(manifest.blockingIssues.map(issue => issue.code)), new Set([
+    'signature_required',
+    'external_check_required',
+    'delivery_evidence_required',
+  ]))
+})
+
+test('reports missing, unverified, expired and undated evidence instead of a false complete status', () => {
+  const manifest = buildMultiformSubmissionReadinessManifest({
+    applicationId: 'application-1',
+    requirements: [
+      readinessRequirement({
+        documentIds: [],
+        fulfillment: 'missing',
+      }),
+      readinessRequirement({
+        key: 'application-1:income_evidence:client-jan',
+        code: 'income_evidence',
+        label: 'Dokument dochodowy',
+        documentIds: ['document-2'],
+        readiness: { requiresExpertVerification: true, maxAgeDays: 30 },
+      }),
+      readinessRequirement({
+        key: 'application-1:bank_statements:client-jan',
+        code: 'bank_statements',
+        label: 'Wyciąg z rachunku',
+        documentIds: ['document-3'],
+        readiness: { maxAgeDays: 30 },
+      }),
+    ],
+    documents: [
+      readinessDocument({
+        id: 'document-2',
+        status_code: 'received',
+        readiness: { issuedAt: '2026-06-01T00:00:00.000Z' },
+      }),
+      readinessDocument({
+        id: 'document-3',
+        readiness: {},
+      }),
+    ],
+    selectedDocumentIds: ['document-2', 'document-3'],
+    intakeAnswers: completeAnswers(),
+    now: '2026-08-09T12:00:00.000Z',
+  })
+
+  assert.equal(manifest.status, 'incomplete')
+  assert.deepEqual(new Set(manifest.blockingIssues.map(issue => issue.code)), new Set([
+    'missing_attachment',
+    'expert_verification_required',
+    'document_expired',
+    'document_validity_unknown',
+  ]))
+})
+
+test('does not block submission with an intake requirement resolved as not applicable', () => {
+  const manifest = buildMultiformSubmissionReadinessManifest({
+    applicationId: 'application-1',
+    requirements: [readinessRequirement({
+      key: 'application-1:appraisal_report:case',
+      code: 'appraisal_report',
+      label: 'Operat szacunkowy',
+      category: 'valuation',
+      applicability: 'conditional',
+      ownerClientId: null,
+      documentIds: [],
+      fulfillment: 'conditional',
+    })],
+    documents: [],
+    selectedDocumentIds: [],
+    intakeAnswers: completeAnswers(),
+  })
+
+  assert.equal(manifest.readyForSubmission, true)
+  assert.equal(manifest.issues.length, 0)
 })

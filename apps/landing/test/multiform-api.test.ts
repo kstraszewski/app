@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   CANONICAL_FIELDS,
+  ERSTE_EMPLOYMENT_INCOME_TEMPLATE,
   ERSTE_TEMPLATE,
   PKO_TEMPLATE,
 } from '@openexpert/multiform'
@@ -55,6 +56,27 @@ test('PDF-constrained text validation reaches the UI contract', () => {
   assert.equal(accountPattern.test('PL12345678901234567890123456'), false)
 })
 
+test('template-specific requirements and per-applicant conditions reach the UI contract', () => {
+  const identityType = CANONICAL_FIELDS.find(field => (
+    field.canonicalKey === 'applicants.0.identityDocumentType'
+  ))
+  assert.ok(identityType)
+  assert.equal(toUiField(identityType).required, false)
+  assert.equal(toUiField(
+    identityType,
+    new Set(['applicants.0.identityDocumentType']),
+  ).required, true)
+
+  const secondIncomeForm = toPreparedDocument(
+    ERSTE_EMPLOYMENT_INCOME_TEMPLATE,
+    { index: 1, label: 'Anna Nowak' },
+  )
+  assert.deepEqual(secondIncomeForm.includeWhen, {
+    canonicalKey: 'applicants.1.incomeSource',
+    equals: ['employment', 'civil_contract', 'retirement'],
+  })
+})
+
 test('template summary exposes the explicit completion method and resolves legacy PDF metadata', () => {
   const legacy = structuredClone(PKO_TEMPLATE)
   delete legacy.fillMethod
@@ -73,6 +95,22 @@ test('template summary exposes the explicit completion method and resolves legac
   assert.equal(futureSummary.ready, false)
   assert.equal(futureSummary.status, 'nieobsługiwany')
   assert.match(futureSummary.warnings.join(' '), /nie ma jeszcze aktywnego handlera/)
+
+  const manual = structuredClone(ERSTE_TEMPLATE)
+  manual.id = 'manual-official-pdf'
+  manual.fillMethod = { kind: 'pdf_manual' }
+  manual.coverage = {
+    status: 'complete',
+    inScopeTargetCount: 0,
+    mappedTargetCount: 0,
+    manualUserActionCount: 1,
+  }
+  manual.bindings = []
+  const manualSummary = summarizeTemplate(manual)
+  assert.equal(manualSummary.fillMode, 'manual')
+  assert.equal(manualSummary.ready, true)
+  assert.equal(manualSummary.status, 'gotowy')
+  assert.equal(firstUnsupportedTemplateFillMethod([manual]), undefined)
 })
 
 test('fill preflight identifies deferred methods before field and bundle validation', () => {

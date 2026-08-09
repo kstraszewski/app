@@ -400,17 +400,17 @@ test('Erste full template invalidates audited completeness while a field awaits 
     binding.canonicalKey === 'applicants.0.pesel'
   ))
   assert.notEqual(bindingIndex, -1)
-  assert.equal(ERSTE_TEMPLATE.coverage.mappedTargetCount, 106)
+  assert.equal(ERSTE_TEMPLATE.coverage.mappedTargetCount, 102)
   assert.equal(ERSTE_TEMPLATE.coverage.status, 'complete')
 
   const pending = setTemplateBindingReviewStatus(ERSTE_TEMPLATE, bindingIndex, 'needsReview')
-  assert.equal(pending.coverage.mappedTargetCount, 105)
-  assert.equal(pending.coverage.inScopeTargetCount, 106)
+  assert.equal(pending.coverage.mappedTargetCount, 101)
+  assert.equal(pending.coverage.inScopeTargetCount, 102)
   assert.equal(pending.coverage.status, 'incomplete')
 
   const reviewed = setTemplateBindingReviewStatus(pending, bindingIndex, 'ready')
-  assert.equal(reviewed.coverage.mappedTargetCount, 106)
-  assert.equal(reviewed.coverage.inScopeTargetCount, 106)
+  assert.equal(reviewed.coverage.mappedTargetCount, 102)
+  assert.equal(reviewed.coverage.inScopeTargetCount, 102)
   assert.equal(reviewed.coverage.status, 'incomplete')
 })
 
@@ -431,7 +431,7 @@ test('approves a position-only PESEL correction without changing the audited map
   assert.equal(approvedBinding.target.box.y, originalY + 1)
   assert.equal(approvedBinding.reviewStatus, 'ready')
   assert.equal(approved.coverage.status, 'complete')
-  assert.equal(approved.coverage.mappedTargetCount, 106)
+  assert.equal(approved.coverage.mappedTargetCount, 102)
   assert.equal(ERSTE_TEMPLATE.bindings[bindingIndex]?.target.kind, 'overlay')
   if (ERSTE_TEMPLATE.bindings[bindingIndex]?.target.kind === 'overlay' && ERSTE_TEMPLATE.bindings[bindingIndex].target.rendererVersion === 2) {
     assert.equal(ERSTE_TEMPLATE.bindings[bindingIndex].target.box.y, originalY)

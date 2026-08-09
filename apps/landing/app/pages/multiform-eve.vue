@@ -730,12 +730,16 @@ function fillMethodLabel(method: TemplateFillMethod) {
   if (method.kind === 'pdf_acroform') return 'Interaktywny PDF'
   if (method.kind === 'pdf_overlay') return 'Statyczny PDF'
   if (method.kind === 'pdf_hybrid') return 'Hybrydowy PDF'
+  if (method.kind === 'pdf_manual') return 'PDF do uzupełnienia ręcznie'
+  if (method.kind === 'pdf_readonly') return 'Dokument informacyjny PDF'
+  if (method.kind === 'xlsx_native') return 'Edytowalny arkusz XLSX'
+  if (method.kind === 'xlsx_manual') return 'Arkusz XLSX do uzupełnienia ręcznie'
   if (method.kind === 'web_form') return 'Formularz internetowy'
   return 'Integracja API'
 }
 
 function fillMethodIsSupported(method: TemplateFillMethod) {
-  return method.kind.startsWith('pdf_')
+  return method.kind.startsWith('pdf_') || method.kind.startsWith('xlsx_')
 }
 
 function documentTitle(document: PreparedDocument, index: number) {

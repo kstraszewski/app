@@ -19,6 +19,7 @@ test('prefills applicant identity from the resolved person profile', () => {
       pesel: '85821435745',
       email: 'aleksandra@example.local',
       phone: '+48123456789',
+      birthDate: '',
     },
   )
 })

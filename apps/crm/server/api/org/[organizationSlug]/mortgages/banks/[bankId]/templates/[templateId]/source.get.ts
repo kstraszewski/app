@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     ? registeredMortgageTemplate(String(bank.slug), templateId)
     : undefined
   if (!registered && !templateResult.data?.source_file_version_id) {
-    throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono źródłowego formularza PDF.' })
+    throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono źródłowego dokumentu.' })
   }
 
   const source = await loadMortgageDocumentTemplateSource(
@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
   const bytes = source.bytes
 
   const fileName = safeFileName(source.fileName)
-  setHeader(event, 'Content-Type', 'application/pdf')
+  setHeader(event, 'Content-Type', source.mimeType)
   setHeader(event, 'Content-Length', bytes.byteLength)
   setHeader(event, 'Content-Disposition', `inline; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`)
   setHeader(event, 'Cache-Control', 'private, no-store')

@@ -8,6 +8,7 @@ import {
   multiformIntakeEmploymentTypeOptions,
   multiformIntakeIncomeSourceOptions,
   multiformIntakeLabels,
+  multiformIntakeLoanProgramOptions,
   multiformIntakeLoanPurposeOptions,
   normalizeMultiformIntake,
   resolveMultiformIntakeRequirement,
@@ -41,6 +42,7 @@ const caseSubject = '__case__'
 const incomeSourceItems = [...multiformIntakeIncomeSourceOptions]
 const employmentTypeItems = [...multiformIntakeEmploymentTypeOptions]
 const loanPurposeItems = [...multiformIntakeLoanPurposeOptions]
+const loanProgramItems = [...multiformIntakeLoanProgramOptions]
 const booleanItems = [...multiformIntakeBooleanOptions]
 const activeSubject = ref(
   props.caseData.clients.find(client => client.is_primary)?.id
@@ -116,7 +118,11 @@ function updateCase<K extends keyof MultiformCaseIntakeAnswers>(
   value: MultiformCaseIntakeAnswers[K],
 ) {
   const next = copyAnswers()
-  next.case = { ...next.case, [field]: value }
+  next.case = {
+    ...next.case,
+    [field]: value,
+    ...(field === 'loanProgram' && value !== 'rkm' ? { rkmGuarantee: null } : {}),
+  }
   emit('update:modelValue', next)
 }
 
@@ -142,8 +148,13 @@ function updateLoanPurpose(value: unknown) {
   if (option) updateCase('loanPurpose', option.value)
 }
 
+function updateLoanProgram(value: unknown) {
+  const option = multiformIntakeLoanProgramOptions.find(item => item.value === value)
+  if (option) updateCase('loanProgram', option.value)
+}
+
 function updateBooleanCase(
-  field: 'preliminaryAgreement' | 'landRegister' | 'appraisalAvailable' | 'trancheDisbursement',
+  field: 'rkmGuarantee' | 'preliminaryAgreement' | 'landRegister' | 'appraisalAvailable' | 'trancheDisbursement',
   value: unknown,
 ) {
   if (typeof value === 'boolean') updateCase(field, value)
@@ -402,6 +413,49 @@ defineExpose({ focusIssue })
               : 'Informacje wspólne dla wszystkich banków.' }}
           </p>
         </div>
+
+        <UFormField
+          name="intakeLoanProgram"
+          data-intake-field="loanProgram"
+          class="multiform-intake__field multiform-intake__field--choice"
+          :label="multiformIntakeLabels.loanProgram"
+          description="Wybór steruje dokumentami RKM dołączanymi do kompletu Erste."
+          :error="fieldError('loanProgram')"
+          required
+        >
+          <URadioGroup
+            :model-value="normalizedAnswers.case.loanProgram ?? undefined"
+            :items="loanProgramItems"
+            value-key="value"
+            orientation="horizontal"
+            variant="card"
+            size="sm"
+            class="multiform-intake__choice-grid multiform-intake__choice-grid--wide"
+            @update:model-value="updateLoanProgram"
+          />
+        </UFormField>
+
+        <UFormField
+          v-if="normalizedAnswers.case.loanProgram === 'rkm'"
+          name="intakeRkmGuarantee"
+          data-intake-field="rkmGuarantee"
+          class="multiform-intake__binary-field"
+          orientation="horizontal"
+          :label="multiformIntakeLabels.rkmGuarantee"
+          :error="fieldError('rkmGuarantee')"
+          required
+        >
+          <URadioGroup
+            :model-value="normalizedAnswers.case.rkmGuarantee ?? undefined"
+            :items="booleanItems"
+            value-key="value"
+            orientation="horizontal"
+            variant="table"
+            size="sm"
+            class="multiform-intake__choice-grid multiform-intake__choice-grid--boolean"
+            @update:model-value="updateBooleanCase('rkmGuarantee', $event)"
+          />
+        </UFormField>
 
         <UFormField
           name="intakeLoanPurpose"

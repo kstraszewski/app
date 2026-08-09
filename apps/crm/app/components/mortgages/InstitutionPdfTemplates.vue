@@ -118,6 +118,13 @@ function activeColor(template: InstitutionTemplate): 'success' | 'neutral' | 'er
   return 'error'
 }
 
+function sourceStructureLabel(template: InstitutionTemplate) {
+  if (template.source?.fileName.toLocaleLowerCase('pl-PL').endsWith('.xlsx')) {
+    return 'Arkusz XLSX'
+  }
+  return `${template.source?.pageCount ?? 0} stron`
+}
+
 function formatDate(value: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -134,10 +141,10 @@ function formatDate(value: string | null) {
     <div class="template-heading">
       <div>
         <span>Formularze instytucji</span>
-        <h2>Szablony PDF i mapowania danych</h2>
+        <h2>Szablony dokumentów i mapowania danych</h2>
         <p>
           Tutaj administrator przygotowuje Template JSON, sprawdza pokrycie pól
-          i otwiera źródłowy formularz banku.
+          i otwiera źródłowy formularz PDF albo arkusz XLSX banku.
         </p>
       </div>
       <div class="template-heading__metrics" aria-label="Podsumowanie szablonów">
@@ -152,7 +159,7 @@ function formatDate(value: string | null) {
       variant="subtle"
       icon="i-lucide-shield-check"
       title="Globalna konfiguracja instytucji"
-      description="Zmiany zapisują się po stronie serwera i są audytowane. Opublikować można wyłącznie szablon z kompletnym, zatwierdzonym mapowaniem PDF."
+      description="Zmiany zapisują się po stronie serwera i są audytowane. Opublikować można wyłącznie szablon z kompletnym, zatwierdzonym mapowaniem dokumentu."
     />
 
     <UAlert
@@ -160,7 +167,7 @@ function formatDate(value: string | null) {
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      title="Nie udało się pobrać szablonów PDF"
+      title="Nie udało się pobrać szablonów dokumentów"
       :description="apiErrorMessage(error)"
       :actions="[{ label: 'Ponów', onClick: () => refresh() }]"
     />
@@ -173,7 +180,7 @@ function formatDate(value: string | null) {
       <article v-for="template in templates" :key="template.id" class="template-card">
         <header class="template-card__header">
           <span class="template-card__icon">
-            <UIcon name="i-lucide-file-json-2" />
+            <UIcon :name="template.source?.fileName.toLocaleLowerCase('pl-PL').endsWith('.xlsx') ? 'i-lucide-file-spreadsheet' : 'i-lucide-file-json-2'" />
           </span>
           <div class="template-card__identity">
             <div class="template-card__title">
@@ -203,7 +210,7 @@ function formatDate(value: string | null) {
               </NuxtLink>
               <span v-else><UIcon name="i-lucide-package" />Starszy szablon wdrożeniowy</span>
               <span><UIcon name="i-lucide-file-text" />{{ template.source.fileName }}</span>
-              <span><UIcon name="i-lucide-copy-check" />{{ template.source.pageCount }} stron</span>
+              <span><UIcon name="i-lucide-copy-check" />{{ sourceStructureLabel(template) }}</span>
               <span><UIcon name="i-lucide-fingerprint" />SHA-256 potwierdzony</span>
             </div>
           </div>
@@ -221,7 +228,7 @@ function formatDate(value: string | null) {
           <UProgress :model-value="coveragePercent(template)" color="primary" />
           <small>{{ coveragePercent(template) }}%</small>
           <div class="template-card__facts">
-            <span>{{ (template.draft?.summary ?? template.active.summary).pages }} stron</span>
+            <span>{{ sourceStructureLabel(template) }}</span>
             <span>{{ multiformFillMethodPresentation((template.draft?.summary ?? template.active.summary).fillMethod).label }}</span>
             <span>{{ (template.draft?.summary ?? template.active.summary).manualUserActionCount }} ręcznych działań</span>
             <span>{{ (template.draft?.summary ?? template.active.summary).warnings }} ostrzeżeń</span>

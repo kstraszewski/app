@@ -413,6 +413,7 @@ export async function fillCaseMultiformDocument(
   selection: CaseMultiformSelection,
   input: {
     templateId: string
+    instanceIndex?: number
     variant: 'filled' | 'blank'
     values: unknown
     collectionCounts: unknown
@@ -426,6 +427,7 @@ export async function fillCaseMultiformDocument(
     body: {
       templateIds: selection.templateIds,
       templateId: input.templateId,
+      ...(input.instanceIndex !== undefined ? { instanceIndex: input.instanceIndex } : {}),
       output: input.variant === 'blank' ? 'source' : 'pdf',
       values: input.values,
       collectionCounts: input.collectionCounts,
@@ -438,12 +440,12 @@ export async function fillCaseMultiformDocument(
       },
     },
   })
-  setHeader(event, 'Content-Type', response.headers.get('content-type') || 'application/pdf')
+  setHeader(event, 'Content-Type', response.headers.get('content-type') || 'application/octet-stream')
   setHeader(
     event,
     'Content-Disposition',
     response.headers.get('content-disposition')
-      || `attachment; filename="${input.variant === 'blank' ? 'pusty-szablon.pdf' : 'uzupelniony-wniosek.pdf'}"`,
+      || `attachment; filename="${input.variant === 'blank' ? 'pusty-szablon' : 'uzupelniony-dokument'}"`,
   )
   setHeader(event, 'Cache-Control', 'private, no-store')
   if (!response.body) return new Uint8Array(await response.arrayBuffer())

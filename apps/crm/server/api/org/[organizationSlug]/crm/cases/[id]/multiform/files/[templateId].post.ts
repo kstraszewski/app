@@ -15,8 +15,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dane formularza są nieprawidłowe.' })
   }
   const variant = body.variant === 'blank' ? 'blank' : 'filled'
+  const instanceIndex = body.instanceIndex === undefined
+    ? undefined
+    : typeof body.instanceIndex === 'number' && Number.isSafeInteger(body.instanceIndex) && body.instanceIndex >= 0
+      ? body.instanceIndex
+      : null
+  if (instanceIndex === null) {
+    throw createError({ statusCode: 400, statusMessage: 'Indeks formularza dla wnioskodawcy jest nieprawidłowy.' })
+  }
   return fillCaseMultiformDocument(event, selection, {
     templateId,
+    ...(instanceIndex !== undefined ? { instanceIndex } : {}),
     variant,
     values: body.values,
     collectionCounts: body.collectionCounts,

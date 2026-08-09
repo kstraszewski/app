@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import fontkit from '@pdf-lib/fontkit'
 import {
   ERSTE_TEMPLATE,
+  ING_INCOME_CERTIFICATE_TEMPLATE,
   PEKAO_TEMPLATE,
   type DocumentTemplate,
   type PdfTextAppearance,
@@ -40,6 +41,7 @@ import {
   MultiformPdfValueError,
   UnsupportedMultiformFillMethodError,
 } from '../server/utils/multiform-pdf.ts'
+import { MULTIFORM_SINGLE_FIXTURE } from './fixtures/multiform-scenarios.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -165,6 +167,65 @@ test('deferred web form and API methods fail with a controlled renderer error', 
       ),
     )
   }
+})
+
+test('pdf_manual preserves the official form for hand completion and sanitizes active actions', async () => {
+  const sourceBytes = await overlayPdfWithDocumentAndLinkActions()
+  const template: DocumentTemplate = {
+    schemaVersion: 2,
+    id: 'manual-official-pdf',
+    bank: 'mbank',
+    label: 'Oficjalny formularz do uzupełnienia ręcznie',
+    version: 1,
+    fillMethod: { kind: 'pdf_manual' },
+    source: {
+      fileName: 'manual.pdf',
+      sha256: 'a'.repeat(64),
+      pageCount: 1,
+      formKind: 'overlay',
+      pages: [pageGeometry],
+    },
+    coverage: {
+      status: 'complete',
+      inScopeTargetCount: 0,
+      mappedTargetCount: 0,
+      manualUserActionCount: 1,
+    },
+    bindings: [],
+  }
+  const outputBytes = await fillPdfTemplate(template, sourceBytes, new Uint8Array(), {})
+  const output = await PDFDocument.load(outputBytes, { updateMetadata: false })
+  const names = output.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)
+  assert.equal(output.getPageCount(), 1)
+  assert.equal(output.catalog.has(PDFName.of('OpenAction')), false)
+  assert.equal(output.catalog.has(PDFName.of('AA')), false)
+  assert.equal(names?.has(PDFName.of('JavaScript')) ?? false, false)
+  for (const annotation of output.getPage(0).node.Annots()?.asArray() ?? []) {
+    const dictionary = output.context.lookupMaybe(annotation, PDFDict)
+    assert.equal(dictionary?.has(PDFName.of('A')) ?? false, false)
+    assert.equal(dictionary?.has(PDFName.of('AA')) ?? false, false)
+  }
+})
+
+test('pdf_manual preserves the sanitized official ING income derivative', async () => {
+  const sourceBytes = await readFile(new URL(
+    '../../../packages/database/data/mortgages/official-bank-file-assets/ing-zaswiadczenie-o-dochodach-2026-03-08-sanitized.pdf',
+    import.meta.url,
+  ))
+  const outputBytes = await fillPdfTemplate(
+    ING_INCOME_CERTIFICATE_TEMPLATE,
+    sourceBytes,
+    new Uint8Array(),
+    {},
+  )
+  const output = await PDFDocument.load(outputBytes, { updateMetadata: false })
+  const names = output.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)
+
+  assert.equal(output.getPageCount(), 2)
+  assert.equal(output.getForm().getFields().length, 42)
+  assert.equal(output.catalog.has(PDFName.of('OpenAction')), false)
+  assert.equal(output.catalog.has(PDFName.of('AA')), false)
+  assert.equal(names?.has(PDFName.of('JavaScript')) ?? false, false)
 })
 
 test('renderer removes document JavaScript and actions from ordinary link annotations', async () => {
@@ -533,7 +594,7 @@ test('renderer v2 marks the false option but leaves an ordinary false checkbox e
 })
 
 test('real Erste overlay marks Nie when grace period is false', async () => {
-  const sourceBytes = await readFile(new URL('../../../mock-files/erste-wniosek-o-kredyt-hipoteczny.pdf', import.meta.url))
+  const sourceBytes = await readFile(new URL('../../../mock-files/erste-wniosek-o-kredyt-hipoteczny-2026-07-20.pdf', import.meta.url))
   const sourcePdf = await PDFDocument.load(sourceBytes)
   const sourceStreamCount = decodedPageContentStreams(sourcePdf, 3).length
   const outputBytes = await fillPdfTemplate(ERSTE_TEMPLATE, sourceBytes, await fontBytesPromise, {
@@ -547,10 +608,10 @@ test('real Erste overlay marks Nie when grace period is false', async () => {
 
 test('real Erste intermediary values render after their page-seven labels', async () => {
   const expectedBoxes = new Map([
-    ['intermediary.email', { x: 252, y: 543, width: 277, height: 17 }],
-    ['intermediary.phone', { x: 134, y: 560, width: 395, height: 17 }],
-    ['intermediary.acceptingPerson', { x: 365, y: 578, width: 164, height: 17 }],
-    ['intermediary.agentName', { x: 216, y: 619, width: 313, height: 17 }],
+    ['intermediary.email', { x: 252, y: 448, width: 277, height: 17 }],
+    ['intermediary.phone', { x: 134, y: 464, width: 395, height: 17 }],
+    ['intermediary.acceptingPerson', { x: 365, y: 481, width: 164, height: 17 }],
+    ['intermediary.agentName', { x: 216, y: 521, width: 313, height: 17 }],
   ])
   for (const [canonicalKey, expectedBox] of expectedBoxes) {
     const target = ERSTE_TEMPLATE.bindings.find(binding => (
@@ -565,10 +626,11 @@ test('real Erste intermediary values render after their page-seven labels', asyn
   }
 
   const sourceBytes = await readFile(new URL(
-    '../../../mock-files/erste-wniosek-o-kredyt-hipoteczny.pdf',
+    '../../../mock-files/erste-wniosek-o-kredyt-hipoteczny-2026-07-20.pdf',
     import.meta.url,
   ))
   const outputBytes = await fillPdfTemplate(ERSTE_TEMPLATE, sourceBytes, await fontBytesPromise, {
+    'intermediary.kind': 'intermediary_or_partner',
     'intermediary.email': 'ekspert@example.test',
     'intermediary.phone': '+48 500 600 700',
     'intermediary.acceptingPerson': 'Marta Doradcza',
@@ -577,10 +639,52 @@ test('real Erste intermediary values render after their page-seven labels', asyn
   const output = await PDFDocument.load(outputBytes)
   const appendedContent = decodedPageContentStreams(output, 6).at(-1) ?? ''
 
-  assert.equal((appendedContent.match(/\bBT\b/g) ?? []).length, 4)
-  for (const paddedX of [253.5, 135.5, 366.5, 217.5]) {
+  assert.equal((appendedContent.match(/\bBT\b/g) ?? []).length, 3)
+  for (const paddedX of [253.5, 135.5, 366.5]) {
     assert.match(appendedContent, new RegExp(`1 0 0 1 ${String(paddedX).replace('.', '\\.')} `))
   }
+
+  const agentOutputBytes = await fillPdfTemplate(ERSTE_TEMPLATE, sourceBytes, await fontBytesPromise, {
+    'intermediary.kind': 'bank_agent',
+    'intermediary.email': 'should-not-render@example.test',
+    'intermediary.agentName': 'Marta Doradcza',
+  })
+  const agentOutput = await PDFDocument.load(agentOutputBytes)
+  const appendedAgentContent = decodedPageContentStreams(agentOutput, 6).at(-1) ?? ''
+  assert.equal((appendedAgentContent.match(/\bBT\b/g) ?? []).length, 1)
+  assert.match(appendedAgentContent, /1 0 0 1 217\.5 /)
+})
+
+test('real Erste 20.07.2026 overlay renders the current mortgage scenario on every data page', async () => {
+  const sourceBytes = await readFile(new URL(
+    '../../../mock-files/erste-wniosek-o-kredyt-hipoteczny-2026-07-20.pdf',
+    import.meta.url,
+  ))
+  const outputBytes = await fillPdfTemplate(
+    ERSTE_TEMPLATE,
+    sourceBytes,
+    await fontBytesPromise,
+    MULTIFORM_SINGLE_FIXTURE.values,
+  )
+  const source = await PDFDocument.load(sourceBytes, { updateMetadata: false })
+  const output = await PDFDocument.load(outputBytes, { updateMetadata: false })
+
+  assert.equal(source.getPageCount(), 9)
+  assert.equal(output.getPageCount(), 9)
+  assert.equal(source.getForm().getFields().length, 0)
+  assert.equal(output.getForm().getFields().length, 0)
+  for (let pageIndex = 0; pageIndex < 8; pageIndex++) {
+    assert.notEqual(
+      decodedPageContent(output, pageIndex),
+      decodedPageContent(source, pageIndex),
+      `page ${pageIndex + 1} must contain its scenario overlay`,
+    )
+  }
+  assert.equal(
+    decodedPageContent(output, 8),
+    decodedPageContent(source, 8),
+    'signature-only page 9 must remain unchanged',
+  )
 })
 
 test('real Pekao source preserves canonical values and widget states for one applicant', async () => {

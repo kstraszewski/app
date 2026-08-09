@@ -23,6 +23,22 @@ const presentations = {
     label: 'Hybrydowy PDF',
     availability: 'supported',
   },
+  pdf_manual: {
+    label: 'PDF do uzupełnienia ręcznie',
+    availability: 'supported',
+  },
+  pdf_readonly: {
+    label: 'Dokument informacyjny PDF',
+    availability: 'supported',
+  },
+  xlsx_native: {
+    label: 'Edytowalny arkusz XLSX',
+    availability: 'supported',
+  },
+  xlsx_manual: {
+    label: 'Arkusz XLSX do uzupełnienia ręcznie',
+    availability: 'supported',
+  },
   web_form: {
     label: 'Formularz internetowy',
     availability: 'not_supported',

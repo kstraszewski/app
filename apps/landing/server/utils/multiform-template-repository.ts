@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { serverDataBackend } from './data-api'
 import {
-  getTemplate,
   validateTemplateJson,
   type DocumentTemplate,
 } from '@openexpert/multiform'
@@ -38,13 +37,45 @@ export async function resolvePinnedMultiformTemplates(
   if (!productVersionIds.length) return [] as DocumentTemplate[]
 
   const backendData = serverDataBackend(event) as any
+  const versionsResult = await backendData
+    .from('mortgage_product_versions')
+    .select('id, calculator_schema_version')
+    .in('id', productVersionIds)
+  databaseError(versionsResult.error)
+  const versionRows = (versionsResult.data ?? []) as DatabaseRecord[]
+  const schemaVersionById = new Map(versionRows.map(version => [
+    String(version.id),
+    Number(version.calculator_schema_version),
+  ]))
+  if (schemaVersionById.size !== productVersionIds.length) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Co najmniej jedna wersja produktu nie jest już dostępna.',
+    })
+  }
+  const requiresDatabasePins = (productVersionId: string | null) => Boolean(
+    productVersionId
+    && (schemaVersionById.get(productVersionId) ?? 1) >= 2,
+  )
   const linksResult = await backendData
     .from('mortgage_product_version_document_templates')
     .select('product_version_id, template_revision_id, requirement_code, sort_order')
     .in('product_version_id', productVersionIds)
   databaseError(linksResult.error)
   const links = (linksResult.data ?? []) as DatabaseRecord[]
-  if (!links.length) return [] as DocumentTemplate[]
+  if (!links.length) {
+    const missing = applications.find(application => (
+      requiresDatabasePins(application.productVersionId)
+      && application.templateIds.length > 0
+    ))
+    if (missing) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Wersja produktu wymaga opublikowanych formularzy z Plików banku, ale nie ma przypiętych rewizji.',
+      })
+    }
+    return [] as DocumentTemplate[]
+  }
 
   const revisionIds = [...new Set(links.map(link => String(link.template_revision_id)))]
   const revisionsResult = await backendData
@@ -73,6 +104,8 @@ export async function resolvePinnedMultiformTemplates(
     ])
   }
 
+  const pinnedIdsByProductVersion = new Map<string, Set<string>>()
+
   for (const application of applications) {
     if (!application.productVersionId) continue
     const expectedIds = new Set(application.templateIds)
@@ -92,22 +125,16 @@ export async function resolvePinnedMultiformTemplates(
 
       const validation = validateTemplateJson(revision.template_json)
       const template = revision.template_json as DocumentTemplate
-      const registered = getTemplate(templateId)
       const linkedSourceMatches = Boolean(
         definition?.source_file_id
         && definition?.source_file_version_id
         && template.source.fileName === definition.source_file_name
         && template.source.sha256 === definition.source_sha256,
       )
-      const registeredSourceMatches = Boolean(
-        registered
-        && template.source.fileName === registered.source.fileName
-        && template.source.sha256 === registered.source.sha256,
-      )
       if (
         !validation.summary.activationReady
         || template.id !== templateId
-        || (!linkedSourceMatches && !registeredSourceMatches)
+        || !linkedSourceMatches
       ) {
         throw createError({
           statusCode: 409,
@@ -123,6 +150,27 @@ export async function resolvePinnedMultiformTemplates(
         })
       }
       overrideByTemplateId.set(templateId, { revisionId, template })
+      const pinnedIds = pinnedIdsByProductVersion.get(application.productVersionId)
+        ?? new Set<string>()
+      pinnedIds.add(templateId)
+      pinnedIdsByProductVersion.set(application.productVersionId, pinnedIds)
+    }
+
+    if (requiresDatabasePins(application.productVersionId)) {
+      const pinnedIds = pinnedIdsByProductVersion.get(application.productVersionId)
+        ?? new Set<string>()
+      if (
+        pinnedIds.size !== expectedIds.size
+        || [...expectedIds].some(templateId => !pinnedIds.has(templateId))
+      ) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'Wersja produktu nie ma kompletnego zestawu immutable rewizji formularzy z Plików banku.',
+          data: {
+            missingTemplateIds: [...expectedIds].filter(templateId => !pinnedIds.has(templateId)),
+          },
+        })
+      }
     }
   }
 
@@ -160,15 +208,16 @@ export async function readPinnedMultiformTemplateSource(
     .maybeSingle()
   databaseError(versionResult.error)
   const version = versionResult.data as DatabaseRecord | null
+  const expectedMimeType = template.source.mimeType ?? 'application/pdf'
   if (
     !version
-    || version.mime_type !== 'application/pdf'
+    || version.mime_type !== expectedMimeType
     || version.original_file_name !== template.source.fileName
     || version.checksum_sha256 !== template.source.sha256
   ) {
     throw createError({
       statusCode: 409,
-      statusMessage: `${template.id}: źródłowa wersja PDF nie jest dostępna albo ma inne metadane.`,
+      statusMessage: `${template.id}: źródłowa wersja dokumentu nie jest dostępna albo ma inne metadane.`,
     })
   }
 
@@ -178,7 +227,7 @@ export async function readPinnedMultiformTemplateSource(
   if (downloadResult.error || !downloadResult.data) {
     throw createError({
       statusCode: 404,
-      statusMessage: `${template.id}: nie znaleziono źródłowego PDF-u w magazynie plików banku.`,
+      statusMessage: `${template.id}: nie znaleziono źródłowego dokumentu w magazynie plików banku.`,
     })
   }
   const bytes = new Uint8Array(await downloadResult.data.arrayBuffer())
@@ -186,7 +235,7 @@ export async function readPinnedMultiformTemplateSource(
   if (sha256 !== template.source.sha256) {
     throw createError({
       statusCode: 409,
-      statusMessage: `${template.id}: źródłowy PDF nie przeszedł weryfikacji integralności.`,
+      statusMessage: `${template.id}: źródłowy dokument nie przeszedł weryfikacji integralności.`,
     })
   }
   return bytes

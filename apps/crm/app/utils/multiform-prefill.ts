@@ -1,6 +1,9 @@
 export interface MultiformApplicantPrefillSource {
   label: string
   pesel: string | null
+  email?: string | null
+  phone?: string | null
+  birthDate?: string | null
 }
 
 export interface MultiformClientContactSource {
@@ -18,8 +21,9 @@ export function multiformApplicantDefaults(
     firstName: nameParts.shift() ?? '',
     lastName: nameParts.join(' '),
     pesel: applicant.pesel?.trim() ?? '',
-    email: client?.primary_email ?? '',
-    phone: client?.primary_phone ?? '',
+    email: applicant.email?.trim() || client?.primary_email || '',
+    phone: applicant.phone?.trim() || client?.primary_phone || '',
+    birthDate: applicant.birthDate?.trim() ?? '',
   }
 }
 

@@ -1,6 +1,11 @@
 import {
+  instantiateTemplate,
   prepareBundle,
   templateApplicantCapacity,
+  templateApplicantCapacityIssues,
+  templateInstanceIndexes,
+  type DocumentTemplate,
+  type FieldCondition,
 } from '@openexpert/multiform'
 import { createError, readBody } from 'h3'
 import { toPreparedDocument, toUiField } from '../../../utils/multiform-api'
@@ -16,6 +21,41 @@ function sameStringSet(left: readonly string[], right: readonly string[]) {
   return left.every(value => rightSet.has(value))
 }
 
+function templateInputKeys(template: DocumentTemplate) {
+  return new Set([
+    ...template.bindings.flatMap(binding => [
+      ...(!binding.computed && binding.target.kind !== 'unmapped'
+        ? [binding.canonicalKey]
+        : []),
+      ...(binding.valueFrom ?? []),
+      ...(binding.condition ? [binding.condition.canonicalKey] : []),
+    ]),
+    ...(template.requiredCanonicalKeys ?? []),
+  ])
+}
+
+function fieldApplicabilityByKey(templates: readonly DocumentTemplate[]) {
+  const usage = new Map<string, {
+    unconditional: boolean
+    conditions: FieldCondition[]
+  }>()
+  const add = (key: string, condition?: FieldCondition) => {
+    const current = usage.get(key) ?? { unconditional: false, conditions: [] }
+    if (!condition) current.unconditional = true
+    else if (!current.conditions.some(item => (
+      item.canonicalKey === condition.canonicalKey
+      && JSON.stringify(item.equals) === JSON.stringify(condition.equals)
+    ))) current.conditions.push(condition)
+    usage.set(key, current)
+  }
+
+  for (const template of templates) {
+    for (const key of templateInputKeys(template)) add(key, template.includeWhen)
+    if (template.includeWhen) add(template.includeWhen.canonicalKey)
+  }
+  return usage
+}
+
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ templateIds?: unknown, crmContext?: unknown }>(event)
   const templateIds = Array.isArray(body?.templateIds)
@@ -25,8 +65,8 @@ export default defineEventHandler(async (event) => {
   if (templateIds.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Wybierz co najmniej jeden dokument.' })
   }
-  if (templateIds.length > 10) {
-    throw createError({ statusCode: 400, statusMessage: 'Pakiet może zawierać maksymalnie 10 dokumentów.' })
+  if (templateIds.length > 50) {
+    throw createError({ statusCode: 400, statusMessage: 'Pakiet może zawierać maksymalnie 50 dokumentów.' })
   }
 
   const crmContext = body?.crmContext === undefined
@@ -64,7 +104,6 @@ export default defineEventHandler(async (event) => {
         data: { warnings: bundle.warnings },
       })
     }
-    const bindingCount = bundle.documents.reduce((sum, document) => sum + document.bindings.length, 0)
     const applicantCapacities = bundle.documents
       .map(templateApplicantCapacity)
       .filter((capacity): capacity is number => capacity !== null)
@@ -92,10 +131,64 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    const preparedApplicantCount = crmContext?.applicants.length
+      ?? applicantCollection?.minItems
+      ?? 1
+    const capacityIssues = templateApplicantCapacityIssues(
+      bundle.documents,
+      preparedApplicantCount,
+    )
+    if (capacityIssues.length > 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Co najmniej jeden dokument nie obsługuje liczby wnioskodawców w sprawie.',
+        data: {
+          blockers: capacityIssues.map(issue => (
+            `${issue.templateLabel} obsługuje maksymalnie ${issue.supportedCount} `
+            + `wnioskodawców, a sprawa zawiera ${issue.requestedCount}.`
+          )),
+        },
+      })
+    }
+
+    const preparedDocuments = bundle.documents.flatMap((document) => {
+      if (!document.repeatFor) return [toPreparedDocument(document)]
+      return templateInstanceIndexes(document, {
+        applicants: preparedApplicantCount,
+      }).map(index => toPreparedDocument(document, {
+        index,
+        label: crmContext?.applicants[index]?.label,
+      }))
+    })
+    const bindingCount = bundle.documents.reduce((sum, document) => (
+      sum + document.bindings.length * (document.repeatFor ? preparedApplicantCount : 1)
+    ), 0)
+    const templateRequiredKeys = new Set(bundle.documents.flatMap((document) => {
+      if (!document.repeatFor) return [...(document.requiredCanonicalKeys ?? [])]
+      return templateInstanceIndexes(document, {
+        applicants: preparedApplicantCount,
+      }).flatMap(index => (
+        instantiateTemplate(document, index).requiredCanonicalKeys ?? []
+      ))
+    }))
+    const preparedTemplateInstances = bundle.documents.flatMap((document) => (
+      document.repeatFor
+        ? templateInstanceIndexes(document, { applicants: preparedApplicantCount })
+            .map(index => instantiateTemplate(document, index))
+        : [document]
+    ))
+    const fieldApplicability = fieldApplicabilityByKey(preparedTemplateInstances)
+
     return {
       templateIds: bundle.templateIds,
-      documents: bundle.documents.map(toPreparedDocument),
-      fields: bundle.fields.map(toUiField),
+      documents: preparedDocuments,
+      fields: bundle.fields.map((field) => {
+        const preparedField = toUiField(field, templateRequiredKeys)
+        const applicability = fieldApplicability.get(field.canonicalKey)
+        return applicability && !applicability.unconditional && applicability.conditions.length
+          ? { ...preparedField, applicableWhenAny: applicability.conditions }
+          : preparedField
+      }),
       collections: bundle.collections.map(collection => ({
         ...collection,
         ...(collection.key === 'applicants' && applicantCapacity !== null
@@ -105,7 +198,7 @@ export default defineEventHandler(async (event) => {
       })),
       warnings: bundle.warnings,
       summary: {
-        documentCount: bundle.documents.length,
+        documentCount: preparedDocuments.length,
         uniqueFieldCount: bundle.fields.length,
         mappedOccurrences: bindingCount,
         reusedOccurrences: Math.max(0, bindingCount - bundle.fields.length),

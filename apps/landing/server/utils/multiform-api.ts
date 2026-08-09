@@ -1,5 +1,6 @@
 import {
   CANONICAL_FIELDS,
+  instantiateTemplate,
   resolveTemplateFillMethod,
   type CanonicalFieldDefinition,
   type DocumentTemplate,
@@ -25,6 +26,7 @@ const requiredKeys: ReadonlySet<string> = new Set([
   'applicants.0.lastName',
   'applicants.0.pesel',
   'loan.purpose',
+  'loan.program',
   'loan.productType',
   'loan.amount',
   'loan.termMonths',
@@ -59,10 +61,17 @@ const fieldLabels = new Map<string, string>(
   CANONICAL_FIELDS.map(field => [field.canonicalKey, field.label]),
 )
 
-type PdfFillMethod = Extract<TemplateFillMethod, {
-  kind: 'pdf_acroform' | 'pdf_overlay' | 'pdf_hybrid'
+type SupportedFillMethod = Extract<TemplateFillMethod, {
+  kind:
+    | 'pdf_acroform'
+    | 'pdf_overlay'
+    | 'pdf_hybrid'
+    | 'pdf_manual'
+    | 'pdf_readonly'
+    | 'xlsx_native'
+    | 'xlsx_manual'
 }>
-type DeferredFillMethod = Exclude<TemplateFillMethod, PdfFillMethod>
+type DeferredFillMethod = Exclude<TemplateFillMethod, SupportedFillMethod>
 
 export type MultiformValue = string | number | boolean
 
@@ -79,8 +88,11 @@ export function canonicalMaxLengthIssue(
   return `Wartość może mieć maksymalnie ${maxLength} znaków.`
 }
 
-export function isRequiredCanonicalKey(key: string) {
-  return requiredKeys.has(key)
+export function isRequiredCanonicalKey(
+  key: string,
+  additionalRequiredKeys?: ReadonlySet<string>,
+) {
+  return requiredKeys.has(key) || additionalRequiredKeys?.has(key) === true
 }
 
 export function multiformConditionMatches(
@@ -105,13 +117,17 @@ export function isCanonicalFieldVisible(
 export function isCanonicalFieldRequired(
   field: CanonicalFieldDefinition,
   values: Readonly<Record<string, MultiformValue>>,
+  additionalRequiredKeys?: ReadonlySet<string>,
 ) {
   if (!isCanonicalFieldVisible(field, values)) return false
-  return isRequiredCanonicalKey(field.canonicalKey)
+  return isRequiredCanonicalKey(field.canonicalKey, additionalRequiredKeys)
     || Boolean(field.requiredWhen && multiformConditionMatches(field.requiredWhen, values))
 }
 
-export function toUiField(field: CanonicalFieldDefinition) {
+export function toUiField(
+  field: CanonicalFieldDefinition,
+  additionalRequiredKeys?: ReadonlySet<string>,
+) {
   const booleanOptions = field.type === 'boolean'
     ? [
         { label: 'Tak', value: 'true' },
@@ -129,7 +145,7 @@ export function toUiField(field: CanonicalFieldDefinition) {
     // client receives an explicit Tak/Nie selector with an empty placeholder.
     type: field.type === 'boolean' ? 'select' : field.type,
     section: sectionLabels[field.group],
-    required: isRequiredCanonicalKey(field.canonicalKey),
+    required: isRequiredCanonicalKey(field.canonicalKey, additionalRequiredKeys),
     visibleWhen: field.visibleWhen,
     requiredWhen: field.requiredWhen,
     description: field.form.helpText ?? field.description,
@@ -203,10 +219,14 @@ export function summarizeTemplate(template: DocumentTemplate) {
 
 export function pdfFillMethodIsSupported(
   method: TemplateFillMethod,
-): method is PdfFillMethod {
+): method is SupportedFillMethod {
   return method.kind === 'pdf_acroform'
     || method.kind === 'pdf_overlay'
     || method.kind === 'pdf_hybrid'
+    || method.kind === 'pdf_manual'
+    || method.kind === 'pdf_readonly'
+    || method.kind === 'xlsx_native'
+    || method.kind === 'xlsx_manual'
 }
 
 export function firstUnsupportedTemplateFillMethod(
@@ -238,14 +258,24 @@ export function unsupportedTemplateFillMethodHttpDetails(issue: {
   }
 }
 
-export function toPreparedDocument(document: DocumentTemplate) {
+export function toPreparedDocument(
+  document: DocumentTemplate,
+  instance?: { index: number, label?: string },
+) {
+  const preparedTemplate = instance
+    ? instantiateTemplate(document, instance.index)
+    : document
+  const instanceLabel = instance?.label?.trim()
+    || (instance ? `${document.repeatFor?.itemLabel ?? 'Instancja'} ${instance.index + 1}` : undefined)
   return {
-    id: document.id,
+    id: instance ? `${document.id}:${instance.index}` : document.id,
     templateId: document.id,
     bank: bankLabel(document.bank),
-    name: document.label,
+    name: instanceLabel ? `${document.label} — ${instanceLabel}` : document.label,
     fileName: document.source.fileName,
     fillMethod: resolveTemplateFillMethod(document),
+    ...(preparedTemplate.includeWhen ? { includeWhen: preparedTemplate.includeWhen } : {}),
+    ...(instance ? { instanceIndex: instance.index, instanceLabel } : {}),
   }
 }
 
@@ -253,12 +283,16 @@ function legacyFillMode(method: TemplateFillMethod) {
   if (method.kind === 'pdf_acroform') return 'acroform'
   if (method.kind === 'pdf_overlay') return 'overlay'
   if (method.kind === 'pdf_hybrid') return 'hybrid'
+  if (method.kind === 'pdf_manual') return 'manual'
+  if (method.kind === 'pdf_readonly') return 'readonly'
   return method.kind
 }
 
 export function bankLabel(bank: DocumentTemplate['bank']) {
   if (bank === 'pko-bp') return 'PKO BP'
   if (bank === 'pekao') return 'Pekao SA'
+  if (bank === 'ing') return 'ING Bank Śląski'
+  if (bank === 'mbank') return 'mBank'
   return 'Erste'
 }
 

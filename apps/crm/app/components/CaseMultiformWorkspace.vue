@@ -33,12 +33,14 @@ import {
   supportedCollectionItemCount,
 } from '~/utils/multiform-collections'
 import {
+  buildMultiformSubmissionReadinessManifest,
   createEmptyMultiformIntake,
   getMultiformIntakeProgress,
   normalizeMultiformIntake,
   resolveMultiformIntakeRequirement,
   validateMultiformIntake,
   type MultiformIntakeAnswers,
+  type MultiformSubmissionReadinessManifest,
 } from '#shared/multiform-intake'
 
 interface MultiformDeliveryRecipientResult {
@@ -391,8 +393,25 @@ function packagePreparedDocuments(applicationId: string) {
   const templateIds = new Set(application.templateIds)
   return (preparedBundle.value?.documents ?? []).filter(document => (
     templateIds.has(preparedDocumentTemplateId(document))
+    && preparedDocumentIsApplicable(document)
   ))
 }
+
+function preparedDocumentIsApplicable(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  if (!preparedDocument.includeWhen) return true
+  const actual = values.value[preparedDocument.includeWhen.canonicalKey]
+  if (actual === undefined || actual === null || actual === '') return false
+  const expected = Array.isArray(preparedDocument.includeWhen.equals)
+    ? preparedDocument.includeWhen.equals
+    : [preparedDocument.includeWhen.equals]
+  return expected.includes(String(actual))
+}
+
+const applicablePreparedDocuments = computed(() => (
+  (preparedBundle.value?.documents ?? []).filter(preparedDocumentIsApplicable)
+))
 
 function preparedDocumentFillMethod(
   preparedDocument: MultiformPrepareResponse['documents'][number],
@@ -404,6 +423,29 @@ function preparedDocumentIsSupported(
   preparedDocument: MultiformPrepareResponse['documents'][number],
 ) {
   return multiformFillMethodIsSupported(preparedDocument.fillMethod)
+}
+
+function preparedDocumentIsManual(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return preparedDocument.fillMethod?.kind === 'pdf_manual'
+    || preparedDocument.fillMethod?.kind === 'xlsx_manual'
+}
+
+function preparedDocumentIsPassThrough(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return preparedDocument.fillMethod?.kind === 'pdf_manual'
+    || preparedDocument.fillMethod?.kind === 'pdf_readonly'
+    || preparedDocument.fillMethod?.kind === 'xlsx_manual'
+}
+
+function preparedDocumentSupportsFieldPreview(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return preparedDocument.fillMethod?.kind === 'pdf_acroform'
+    || preparedDocument.fillMethod?.kind === 'pdf_overlay'
+    || preparedDocument.fillMethod?.kind === 'pdf_hybrid'
 }
 
 function unsupportedPreparedDocument(applicationIds: readonly string[]) {
@@ -450,15 +492,6 @@ function packageRequirements(applicationId: string) {
   )) ?? []
 }
 
-function packageMissingRequirements(applicationId: string) {
-  const selected = new Set(selectedDocumentIds.value)
-  return packageRequirements(applicationId).filter(requirement => (
-    requirement.required
-    && ['missing', 'manual'].includes(requirement.fulfillment)
-    && !requirement.documentIds.some(documentId => selected.has(documentId))
-  ))
-}
-
 function missingSelectedRequirementsForApplications(applicationIds: readonly string[]) {
   const selectedApplications = new Set(applicationIds)
   const selectedFiles = new Set(selectedDocumentIds.value)
@@ -503,9 +536,37 @@ const selectedPackageHasUnsupportedFillMethod = computed(() => Boolean(
   unsupportedPreparedDocument(selectedPackageApplicationIds.value),
 ))
 
-const activePackageMissingRequirements = computed(() => activePackageApplication.value
-  ? packageMissingRequirements(activePackageApplication.value.applicationId)
-  : [])
+function packageSubmissionReadiness(applicationId: string): MultiformSubmissionReadinessManifest {
+  return buildMultiformSubmissionReadinessManifest({
+    applicationId,
+    requirements: packageRequirements(applicationId),
+    documents: context.value?.documents ?? [],
+    selectedDocumentIds: packageDocuments([applicationId]).map(document => document.id),
+    intakeAnswers: intakeAnswers.value,
+    now: context.value?.checklist.readiness.evaluatedAt,
+  })
+}
+
+const activePackageReadiness = computed(() => activePackageApplication.value
+  ? packageSubmissionReadiness(activePackageApplication.value.applicationId)
+  : null)
+
+const selectedPackageReadiness = computed(() => selectedPackageApplicationIds.value.map(
+  applicationId => packageSubmissionReadiness(applicationId),
+))
+
+const selectedPackageReadyForSubmission = computed(() => (
+  selectedPackageReadiness.value.length > 0
+  && selectedPackageReadiness.value.every(manifest => manifest.readyForSubmission)
+  && missingTemplateWarnings.value.length === 0
+))
+
+const selectedPackageReadinessIssueCount = computed(() => (
+  selectedPackageReadiness.value.reduce(
+    (count, manifest) => count + manifest.blockingIssues.length,
+    0,
+  ) + missingTemplateWarnings.value.length
+))
 
 const selectedPackageDocumentCount = computed(() => {
   const applicationIds = selectedPackageApplicationIds.value
@@ -794,7 +855,12 @@ function fieldIsActive(field: MultiformFormField) {
 }
 
 function fieldIsVisible(field: MultiformFormField) {
-  return fieldIsActive(field) && conditionMatches(field.visibleWhen)
+  return fieldIsActive(field)
+    && conditionMatches(field.visibleWhen)
+    && (
+      !field.applicableWhenAny?.length
+      || field.applicableWhenAny.some(conditionMatches)
+    )
 }
 
 function fieldIsRequired(field: MultiformFormField) {
@@ -902,9 +968,7 @@ function buildFormGroups(
 }
 
 const formGroups = computed(() => buildFormGroups(
-  (preparedBundle.value?.fields ?? []).filter(field => (
-    field.collection ? conditionMatches(field.visibleWhen) : fieldIsVisible(field)
-  )),
+  (preparedBundle.value?.fields ?? []).filter(fieldIsVisible),
   preparedBundle.value?.collections ?? [],
 ))
 
@@ -927,6 +991,20 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
     const defaults = applicantDefaults(field.collection.index)
     const relativeKey = field.collection.relativeKey as keyof typeof defaults
     if (relativeKey in defaults) return defaults[relativeKey]
+    const applicant = context.value?.applicants[field.collection.index]
+    const intake = applicant ? intakeAnswers.value.applicants[applicant.clientId] : undefined
+    if (field.collection.relativeKey === 'incomeSource' && intake?.incomeSource) {
+      return intake.incomeSource
+    }
+    if (field.collection.relativeKey === 'employmentType' && intake?.employmentType) {
+      return intake.employmentType
+    }
+  }
+  if (field.key === 'loan.program' && intakeAnswers.value.case.loanProgram) {
+    return intakeAnswers.value.case.loanProgram
+  }
+  if (field.key === 'loan.rkmGuarantee' && intakeAnswers.value.case.rkmGuarantee !== null) {
+    return intakeAnswers.value.case.rkmGuarantee
   }
   if (field.key === 'loan.purpose') {
     return canonicalLoanPurposeFromIntake(intakeAnswers.value.case.loanPurpose)
@@ -1189,17 +1267,32 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 function filledPdfFileName(preparedDocument: MultiformPrepareResponse['documents'][number]) {
-  const sourceName = preparedDocument.fileName || 'wniosek.pdf'
-  return `uzupelniony-${sourceName.toLocaleLowerCase('pl-PL').endsWith('.pdf')
+  const isXlsx = preparedDocument.fillMethod?.kind === 'xlsx_native'
+    || preparedDocument.fillMethod?.kind === 'xlsx_manual'
+  const extension = isXlsx ? '.xlsx' : '.pdf'
+  const sourceName = preparedDocument.fileName || `wniosek${extension}`
+  if (preparedDocumentIsPassThrough(preparedDocument)) return blankPdfFileName(preparedDocument)
+  const base = `uzupelniony-${sourceName.toLocaleLowerCase('pl-PL').endsWith(extension)
     ? sourceName
-    : `${sourceName}.pdf`}`
+    : `${sourceName}${extension}`}`
+  if (preparedDocument.instanceIndex === undefined) return base
+  const suffix = preparedDocument.instanceLabel
+    ?.normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLocaleLowerCase('pl-PL') || `wnioskodawca-${preparedDocument.instanceIndex + 1}`
+  return base.replace(/\.(?:pdf|xlsx)$/i, `-${suffix}${extension}`)
 }
 
 function blankPdfFileName(preparedDocument: MultiformPrepareResponse['documents'][number]) {
-  const sourceName = preparedDocument.fileName || 'szablon-wniosku.pdf'
-  return sourceName.toLocaleLowerCase('pl-PL').endsWith('.pdf')
+  const isXlsx = preparedDocument.fillMethod?.kind === 'xlsx_native'
+    || preparedDocument.fillMethod?.kind === 'xlsx_manual'
+  const extension = isXlsx ? '.xlsx' : '.pdf'
+  const sourceName = preparedDocument.fileName || `szablon-wniosku${extension}`
+  return sourceName.toLocaleLowerCase('pl-PL').endsWith(extension)
     ? sourceName
-    : `${sourceName}.pdf`
+    : `${sourceName}${extension}`
 }
 
 function preparedDocumentTemplateId(
@@ -1246,6 +1339,7 @@ async function downloadPreparedDocument(
 ) {
   const templateId = preparedDocument.templateId || preparedDocument.id
   if (!templateId || individualDownloadPending.value) return
+  const preparedDocumentId = preparedDocument.id || templateId
   individualDownloadError.value = ''
   if (!preparedDocumentIsSupported(preparedDocument)) {
     individualDownloadError.value = `${preparedDocumentFillMethod(preparedDocument).label} jest jeszcze nieobsługiwany w eksporcie Multiwniosku.`
@@ -1258,7 +1352,7 @@ async function downloadPreparedDocument(
     await focusFirstInvalidField()
     return
   }
-  individualDownloadPending.value = `template:${variant}:${templateId}`
+  individualDownloadPending.value = `template:${variant}:${preparedDocumentId}`
   try {
     const blob = await $fetch<Blob>(
       crmApiPath(`/cases/${props.caseData.id}/multiform/files/${encodeURIComponent(templateId)}`),
@@ -1268,6 +1362,9 @@ async function downloadPreparedDocument(
           variant,
           values: activeValuesPayload(),
           collectionCounts: collectionCounts.value,
+          ...(preparedDocument.instanceIndex !== undefined
+            ? { instanceIndex: preparedDocument.instanceIndex }
+            : {}),
         },
         responseType: 'blob',
       },
@@ -1283,8 +1380,8 @@ async function downloadPreparedDocument(
     individualDownloadError.value = readableError(
       error,
       variant === 'blank'
-        ? 'Nie udało się pobrać pustego szablonu PDF.'
-        : 'Nie udało się pobrać uzupełnionego formularza PDF.',
+        ? 'Nie udało się pobrać pustego szablonu dokumentu.'
+        : 'Nie udało się pobrać uzupełnionego dokumentu.',
     )
   }
   finally {
@@ -1953,7 +2050,7 @@ onBeforeUnmount(() => {
               <h3 id="case-multiform-form-title">Uzupełnij dane tylko raz</h3>
               <span v-if="preparedBundle">
                 Wartości trafią do {{ context.applications.length }} wniosków bankowych
-                i {{ preparedBundle.documents.length }} formularzy PDF.
+                i {{ applicablePreparedDocuments.length }} formularzy PDF.
               </span>
             </div>
             <div class="case-multiform__progress">
@@ -1985,7 +2082,7 @@ onBeforeUnmount(() => {
           <template v-else-if="preparedBundle">
             <div class="case-multiform__document-strip" aria-label="Formularze w paczce">
               <span
-                v-for="(preparedDocument, index) in preparedBundle.documents"
+                v-for="(preparedDocument, index) in applicablePreparedDocuments"
                 :key="preparedDocument.id || preparedDocument.templateId || index"
               >
                 <UIcon name="i-lucide-file-text" />
@@ -2269,7 +2366,7 @@ onBeforeUnmount(() => {
                     <span class="case-multiform__file-icon"><UIcon name="i-lucide-file-type-2" /></span>
                     <div class="case-multiform__file-info">
                       <strong>{{ documentTitle(preparedDocument, index) }}</strong>
-                      <small>{{ preparedDocument.fileName || 'Formularz PDF' }}</small>
+                      <small>{{ preparedDocument.fileName || 'Dokument bankowy' }}</small>
                       <span class="case-multiform__fill-method">
                         <UIcon name="i-lucide-wand-sparkles" />
                         Metoda: {{ preparedDocumentFillMethod(preparedDocument).label }}
@@ -2278,6 +2375,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div class="case-multiform__file-actions">
                       <UButton
+                        v-if="preparedDocumentSupportsFieldPreview(preparedDocument)"
                         color="neutral"
                         variant="soft"
                         size="sm"
@@ -2288,11 +2386,12 @@ onBeforeUnmount(() => {
                         Podgląd pól
                       </UButton>
                       <UButton
+                        v-if="!preparedDocumentIsPassThrough(preparedDocument)"
                         color="neutral"
                         variant="outline"
                         size="sm"
                         icon="i-lucide-download"
-                        :loading="individualDownloadPending === `template:filled:${preparedDocument.templateId || preparedDocument.id}`"
+                        :loading="individualDownloadPending === `template:filled:${preparedDocument.id || preparedDocument.templateId}`"
                         :disabled="!preparedDocumentIsSupported(preparedDocument) || Boolean(individualDownloadPending)"
                         @click="downloadPreparedDocument(preparedDocument, 'filled')"
                       >
@@ -2300,14 +2399,18 @@ onBeforeUnmount(() => {
                       </UButton>
                       <UButton
                         color="neutral"
-                        variant="ghost"
+                        :variant="preparedDocumentIsPassThrough(preparedDocument) ? 'outline' : 'ghost'"
                         size="sm"
                         icon="i-lucide-file"
-                        :loading="individualDownloadPending === `template:blank:${preparedDocument.templateId || preparedDocument.id}`"
+                        :loading="individualDownloadPending === `template:blank:${preparedDocument.id || preparedDocument.templateId}`"
                         :disabled="!preparedDocumentIsSupported(preparedDocument) || Boolean(individualDownloadPending)"
                         @click="downloadPreparedDocument(preparedDocument, 'blank')"
                       >
-                        Pusty szablon
+                        {{ preparedDocumentIsManual(preparedDocument)
+                          ? 'Pobierz do uzupełnienia'
+                          : preparedDocumentIsPassThrough(preparedDocument)
+                            ? 'Pobierz dokument'
+                            : 'Pusty szablon' }}
                       </UButton>
                     </div>
                   </article>
@@ -2376,24 +2479,38 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
-              <section class="case-multiform__missing-section" :class="{ 'is-empty': !activePackageMissingRequirements.length }">
+              <section
+                v-if="activePackageReadiness"
+                class="case-multiform__missing-section"
+                :class="{
+                  'is-empty': activePackageReadiness.readyForSubmission,
+                  'is-working-package': activePackageReadiness.status === 'working_package',
+                }"
+              >
                 <header>
                   <div>
-                    <UIcon :name="activePackageMissingRequirements.length ? 'i-lucide-circle-alert' : 'i-lucide-circle-check'" />
+                    <UIcon :name="activePackageReadiness.readyForSubmission ? 'i-lucide-shield-check' : 'i-lucide-circle-alert'" />
                     <span>
-                      <strong>{{ activePackageMissingRequirements.length ? 'Do uzupełnienia ręcznie' : 'Komplet dokumentów' }}</strong>
-                      <small>{{ activePackageMissingRequirements.length ? 'Te pozycje nie trafią automatycznie do paczki' : 'Brak nieuzupełnionych pozycji dla tego wniosku' }}</small>
+                      <strong>{{ activePackageReadiness.readyForSubmission
+                        ? 'Gotowy do złożenia'
+                        : activePackageReadiness.status === 'working_package'
+                          ? 'Paczka robocza — wymagane działania'
+                          : 'Paczka niekompletna' }}</strong>
+                      <small>{{ activePackageReadiness.readyForSubmission
+                        ? 'Wszystkie blokujące elementy zostały zweryfikowane'
+                        : 'ZIP można pobrać, ale nie należy jeszcze składać go w banku' }}</small>
                     </span>
                   </div>
-                  <em>{{ activePackageMissingRequirements.length }}</em>
+                  <em>{{ activePackageReadiness.blockingIssues.length }}</em>
                 </header>
-                <ul v-if="activePackageMissingRequirements.length">
-                  <li v-for="requirement in activePackageMissingRequirements" :key="requirement.key">
-                    <UIcon name="i-lucide-file-question" />
+                <ul v-if="activePackageReadiness.issues.length">
+                  <li v-for="issue in activePackageReadiness.issues" :key="`${issue.requirementKey}:${issue.code}`">
+                    <UIcon :name="issue.blocking ? 'i-lucide-circle-alert' : 'i-lucide-building-2'" />
                     <span>
-                      <strong>{{ requirement.label }}</strong>
-                      <small>{{ requirement.notes || 'Dokument lub czynność wymaga obsługi eksperta.' }}</small>
+                      <strong>{{ issue.label }}</strong>
+                      <small>{{ issue.message }}</small>
                     </span>
+                    <UBadge v-if="!issue.blocking" color="neutral" variant="soft">Po stronie banku</UBadge>
                   </li>
                 </ul>
               </section>
@@ -2445,16 +2562,21 @@ onBeforeUnmount(() => {
           </UAlert>
 
           <UAlert
-            v-if="!context.selectedApplicationsValidation.blockers.length"
+            v-if="!context.selectedApplicationsValidation.blockers.length && selectedPackageReadyForSubmission"
             color="success"
             variant="subtle"
             icon="i-lucide-shield-check"
-            :title="missingTemplateWarnings.length
-              ? 'Paczka jest gotowa dla banków z szablonem'
-              : 'Paczka jest gotowa do wygenerowania'"
-            :description="missingTemplateWarnings.length
-              ? 'Wygenerujemy formularze tylko dla banków z gotowym szablonem. Pozostałe wnioski przygotuj ręcznie.'
-              : 'Mapowania, formularze i wymagane załączniki są kompletne.'"
+            title="Paczka jest gotowa do złożenia"
+            description="Formularze, wymagane załączniki, weryfikacje i czynności przed złożeniem są kompletne."
+          />
+
+          <UAlert
+            v-else-if="!context.selectedApplicationsValidation.blockers.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-package-open"
+            title="Możesz pobrać paczkę roboczą"
+            :description="`${selectedPackageReadinessIssueCount} ${selectedPackageReadinessIssueCount === 1 ? 'blokujący element wymaga' : 'blokujących elementów wymaga'} uzupełnienia lub weryfikacji przed złożeniem w banku.`"
           />
 
           <UAlert
@@ -3458,6 +3580,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 11px 14px;
+}
+
+.case-multiform__missing-section li > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
 }
 
 .case-multiform__missing-section li + li {

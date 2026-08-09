@@ -1,4 +1,5 @@
 import type { TemplateFillMethod } from '@openexpert/multiform'
+import type { MultiformRequirementReadiness } from '#shared/multiform-intake'
 import type { MortgageApplicationStatus } from './cases'
 
 export type MultiformFieldValue = string | number | boolean
@@ -48,6 +49,8 @@ export interface MultiformFormField {
   }
   collection?: MultiformCollectionFieldRef
   visibleWhen?: MultiformFieldCondition
+  /** The field is relevant when at least one source document condition matches. */
+  applicableWhenAny?: MultiformFieldCondition[]
   requiredWhen?: MultiformFieldCondition
   validation?: {
     pattern?: string
@@ -61,6 +64,9 @@ export interface MultiformFormField {
 export interface MultiformPreparedDocument {
   id?: string
   templateId?: string
+  instanceIndex?: number
+  instanceLabel?: string
+  includeWhen?: MultiformFieldCondition
   bank?: string
   name?: string
   fileName?: string
@@ -89,6 +95,14 @@ export interface MultiformContextDocument {
   status_code: string
   eligible: boolean
   blocker?: string
+  received_at: string | null
+  verified_at: string | null
+  created_at: string
+  readiness: {
+    issuedAt: string | null
+    validUntil: string | null
+    deliveryEvidenceAt: string | null
+  }
 }
 
 export interface MultiformContextRequirement {
@@ -105,6 +119,7 @@ export interface MultiformContextRequirement {
   allowedMimeTypes: string[]
   templateId?: string
   notes?: string
+  readiness?: MultiformRequirementReadiness
   applicationIds: string[]
   offerIds: string[]
   bankNames: string[]
@@ -155,6 +170,9 @@ export interface MultiformCrmContext {
     clientId: string
     label: string
     pesel: string | null
+    email: string | null
+    phone: string | null
+    birthDate: string | null
     isPrimary: boolean
   }>
   applicationIds: string[]
@@ -179,6 +197,10 @@ export interface MultiformCrmContext {
   >>
   documents: MultiformContextDocument[]
   checklist: {
+    readiness: {
+      manifestVersion: '1.0'
+      evaluatedAt: string
+    }
     requirements: MultiformContextRequirement[]
     missingAttachmentRequirementCodes: string[]
     missingAttachmentRequirementKeys: string[]

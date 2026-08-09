@@ -168,7 +168,7 @@ export function validateMortgageTemplateForBank(
   ) {
     throw createError({
       statusCode: 422,
-      statusMessage: 'Zmiana źródłowego PDF-u wymaga osobnego procesu weryfikacji pliku.',
+      statusMessage: 'Zmiana źródłowego dokumentu wymaga osobnego procesu weryfikacji pliku.',
       data: { validation },
     })
   }

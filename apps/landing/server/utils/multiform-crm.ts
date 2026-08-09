@@ -29,10 +29,26 @@ const allowedAttachmentMimeTypes = new Set([
   'application/pdf',
   'image/jpeg',
   'image/png',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ])
 
 type JsonRecord = Record<string, unknown>
 type CrmDataClient = any
+type CrmMultiformSignatureRole =
+  | 'primary_applicant'
+  | 'each_applicant'
+  | 'spouse'
+  | 'third_party'
+  | 'bank_employee'
+
+interface CrmMultiformRequirementReadiness {
+  blocksSubmission?: boolean
+  requiresExpertVerification?: boolean
+  maxAgeDays?: number
+  signatures?: CrmMultiformSignatureRole[]
+  deliveryEvidenceRequired?: boolean
+}
+
 type DocumentSelectionCondition =
   | { op: 'selection_is', featureId: string, optionId: string }
   | { op: 'all' | 'any', conditions: DocumentSelectionCondition[] }
@@ -59,6 +75,7 @@ interface CrmMultiformBaseDocumentRequirement {
   allowedMimeTypes: string[]
   templateId?: string
   notes?: string
+  readiness?: CrmMultiformRequirementReadiness
 }
 
 export interface CrmMultiformDocumentRequirement extends CrmMultiformBaseDocumentRequirement {
@@ -84,6 +101,10 @@ export interface CrmMultiformDocumentRow {
   size_bytes: number | null
   sha256: string | null
   status_code: string
+  received_at: string | null
+  verified_at: string | null
+  created_at: string
+  metadata: unknown
 }
 
 export interface CrmMultiformPublicDocument {
@@ -99,6 +120,14 @@ export interface CrmMultiformPublicDocument {
   status_code: string
   eligible: boolean
   blocker?: string
+  received_at: string | null
+  verified_at: string | null
+  created_at: string
+  readiness: {
+    issuedAt: string | null
+    validUntil: string | null
+    deliveryEvidenceAt: string | null
+  }
 }
 
 export interface CrmMultiformContext {
@@ -145,6 +174,9 @@ export interface CrmMultiformContext {
     clientId: string
     label: string
     pesel: string | null
+    email: string | null
+    phone: string | null
+    birthDate: string | null
     isPrimary: boolean
   }>
   templateIds: string[]
@@ -163,6 +195,10 @@ export interface CrmMultiformContext {
     }>
   }
   checklist: {
+    readiness: {
+      manifestVersion: '1.0'
+      evaluatedAt: string
+    }
     requirements: Array<CrmMultiformDocumentRequirement & {
       key: string
       ownerClientId: string | null
@@ -196,6 +232,45 @@ function nonEmptyString(value: unknown, maxLength = 1_000) {
   const text = value.trim()
   if (!text || text.length > maxLength) return undefined
   return text
+}
+
+function normalizedIsoTimestamp(value: unknown) {
+  const text = nonEmptyString(value, 80)
+  if (!text) return null
+  const timestamp = Date.parse(text)
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+}
+
+function firstMetadataTimestamp(source: JsonRecord, keys: readonly string[]) {
+  for (const key of keys) {
+    const timestamp = normalizedIsoTimestamp(source[key])
+    if (timestamp) return timestamp
+  }
+  return null
+}
+
+function publicDocumentReadinessMetadata(metadata: unknown) {
+  const source = asRecord(metadata)
+  return {
+    issuedAt: firstMetadataTimestamp(source, [
+      'issuedAt',
+      'issued_at',
+      'documentDate',
+      'document_date',
+    ]),
+    validUntil: firstMetadataTimestamp(source, [
+      'validUntil',
+      'valid_until',
+      'expiresAt',
+      'expires_at',
+    ]),
+    deliveryEvidenceAt: firstMetadataTimestamp(source, [
+      'deliveryEvidenceAt',
+      'delivery_evidence_at',
+      'deliveredAt',
+      'delivered_at',
+    ]),
+  }
 }
 
 function parseDocumentSelectionCondition(input: unknown): DocumentSelectionCondition | null {
@@ -272,6 +347,65 @@ function invalidCatalogSnapshot(message: string): never {
     statusCode: 409,
     statusMessage: `Snapshot oferty ma nieprawidłową konfigurację dokumentów: ${message}`,
   })
+}
+
+function parseRequirementReadiness(
+  value: unknown,
+  requirementCode: string,
+): CrmMultiformRequirementReadiness | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    invalidCatalogSnapshot(`wymaganie ${requirementCode} ma nieprawidłową konfigurację readiness.`)
+  }
+  const source = value as JsonRecord
+  for (const field of [
+    'blocksSubmission',
+    'requiresExpertVerification',
+    'deliveryEvidenceRequired',
+  ] as const) {
+    if (source[field] !== undefined && typeof source[field] !== 'boolean') {
+      invalidCatalogSnapshot(`wymaganie ${requirementCode} ma nieprawidłowe pole readiness.${field}.`)
+    }
+  }
+  if (
+    source.maxAgeDays !== undefined
+    && (!Number.isSafeInteger(source.maxAgeDays) || Number(source.maxAgeDays) < 1 || Number(source.maxAgeDays) > 3_650)
+  ) {
+    invalidCatalogSnapshot(`wymaganie ${requirementCode} ma nieprawidłowe pole readiness.maxAgeDays.`)
+  }
+  const allowedSignatureRoles = new Set<CrmMultiformSignatureRole>([
+    'primary_applicant',
+    'each_applicant',
+    'spouse',
+    'third_party',
+    'bank_employee',
+  ])
+  let signatures: CrmMultiformSignatureRole[] | undefined
+  if (source.signatures !== undefined) {
+    if (!Array.isArray(source.signatures) || source.signatures.length > allowedSignatureRoles.size) {
+      invalidCatalogSnapshot(`wymaganie ${requirementCode} ma nieprawidłową listę readiness.signatures.`)
+    }
+    signatures = source.signatures.filter((role): role is CrmMultiformSignatureRole => (
+      typeof role === 'string' && allowedSignatureRoles.has(role as CrmMultiformSignatureRole)
+    ))
+    if (signatures.length !== source.signatures.length || new Set(signatures).size !== signatures.length) {
+      invalidCatalogSnapshot(`wymaganie ${requirementCode} ma nieprawidłową listę readiness.signatures.`)
+    }
+  }
+
+  return {
+    ...(typeof source.blocksSubmission === 'boolean'
+      ? { blocksSubmission: source.blocksSubmission }
+      : {}),
+    ...(typeof source.requiresExpertVerification === 'boolean'
+      ? { requiresExpertVerification: source.requiresExpertVerification }
+      : {}),
+    ...(typeof source.maxAgeDays === 'number' ? { maxAgeDays: source.maxAgeDays } : {}),
+    ...(signatures ? { signatures } : {}),
+    ...(typeof source.deliveryEvidenceRequired === 'boolean'
+      ? { deliveryEvidenceRequired: source.deliveryEvidenceRequired }
+      : {}),
+  }
 }
 
 function parseTemplateIds(value: unknown) {
@@ -378,6 +512,7 @@ function parseDocumentRequirements(
     ) invalidCatalogSnapshot(`wymaganie ${code} zawiera niedozwolony albo powtórzony typ MIME.`)
     const templateId = nonEmptyString(source.templateId, 120)
     const notes = nonEmptyString(source.notes, 1_000)
+    const readiness = parseRequirementReadiness(source.readiness, code)
     usedCodes.add(code)
     const hasWhen = Object.prototype.hasOwnProperty.call(source, 'when') && source.when != null
     const when = hasWhen ? parseDocumentSelectionCondition(source.when) : null
@@ -400,6 +535,7 @@ function parseDocumentRequirements(
       allowedMimeTypes,
       ...(templateId ? { templateId } : {}),
       ...(notes ? { notes } : {}),
+      ...(readiness ? { readiness } : {}),
     })
   }
   return requirements
@@ -494,6 +630,35 @@ function requirementNotes(
   return notes.length ? notes.join('\n') : undefined
 }
 
+function mergeRequirementReadiness(
+  left: CrmMultiformRequirementReadiness | undefined,
+  right: CrmMultiformRequirementReadiness | undefined,
+): CrmMultiformRequirementReadiness | undefined {
+  if (!left && !right) return undefined
+  const maxAgeDays = left?.maxAgeDays && right?.maxAgeDays
+    ? Math.min(left.maxAgeDays, right.maxAgeDays)
+    : left?.maxAgeDays ?? right?.maxAgeDays
+  const signatures = [...new Set([
+    ...(left?.signatures ?? []),
+    ...(right?.signatures ?? []),
+  ])]
+  return {
+    ...(left?.blocksSubmission === true || right?.blocksSubmission === true
+      ? { blocksSubmission: true }
+      : left?.blocksSubmission === false && right?.blocksSubmission === false
+        ? { blocksSubmission: false }
+        : {}),
+    ...(left?.requiresExpertVerification === true || right?.requiresExpertVerification === true
+      ? { requiresExpertVerification: true }
+      : {}),
+    ...(maxAgeDays ? { maxAgeDays } : {}),
+    ...(signatures.length ? { signatures } : {}),
+    ...(left?.deliveryEvidenceRequired === true || right?.deliveryEvidenceRequired === true
+      ? { deliveryEvidenceRequired: true }
+      : {}),
+  }
+}
+
 /**
  * Client-supplied evidence is shared by all banks and therefore appears once.
  * Everything owned by a bank process remains scoped to its submission.
@@ -555,6 +720,9 @@ export function aggregateCrmMultiformDocumentRequirements(
         requirementApplicabilityRank,
       )
       requirement.evidence = strongerValue(requirement.evidence, parsed.evidence, requirementEvidenceRank)
+      const readiness = mergeRequirementReadiness(requirement.readiness, parsed.readiness)
+      if (readiness) requirement.readiness = readiness
+      else delete requirement.readiness
       if (requirement.templateId !== parsed.templateId) delete requirement.templateId
       current.notes.push({ bankName: source.bankName, notes: parsed.notes })
       const notes = requirementNotes(current.notes)
@@ -675,7 +843,7 @@ function buildTemplateValidation(
 
   const blockers = [
     ...(templateIds.length === 0 ? ['Aktywne wnioski nie mają skonfigurowanych template’ów Multiform.'] : []),
-    ...(templateIds.length > 10 ? ['Pakiet wniosków przekracza limit 10 template’ów Multiform.'] : []),
+    ...(templateIds.length > 50 ? ['Pakiet wniosków przekracza limit 50 template’ów Multiwniosku.'] : []),
     ...requirements.flatMap(requirement => (
       requirement.required
       && requirement.applicability === 'always'
@@ -780,6 +948,10 @@ function buildChecklist(
     .filter(requirement => requirement.fulfillment === 'manual')
     .map(requirement => requirement.code)
   return {
+    readiness: {
+      manifestVersion: '1.0',
+      evaluatedAt: new Date().toISOString(),
+    },
     requirements: checklistRequirements,
     missingAttachmentRequirementCodes,
     missingAttachmentRequirementKeys,
@@ -1005,7 +1177,7 @@ export async function loadCrmMultiformContext(
   }>
   const clientIds = caseClientLinks.map(link => String(link.client_id))
 
-  const documentSelect = 'id, client_id, submission_id, name, document_type, storage_bucket, storage_path, mime_type, size_bytes, sha256, status_code'
+  const documentSelect = 'id, client_id, submission_id, name, document_type, storage_bucket, storage_path, mime_type, size_bytes, sha256, status_code, received_at, verified_at, created_at, metadata'
   const [clientDocumentsResult, bankDocumentsResult, clientsResult, peopleResult] = await Promise.all([
     clientAttachmentRequirementCodes.length
       ? dataApi
@@ -1041,7 +1213,7 @@ export async function loadCrmMultiformContext(
     clientIds.length
       ? dataApi
           .from('crm_client_people')
-          .select('client_id, display_name, pesel, role, created_at')
+          .select('client_id, display_name, pesel, email, phone, date_of_birth, role, created_at')
           .eq('organization_id', organization.id)
           .in('client_id', clientIds)
           .order('created_at')
@@ -1083,6 +1255,9 @@ export async function loadCrmMultiformContext(
       clientId,
       label: profile.label,
       pesel: profile.pesel,
+      email: profile.email,
+      phone: profile.phone,
+      birthDate: profile.birthDate,
       isPrimary: Boolean(link.is_primary),
     }
   })
@@ -1121,6 +1296,10 @@ export async function loadCrmMultiformContext(
       sha256: document.sha256,
       status_code: document.status_code,
       eligible: !blocker,
+      received_at: document.received_at,
+      verified_at: document.verified_at,
+      created_at: document.created_at,
+      readiness: publicDocumentReadinessMetadata(document.metadata),
       ...(blocker ? { blocker } : {}),
     }
   })

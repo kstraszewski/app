@@ -23,6 +23,11 @@ export const multiformIntakeLoanPurposes = [
   'refinance',
 ] as const
 
+export const multiformIntakeLoanPrograms = [
+  'standard',
+  'rkm',
+] as const
+
 export const multiformIntakeRequirementStatuses = [
   'required',
   'optional',
@@ -33,7 +38,28 @@ export const multiformIntakeRequirementStatuses = [
 export type MultiformIntakeIncomeSource = typeof multiformIntakeIncomeSources[number]
 export type MultiformIntakeEmploymentType = typeof multiformIntakeEmploymentTypes[number]
 export type MultiformIntakeLoanPurpose = typeof multiformIntakeLoanPurposes[number]
+export type MultiformIntakeLoanProgram = typeof multiformIntakeLoanPrograms[number]
 export type MultiformIntakeRequirementStatus = typeof multiformIntakeRequirementStatuses[number]
+
+export const multiformSubmissionReadinessManifestVersion = '1.0' as const
+
+export const multiformSubmissionSignatureRoles = [
+  'primary_applicant',
+  'each_applicant',
+  'spouse',
+  'third_party',
+  'bank_employee',
+] as const
+
+export type MultiformSubmissionSignatureRole = typeof multiformSubmissionSignatureRoles[number]
+
+export interface MultiformRequirementReadiness {
+  blocksSubmission?: boolean
+  requiresExpertVerification?: boolean
+  maxAgeDays?: number
+  signatures?: MultiformSubmissionSignatureRole[]
+  deliveryEvidenceRequired?: boolean
+}
 
 export interface MultiformApplicantIntakeAnswers {
   incomeSource: MultiformIntakeIncomeSource | null
@@ -44,6 +70,8 @@ export interface MultiformApplicantIntakeAnswers {
 }
 
 export interface MultiformCaseIntakeAnswers {
+  loanProgram: MultiformIntakeLoanProgram | null
+  rkmGuarantee: boolean | null
   loanPurpose: MultiformIntakeLoanPurpose | null
   preliminaryAgreement: boolean | null
   landRegister: boolean | null
@@ -86,6 +114,11 @@ export const multiformIntakeLoanPurposeOptions = [
   { label: 'Refinansowanie', value: 'refinance' },
 ] as const satisfies readonly MultiformIntakeOption<MultiformIntakeLoanPurpose>[]
 
+export const multiformIntakeLoanProgramOptions = [
+  { label: 'Standardowy kredyt hipoteczny', value: 'standard' },
+  { label: 'Rodzinny Kredyt Mieszkaniowy (RKM)', value: 'rkm' },
+] as const satisfies readonly MultiformIntakeOption<MultiformIntakeLoanProgram>[]
+
 export const multiformIntakeBooleanOptions = [
   { label: 'Tak', value: true },
   { label: 'Nie', value: false },
@@ -97,6 +130,8 @@ export const multiformIntakeLabels = {
   incomePaidToAccount: 'Czy dochód wpływa na rachunek bankowy?',
   additionalIncome: 'Czy występują dodatkowe źródła dochodu?',
   liabilities: 'Czy występują obecne zobowiązania finansowe?',
+  loanProgram: 'Program kredytowy',
+  rkmGuarantee: 'Czy RKM korzysta z gwarancji spłaty BGK?',
   loanPurpose: 'Cel kredytu',
   preliminaryAgreement: 'Czy podpisano umowę przedwstępną?',
   landRegister: 'Czy nieruchomość ma księgę wieczystą?',
@@ -157,6 +192,7 @@ export interface MultiformIntakeRequirement {
   applicability: string
   required: boolean
   ownerClientId: string | null
+  readiness?: MultiformRequirementReadiness
 }
 
 export interface MultiformIntakeRequirementResolution {
@@ -165,11 +201,94 @@ export interface MultiformIntakeRequirementResolution {
   phase: 'analysis' | 'later'
 }
 
+export type MultiformSubmissionReadinessPhase =
+  | 'documents'
+  | 'bank_forms'
+  | 'expert_verification'
+  | 'external_checks'
+  | 'manual_actions'
+  | 'signatures'
+  | 'information_delivery'
+  | 'bank_actions'
+
+export type MultiformSubmissionReadinessIssueCode =
+  | 'missing_attachment'
+  | 'applicability_unknown'
+  | 'expert_verification_required'
+  | 'document_expired'
+  | 'document_validity_unknown'
+  | 'external_check_required'
+  | 'manual_action_required'
+  | 'signature_required'
+  | 'delivery_evidence_required'
+  | 'bank_action_required'
+
+export interface MultiformSubmissionReadinessDocument {
+  id: string
+  status_code: string
+  received_at?: string | null
+  verified_at?: string | null
+  created_at?: string | null
+  readiness?: {
+    issuedAt?: string | null
+    validUntil?: string | null
+    deliveryEvidenceAt?: string | null
+  }
+}
+
+export interface MultiformSubmissionReadinessRequirement extends MultiformIntakeRequirement {
+  key: string
+  label: string
+  itemKind: 'client_document' | 'bank_document' | 'external_check' | 'manual_action'
+  templateId?: string
+  applicationId?: string
+  applicationIds: string[]
+  documentIds: string[]
+  fulfillment: 'attached' | 'generated' | 'missing' | 'manual' | 'conditional' | 'optional'
+}
+
+export interface MultiformSubmissionReadinessIssue {
+  code: MultiformSubmissionReadinessIssueCode
+  phase: MultiformSubmissionReadinessPhase
+  requirementKey: string
+  requirementCode: string
+  label: string
+  message: string
+  blocking: boolean
+  ownerClientId: string | null
+}
+
+export interface MultiformSubmissionReadinessPhaseSummary {
+  phase: MultiformSubmissionReadinessPhase
+  issueCount: number
+  blockingIssueCount: number
+}
+
+export interface MultiformSubmissionReadinessManifest {
+  version: typeof multiformSubmissionReadinessManifestVersion
+  applicationId: string
+  status: 'ready_for_submission' | 'working_package' | 'incomplete'
+  readyForSubmission: boolean
+  issues: MultiformSubmissionReadinessIssue[]
+  blockingIssues: MultiformSubmissionReadinessIssue[]
+  phases: MultiformSubmissionReadinessPhaseSummary[]
+}
+
+export interface BuildMultiformSubmissionReadinessInput {
+  applicationId: string
+  requirements: readonly MultiformSubmissionReadinessRequirement[]
+  documents: readonly MultiformSubmissionReadinessDocument[]
+  selectedDocumentIds: readonly string[]
+  intakeAnswers: MultiformIntakeAnswers
+  now?: Date | string | number
+}
+
 type JsonRecord = Record<string, unknown>
 
 const incomeSourceSet = new Set<string>(multiformIntakeIncomeSources)
 const employmentTypeSet = new Set<string>(multiformIntakeEmploymentTypes)
 const loanPurposeSet = new Set<string>(multiformIntakeLoanPurposes)
+const loanProgramSet = new Set<string>(multiformIntakeLoanPrograms)
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -219,6 +338,8 @@ function emptyApplicantAnswers(): MultiformApplicantIntakeAnswers {
 
 function emptyCaseAnswers(): MultiformCaseIntakeAnswers {
   return {
+    loanProgram: null,
+    rkmGuarantee: null,
     loanPurpose: null,
     preliminaryAgreement: null,
     landRegister: null,
@@ -262,10 +383,18 @@ export function normalizeMultiformIntake(
   }
 
   const rawCase = asRecord(ownValue(source, 'case'))
+  const loanProgram = enumValue<MultiformIntakeLoanProgram>(
+    ownValue(rawCase, 'loanProgram'),
+    loanProgramSet,
+  )
   return {
     applicants,
     case: {
       ...emptyCaseAnswers(),
+      loanProgram,
+      rkmGuarantee: loanProgram === 'rkm'
+        ? nullableBoolean(ownValue(rawCase, 'rkmGuarantee'))
+        : null,
       loanPurpose: enumValue<MultiformIntakeLoanPurpose>(
         ownValue(rawCase, 'loanPurpose'),
         loanPurposeSet,
@@ -305,6 +434,8 @@ function applicantProgress(answers: MultiformApplicantIntakeAnswers): MultiformI
 
 function caseProgress(answers: MultiformCaseIntakeAnswers): MultiformIntakeProgressCount {
   return countProgress([
+    answers.loanProgram,
+    ...(answers.loanProgram === 'rkm' ? [answers.rkmGuarantee] : []),
     answers.loanPurpose,
     answers.preliminaryAgreement,
     answers.landRegister,
@@ -384,6 +515,7 @@ export function validateMultiformIntake(
   }
 
   for (const field of [
+    'loanProgram',
     'loanPurpose',
     'preliminaryAgreement',
     'landRegister',
@@ -397,6 +529,15 @@ export function validateMultiformIntake(
       field,
       path: `case.${field}`,
       message: `Uzupełnij pole „${multiformIntakeLabels[field]}”.`,
+    })
+  }
+  if (value.case.loanProgram === 'rkm' && value.case.rkmGuarantee === null) {
+    issues.push({
+      scope: 'case',
+      clientId: null,
+      field: 'rkmGuarantee',
+      path: 'case.rkmGuarantee',
+      message: `Uzupełnij pole „${multiformIntakeLabels.rkmGuarantee}”.`,
     })
   }
 
@@ -432,6 +573,20 @@ function conditionalRequirementStatus(
   const category = requirement.category.toLowerCase()
   const owner = applicantAnswers(answers, requirement.ownerClientId)
 
+  if (code === 'erste_rkm_guarantee_conditions') {
+    if (!answers.case.loanProgram) return 'unknown'
+    if (answers.case.loanProgram !== 'rkm') return 'not_applicable'
+    return booleanRequirementStatus(answers.case.rkmGuarantee)
+  }
+  if (code === 'erste_rkm_credit_and_family_repayment_conditions') {
+    if (!answers.case.loanProgram) return 'unknown'
+    return answers.case.loanProgram === 'rkm' ? 'required' : 'not_applicable'
+  }
+  if (code === 'erste_investor_statement') {
+    if (!answers.case.loanPurpose) return 'unknown'
+    return answers.case.loanPurpose === 'purchase_primary' ? 'required' : 'not_applicable'
+  }
+
   if (code === 'income_evidence') {
     return owner?.incomeSource ? 'required' : 'unknown'
   }
@@ -440,9 +595,29 @@ function conditionalRequirementStatus(
   }
   if (category === 'income_employment') {
     if (!owner?.incomeSource) return 'unknown'
-    return ['employment', 'civil_contract'].includes(owner.incomeSource)
+    return ['employment', 'civil_contract', 'retirement'].includes(owner.incomeSource)
       ? 'required'
       : 'not_applicable'
+  }
+  if (category === 'income_employment_only') {
+    if (!owner?.incomeSource) return 'unknown'
+    return owner.incomeSource === 'employment' ? 'required' : 'not_applicable'
+  }
+  if (category === 'income_civil_contract') {
+    if (!owner?.incomeSource) return 'unknown'
+    return owner.incomeSource === 'civil_contract' ? 'required' : 'not_applicable'
+  }
+  if (category === 'income_retirement') {
+    if (!owner?.incomeSource) return 'unknown'
+    return owner.incomeSource === 'retirement' ? 'required' : 'not_applicable'
+  }
+  if (category === 'income_rental') {
+    if (!owner?.incomeSource) return 'unknown'
+    return owner.incomeSource === 'rental' ? 'required' : 'not_applicable'
+  }
+  if (category === 'income_foreign') {
+    if (!owner?.incomeSource) return 'unknown'
+    return owner.incomeSource === 'foreign' ? 'required' : 'not_applicable'
   }
   if (category === 'income_business') {
     if (!owner?.incomeSource) return 'unknown'
@@ -517,3 +692,242 @@ export function resolveMultiformIntakeRequirementStatus(
 ): MultiformIntakeRequirementStatus {
   return resolveMultiformIntakeRequirement(requirement, answers).status
 }
+
+function requirementBlocksSubmission(
+  requirement: MultiformSubmissionReadinessRequirement,
+) {
+  return requirement.readiness?.blocksSubmission
+    ?? (requirement.required && requirement.stage === 'analysis')
+}
+
+function submissionRequirementApplies(
+  requirement: MultiformSubmissionReadinessRequirement,
+  applicationId: string,
+) {
+  return requirement.applicationId === applicationId
+    || requirement.applicationIds.length === 0
+    || requirement.applicationIds.includes(applicationId)
+}
+
+function validDate(value: unknown): Date | null {
+  if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) return null
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+function signatureRoleLabel(role: MultiformSubmissionSignatureRole) {
+  const labels: Record<MultiformSubmissionSignatureRole, string> = {
+    primary_applicant: 'głównego wnioskodawcy',
+    each_applicant: 'każdego wnioskodawcy',
+    spouse: 'małżonka lub małżonki',
+    third_party: 'wymaganej osoby trzeciej',
+    bank_employee: 'pracownika banku',
+  }
+  return labels[role]
+}
+
+function readinessIssue(
+  requirement: MultiformSubmissionReadinessRequirement,
+  issue: Omit<MultiformSubmissionReadinessIssue,
+    'requirementKey' | 'requirementCode' | 'label' | 'ownerClientId'>,
+): MultiformSubmissionReadinessIssue {
+  return {
+    ...issue,
+    requirementKey: requirement.key,
+    requirementCode: requirement.code,
+    label: requirement.label,
+    ownerClientId: requirement.ownerClientId,
+  }
+}
+
+function documentValidityIssues(
+  requirement: MultiformSubmissionReadinessRequirement,
+  documents: readonly MultiformSubmissionReadinessDocument[],
+  now: Date,
+  blocking: boolean,
+) {
+  const maxAgeDays = requirement.readiness?.maxAgeDays
+  if (!maxAgeDays) return []
+
+  return documents.flatMap((document) => {
+    const validUntil = validDate(document.readiness?.validUntil)
+    const issuedAt = validDate(document.readiness?.issuedAt)
+    const expiresAt = validUntil ?? (issuedAt
+      ? new Date(issuedAt.getTime() + maxAgeDays * 24 * 60 * 60 * 1_000)
+      : null)
+
+    if (!expiresAt) {
+      return [readinessIssue(requirement, {
+        code: 'document_validity_unknown',
+        phase: 'expert_verification',
+        message: `Uzupełnij datę wystawienia lub ważności dokumentu „${requirement.label}”.`,
+        blocking,
+      })]
+    }
+    if (expiresAt.getTime() <= now.getTime()) {
+      return [readinessIssue(requirement, {
+        code: 'document_expired',
+        phase: 'expert_verification',
+        message: `Dokument „${requirement.label}” utracił ważność.`,
+        blocking,
+      })]
+    }
+    return []
+  })
+}
+
+/**
+ * Builds a bank-application-specific, versioned submission-readiness manifest.
+ * Downloadability and submission readiness are deliberately separate: a ZIP
+ * may remain useful as a working package while signatures, checks or expert
+ * verification are still pending.
+ */
+export function buildMultiformSubmissionReadinessManifest(
+  input: BuildMultiformSubmissionReadinessInput,
+): MultiformSubmissionReadinessManifest {
+  const now = validDate(input.now ?? new Date()) ?? new Date()
+  const selectedDocumentIds = new Set(input.selectedDocumentIds)
+  const documentById = new Map(input.documents.map(document => [document.id, document]))
+  const issues: MultiformSubmissionReadinessIssue[] = []
+
+  for (const requirement of input.requirements) {
+    if (!submissionRequirementApplies(requirement, input.applicationId)) continue
+
+    const resolution = resolveMultiformIntakeRequirement(requirement, input.intakeAnswers)
+    const blocksSubmission = requirementBlocksSubmission(requirement)
+    if (resolution.status === 'not_applicable' || resolution.status === 'optional') continue
+    if (resolution.status === 'unknown') {
+      issues.push(readinessIssue(requirement, {
+        code: 'applicability_unknown',
+        phase: 'documents',
+        message: `Ustal, czy pozycja „${requirement.label}” jest wymagana w tej sprawie.`,
+        blocking: blocksSubmission,
+      }))
+      continue
+    }
+
+    const selectedDocuments = requirement.documentIds
+      .filter(documentId => selectedDocumentIds.has(documentId))
+      .flatMap(documentId => {
+        const document = documentById.get(documentId)
+        return document ? [document] : []
+      })
+    const acceptsAttachment = requirement.itemKind === 'client_document'
+      || (requirement.itemKind === 'bank_document' && !requirement.templateId)
+
+    if (acceptsAttachment && selectedDocuments.length === 0) {
+      issues.push(readinessIssue(requirement, {
+        code: 'missing_attachment',
+        phase: 'documents',
+        message: `Dołącz wymagany dokument „${requirement.label}”.`,
+        blocking: blocksSubmission,
+      }))
+    }
+    else if (selectedDocuments.length > 0) {
+      if (
+        requirement.readiness?.requiresExpertVerification
+        && selectedDocuments.some(document => document.status_code !== 'verified')
+      ) {
+        issues.push(readinessIssue(requirement, {
+          code: 'expert_verification_required',
+          phase: 'expert_verification',
+          message: `Ekspert musi zweryfikować dokument „${requirement.label}”.`,
+          blocking: blocksSubmission,
+        }))
+      }
+      issues.push(...documentValidityIssues(
+        requirement,
+        selectedDocuments,
+        now,
+        blocksSubmission,
+      ))
+    }
+
+    if (requirement.itemKind === 'external_check') {
+      issues.push(readinessIssue(requirement, {
+        code: 'external_check_required',
+        phase: 'external_checks',
+        message: requirement.readiness?.blocksSubmission === false
+          ? `Kontrola „${requirement.label}” pozostaje do wykonania poza Multiwnioskiem.`
+          : `Wykonaj i potwierdź kontrolę „${requirement.label}” przed złożeniem.`,
+        blocking: blocksSubmission,
+      }))
+    }
+    if (requirement.itemKind === 'manual_action') {
+      issues.push(readinessIssue(requirement, {
+        code: 'manual_action_required',
+        phase: 'manual_actions',
+        message: `Wykonaj i potwierdź czynność „${requirement.label}”.`,
+        blocking: blocksSubmission,
+      }))
+    }
+
+    for (const signature of requirement.readiness?.signatures ?? []) {
+      const isBankAction = signature === 'bank_employee'
+      issues.push(readinessIssue(requirement, {
+        code: isBankAction ? 'bank_action_required' : 'signature_required',
+        phase: isBankAction ? 'bank_actions' : 'signatures',
+        message: isBankAction
+          ? `Podpis ${signatureRoleLabel(signature)} zostanie uzupełniony po stronie banku.`
+          : `Uzyskaj podpis ${signatureRoleLabel(signature)} na dokumencie „${requirement.label}”.`,
+        blocking: isBankAction ? false : blocksSubmission,
+      }))
+    }
+
+    if (requirement.readiness?.deliveryEvidenceRequired) {
+      const hasDeliveryEvidence = selectedDocuments.some(document => (
+        Boolean(validDate(document.readiness?.deliveryEvidenceAt))
+      ))
+      if (!hasDeliveryEvidence) {
+        issues.push(readinessIssue(requirement, {
+          code: 'delivery_evidence_required',
+          phase: 'information_delivery',
+          message: `Zarejestruj przekazanie dokumentu „${requirement.label}” klientowi.`,
+          blocking: blocksSubmission,
+        }))
+      }
+    }
+  }
+
+  const blockingIssues = issues.filter(issue => issue.blocking)
+  const incompleteCodes = new Set<MultiformSubmissionReadinessIssueCode>([
+    'missing_attachment',
+    'applicability_unknown',
+    'document_expired',
+    'document_validity_unknown',
+  ])
+  const phases = multiformSubmissionReadinessPhases.flatMap((phase) => {
+    const phaseIssues = issues.filter(issue => issue.phase === phase)
+    return phaseIssues.length
+      ? [{
+          phase,
+          issueCount: phaseIssues.length,
+          blockingIssueCount: phaseIssues.filter(issue => issue.blocking).length,
+        }]
+      : []
+  })
+  return {
+    version: multiformSubmissionReadinessManifestVersion,
+    applicationId: input.applicationId,
+    status: blockingIssues.length === 0
+      ? 'ready_for_submission'
+      : blockingIssues.some(issue => incompleteCodes.has(issue.code))
+        ? 'incomplete'
+        : 'working_package',
+    readyForSubmission: blockingIssues.length === 0,
+    issues,
+    blockingIssues,
+    phases,
+  }
+}
+
+const multiformSubmissionReadinessPhases: readonly MultiformSubmissionReadinessPhase[] = [
+  'documents',
+  'bank_forms',
+  'expert_verification',
+  'external_checks',
+  'manual_actions',
+  'signatures',
+  'information_delivery',
+  'bank_actions',
+]

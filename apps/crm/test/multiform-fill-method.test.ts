@@ -6,7 +6,7 @@ import {
   multiformFillMethodPresentation,
 } from '../app/utils/multiform-fill-method.ts'
 
-test('labels every supported PDF completion method', () => {
+test('labels every supported document completion method', () => {
   assert.deepEqual(multiformFillMethodPresentation({ kind: 'pdf_acroform' }), {
     label: 'Interaktywny PDF',
     availability: 'supported',
@@ -17,6 +17,22 @@ test('labels every supported PDF completion method', () => {
   })
   assert.deepEqual(multiformFillMethodPresentation({ kind: 'pdf_hybrid' }), {
     label: 'Hybrydowy PDF',
+    availability: 'supported',
+  })
+  assert.deepEqual(multiformFillMethodPresentation({ kind: 'pdf_manual' }), {
+    label: 'PDF do uzupełnienia ręcznie',
+    availability: 'supported',
+  })
+  assert.deepEqual(multiformFillMethodPresentation({ kind: 'pdf_readonly' }), {
+    label: 'Dokument informacyjny PDF',
+    availability: 'supported',
+  })
+  assert.deepEqual(multiformFillMethodPresentation({ kind: 'xlsx_native' }), {
+    label: 'Edytowalny arkusz XLSX',
+    availability: 'supported',
+  })
+  assert.deepEqual(multiformFillMethodPresentation({ kind: 'xlsx_manual' }), {
+    label: 'Arkusz XLSX do uzupełnienia ręcznie',
     availability: 'supported',
   })
 })

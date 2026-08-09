@@ -137,10 +137,10 @@ export const PKO_TEMPLATE: DocumentTemplate = {
   id: 'pko-bp-mortgage-2022',
   bank: 'pko-bp',
   label: 'PKO BP - wniosek o udzielenie kredytu lub pożyczki',
-  version: 2,
+  version: 3,
   fillMethod: { kind: 'pdf_acroform' },
   source: {
-    fileName: 'pko-bp-wniosek-o-kredyt-hipoteczny.pdf',
+    fileName: 'pko-bp-wniosek-o-kredyt-hipoteczny-2025-09-30.pdf',
     sha256: 'c6ee2244dee8959613b4fc1ae07e1a49878b47a0ba28f1a97aee7e164de6af3c',
     pageCount: 4,
     formKind: 'acroform',

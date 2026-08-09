@@ -1,6 +1,7 @@
 import {
   CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
+  MAX_APPLICANTS,
 } from './canonical-fields.ts'
 import { resolveTemplateFillMethod } from './types.ts'
 import type {
@@ -8,6 +9,7 @@ import type {
   CanonicalFieldDefinition,
   PdfFormKind,
   PdfTemplateFillMethod,
+  SpreadsheetTemplateFillMethod,
 } from './types.ts'
 
 export type TemplateJsonKind = 'document-template' | 'generated-draft' | 'unknown'
@@ -85,6 +87,7 @@ const valueFormats = new Set([
   'fullName',
   'fullAddress',
   'houseAndUnit',
+  'streetHouseAndUnit',
   'landRegister.part1',
   'landRegister.part2',
   'landRegister.part3',
@@ -96,13 +99,20 @@ const pdfFillMethodKinds = new Set([
   'pdf_acroform',
   'pdf_overlay',
   'pdf_hybrid',
+  'pdf_manual',
+  'pdf_readonly',
 ])
 const deferredFillMethodKinds = new Set([
   'web_form',
   'api',
 ])
+const spreadsheetFillMethodKinds = new Set([
+  'xlsx_native',
+  'xlsx_manual',
+])
 
 type PdfFillMethodKind = PdfTemplateFillMethod['kind']
+type SpreadsheetFillMethodKind = SpreadsheetTemplateFillMethod['kind']
 
 function pdfFillMethodForFormKind(formKind: PdfFormKind): PdfFillMethodKind {
   return resolveTemplateFillMethod({ source: { formKind } }).kind as PdfFillMethodKind
@@ -774,6 +784,55 @@ function validateTarget(
     }
   }
 
+  if (value.kind === 'xlsx_cell') {
+    if (!isNonEmptyString(value.sheet)) {
+      pushIssue(errors, `${path}.sheet`, 'missing_xlsx_sheet', 'Target XLSX wymaga nazwy arkusza.')
+    }
+    if (!isNonEmptyString(value.cell) || !/^[A-Z]{1,3}[1-9]\d{0,6}$/u.test(value.cell)) {
+      pushIssue(errors, `${path}.cell`, 'invalid_xlsx_cell', 'Target XLSX wymaga poprawnego adresu komórki A1.')
+    }
+    if (!['string', 'number', 'date', 'boolean'].includes(String(value.valueType))) {
+      pushIssue(errors, `${path}.valueType`, 'invalid_xlsx_value_type', 'Nieobsługiwany typ wartości komórki XLSX.')
+    }
+    if (value.valueMap !== undefined) {
+      if (
+        !isRecord(value.valueMap)
+        || Object.entries(value.valueMap).some(([key, item]) => (
+          key.trim() === ''
+          || !['string', 'number', 'boolean'].includes(typeof item)
+        ))
+      ) {
+        pushIssue(errors, `${path}.valueMap`, 'invalid_xlsx_value_map', 'valueMap XLSX musi mapować teksty na wartości komórek.')
+      }
+    }
+    let snapshotValid = false
+    if (!isRecord(value.expected)) {
+      pushIssue(errors, `${path}.expected`, 'missing_xlsx_cell_snapshot', 'Target XLSX wymaga snapshotu komórki źródłowej.')
+    }
+    else {
+      const styleValid = isNonNegativeInteger(value.expected.styleIndex)
+      const unlockedValid = typeof value.expected.unlocked === 'boolean'
+      const formulaValid = value.expected.formula === false
+      if (!styleValid) {
+        pushIssue(errors, `${path}.expected.styleIndex`, 'invalid_xlsx_style_index', 'Indeks stylu komórki XLSX musi być nieujemny.')
+      }
+      if (!unlockedValid) {
+        pushIssue(errors, `${path}.expected.unlocked`, 'invalid_xlsx_protection_snapshot', 'Snapshot komórki XLSX musi określać jej stan ochrony.')
+      }
+      if (!formulaValid) {
+        pushIssue(errors, `${path}.expected.formula`, 'xlsx_target_must_not_be_formula', 'Automatyczne mapowanie nie może nadpisywać formuły banku.')
+      }
+      snapshotValid = styleValid && unlockedValid && formulaValid
+    }
+    return {
+      kind: 'xlsx_cell',
+      signature: isNonEmptyString(value.sheet) && isNonEmptyString(value.cell)
+        ? `xlsx:${value.sheet}:${value.cell}`
+        : '',
+      auditable: snapshotValid,
+    }
+  }
+
   if (value.kind === 'unmapped') {
     if (!isNonEmptyString(value.reason)) {
       pushIssue(errors, `${path}.reason`, 'missing_unmapped_reason', 'Nieprzypisany target wymaga uzasadnienia.')
@@ -781,7 +840,7 @@ function validateTarget(
     return { kind: 'unmapped', signature: '', auditable: false }
   }
 
-  pushIssue(errors, `${path}.kind`, 'unknown_target_kind', 'Obsługiwane targety to acroform, overlay i unmapped.')
+  pushIssue(errors, `${path}.kind`, 'unknown_target_kind', 'Obsługiwane targety to acroform, overlay, xlsx_cell i unmapped.')
   return { kind: 'invalid', signature: '', auditable: false }
 }
 
@@ -814,7 +873,61 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   if (!isNonEmptyString(input.label)) pushIssue(errors, 'label', 'missing_label', 'Template wymaga etykiety.')
   if (!isPositiveInteger(input.version)) pushIssue(errors, 'version', 'invalid_version', 'Wersja musi być dodatnią liczbą całkowitą.')
 
+  const repeatFor = input.repeatFor === undefined
+    ? undefined
+    : isRecord(input.repeatFor)
+      ? input.repeatFor
+      : null
+  if (repeatFor === null) {
+    pushIssue(errors, 'repeatFor', 'invalid_repeat_configuration', 'Konfiguracja formularza powtarzanego musi być obiektem.')
+  }
+  else if (repeatFor) {
+    if (repeatFor.collection !== 'applicants') {
+      pushIssue(errors, 'repeatFor.collection', 'invalid_repeat_collection', 'Formularz można obecnie powtarzać wyłącznie dla wnioskodawców.')
+    }
+    if (!isNonNegativeInteger(repeatFor.templateIndex)) {
+      pushIssue(errors, 'repeatFor.templateIndex', 'invalid_repeat_template_index', 'Indeks wzorcowego wnioskodawcy musi być nieujemną liczbą całkowitą.')
+    }
+    if (!isPositiveInteger(repeatFor.maxInstances) || repeatFor.maxInstances > MAX_APPLICANTS) {
+      pushIssue(errors, 'repeatFor.maxInstances', 'invalid_repeat_capacity', `Formularz może obsługiwać od 1 do ${MAX_APPLICANTS} instancji.`)
+    }
+    if (
+      isNonNegativeInteger(repeatFor.templateIndex)
+      && isPositiveInteger(repeatFor.maxInstances)
+      && repeatFor.templateIndex >= repeatFor.maxInstances
+    ) {
+      pushIssue(errors, 'repeatFor.templateIndex', 'repeat_template_index_out_of_range', 'Indeks wzorcowego wnioskodawcy musi mieścić się w limicie instancji.')
+    }
+    if (!isNonEmptyString(repeatFor.itemLabel)) {
+      pushIssue(errors, 'repeatFor.itemLabel', 'missing_repeat_item_label', 'Formularz powtarzany wymaga etykiety pojedynczej instancji.')
+    }
+  }
+
+  if (input.requiredCanonicalKeys !== undefined) {
+    if (!Array.isArray(input.requiredCanonicalKeys)) {
+      pushIssue(errors, 'requiredCanonicalKeys', 'invalid_required_canonical_keys', 'Lista wymaganych pól kanonicznych musi być tablicą.')
+    }
+    else {
+      const seenRequiredKeys = new Set<string>()
+      for (const [index, key] of input.requiredCanonicalKeys.entries()) {
+        const path = `requiredCanonicalKeys[${index}]`
+        if (!isNonEmptyString(key)) {
+          pushIssue(errors, path, 'invalid_required_canonical_key', 'Wymagany klucz kanoniczny musi być niepustym tekstem.')
+          continue
+        }
+        if (!canonicalKeys.has(key)) {
+          pushIssue(errors, path, 'unknown_required_canonical_key', 'Wymagany klucz nie występuje w aktualnym katalogu kanonicznym.')
+        }
+        if (seenRequiredKeys.has(key)) {
+          pushIssue(errors, path, 'duplicate_required_canonical_key', 'Lista wymaganych pól zawiera duplikat.')
+        }
+        seenRequiredKeys.add(key)
+      }
+    }
+  }
+
   let effectivePdfFillMethod: PdfFillMethodKind | undefined
+  let effectiveSpreadsheetFillMethod: SpreadsheetFillMethodKind | undefined
   let fillMethodRuntimeSupported = false
   if (input.fillMethod !== undefined) {
     if (!isRecord(input.fillMethod)) {
@@ -825,6 +938,10 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
     }
     else if (pdfFillMethodKinds.has(input.fillMethod.kind)) {
       effectivePdfFillMethod = input.fillMethod.kind as PdfFillMethodKind
+      fillMethodRuntimeSupported = true
+    }
+    else if (spreadsheetFillMethodKinds.has(input.fillMethod.kind)) {
+      effectiveSpreadsheetFillMethod = input.fillMethod.kind as SpreadsheetFillMethodKind
       fillMethodRuntimeSupported = true
     }
     else if (deferredFillMethodKinds.has(input.fillMethod.kind)) {
@@ -841,7 +958,7 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
         errors,
         'fillMethod.kind',
         'invalid_fill_method_kind',
-        'Obsługiwane metody to pdf_acroform, pdf_overlay, pdf_hybrid, web_form i api.',
+        'Obsługiwane metody to pdf_acroform, pdf_overlay, pdf_hybrid, pdf_manual, pdf_readonly, xlsx_native, xlsx_manual, web_form i api.',
       )
     }
   }
@@ -856,11 +973,63 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   }
 
   const source = isRecord(input.source) ? input.source : undefined
+  const usesSpreadsheetSource = effectiveSpreadsheetFillMethod !== undefined
   let pageCount: number | undefined
   let sourceFormKind: PdfFormKind | undefined
   const sourcePages = new Map<number, Record<string, unknown>>()
   if (!source) {
-    pushIssue(errors, 'source', 'missing_source', 'Template wymaga metadanych źródłowego PDF-u.')
+    pushIssue(errors, 'source', 'missing_source', 'Template wymaga metadanych źródłowego dokumentu.')
+  }
+  else if (usesSpreadsheetSource) {
+    if (!isNonEmptyString(source.fileName) || !source.fileName.toLocaleLowerCase('pl-PL').endsWith('.xlsx')) {
+      pushIssue(errors, 'source.fileName', 'invalid_xlsx_filename', 'Nazwa źródła musi wskazywać plik XLSX.')
+    }
+    if (source.mimeType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+      pushIssue(errors, 'source.mimeType', 'invalid_xlsx_mime_type', 'Źródło XLSX wymaga właściwego typu MIME.')
+    }
+    if (!isNonEmptyString(source.sha256) || !/^[a-f\d]{64}$/i.test(source.sha256)) {
+      pushIssue(errors, 'source.sha256', 'invalid_sha256', 'SHA-256 musi zawierać dokładnie 64 znaki szesnastkowe.')
+    }
+    if (source.pageCount !== 0) {
+      pushIssue(errors, 'source.pageCount', 'invalid_xlsx_page_count', 'Arkusz XLSX nie ma stron PDF; pageCount musi wynosić 0.')
+    }
+    if (source.formKind !== 'overlay') {
+      pushIssue(errors, 'source.formKind', 'invalid_xlsx_compatibility_form_kind', 'Źródło XLSX używa technicznej wartości formKind=overlay dla zgodności schematu V2.')
+    }
+    if (!Array.isArray(source.pages) || source.pages.length !== 0) {
+      pushIssue(errors, 'source.pages', 'invalid_xlsx_page_geometry', 'Źródło XLSX nie może zawierać geometrii stron PDF.')
+    }
+    if (!isRecord(source.workbook)) {
+      pushIssue(errors, 'source.workbook', 'missing_xlsx_workbook_snapshot', 'Źródło XLSX wymaga snapshotu struktury skoroszytu.')
+    }
+    else {
+      if (!Array.isArray(source.workbook.sheets) || source.workbook.sheets.length === 0) {
+        pushIssue(errors, 'source.workbook.sheets', 'invalid_xlsx_sheet_snapshot', 'Snapshot XLSX wymaga listy arkuszy.')
+      }
+      else {
+        const sheetNames = new Set<string>()
+        for (const [index, rawSheet] of source.workbook.sheets.entries()) {
+          const path = `source.workbook.sheets[${index}]`
+          if (!isRecord(rawSheet) || !isNonEmptyString(rawSheet.name)) {
+            pushIssue(errors, `${path}.name`, 'invalid_xlsx_sheet_name', 'Snapshot arkusza wymaga niepustej nazwy.')
+            continue
+          }
+          if (sheetNames.has(rawSheet.name)) {
+            pushIssue(errors, `${path}.name`, 'duplicate_xlsx_sheet_name', 'Nazwy arkuszy w snapshotcie muszą być unikalne.')
+          }
+          sheetNames.add(rawSheet.name)
+          if (!['visible', 'hidden', 'veryHidden'].includes(String(rawSheet.state))) {
+            pushIssue(errors, `${path}.state`, 'invalid_xlsx_sheet_state', 'Nieprawidłowy stan arkusza XLSX.')
+          }
+        }
+      }
+      if (!isNonNegativeInteger(source.workbook.formulaCellCount)) {
+        pushIssue(errors, 'source.workbook.formulaCellCount', 'invalid_xlsx_formula_count', 'Liczba komórek z formułami musi być nieujemna.')
+      }
+      if (typeof source.workbook.structureProtected !== 'boolean') {
+        pushIssue(errors, 'source.workbook.structureProtected', 'invalid_xlsx_structure_protection', 'Snapshot XLSX musi określać ochronę struktury skoroszytu.')
+      }
+    }
   }
   else {
     if (!isNonEmptyString(source.fileName) || !source.fileName.toLocaleLowerCase('pl-PL').endsWith('.pdf')) {
@@ -922,6 +1091,8 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   }
   else if (
     effectivePdfFillMethod
+    && effectivePdfFillMethod !== 'pdf_manual'
+    && effectivePdfFillMethod !== 'pdf_readonly'
     && sourceFormKind
     && effectivePdfFillMethod !== pdfFillMethodForFormKind(sourceFormKind)
   ) {
@@ -935,6 +1106,9 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
 
   if (input.overlayOrigin !== undefined && !['top-left', 'bottom-left'].includes(String(input.overlayOrigin))) {
     pushIssue(errors, 'overlayOrigin', 'invalid_overlay_origin', 'overlayOrigin musi mieć wartość top-left albo bottom-left.')
+  }
+  if (input.includeWhen !== undefined) {
+    validateCondition(input.includeWhen, 'includeWhen', errors, warnings)
   }
 
   let coverageComplete = false
@@ -993,6 +1167,7 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
   let auditableTargetCount = 0
   let acroFormTargetCount = 0
   let overlayTargetCount = 0
+  let xlsxCellTargetCount = 0
   const targetOwners = new Map<string, number>()
   const duplicateSignatures = new Set<string>()
 
@@ -1095,13 +1270,14 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
       errors,
     )
     if (target.kind === 'unmapped') unmappedCount += 1
-    if (target.kind === 'acroform' || target.kind === 'overlay') mappedBindingCount += 1
+    if (target.kind === 'acroform' || target.kind === 'overlay' || target.kind === 'xlsx_cell') mappedBindingCount += 1
     if (target.kind === 'acroform') acroFormTargetCount += 1
     if (target.kind === 'overlay') overlayTargetCount += 1
+    if (target.kind === 'xlsx_cell') xlsxCellTargetCount += 1
     if (target.auditable === true) auditableTargetCount += 1
     if (rawBinding.reviewStatus === 'needsReview') needsReviewCount += 1
     if (
-      (target.kind === 'acroform' || target.kind === 'overlay')
+      (target.kind === 'acroform' || target.kind === 'overlay' || target.kind === 'xlsx_cell')
       && rawBinding.reviewStatus !== 'needsReview'
     ) readyBindingCount += 1
 
@@ -1112,6 +1288,78 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
         pushIssue(warnings, `${path}.target`, 'duplicate_target', `Target jest również używany przez bindings[${previousOwner}].`, 'warning')
       }
       else targetOwners.set(target.signature, index)
+    }
+  }
+
+  if (
+    repeatFor
+    && repeatFor.collection === 'applicants'
+    && isNonNegativeInteger(repeatFor.templateIndex)
+  ) {
+    const authoredPrefix = `applicants.${repeatFor.templateIndex}.`
+    if (isRecord(input.includeWhen) && typeof input.includeWhen.canonicalKey === 'string') {
+      const key = input.includeWhen.canonicalKey
+      if (key.startsWith('applicants.') && !key.startsWith(authoredPrefix)) {
+        pushIssue(
+          errors,
+          'includeWhen.canonicalKey',
+          'repeat_cross_instance_reference',
+          'Warunek formularza powtarzanego może odwoływać się tylko do wzorcowego indeksu wnioskodawcy.',
+        )
+      }
+    }
+    for (const [index, key] of (Array.isArray(input.requiredCanonicalKeys)
+      ? input.requiredCanonicalKeys
+      : []).entries()) {
+      if (typeof key === 'string' && key.startsWith('applicants.') && !key.startsWith(authoredPrefix)) {
+        pushIssue(
+          errors,
+          `requiredCanonicalKeys[${index}]`,
+          'repeat_cross_instance_reference',
+          'Wymagane pole formularza powtarzanego może odwoływać się tylko do wzorcowego indeksu wnioskodawcy.',
+        )
+      }
+    }
+    let authoredApplicantReferenceCount = 0
+    if (
+      isRecord(input.includeWhen)
+      && typeof input.includeWhen.canonicalKey === 'string'
+      && input.includeWhen.canonicalKey.startsWith(authoredPrefix)
+    ) {
+      authoredApplicantReferenceCount += 1
+    }
+    for (const key of (Array.isArray(input.requiredCanonicalKeys)
+      ? input.requiredCanonicalKeys
+      : [])) {
+      if (typeof key === 'string' && key.startsWith(authoredPrefix)) {
+        authoredApplicantReferenceCount += 1
+      }
+    }
+    for (const [index, rawBinding] of (bindings ?? []).entries()) {
+      if (!isRecord(rawBinding)) continue
+      const referencedKeys = [
+        rawBinding.canonicalKey,
+        ...(Array.isArray(rawBinding.valueFrom) ? rawBinding.valueFrom : []),
+        ...(isRecord(rawBinding.condition) ? [rawBinding.condition.canonicalKey] : []),
+      ].filter((key): key is string => typeof key === 'string')
+      for (const key of referencedKeys) {
+        if (!key.startsWith('applicants.')) continue
+        if (key.startsWith(authoredPrefix)) authoredApplicantReferenceCount += 1
+        else {
+          pushIssue(
+            errors,
+            `bindings[${index}]`,
+            'repeat_cross_instance_reference',
+            'Formularz powtarzany może odwoływać się tylko do wzorcowego indeksu wnioskodawcy.',
+          )
+        }
+      }
+    }
+    if (
+      authoredApplicantReferenceCount === 0
+      && effectivePdfFillMethod !== 'pdf_manual'
+    ) {
+      pushIssue(errors, 'repeatFor.templateIndex', 'repeat_template_index_unused', 'Formularz powtarzany nie zawiera pól wzorcowego wnioskodawcy.')
     }
   }
 
@@ -1166,6 +1414,50 @@ export function validateTemplateJson(input: unknown): TemplateValidationResult {
       'fill_method_target_mismatch',
       'Metoda pdf_hybrid wymaga co najmniej jednego targetu AcroForm i jednego targetu overlay.',
       fillMethodTargetSeverity,
+    )
+  }
+  else if (
+    (effectivePdfFillMethod === 'pdf_manual' || effectivePdfFillMethod === 'pdf_readonly')
+    && mappedBindingCount > 0
+  ) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      fillMethodTargetIssues,
+      input.fillMethod === undefined ? 'source.formKind' : 'fillMethod.kind',
+      'fill_method_target_mismatch',
+      `Metoda ${effectivePdfFillMethod} nie może zawierać automatycznych targetów AcroForm ani overlay.`,
+      fillMethodTargetSeverity,
+    )
+  }
+  else if (effectivePdfFillMethod && xlsxCellTargetCount > 0) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      fillMethodTargetIssues,
+      input.fillMethod === undefined ? 'source.formKind' : 'fillMethod.kind',
+      'fill_method_target_mismatch',
+      `Metoda ${effectivePdfFillMethod} nie może zawierać targetów komórek XLSX.`,
+      fillMethodTargetSeverity,
+    )
+  }
+  else if (
+    effectiveSpreadsheetFillMethod === 'xlsx_native'
+    && (xlsxCellTargetCount === 0 || acroFormTargetCount > 0 || overlayTargetCount > 0)
+  ) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      errors,
+      'fillMethod.kind',
+      'fill_method_target_mismatch',
+      'Metoda xlsx_native wymaga co najmniej jednego targetu xlsx_cell i nie obsługuje targetów PDF.',
+    )
+  }
+  else if (effectiveSpreadsheetFillMethod === 'xlsx_manual' && mappedBindingCount > 0) {
+    fillMethodTargetsCompatible = false
+    pushIssue(
+      errors,
+      'fillMethod.kind',
+      'fill_method_target_mismatch',
+      'Metoda xlsx_manual nie może zawierać automatycznych mapowań komórek.',
     )
   }
 

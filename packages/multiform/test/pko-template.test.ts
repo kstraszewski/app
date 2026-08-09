@@ -16,7 +16,7 @@ import { PKO_TEMPLATE } from '../src/templates/pko.ts'
 import { validateTemplateJson } from '../src/template-validation.ts'
 
 const sourcePath = fileURLToPath(new URL(
-  '../../../mock-files/pko-bp-wniosek-o-kredyt-hipoteczny.pdf',
+  '../../../mock-files/pko-bp-wniosek-o-kredyt-hipoteczny-2025-09-30.pdf',
   import.meta.url,
 ))
 
@@ -41,7 +41,7 @@ test('PKO inventories every customer-facing AcroForm widget exactly once', async
   assert.equal(customerFields.length, 144)
   assert.equal(customerFields.filter(field => field instanceof PDFTextField).length, 70)
   assert.equal(customerFields.filter(field => field instanceof PDFCheckBox).length, 74)
-  assert.equal(PKO_TEMPLATE.version, 2)
+  assert.equal(PKO_TEMPLATE.version, 3)
   assert.equal(new Set(targetNames).size, 144)
   assert.deepEqual(
     [...targetNames].sort((left, right) => left.localeCompare(right, 'pl')),

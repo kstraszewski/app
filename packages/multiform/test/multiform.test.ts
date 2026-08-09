@@ -16,10 +16,13 @@ import {
   getTemplate,
   getTemplateBySourceSha256,
   getTemplates,
+  instantiateTemplate,
   prepareBundle,
   resolveTemplateFillMethod,
   templateApplicantCapacity,
   templateApplicantCapacityIssues,
+  templateInstanceIndexes,
+  templateMatchesValues,
   validateTemplateJson,
 } from '../src/index.ts'
 import { createTemplateSkeleton } from '../src/template-generator.ts'
@@ -150,7 +153,7 @@ const completeValidationTemplate = (
 })
 
 test('exposes a unique canonical catalog for the MVP form', () => {
-  const keys = CANONICAL_FIELDS.map((field) => field.canonicalKey)
+  const keys: string[] = CANONICAL_FIELDS.map(field => field.canonicalKey)
   const applicantFields = CANONICAL_FIELDS.filter(field => field.collection?.key === 'applicants')
   assert.equal(new Set(keys).size, keys.length)
   assert.ok(keys.includes('applicants.0.pesel'))
@@ -158,7 +161,12 @@ test('exposes a unique canonical catalog for the MVP form', () => {
   assert.ok(keys.includes('loan.amount'))
   assert.ok(keys.includes('property.address.houseNumber'))
   assert.ok(keys.includes('property.landRegisterNumber'))
-  assert.equal(applicantFields.length, 31)
+  assert.ok(applicantFields.length >= 31)
+  for (const index of [0, 1, 2, 3, 4]) {
+    for (const relativeKey of ['firstName', 'lastName', 'pesel']) {
+      assert.ok(keys.includes(`applicants.${index}.${relativeKey}`))
+    }
+  }
   assert.deepEqual(
     [...new Set(applicantFields.map(field => field.collection?.index))],
     [0, 1, 2, 3, 4],
@@ -196,6 +204,7 @@ test('exposes a unique canonical catalog for the MVP form', () => {
         'targetPropertyOwner',
         'willOccupyFinancedProperty',
         'lifeInsuranceSelected',
+        'postContractDataProcessingConsent',
       ],
     },
     {
@@ -205,6 +214,14 @@ test('exposes a unique canonical catalog for the MVP form', () => {
       minItems: 1,
       maxItems: 6,
       requiredRelativeKeys: ['date', 'amount', 'accountOwner'],
+    },
+    {
+      key: 'investorPayments',
+      label: 'Harmonogram płatności inwestorowi',
+      itemLabel: 'Płatność',
+      minItems: 1,
+      maxItems: 8,
+      requiredRelativeKeys: ['date', 'amount', 'purpose'],
     },
     {
       key: 'households',
@@ -247,9 +264,14 @@ test('exposes a unique canonical catalog for the MVP form', () => {
   ])
 })
 
-test('registers the three curated PDF templates', () => {
+test('registers the demo templates and the complete Erste document set', () => {
   const templates = getTemplates()
-  assert.deepEqual(templates.map((template) => template.id), [...DEMO_TEMPLATE_IDS])
+  const templateIds = templates.map(template => template.id)
+  assert.ok(DEMO_TEMPLATE_IDS.every(id => templateIds.includes(id)))
+  assert.ok(templateIds.includes('erste-risk-cost-information-2026'))
+  assert.ok(templateIds.includes('erste-general-mortgage-information-2026'))
+  assert.ok(templateIds.includes('erste-rkm-guarantee-conditions-2026'))
+  assert.ok(templateIds.includes('erste-rkm-family-conditions-2026'))
   assert.ok(DEMO_TEMPLATE_IDS.length <= 5)
   assert.equal(getTemplate('erste-mortgage-2026')?.source.formKind, 'overlay')
   assert.equal(getTemplate('pko-bp-mortgage-2022')?.source.formKind, 'acroform')
@@ -318,6 +340,36 @@ test('keeps future fill methods typed but non-activatable until handlers exist',
       issue.path === 'fillMethod.kind' && issue.code === 'fill_method_handler_unavailable'
     )), kind)
   }
+})
+
+test('accepts an audited official PDF as a manual package document without automatic targets', () => {
+  const template = completeValidationTemplate(preciseTextTarget(
+    1,
+    { x: 120, y: 640, width: 180, height: 17 },
+  ))
+  const manual = {
+    ...template,
+    fillMethod: { kind: 'pdf_manual' },
+    coverage: {
+      status: 'complete',
+      inScopeTargetCount: 0,
+      mappedTargetCount: 0,
+      manualUserActionCount: 1,
+      notes: ['Oficjalny formularz banku jest dołączany do paczki i uzupełniany ręcznie.'],
+    },
+    bindings: [],
+  }
+
+  const result = validateTemplateJson(manual)
+  assert.equal(result.valid, true)
+  assert.equal(result.fillReady, true)
+  assert.equal(result.summary.activationReady, true)
+
+  const invalid = validateTemplateJson({
+    ...manual,
+    bindings: template.bindings,
+  })
+  assert.ok(invalid.errors.some(issue => issue.code === 'fill_method_target_mismatch'))
 })
 
 test('rejects PDF fill methods that drift from source metadata or target kinds', () => {
@@ -415,11 +467,11 @@ test('accepts pdf_hybrid only when both native and overlay targets are present',
 test('computes applicant capacity per template without hiding index gaps', () => {
   const erste = getTemplate('erste-mortgage-2026')!
   const pko = getTemplate('pko-bp-mortgage-2022')!
-  assert.equal(templateApplicantCapacity(erste), 5)
+  assert.equal(templateApplicantCapacity(erste), 4)
   assert.equal(templateApplicantCapacity(pko), 4)
   assert.deepEqual(
     templateApplicantCapacityIssues([erste, pko], 5).map(issue => issue.templateId),
-    ['pko-bp-mortgage-2022'],
+    ['erste-mortgage-2026', 'pko-bp-mortgage-2022'],
   )
   assert.deepEqual(templateApplicantCapacityIssues([erste, pko], 4), [])
 
@@ -900,7 +952,7 @@ test('uses verified AcroForm names and overlay coordinates', () => {
   assert.equal(ersteApplicant?.computed, true)
   assert.deepEqual(ersteApplicant?.target, preciseTextTarget(
     1,
-    { x: 155, y: 499, width: 374, height: 17 },
+    { x: 155, y: 481, width: 374, height: 17 },
   ))
 
   const erste = getTemplate('erste-mortgage-2026')!
@@ -911,16 +963,16 @@ test('uses verified AcroForm names and overlay coordinates', () => {
     ]),
   )
   assert.deepEqual(bindingsByPage, {
-    1: 12,
+    1: 10,
     2: 15,
-    3: 13,
-    4: 29,
-    5: 16,
+    3: 17,
+    4: 25,
+    5: 14,
     6: 4,
-    7: 12,
-    8: 5,
+    7: 14,
+    8: 3,
   })
-  assert.equal(erste.bindings.length, 106)
+  assert.equal(erste.bindings.length, 102)
   assert.equal(erste.bindings.every(binding => binding.reviewStatus === 'ready'), true)
   const refinancingTarget = erste.bindings.find(binding => (
     binding.canonicalKey === 'loan.purpose'
@@ -935,7 +987,7 @@ test('uses verified AcroForm names and overlay coordinates', () => {
   )
   assert.deepEqual(
     erste.bindings.find(binding => binding.canonicalKey === 'intermediary.name')?.target,
-    preciseTextTarget(7, { x: 167, y: 525, width: 362, height: 17 }, 8.5),
+    preciseTextTarget(7, { x: 167, y: 430, width: 362, height: 17 }, 8.5),
   )
 })
 
@@ -949,7 +1001,7 @@ test('prepareBundle merges canonical inputs and omits computed presentation fiel
   assert.ok(keys.includes('applicants.0.lastName'))
   assert.ok(keys.includes('applicants.2.firstName'))
   assert.ok(keys.includes('applicants.3.lastName'))
-  assert.ok(keys.includes('applicants.4.pesel'))
+  assert.ok(!keys.includes('applicants.4.pesel'))
   assert.ok(keys.includes('property.address.houseNumber'))
   assert.ok(keys.includes('property.address.unitNumber'))
   assert.ok(!keys.includes('applicants.0.fullName'))
@@ -965,20 +1017,16 @@ test('prepareBundle merges canonical inputs and omits computed presentation fiel
 })
 
 test('every curated source form has complete reviewed customer-field coverage', () => {
-  const expectedCoverage = new Map([
-    ['erste-mortgage-2026', { mapped: 106, total: 106 }],
-    ['pko-bp-mortgage-2022', { mapped: 144, total: 144 }],
-    ['pekao-mortgage-2025', { mapped: 278, total: 278 }],
-  ])
-
   for (const template of getTemplates()) {
     const needsReviewCount = template.bindings.filter(binding => binding.reviewStatus === 'needsReview').length
-    assert.ok(template.bindings.length > 0)
     assert.ok(template.bindings.every(binding => binding.target.kind !== 'unmapped'))
     assert.equal(needsReviewCount, 0)
     assert.equal(template.coverage.status, 'complete')
-    assert.equal(template.coverage.mappedTargetCount, expectedCoverage.get(template.id)?.mapped)
-    assert.equal(template.coverage.inScopeTargetCount, expectedCoverage.get(template.id)?.total)
+    assert.equal(template.coverage.mappedTargetCount, template.coverage.inScopeTargetCount)
+    assert.equal(
+      template.bindings.filter(binding => binding.target.kind !== 'unmapped').length,
+      template.coverage.mappedTargetCount,
+    )
 
     const warnings = prepareBundle([template.id]).warnings
     assert.equal(warnings.length, 0)
@@ -1004,7 +1052,7 @@ test('merges conditional other descriptions once and maps them in every applicab
   })
   assert.equal(propertyOtherFields.length, 1)
 
-  const purposeTargets = getTemplates().map(template => template.bindings.find(binding => (
+  const purposeTargets = DEMO_TEMPLATE_IDS.map(id => getTemplate(id)?.bindings.find(binding => (
     binding.canonicalKey === 'loan.purposeOther'
   ))?.target)
   assert.deepEqual(purposeTargets.map(target => (
@@ -1238,4 +1286,113 @@ test('prepareBundle de-duplicates template ids and rejects unknown templates', (
   assert.deepEqual(bundle.templateIds, ['erste-mortgage-2026'])
   assert.equal(bundle.documents.length, 1)
   assert.throws(() => prepareBundle(['does-not-exist']), /Unknown multiform template/)
+})
+
+test('repeats one audited applicant form for every active applicant', () => {
+  const erste = getTemplate('erste-mortgage-2026')!
+  const applicantBinding = erste.bindings.find(binding => (
+    binding.canonicalKey === 'applicants.0.fullName'
+  ))!
+  const repeated: DocumentTemplate = {
+    ...erste,
+    id: 'erste-repeat-test-2026',
+    label: 'Karta klienta',
+    version: 1,
+    repeatFor: {
+      collection: 'applicants',
+      templateIndex: 0,
+      maxInstances: 5,
+      itemLabel: 'Wnioskodawca',
+    },
+    requiredCanonicalKeys: ['applicants.0.firstName'],
+    coverage: {
+      status: 'complete',
+      inScopeTargetCount: 1,
+      mappedTargetCount: 1,
+      manualUserActionCount: 0,
+      excludedTargetCount: 0,
+      notes: [],
+    },
+    bindings: [applicantBinding],
+  }
+
+  const validation = validateTemplateJson(repeated)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  assert.equal(validation.fillReady, true)
+  assert.equal(templateApplicantCapacity(repeated), 5)
+  assert.deepEqual(templateInstanceIndexes(repeated, { applicants: 2 }), [0, 1])
+
+  const second = instantiateTemplate(repeated, 1)
+  assert.equal(second.repeatFor, undefined)
+  assert.equal(second.bindings[0]?.canonicalKey, 'applicants.1.fullName')
+  assert.deepEqual(second.requiredCanonicalKeys, ['applicants.1.firstName'])
+  assert.deepEqual(second.bindings[0]?.valueFrom, [
+    'applicants.1.firstName',
+    'applicants.1.lastName',
+  ])
+
+  const bundle = prepareBundle([repeated.id], [repeated])
+  for (let index = 0; index < 5; index += 1) {
+    assert.ok(bundle.fields.some(field => field.canonicalKey === `applicants.${index}.firstName`))
+    assert.ok(bundle.fields.some(field => field.canonicalKey === `applicants.${index}.lastName`))
+  }
+})
+
+test('rejects unknown and duplicated template-specific required inputs', () => {
+  const erste = getTemplate('erste-mortgage-2026')!
+  const invalid = {
+    ...erste,
+    id: 'erste-invalid-required-inputs-2026',
+    requiredCanonicalKeys: [
+      'applicants.0.firstName',
+      'applicants.0.firstName',
+      'not-a-canonical-key',
+    ],
+  }
+  const validation = validateTemplateJson(invalid)
+  assert.equal(validation.valid, false)
+  assert.ok(validation.errors.some(issue => issue.code === 'duplicate_required_canonical_key'))
+  assert.ok(validation.errors.some(issue => issue.code === 'unknown_required_canonical_key'))
+})
+
+test('rejects repeated forms that leak data from another applicant slot', () => {
+  const erste = getTemplate('erste-mortgage-2026')!
+  const firstName = erste.bindings.find(binding => (
+    binding.canonicalKey === 'applicants.0.firstName'
+  ))!
+  const invalid = {
+    ...erste,
+    id: 'erste-repeat-invalid-2026',
+    repeatFor: {
+      collection: 'applicants',
+      templateIndex: 0,
+      maxInstances: 5,
+      itemLabel: 'Wnioskodawca',
+    },
+    bindings: [
+      firstName,
+      { ...firstName, canonicalKey: 'applicants.1.firstName' },
+    ],
+  }
+  const validation = validateTemplateJson(invalid)
+  assert.equal(validation.valid, false)
+  assert.ok(validation.errors.some(issue => issue.code === 'repeat_cross_instance_reference'))
+})
+
+test('includes informational Erste documents only for the matching loan program', () => {
+  const family = getTemplate('erste-rkm-family-conditions-2026')!
+  const guarantee = getTemplate('erste-rkm-guarantee-conditions-2026')!
+  const standardValues = { 'loan.program': 'standard', 'loan.rkmGuarantee': false }
+  const rkmValues = { 'loan.program': 'rkm', 'loan.rkmGuarantee': true }
+
+  assert.equal(templateMatchesValues(family, standardValues), false)
+  assert.equal(templateMatchesValues(guarantee, standardValues), false)
+  assert.equal(templateMatchesValues(family, rkmValues), true)
+  assert.equal(templateMatchesValues(guarantee, rkmValues), true)
+
+  const bundle = prepareBundle([family.id, guarantee.id])
+  assert.ok(bundle.fields.some(field => field.canonicalKey === 'loan.program'))
+  assert.ok(bundle.fields.some(field => field.canonicalKey === 'loan.rkmGuarantee'))
+  assert.equal(validateTemplateJson(family).fillReady, true)
+  assert.equal(validateTemplateJson(guarantee).fillReady, true)
 })

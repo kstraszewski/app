@@ -157,6 +157,11 @@ const DISBURSEMENT_OPTIONS = [
   { value: 'tranches', label: 'W transzach' },
 ] as const
 
+const INVESTOR_PAYMENT_TIMING_OPTIONS = [
+  { value: 'before_notarial_deed', label: 'Przed aktem notarialnym przeniesienia własności' },
+  { value: 'after_notarial_deed', label: 'Po akcie notarialnym przeniesienia własności' },
+] as const
+
 const PROPERTY_TYPE_OPTIONS = [
   { value: 'house', label: 'Dom' },
   { value: 'apartment', label: 'Mieszkanie' },
@@ -167,6 +172,109 @@ const PROPERTY_TYPE_OPTIONS = [
   { value: 'multi_family_building', label: 'Dom wielomieszkaniowy' },
   { value: 'recreational_plot', label: 'Działka rekreacyjna' },
   { value: 'other', label: 'Inna nieruchomość' },
+] as const
+
+const PEKAO_FINISH_STANDARD_OPTIONS = [
+  { value: 'developer', label: 'Deweloperski' },
+  { value: 'standard', label: 'Średni' },
+  { value: 'enhanced', label: 'Podwyższony' },
+  { value: 'high', label: 'Wysoki' },
+] as const
+
+const BUILDING_FORM_OPTIONS = [
+  { value: 'detached', label: 'Wolnostojąca' },
+  { value: 'semi_detached', label: 'Bliźniacza' },
+  { value: 'terraced', label: 'Szeregowa' },
+] as const
+
+const MARITAL_STATUS_OPTIONS = [
+  { value: 'single', label: 'Panna lub kawaler' },
+  { value: 'married', label: 'Mężatka lub żonaty' },
+  { value: 'divorced', label: 'Rozwiedziona lub rozwiedziony' },
+  { value: 'separated', label: 'Separacja' },
+  { value: 'widowed', label: 'Wdowa lub wdowiec' },
+] as const
+
+const HOUSING_STATUS_OPTIONS = [
+  { value: 'cooperative_tenancy', label: 'Spółdzielcze lokatorskie' },
+  { value: 'municipal_or_tbs', label: 'Mieszkanie komunalne lub TBS' },
+  { value: 'owner', label: 'Własność' },
+  { value: 'cooperative_ownership', label: 'Spółdzielcze własnościowe' },
+  { value: 'rental', label: 'Najem' },
+  { value: 'with_family', label: 'Przy rodzinie' },
+  { value: 'other', label: 'Inne' },
+] as const
+
+const EDUCATION_OPTIONS = [
+  { value: 'primary', label: 'Podstawowe' },
+  { value: 'vocational', label: 'Zawodowe' },
+  { value: 'secondary', label: 'Średnie' },
+  { value: 'bachelor', label: 'Licencjat' },
+  { value: 'higher', label: 'Wyższe' },
+  { value: 'other', label: 'Inne' },
+] as const
+
+const EMPLOYMENT_CATEGORY_OPTIONS = [
+  { value: 'public_budget', label: 'Sfera budżetowa' },
+  { value: 'local_or_state_admin', label: 'Administracja lokalna lub państwowa' },
+  { value: 'state_enterprise', label: 'Przedsiębiorstwo państwowe' },
+  { value: 'joint_stock_company', label: 'Spółka akcyjna' },
+  { value: 'limited_liability_company', label: 'Spółka z o.o.' },
+  { value: 'private_enterprise', label: 'Pozostałe przedsiębiorstwo prywatne' },
+  { value: 'cooperative', label: 'Spółdzielnia' },
+  { value: 'freelance', label: 'Wolny zawód' },
+  { value: 'farmer', label: 'Rolnik' },
+  { value: 'pensioner', label: 'Emeryt lub rencista' },
+  { value: 'student', label: 'Student' },
+  { value: 'unemployed', label: 'Bezrobotny' },
+  { value: 'other', label: 'Inne' },
+  { value: 'self_employed', label: 'Własna działalność gospodarcza' },
+] as const
+
+const INCOME_SOURCE_OPTIONS = [
+  { value: 'employment', label: 'Umowa o pracę' },
+  { value: 'business', label: 'Działalność gospodarcza' },
+  { value: 'civil_contract', label: 'Umowa cywilnoprawna' },
+  { value: 'retirement', label: 'Emerytura lub renta' },
+  { value: 'rental', label: 'Najem' },
+  { value: 'foreign', label: 'Dochód zagraniczny' },
+  { value: 'other', label: 'Inne źródło' },
+] as const
+
+const EMPLOYMENT_CONTRACT_DURATION_OPTIONS = [
+  { value: 'indefinite', label: 'Na czas nieokreślony' },
+  { value: 'fixed_term', label: 'Na czas określony' },
+] as const
+
+const SALARY_PAYMENT_METHOD_OPTIONS = [
+  { value: 'bank_transfer', label: 'Przelewem na konto' },
+  { value: 'cash', label: 'W gotówce' },
+] as const
+
+const EMPLOYMENT_TENURE_OPTIONS = [
+  { value: 'up_to_6_months', label: 'Do 6 miesięcy' },
+  { value: 'up_to_1_year', label: 'Do 1 roku' },
+  { value: 'up_to_2_years', label: 'Do 2 lat' },
+  { value: 'up_to_5_years', label: 'Do 5 lat' },
+  { value: 'up_to_10_years', label: 'Do 10 lat' },
+  { value: 'over_10_years', label: 'Powyżej 10 lat' },
+] as const
+
+const APPLICANT_LIABILITY_TYPE_OPTIONS = [
+  { value: 'obligation', label: 'Zobowiązanie' },
+  { value: 'guarantee', label: 'Poręczenie' },
+  { value: 'secured_obligation', label: 'Zobowiązanie zabezpieczone' },
+] as const
+
+const APPLICANT_LIABILITY_PRODUCT_OPTIONS = [
+  { value: 'consumer_credit', label: 'Kredyt konsumpcyjny' },
+  { value: 'mortgage_secured_credit', label: 'Kredyt zabezpieczony hipoteką' },
+  { value: 'business', label: 'Finansowanie działalności gospodarczej' },
+] as const
+
+const APPLICANT_LIABILITY_PARTY_OPTIONS = [
+  { value: 'applicant', label: 'Wnioskodawca' },
+  { value: 'spouse', label: 'Współmałżonek' },
 ] as const
 
 type SemanticFieldInput<TCanonicalKey extends string> = Omit<
@@ -246,6 +354,7 @@ function defineCompactField<const TCanonicalKey extends string>(
 export const APPLICANT_INDEXES = [0, 1, 2, 3, 4] as const
 export const MAX_APPLICANTS = APPLICANT_INDEXES.length
 export const TRANCHE_INDEXES = [0, 1, 2, 3, 4, 5] as const
+export const INVESTOR_PAYMENT_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7] as const
 export const HOUSEHOLD_INDEXES = [0, 1, 2] as const
 export const LIABILITY_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 export const MORTGAGE_DISCHARGE_INDEXES = [0, 1, 2, 3] as const
@@ -398,6 +507,7 @@ export const CANONICAL_COLLECTIONS = [
       'targetPropertyOwner',
       'willOccupyFinancedProperty',
       'lifeInsuranceSelected',
+      'postContractDataProcessingConsent',
     ],
   },
   {
@@ -407,6 +517,14 @@ export const CANONICAL_COLLECTIONS = [
     minItems: 1,
     maxItems: TRANCHE_INDEXES.length,
     requiredRelativeKeys: ['date', 'amount', 'accountOwner'],
+  },
+  {
+    key: 'investorPayments',
+    label: 'Harmonogram płatności inwestorowi',
+    itemLabel: 'Płatność',
+    minItems: 1,
+    maxItems: INVESTOR_PAYMENT_INDEXES.length,
+    requiredRelativeKeys: ['date', 'amount', 'purpose'],
   },
   {
     key: 'households',
@@ -479,6 +597,202 @@ const APPLICANT_FIELDS = APPLICANT_INDEXES.flatMap(index => (
   APPLICANT_FIELD_BLUEPRINTS.map(blueprint => materializeApplicantField(index, blueprint))
 ))
 
+const KIK_APPLICANT_FIELD_BLUEPRINTS = [
+  { relativeKey: 'middleName', label: 'Drugie imię', type: 'text' },
+  { relativeKey: 'birthDate', label: 'Data urodzenia', type: 'date' },
+  { relativeKey: 'identityDocumentType', label: 'Typ dokumentu tożsamości', type: 'text' },
+  { relativeKey: 'identityDocumentNumber', label: 'Seria i numer dokumentu tożsamości', type: 'text' },
+  { relativeKey: 'birthPlace', label: 'Miejsce urodzenia', type: 'text' },
+  { relativeKey: 'countryOfResidence', label: 'Kraj zamieszkania', type: 'text' },
+  { relativeKey: 'citizenship', label: 'Obywatelstwo', type: 'text' },
+  { relativeKey: 'phone', label: 'Numer telefonu', type: 'text' },
+  { relativeKey: 'email', label: 'Adres e-mail', type: 'text', validation: { pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' } },
+  { relativeKey: 'residentialAddress', label: 'Adres zamieszkania', type: 'text' },
+  { relativeKey: 'correspondenceAddress', label: 'Adres do korespondencji', type: 'text' },
+  { relativeKey: 'maritalStatus', label: 'Stan cywilny', type: 'select', options: MARITAL_STATUS_OPTIONS },
+  { relativeKey: 'maritalPropertyCommunity', label: 'Wspólność majątkowa', type: 'boolean', visibleWhen: { relativeKey: 'maritalStatus', equals: 'married' } },
+  { relativeKey: 'housingStatus', label: 'Status mieszkaniowy', type: 'select', options: HOUSING_STATUS_OPTIONS },
+  { relativeKey: 'ownsMultiFamilyHouse', label: 'Posiada dom wielorodzinny', type: 'boolean' },
+  { relativeKey: 'ownsSingleFamilyHouse', label: 'Posiada dom jednorodzinny', type: 'boolean' },
+  { relativeKey: 'ownsApartment', label: 'Posiada mieszkanie', type: 'boolean' },
+  { relativeKey: 'ownsPlot', label: 'Posiada działkę', type: 'boolean' },
+  { relativeKey: 'ownsOtherProperty', label: 'Posiada inną nieruchomość', type: 'boolean' },
+  { relativeKey: 'householdSize', label: 'Liczba osób w gospodarstwie domowym', type: 'number', validation: { min: 1, integer: true } },
+  { relativeKey: 'childBenefitCount', label: 'Liczba dzieci objętych świadczeniem Rodzina 800+', type: 'number', validation: { min: 0, integer: true } },
+  { relativeKey: 'childBenefitBirthDate1', label: 'Miesiąc i rok urodzenia dziecka 800+ — 1', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: ['1', '2', '3', '4', '5', '6'] } },
+  { relativeKey: 'childBenefitBirthDate2', label: 'Miesiąc i rok urodzenia dziecka 800+ — 2', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: ['2', '3', '4', '5', '6'] } },
+  { relativeKey: 'childBenefitBirthDate3', label: 'Miesiąc i rok urodzenia dziecka 800+ — 3', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: ['3', '4', '5', '6'] } },
+  { relativeKey: 'childBenefitBirthDate4', label: 'Miesiąc i rok urodzenia dziecka 800+ — 4', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: ['4', '5', '6'] } },
+  { relativeKey: 'childBenefitBirthDate5', label: 'Miesiąc i rok urodzenia dziecka 800+ — 5', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: ['5', '6'] } },
+  { relativeKey: 'childBenefitBirthDate6', label: 'Miesiąc i rok urodzenia dziecka 800+ — 6', type: 'text', visibleWhen: { relativeKey: 'childBenefitCount', equals: '6' } },
+  { relativeKey: 'education', label: 'Wykształcenie', type: 'select', options: EDUCATION_OPTIONS },
+  { relativeKey: 'occupation', label: 'Wykonywany zawód', type: 'text' },
+  { relativeKey: 'employmentCategory', label: 'Kategoria zatrudnienia', type: 'select', options: EMPLOYMENT_CATEGORY_OPTIONS },
+  { relativeKey: 'incomeSource', label: 'Główne źródło dochodu', type: 'select', options: INCOME_SOURCE_OPTIONS },
+  { relativeKey: 'businessLegalForm', label: 'Forma organizacyjno-prawna działalności', type: 'text', visibleWhen: { relativeKey: 'employmentCategory', equals: 'self_employed' } },
+  { relativeKey: 'pkdCode', label: 'Kod PKD działalności', type: 'text', visibleWhen: { relativeKey: 'employmentCategory', equals: 'self_employed' } },
+  { relativeKey: 'employmentTenure', label: 'Staż pracy', type: 'select', options: EMPLOYMENT_TENURE_OPTIONS },
+  { relativeKey: 'businessActiveOrRecentlySuspended', label: 'Prowadzi lub niedawno zawiesił działalność gospodarczą', type: 'boolean' },
+  { relativeKey: 'monthlyMaintenanceCosts', label: 'Miesięczne koszty utrzymania', type: 'currency', validation: { min: 0 } },
+  { relativeKey: 'alimonyAndLegalBurdens', label: 'Alimenty i inne miesięczne obciążenia prawne', type: 'currency', validation: { min: 0 } },
+  { relativeKey: 'collectionProceedings', label: 'Postępowanie windykacyjne', type: 'boolean' },
+  { relativeKey: 'collectedDebtAmount', label: 'Kwota windykowanego długu', type: 'currency', validation: { min: 0 }, visibleWhen: { relativeKey: 'collectionProceedings', equals: 'true' } },
+] as const
+
+type KikApplicantRelativeKey = typeof KIK_APPLICANT_FIELD_BLUEPRINTS[number]['relativeKey']
+type KikApplicantCanonicalFieldKey = `applicants.${ApplicantIndex}.${KikApplicantRelativeKey}`
+
+function materializeKikApplicantField(
+  index: ApplicantIndex,
+  blueprint: typeof KIK_APPLICANT_FIELD_BLUEPRINTS[number],
+): CanonicalFieldDefinition & { canonicalKey: KikApplicantCanonicalFieldKey } {
+  const displayIndex = index + 1
+  const visibleWhen = 'visibleWhen' in blueprint
+    ? {
+        canonicalKey: `applicants.${index}.${blueprint.visibleWhen.relativeKey}`,
+        equals: blueprint.visibleWhen.equals,
+      }
+    : undefined
+
+  return defineCompactField({
+    canonicalKey: `applicants.${index}.${blueprint.relativeKey}` as KikApplicantCanonicalFieldKey,
+    label: `${blueprint.label} — wnioskodawca ${displayIndex}`,
+    type: blueprint.type,
+    group: 'applicants',
+    question: `${blueprint.label} — wnioskodawca ${displayIndex}`,
+    semanticDescription: `${blueprint.label} osoby występującej jako wnioskodawca nr ${displayIndex}, potrzebne do bankowej karty informacyjnej klienta.`,
+    semanticRole: `person.${blueprint.relativeKey}`,
+    aliases: [blueprint.label, `${blueprint.label} wnioskodawcy ${displayIndex}`],
+    collection: {
+      key: 'applicants',
+      index,
+      displayIndex,
+      relativeKey: blueprint.relativeKey,
+      label: blueprint.label,
+    },
+    ...('options' in blueprint ? { options: blueprint.options } : {}),
+    ...('validation' in blueprint ? { validation: blueprint.validation } : {}),
+    ...(visibleWhen ? { visibleWhen, requiredWhen: visibleWhen } : {}),
+  })
+}
+
+const KIK_APPLICANT_FIELDS = APPLICANT_INDEXES.flatMap(index => (
+  KIK_APPLICANT_FIELD_BLUEPRINTS.map(blueprint => materializeKikApplicantField(index, blueprint))
+))
+
+const KIK_APPLICANT_LIABILITY_INDEXES = [0, 1, 2, 3, 4] as const
+const KIK_APPLICANT_LIABILITY_FIELD_BLUEPRINTS = [
+  { relativeKey: 'institution', label: 'Nazwa banku lub instytucji', type: 'text' },
+  { relativeKey: 'obligationType', label: 'Typ zobowiązania', type: 'select', options: APPLICANT_LIABILITY_TYPE_OPTIONS },
+  { relativeKey: 'productType', label: 'Rodzaj zobowiązania', type: 'select', options: APPLICANT_LIABILITY_PRODUCT_OPTIONS },
+  { relativeKey: 'outstandingAmount', label: 'Kwota aktualnego zobowiązania', type: 'currency', validation: { min: 0 } },
+  { relativeKey: 'monthlyPayment', label: 'Miesięczna rata zobowiązania', type: 'currency', validation: { min: 0 } },
+  { relativeKey: 'currency', label: 'Waluta zobowiązania', type: 'text' },
+  { relativeKey: 'burdenedParty', label: 'Osoba obciążona zobowiązaniem', type: 'select', options: APPLICANT_LIABILITY_PARTY_OPTIONS },
+] as const
+
+type KikApplicantLiabilityIndex = typeof KIK_APPLICANT_LIABILITY_INDEXES[number]
+type KikApplicantLiabilityRelativeKey = typeof KIK_APPLICANT_LIABILITY_FIELD_BLUEPRINTS[number]['relativeKey']
+type KikApplicantLiabilityCanonicalFieldKey =
+  `applicants.${ApplicantIndex}.liabilities.${KikApplicantLiabilityIndex}.${KikApplicantLiabilityRelativeKey}`
+
+function materializeKikApplicantLiabilityField(
+  applicantIndex: ApplicantIndex,
+  liabilityIndex: KikApplicantLiabilityIndex,
+  blueprint: typeof KIK_APPLICANT_LIABILITY_FIELD_BLUEPRINTS[number],
+): CanonicalFieldDefinition & { canonicalKey: KikApplicantLiabilityCanonicalFieldKey } {
+  const applicantDisplayIndex = applicantIndex + 1
+  const liabilityDisplayIndex = liabilityIndex + 1
+  const relativeKey = `liabilities.${liabilityIndex}.${blueprint.relativeKey}`
+
+  return defineCompactField({
+    canonicalKey: `applicants.${applicantIndex}.${relativeKey}` as KikApplicantLiabilityCanonicalFieldKey,
+    label: `${blueprint.label} — wnioskodawca ${applicantDisplayIndex}, zobowiązanie ${liabilityDisplayIndex}`,
+    type: blueprint.type,
+    group: 'liabilities',
+    semanticDescription: `${blueprint.label} w pozycji ${liabilityDisplayIndex} indywidualnej karty informacyjnej wnioskodawcy nr ${applicantDisplayIndex}.`,
+    semanticRole: `person.liabilities.${blueprint.relativeKey}`,
+    collection: {
+      key: 'applicants',
+      index: applicantIndex,
+      displayIndex: applicantDisplayIndex,
+      relativeKey,
+      label: `${blueprint.label} — zobowiązanie ${liabilityDisplayIndex}`,
+    },
+    ...('options' in blueprint ? { options: blueprint.options } : {}),
+    ...('validation' in blueprint ? { validation: blueprint.validation } : {}),
+  })
+}
+
+const KIK_APPLICANT_LIABILITY_FIELDS = APPLICANT_INDEXES.flatMap(applicantIndex => (
+  KIK_APPLICANT_LIABILITY_INDEXES.flatMap(liabilityIndex => (
+    KIK_APPLICANT_LIABILITY_FIELD_BLUEPRINTS.map(blueprint => (
+      materializeKikApplicantLiabilityField(applicantIndex, liabilityIndex, blueprint)
+    ))
+  ))
+))
+
+const INCOME_APPLICANT_FIELD_BLUEPRINTS = [
+  { relativeKey: 'employerName', label: 'Nazwa pracodawcy lub płatnika świadczenia', type: 'text' },
+  { relativeKey: 'employerNip', label: 'NIP pracodawcy lub płatnika świadczenia', type: 'text', validation: { pattern: '^\\d{10}$' } },
+  { relativeKey: 'employerRegon', label: 'REGON pracodawcy lub płatnika świadczenia', type: 'text', validation: { pattern: '^\\d{9}(?:\\d{5})?$' } },
+  { relativeKey: 'employerRegistryNumber', label: 'Numer CEIDG albo KRS pracodawcy', type: 'text' },
+  { relativeKey: 'employerAddress', label: 'Adres pracodawcy lub płatnika świadczenia', type: 'text' },
+  { relativeKey: 'employmentBenefitType', label: 'Rodzaj umowy albo świadczenia', type: 'text' },
+  { relativeKey: 'employmentStartDate', label: 'Data rozpoczęcia umowy albo przyznania świadczenia', type: 'date' },
+  { relativeKey: 'employmentContractDuration', label: 'Okres obowiązywania umowy albo świadczenia', type: 'select', options: EMPLOYMENT_CONTRACT_DURATION_OPTIONS },
+  { relativeKey: 'employmentEndDate', label: 'Data końcowa umowy albo świadczenia', type: 'date', visibleWhen: { relativeKey: 'employmentContractDuration', equals: 'fixed_term' } },
+  { relativeKey: 'jobTitle', label: 'Stanowisko pracy', type: 'text' },
+  { relativeKey: 'averageNetIncome', label: 'Średnie miesięczne wynagrodzenie netto', type: 'currency', validation: { min: 0 } },
+  { relativeKey: 'incomeCurrency', label: 'Waluta dochodu', type: 'text' },
+  { relativeKey: 'averageNetIncomeInWords', label: 'Wynagrodzenie netto słownie', type: 'text' },
+  { relativeKey: 'salaryPaymentMethod', label: 'Sposób wypłaty wynagrodzenia', type: 'select', options: SALARY_PAYMENT_METHOD_OPTIONS },
+  { relativeKey: 'salaryGarnished', label: 'Wynagrodzenie obciążone wyrokami lub innymi potrąceniami', type: 'boolean' },
+  { relativeKey: 'salaryGarnishmentAmount', label: 'Kwota potrącenia z wynagrodzenia', type: 'currency', validation: { min: 0 }, visibleWhen: { relativeKey: 'salaryGarnished', equals: 'true' } },
+  { relativeKey: 'adverseEmploymentCircumstances', label: 'Likwidacja, upadłość, wypowiedzenie, okres próbny albo praca tymczasowa', type: 'boolean' },
+] as const
+
+type IncomeApplicantRelativeKey = typeof INCOME_APPLICANT_FIELD_BLUEPRINTS[number]['relativeKey']
+type IncomeApplicantCanonicalFieldKey = `applicants.${ApplicantIndex}.${IncomeApplicantRelativeKey}`
+
+function materializeIncomeApplicantField(
+  index: ApplicantIndex,
+  blueprint: typeof INCOME_APPLICANT_FIELD_BLUEPRINTS[number],
+): CanonicalFieldDefinition & { canonicalKey: IncomeApplicantCanonicalFieldKey } {
+  const displayIndex = index + 1
+  const visibleWhen = 'visibleWhen' in blueprint
+    ? {
+        canonicalKey: `applicants.${index}.${blueprint.visibleWhen.relativeKey}`,
+        equals: blueprint.visibleWhen.equals,
+      }
+    : undefined
+
+  return defineCompactField({
+    canonicalKey: `applicants.${index}.${blueprint.relativeKey}` as IncomeApplicantCanonicalFieldKey,
+    label: `${blueprint.label} — wnioskodawca ${displayIndex}`,
+    type: blueprint.type,
+    group: 'applicants',
+    question: `${blueprint.label} — wnioskodawca ${displayIndex}`,
+    semanticDescription: `${blueprint.label} osoby występującej jako wnioskodawca nr ${displayIndex}, wymagane w formularzu dochodowym Erste.`,
+    semanticRole: `person.income.${blueprint.relativeKey}`,
+    aliases: [blueprint.label, `${blueprint.label} wnioskodawcy ${displayIndex}`],
+    collection: {
+      key: 'applicants',
+      index,
+      displayIndex,
+      relativeKey: blueprint.relativeKey,
+      label: blueprint.label,
+    },
+    ...('options' in blueprint ? { options: blueprint.options } : {}),
+    ...('validation' in blueprint ? { validation: blueprint.validation } : {}),
+    ...(visibleWhen ? { visibleWhen, requiredWhen: visibleWhen } : {}),
+  })
+}
+
+const INCOME_APPLICANT_FIELDS = APPLICANT_INDEXES.flatMap(index => (
+  INCOME_APPLICANT_FIELD_BLUEPRINTS.map(blueprint => materializeIncomeApplicantField(index, blueprint))
+))
+
 const TRANCHE_FIELDS = TRANCHE_INDEXES.flatMap((index) => {
   const displayIndex = index + 1
   const collection = (relativeKey: string, label: string) => ({
@@ -530,10 +844,100 @@ const TRANCHE_FIELDS = TRANCHE_INDEXES.flatMap((index) => {
       collection: collection('accountOwner', 'Właściciel rachunku'),
       visibleWhen,
     }),
+    defineField({
+      canonicalKey: `tranches.${index}.ownFundsBeforeDisbursement`,
+      label: `Środki własne przed wypłatą — transza ${displayIndex}`,
+      type: 'currency',
+      group: 'investment',
+      question: `Podaj środki własne do wniesienia przed transzą ${displayIndex}`,
+      semanticDescription: `Kwota środków własnych wnoszona przed wypłatą transzy nr ${displayIndex}.`,
+      semanticRole: 'investment.ownFunds.beforeTranche',
+      aliases: ['środki własne przed transzą', 'wkład własny przed wypłatą'],
+      exclude: ['kwota transzy kredytu'],
+      collection: collection('ownFundsBeforeDisbursement', 'Środki własne przed wypłatą'),
+      visibleWhen,
+      validation: { min: 0 },
+    }),
+  ]
+})
+
+const INVESTOR_PAYMENT_FIELDS = INVESTOR_PAYMENT_INDEXES.flatMap((index) => {
+  const displayIndex = index + 1
+  const collection = (relativeKey: string, label: string) => ({
+    key: 'investorPayments',
+    index,
+    displayIndex,
+    relativeKey,
+    label,
+  })
+  const visibleWhen = {
+    canonicalKey: 'investor.paymentScheduleType',
+    equals: 'tranches',
+  } as const
+
+  return [
+    defineCompactField({
+      canonicalKey: `investorPayments.${index}.date`,
+      label: `Data płatności — pozycja ${displayIndex}`,
+      type: 'date',
+      group: 'investment',
+      semanticDescription: `Data płatności nr ${displayIndex} z harmonogramu ceny dla inwestora.`,
+      semanticRole: 'investment.investor.payment.date',
+      aliases: ['data płatności', 'data transzy dla inwestora'],
+      exclude: ['data wypłaty transzy kredytu'],
+      collection: collection('date', 'Data płatności'),
+      visibleWhen,
+    }),
+    defineCompactField({
+      canonicalKey: `investorPayments.${index}.amount`,
+      label: `Kwota płatności — pozycja ${displayIndex}`,
+      type: 'currency',
+      group: 'investment',
+      semanticDescription: `Kwota płatności nr ${displayIndex} z harmonogramu ceny dla inwestora.`,
+      semanticRole: 'investment.investor.payment.amount',
+      aliases: ['kwota płatności', 'kwota transzy dla inwestora'],
+      exclude: ['kwota wypłaty transzy kredytu'],
+      collection: collection('amount', 'Kwota płatności'),
+      visibleWhen,
+      validation: { min: 0 },
+    }),
+    defineCompactField({
+      canonicalKey: `investorPayments.${index}.purpose`,
+      label: `Przeznaczenie płatności — pozycja ${displayIndex}`,
+      type: 'text',
+      group: 'investment',
+      semanticDescription: `Przedmiot płatności nr ${displayIndex}: lokal, dom albo udział.`,
+      semanticRole: 'investment.investor.payment.purpose',
+      aliases: ['za co jest płatność transzy', 'przedmiot płatności'],
+      exclude: ['cel kredytu'],
+      collection: collection('purpose', 'Przeznaczenie płatności'),
+      visibleWhen,
+    }),
   ]
 })
 
 const BANK_APPLICANT_INDEXES = [0, 1, 2, 3] as const
+
+const ERSTE_PRELIMINARY_APPLICANT_FIELDS = BANK_APPLICANT_INDEXES.map((index) => {
+  const displayIndex = index + 1
+  return defineCompactField({
+    canonicalKey: `applicants.${index}.postContractDataProcessingConsent` as const,
+    label: `Zgoda na przetwarzanie danych po wygaśnięciu zobowiązania — wnioskodawca ${displayIndex}`,
+    type: 'boolean',
+    group: 'applicants',
+    semanticDescription: `Zgoda wnioskodawcy nr ${displayIndex} na przetwarzanie danych objętych tajemnicą bankową po wygaśnięciu zobowiązania, maksymalnie przez 5 lat.`,
+    semanticRole: 'person.consent.postContractDataProcessing',
+    aliases: ['zgoda na przetwarzanie danych po wygaśnięciu zobowiązania'],
+    exclude: ['zgoda marketingowa', 'zgoda na kontakt elektroniczny'],
+    collection: {
+      key: 'applicants',
+      index,
+      displayIndex,
+      relativeKey: 'postContractDataProcessingConsent',
+      label: 'Zgoda na przetwarzanie danych po wygaśnięciu zobowiązania',
+    },
+  })
+})
 
 const EXTENDED_APPLICANT_FIELDS = BANK_APPLICANT_INDEXES.flatMap((index) => {
   const displayIndex = index + 1
@@ -847,6 +1251,25 @@ const STATIC_COMPUTED_BINDINGS = [
     valueFormat: 'houseAndUnit',
   },
   {
+    canonicalKey: 'property.address.streetHouseAndUnit',
+    label: 'Ulica oraz numer domu i lokalu nieruchomości',
+    type: 'text',
+    group: 'property',
+    semanticDescription: 'Ulica wraz z numerem budynku i lokalu, bez kodu pocztowego i miejscowości.',
+    semanticRole: 'property.address.streetHouseAndUnit',
+    aiMappingHints: {
+      aliases: ['ulica, nr budynku/działki/lokalu', 'ulica i numer domu'],
+      exclude: ['kod pocztowy', 'miejscowość'],
+    },
+    computed: true,
+    valueFrom: [
+      'property.address.street',
+      'property.address.houseNumber',
+      'property.address.unitNumber',
+    ],
+    valueFormat: 'streetHouseAndUnit',
+  },
+  {
     canonicalKey: 'investment.engagedOwnFundsTotal',
     label: 'Zaangażowane środki własne razem',
     type: 'currency',
@@ -887,6 +1310,36 @@ export const CANONICAL_COMPUTED_BINDINGS = [
 ] as const
 
 const DOMAIN_FIELDS = [
+  defineField({
+    canonicalKey: 'loan.program',
+    label: 'Program kredytowy',
+    type: 'select',
+    group: 'loan',
+    question: 'Wybierz program kredytowy',
+    helpText: 'Wskaż standardowy kredyt hipoteczny albo Rodzinny Kredyt Mieszkaniowy.',
+    semanticDescription: 'Program produktowy, w ramach którego składany jest wniosek hipoteczny.',
+    semanticRole: 'loan.program',
+    aliases: ['program kredytu', 'rodzinny kredyt mieszkaniowy', 'RKM'],
+    exclude: ['cel kredytu', 'rodzaj oprocentowania'],
+    options: [
+      { value: 'standard', label: 'Standardowy kredyt hipoteczny' },
+      { value: 'rkm', label: 'Rodzinny Kredyt Mieszkaniowy (RKM)' },
+    ],
+  }),
+  defineField({
+    canonicalKey: 'loan.rkmGuarantee',
+    label: 'Gwarancja spłaty BGK w RKM',
+    type: 'boolean',
+    group: 'loan',
+    question: 'Czy RKM korzysta z gwarancji spłaty BGK?',
+    helpText: 'Odpowiedź steruje dołączeniem warunków gwarancji spłaty do kompletu Erste.',
+    semanticDescription: 'Informacja, czy Rodzinny Kredyt Mieszkaniowy korzysta z gwarancji spłaty BGK.',
+    semanticRole: 'loan.program.rkm.guarantee',
+    aliases: ['gwarancja BGK', 'gwarancja spłaty RKM'],
+    exclude: ['ubezpieczenie kredytu', 'poręczenie prywatne'],
+    visibleWhen: { canonicalKey: 'loan.program', equals: 'rkm' },
+    requiredWhen: { canonicalKey: 'loan.program', equals: 'rkm' },
+  }),
   defineField({
     canonicalKey: 'loan.purpose',
     label: 'Cel kredytu',
@@ -1545,6 +1998,178 @@ const DOMAIN_FIELDS = [
   }),
 ] as const
 
+const ERSTE_SUPPLEMENTAL_FIELDS = [
+  defineField({
+    canonicalKey: 'consents.electronicDocumentDelivery',
+    label: 'Elektroniczne przekazywanie dokumentów bankowych',
+    type: 'boolean',
+    group: 'declarations',
+    question: 'Czy wszyscy wnioskodawcy zgadzają się na elektroniczne przekazywanie dokumentów bankowych?',
+    helpText: 'Dokumenty trafią na wskazane adresy e-mail, a hasło dostępu na numer telefonu.',
+    semanticDescription: 'Wspólna zgoda wszystkich wnioskodawców na przekazywanie formularza informacyjnego, regulacji, decyzji i projektu umowy drogą elektroniczną.',
+    semanticRole: 'application.consent.electronicDocumentDelivery',
+    aliases: ['zgoda dla formy kontaktu', 'zgoda wszystkich wnioskodawców na e-mail'],
+    exclude: ['zgoda marketingowa', 'zgoda na decyzję przed terminem'],
+  }),
+  defineField({
+    canonicalKey: 'investor.name',
+    label: 'Nazwa inwestora',
+    type: 'text',
+    group: 'investment',
+    question: 'Podaj nazwę inwestora lub dewelopera',
+    semanticDescription: 'Nazwa podmiotu, który realizuje inwestycję i składa oświadczenie dla Erste.',
+    semanticRole: 'investment.investor.name',
+    aliases: ['nazwa inwestora', 'nazwa dewelopera'],
+    exclude: ['imię i nazwisko wnioskodawcy', 'nazwa pośrednika'],
+  }),
+  defineField({
+    canonicalKey: 'investor.buyerDetails',
+    label: 'Dane nabywcy dla inwestora',
+    type: 'text',
+    group: 'investment',
+    question: 'Podaj dane nabywcy wskazane w umowie rezerwacyjnej',
+    helpText: 'Wpisz dane dokładnie tak, jak w umowie rezerwacyjnej.',
+    semanticDescription: 'Dane nabywcy przywołane przez inwestora w związku z zawartą umową rezerwacyjną.',
+    semanticRole: 'investment.investor.buyerDetails',
+    aliases: ['dane nabywcy', 'nabywca z umowy rezerwacyjnej'],
+    exclude: ['dane inwestora', 'dane pośrednika'],
+  }),
+  defineField({
+    canonicalKey: 'investor.garageShareIncluded',
+    label: 'Nabywany udział w lokalu niemieszkalnym',
+    type: 'boolean',
+    group: 'investment',
+    question: 'Czy nabywany jest odrębny udział w lokalu niemieszkalnym, np. hali garażowej?',
+    semanticDescription: 'Informacja, czy transakcja obejmuje odrębne prawo do udziału w lokalu niemieszkalnym.',
+    semanticRole: 'investment.investor.garageShare.included',
+    aliases: ['udział w hali garażowej', 'udział w lokalu niemieszkalnym'],
+    exclude: ['miejsce postojowe jako część lokalu'],
+  }),
+  defineField({
+    canonicalKey: 'investor.garageSharePrice',
+    label: 'Cena udziału w lokalu niemieszkalnym',
+    type: 'currency',
+    group: 'investment',
+    question: 'Podaj cenę udziału w lokalu niemieszkalnym',
+    semanticDescription: 'Cena odrębnie nabywanego udziału w lokalu niemieszkalnym, np. hali garażowej.',
+    semanticRole: 'investment.investor.garageShare.price',
+    aliases: ['cena udziału w hali garażowej'],
+    exclude: ['cena lokalu mieszkalnego'],
+    visibleWhen: { canonicalKey: 'investor.garageShareIncluded', equals: 'true' },
+    requiredWhen: { canonicalKey: 'investor.garageShareIncluded', equals: 'true' },
+    validation: { min: 0 },
+  }),
+  defineField({
+    canonicalKey: 'investor.otherSharesIncluded',
+    label: 'Nabywane inne udziały',
+    type: 'boolean',
+    group: 'investment',
+    question: 'Czy transakcja obejmuje inne odrębne udziały, np. w drodze lub działce?',
+    semanticDescription: 'Informacja, czy inwestor sprzedaje wraz z nieruchomością inne odrębne prawa udziałowe.',
+    semanticRole: 'investment.investor.otherShares.included',
+    aliases: ['inne udziały', 'udział w drodze', 'naziemne miejsce postojowe'],
+    exclude: ['udział w hali garażowej'],
+  }),
+  defineField({
+    canonicalKey: 'investor.otherSharesPrice',
+    label: 'Cena innych udziałów',
+    type: 'currency',
+    group: 'investment',
+    question: 'Podaj łączną cenę innych odrębnie nabywanych udziałów',
+    semanticDescription: 'Łączna cena innych praw udziałowych nabywanych od inwestora.',
+    semanticRole: 'investment.investor.otherShares.price',
+    aliases: ['cena innych udziałów'],
+    exclude: ['cena udziału w hali garażowej'],
+    visibleWhen: { canonicalKey: 'investor.otherSharesIncluded', equals: 'true' },
+    requiredWhen: { canonicalKey: 'investor.otherSharesIncluded', equals: 'true' },
+    validation: { min: 0 },
+  }),
+  defineField({
+    canonicalKey: 'investor.paymentTiming',
+    label: 'Termin zapłaty ceny inwestorowi',
+    type: 'select',
+    group: 'investment',
+    question: 'Kiedy nabywca zapłaci cenę inwestorowi?',
+    semanticDescription: 'Moment zapłaty ceny względem aktu notarialnego przenoszącego własność.',
+    semanticRole: 'investment.investor.payment.timing',
+    aliases: ['nabywca zapłaci cenę', 'zapłata przed lub po akcie notarialnym'],
+    exclude: ['termin wypłaty kredytu'],
+    options: INVESTOR_PAYMENT_TIMING_OPTIONS,
+  }),
+  defineField({
+    canonicalKey: 'investor.houseTargetDescription',
+    label: 'Docelowy opis działki zabudowanej domem',
+    type: 'textarea',
+    group: 'investment',
+    question: 'Podaj numer i powierzchnię działki, miejscowość, ulicę i numer budynku',
+    semanticDescription: 'Pełny opis docelowego adresu oraz parametrów działki zabudowanej domem nabywanej od inwestora.',
+    semanticRole: 'investment.investor.targetAddress.house',
+    aliases: ['docelowy adres działki zabudowanej domem'],
+    exclude: ['adres lokalu mieszkalnego'],
+    visibleWhen: { canonicalKey: 'property.type', equals: 'house' },
+  }),
+  defineField({
+    canonicalKey: 'investor.garageShareTargetDescription',
+    label: 'Opis docelowego udziału w hali garażowej',
+    type: 'textarea',
+    group: 'investment',
+    question: 'Podaj wysokość udziału, adres i numer księgi wieczystej hali',
+    semanticDescription: 'Opis odrębnie nabywanego udziału w hali garażowej wraz z adresem i numerem księgi wieczystej.',
+    semanticRole: 'investment.investor.targetAddress.garageShare',
+    aliases: ['wysokość udziału, adres i numer KW hali'],
+    exclude: ['adres lokalu mieszkalnego'],
+    visibleWhen: { canonicalKey: 'investor.garageShareIncluded', equals: 'true' },
+  }),
+  defineField({
+    canonicalKey: 'investor.paymentScheduleType',
+    label: 'Sposób zapłaty ceny inwestorowi',
+    type: 'select',
+    group: 'investment',
+    question: 'Czy nabywca zapłaci jednorazowo, czy w transzach?',
+    semanticDescription: 'Sposób realizacji harmonogramu płatności ceny dla inwestora.',
+    semanticRole: 'investment.investor.payment.scheduleType',
+    aliases: ['harmonogram płatności jednorazowo lub w transzach'],
+    exclude: ['wypłata kredytu jednorazowo lub w transzach'],
+    options: DISBURSEMENT_OPTIONS,
+    visibleWhen: { canonicalKey: 'investor.paymentTiming', equals: 'before_notarial_deed' },
+    requiredWhen: { canonicalKey: 'investor.paymentTiming', equals: 'before_notarial_deed' },
+  }),
+  defineField({
+    canonicalKey: 'investor.plotNumbers',
+    label: 'Numery działek inwestycji',
+    type: 'text',
+    group: 'investment',
+    question: 'Podaj numery działek, na których realizowana jest inwestycja',
+    semanticDescription: 'Numery ewidencyjne działki albo działek, na których inwestor realizuje przedsięwzięcie.',
+    semanticRole: 'investment.investor.plotNumbers',
+    aliases: ['inwestycję realizujemy na działce numer'],
+    exclude: ['numer księgi wieczystej'],
+  }),
+  defineField({
+    canonicalKey: 'investor.constructionProgressPercent',
+    label: 'Zaawansowanie prac budowlanych',
+    type: 'number',
+    group: 'investment',
+    question: 'Podaj procent wykonanych prac budowlanych',
+    semanticDescription: 'Deklarowany przez inwestora procent wykonania prac związanych z budową.',
+    semanticRole: 'investment.investor.constructionProgressPercent',
+    aliases: ['procent wykonanych prac', 'zaawansowanie budowy'],
+    exclude: ['udział własnościowy'],
+    validation: { min: 0, max: 100 },
+  }),
+  defineField({
+    canonicalKey: 'investor.expectedOwnershipTransferDate',
+    label: 'Planowana data aktu przenoszącego własność',
+    type: 'date',
+    group: 'investment',
+    question: 'Podaj planowaną datę podpisania aktu notarialnego przeniesienia własności',
+    semanticDescription: 'Termin przewidywany przez inwestora na podpisanie aktu notarialnego przenoszącego własność nieruchomości.',
+    semanticRole: 'investment.investor.expectedOwnershipTransferDate',
+    aliases: ['termin podpisania aktu notarialnego przeniesienia własności'],
+    exclude: ['data umowy rezerwacyjnej'],
+  }),
+] as const
+
 const BANK_DOMAIN_FIELDS = [
   defineCompactField({
     canonicalKey: 'loan.productType',
@@ -1702,6 +2327,54 @@ const BANK_DOMAIN_FIELDS = [
     canonicalKey: 'property.usableArea',
     label: 'Powierzchnia użytkowa nieruchomości',
     type: 'number',
+    group: 'property',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.hasBasement',
+    label: 'Podpiwniczenie budynku',
+    type: 'boolean',
+    group: 'property',
+  }),
+  defineCompactField({
+    canonicalKey: 'property.buildingFootprintArea',
+    label: 'Powierzchnia zabudowy budynku',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.totalArea',
+    label: 'Powierzchnia całkowita budynku',
+    type: 'number',
+    group: 'property',
+    validation: { min: 0 },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.targetFinishStandard',
+    label: 'Docelowy standard wykończenia',
+    type: 'select',
+    group: 'property',
+    options: PEKAO_FINISH_STANDARD_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.aboveGroundFloors',
+    label: 'Liczba kondygnacji nadziemnych',
+    type: 'number',
+    group: 'property',
+    validation: { min: 1, max: 20, integer: true },
+  }),
+  defineCompactField({
+    canonicalKey: 'property.buildingForm',
+    label: 'Forma zabudowy budynku',
+    type: 'select',
+    group: 'property',
+    options: BUILDING_FORM_OPTIONS,
+  }),
+  defineCompactField({
+    canonicalKey: 'property.preWorksValue',
+    label: 'Wartość nieruchomości przed pracami',
+    type: 'currency',
     group: 'property',
     validation: { min: 0 },
   }),
@@ -2000,13 +2673,19 @@ const BANK_DOMAIN_FIELDS = [
 export const CANONICAL_FIELDS = [
   ...APPLICATION_FIELDS,
   ...APPLICANT_FIELDS,
+  ...KIK_APPLICANT_FIELDS,
+  ...KIK_APPLICANT_LIABILITY_FIELDS,
+  ...INCOME_APPLICANT_FIELDS,
   ...TRANCHE_FIELDS,
+  ...INVESTOR_PAYMENT_FIELDS,
+  ...ERSTE_PRELIMINARY_APPLICANT_FIELDS,
   ...EXTENDED_APPLICANT_FIELDS,
   ...HOUSEHOLD_FIELDS,
   ...LIABILITY_FIELDS,
   ...MORTGAGE_DISCHARGE_FIELDS,
   ...COLLATERAL_PROPERTY_FIELDS,
   ...DOMAIN_FIELDS,
+  ...ERSTE_SUPPLEMENTAL_FIELDS,
   ...BANK_DOMAIN_FIELDS,
 ] satisfies readonly CanonicalFieldDefinition[]
 

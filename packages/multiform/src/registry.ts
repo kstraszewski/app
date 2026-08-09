@@ -1,4 +1,5 @@
 import { CANONICAL_COLLECTIONS, CANONICAL_FIELDS } from './canonical-fields.ts'
+import { instantiateTemplate } from './template-instances.ts'
 import { TEMPLATES } from './templates/index.ts'
 import type {
   BundleWarning,
@@ -93,7 +94,14 @@ export function prepareBundle(
     const coverageWarning = warningForCoverage(template)
     if (coverageWarning) warnings.push(coverageWarning)
 
-    for (const binding of template.bindings) {
+    const fieldTemplates = template.repeatFor
+      ? Array.from(
+          { length: template.repeatFor.maxInstances },
+          (_, instanceIndex) => instantiateTemplate(template, instanceIndex),
+        )
+      : [template]
+
+    for (const binding of fieldTemplates.flatMap(document => document.bindings)) {
       if (
         !binding.computed
         && binding.target.kind !== 'unmapped'
@@ -110,6 +118,14 @@ export function prepareBundle(
 
       const warning = warningForBinding(template, binding)
       if (warning) warnings.push(warning)
+    }
+    for (const fieldTemplate of fieldTemplates) {
+      if (fieldTemplate.includeWhen && FIELD_KEYS.has(fieldTemplate.includeWhen.canonicalKey)) {
+        requestedFields.add(fieldTemplate.includeWhen.canonicalKey)
+      }
+      for (const key of fieldTemplate.requiredCanonicalKeys ?? []) {
+        if (FIELD_KEYS.has(key)) requestedFields.add(key)
+      }
     }
   }
 

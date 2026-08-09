@@ -16,6 +16,9 @@ function applicantIndexes(binding: TemplateBinding) {
  * therefore should not constrain the collection.
  */
 export function templateApplicantCapacity(template: DocumentTemplate): number | null {
+  if (template.repeatFor?.collection === 'applicants') {
+    return template.repeatFor.maxInstances
+  }
   const indexes = new Set(template.bindings.flatMap(applicantIndexes))
   if (indexes.size === 0) return null
   let capacity = 0

@@ -223,12 +223,34 @@ export interface PreciseOverlayTarget {
 
 export type OverlayTarget = LegacyOverlayTarget | PreciseOverlayTarget
 
+export type XlsxCellValueType = 'string' | 'number' | 'date' | 'boolean'
+
+export interface XlsxCellSnapshot {
+  /** Zero-based style index from the immutable source worksheet XML. */
+  styleIndex: number
+  /** Source protection state; native filling preserves it exactly. */
+  unlocked: boolean
+  /** Native filling never overwrites a formula cell. */
+  formula: false
+}
+
+export interface XlsxCellTarget {
+  kind: 'xlsx_cell'
+  sheet: string
+  cell: string
+  valueType: XlsxCellValueType
+  /** Maps canonical enum/boolean values to exact values accepted by the bank workbook. */
+  valueMap?: Readonly<Record<string, string | number | boolean>>
+  /** Source-derived guard used to detect workbook drift before writing a value. */
+  expected: XlsxCellSnapshot
+}
+
 export interface UnmappedTarget {
   kind: 'unmapped'
   reason: string
 }
 
-export type TemplateTarget = AcroFormTarget | OverlayTarget | UnmappedTarget
+export type TemplateTarget = AcroFormTarget | OverlayTarget | XlsxCellTarget | UnmappedTarget
 
 export type BindingCondition = FieldCondition
 
@@ -242,6 +264,7 @@ export type ValueFormat =
   | 'fullName'
   | 'fullAddress'
   | 'houseAndUnit'
+  | 'streetHouseAndUnit'
   | 'landRegister.part1'
   | 'landRegister.part2'
   | 'landRegister.part3'
@@ -317,12 +340,55 @@ export type PdfTemplateFillMethod =
   | { kind: 'pdf_acroform' }
   | { kind: 'pdf_overlay' }
   | { kind: 'pdf_hybrid' }
+  /**
+   * Keeps an official bank PDF in the application package without claiming
+   * that the engine can complete its customer fields. The runtime sanitizes
+   * the PDF, but the expert/customer must fill and sign it manually.
+   */
+  | { kind: 'pdf_manual' }
+  /** Official bank material included unchanged in meaning; it has no fields to complete. */
+  | { kind: 'pdf_readonly' }
+
+export type SpreadsheetTemplateFillMethod =
+  /** Writes canonical values into reviewed cells while preserving workbook formulas and layout. */
+  | { kind: 'xlsx_native' }
+  /** Keeps an official workbook in the package for manual completion. */
+  | { kind: 'xlsx_manual' }
 
 export type DeferredTemplateFillMethod =
   | { kind: 'web_form' }
   | { kind: 'api' }
 
-export type TemplateFillMethod = PdfTemplateFillMethod | DeferredTemplateFillMethod
+export type TemplateFillMethod =
+  | PdfTemplateFillMethod
+  | SpreadsheetTemplateFillMethod
+  | DeferredTemplateFillMethod
+
+export interface XlsxWorkbookSheetSnapshot {
+  name: string
+  state: 'visible' | 'hidden' | 'veryHidden'
+}
+
+export interface XlsxWorkbookSnapshot {
+  sheets: readonly XlsxWorkbookSheetSnapshot[]
+  formulaCellCount: number
+  structureProtected: boolean
+}
+
+/**
+ * Repeats one bank form for every active item of a canonical collection.
+ *
+ * The template is authored once against `templateIndex` (normally applicant
+ * zero). At runtime the engine remaps that indexed canonical prefix to the
+ * requested collection item and renders a separate PDF. This keeps source
+ * geometry auditable while supporting bank forms that are issued per person.
+ */
+export interface TemplateRepeatFor {
+  collection: 'applicants'
+  templateIndex: number
+  maxInstances: number
+  itemLabel: string
+}
 
 export interface DocumentTemplate {
   schemaVersion: 2
@@ -339,12 +405,22 @@ export interface DocumentTemplate {
   source: {
     fileName: string
     sha256: string
+    mimeType?:
+      | 'application/pdf'
+      | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     pageCount: number
     /** @deprecated Compatibility metadata; use `fillMethod.kind` for routing. */
     formKind: PdfFormKind
     pages: readonly PdfPageGeometry[]
+    /** Present for spreadsheet methods; PDF templates omit it. */
+    workbook?: XlsxWorkbookSnapshot
   }
   coverage: TemplateCoverage
+  repeatFor?: TemplateRepeatFor
+  /** Includes the whole output document only when the canonical condition matches. */
+  includeWhen?: FieldCondition
+  /** Canonical inputs the bank requires before this document may be generated. */
+  requiredCanonicalKeys?: readonly string[]
   overlayOrigin?: 'top-left' | 'bottom-left'
   bindings: readonly TemplateBinding[]
 }

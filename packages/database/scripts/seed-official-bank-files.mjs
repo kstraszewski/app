@@ -1452,10 +1452,60 @@ async function persistUnchangedPlan(database, plan) {
   }
 }
 
+async function reconcileCanonicalVersionFileName(database, plan) {
+  const expectedFileName = safeFileName(plan.document.entry.fileName)
+  const version = await database.query(
+    `select original_file_name
+       from public.mortgage_bank_file_versions
+      where id = $1::uuid
+      for update`,
+    [plan.versionId],
+  )
+  if (version.rowCount !== 1) {
+    throw new Error(`Bank-file version disappeared for “${plan.document.entry.title}”`)
+  }
+  const currentFileName = version.rows[0].original_file_name
+  if (currentFileName === expectedFileName) return
+
+  const owners = await database.query(
+    `select template_key
+       from public.mortgage_document_templates
+      where source_file_version_id = $1::uuid
+      order by template_key`,
+    [plan.versionId],
+  )
+  if (owners.rowCount > 0) {
+    throw new Error(
+      `Cannot rename the immutable bank-file version for “${plan.document.entry.title}” from `
+      + `“${currentFileName}” to “${expectedFileName}” because it is pinned by `
+      + owners.rows.map(row => row.template_key).join(', '),
+    )
+  }
+
+  const updated = await database.query(
+    `update public.mortgage_bank_file_versions
+        set original_file_name = $2,
+            updated_at = now()
+      where id = $1::uuid
+        and original_file_name = $3
+      returning id`,
+    [plan.versionId, expectedFileName, currentFileName],
+  )
+  if (updated.rowCount !== 1) {
+    throw new Error(`Bank-file version changed while renaming “${plan.document.entry.title}”`)
+  }
+  process.stdout.write(
+    `Canonicalized bank-file name for ${plan.document.entry.bankSlug}: `
+    + `${currentFileName} -> ${expectedFileName}\n`,
+  )
+}
+
 async function verifyPersistedPlan(database, plan) {
   const result = await database.query(
     `select file.id::text,
+            file.current_version_id::text,
             version.id::text as version_id,
+            version.original_file_name,
             version.status,
             version.extraction_status,
             version.embedding_status,
@@ -1491,6 +1541,7 @@ async function verifyPersistedPlan(database, plan) {
     throw new Error(`Persisted version verification failed for “${plan.document.entry.title}”`)
   }
   const row = result.rows[0]
+  const expectedFileName = safeFileName(plan.document.entry.fileName)
   const searchablePdf = requiresTextExtraction(plan.document.entry)
   const contentReady = searchablePdf
     ? row.extraction_status === 'completed'
@@ -1501,7 +1552,10 @@ async function verifyPersistedPlan(database, plan) {
       && row.embedding_status === 'disabled'
       && Number(row.chunk_count) === 0
       && Number(row.embedding_count) === 0
-  if (!contentReady || (plan.productId && !row.has_product)) {
+  const sourceReady = row.current_version_id === row.version_id
+    && row.status === 'current'
+    && row.original_file_name === expectedFileName
+  if (!sourceReady || !contentReady || (plan.productId && !row.has_product)) {
     throw new Error(`Persisted data is incomplete for “${plan.document.entry.title}”`)
   }
 }
@@ -1517,6 +1571,7 @@ async function commitPlans(database, plans, bankCatalog) {
 
     const now = new Date().toISOString()
     for (const plan of plans) {
+      if (plan.mode !== 'insert') await reconcileCanonicalVersionFileName(database, plan)
       if (plan.mode === 'unchanged') await persistUnchangedPlan(database, plan)
       else await persistProcessedPlan(database, plan, now)
     }

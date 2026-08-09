@@ -46,7 +46,7 @@ test('produkt Pekao używa aktualnego manualnego PDF zamiast starego mapowania i
   const templateIds = pekao.version.multiformTemplateIds
   assert.equal(templateIds.includes('pekao-mortgage-2025'), false)
   assert.equal(templateIds.includes('pekao-mortgage-2026-manual'), true)
-  assert.equal(templateIds.length, 7)
+  assert.equal(templateIds.length, 8)
   assert.deepEqual(
     pekao.version.documentRequirements.flatMap(requirement => (
       requirement.templateId ? [requirement.templateId] : []
@@ -63,7 +63,14 @@ test('produkt Pekao używa aktualnego manualnego PDF zamiast starego mapowania i
   assert.equal(requirements.get('pekao_employer_income_certificate').readiness.maxAgeDays, 30)
   assert.equal(requirements.get('pekao_business_statement').readiness.maxAgeDays, 30)
   assert.equal(requirements.get('pekao_business_changed_taxation').templateId, undefined)
-  assert.equal(requirements.get('pekao_construction_cost_estimate').allowedMimeTypes.length, 0)
+  assert.deepEqual(
+    requirements.get('pekao_construction_cost_estimate').allowedMimeTypes,
+    ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  )
+  assert.equal(
+    requirements.get('pekao_construction_cost_estimate').templateId,
+    'pekao-construction-cost-estimate-2026',
+  )
   assert.equal(requirements.get('pekao_general_construction_information').applicability, 'conditional')
   assert.equal(requirements.get('pekao_general_family_information').applicability, 'conditional')
   assert.equal(requirements.get('refinanced_loan_closing_documents').applicability, 'case_requested')

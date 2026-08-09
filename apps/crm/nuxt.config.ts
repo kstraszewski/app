@@ -158,6 +158,10 @@ export default defineNuxtConfig({
     multiformServiceUrl,
     aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
     googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
+    ceidg: {
+      apiBaseUrl: process.env.NUXT_CEIDG_API_BASE_URL || 'https://dane.biznes.gov.pl',
+      token: process.env.NUXT_CEIDG_API_TOKEN || '',
+    },
     dataApi: {
       url: dataApiUrl,
       jwt: {

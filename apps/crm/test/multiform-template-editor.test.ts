@@ -387,11 +387,12 @@ test('adding and removing an overlay toggles an AcroForm template through hybrid
   })
 
   assert.equal(PEKAO_TEMPLATE.source.formKind, 'acroform')
+  assert.deepEqual(PEKAO_TEMPLATE.fillMethod, { kind: 'pdf_acroform' })
   assert.equal(result.template.source.formKind, 'hybrid')
-  assert.equal(
-    removeTemplateBinding(result.template, result.bindingIndex).source.formKind,
-    'acroform',
-  )
+  assert.deepEqual(result.template.fillMethod, { kind: 'pdf_hybrid' })
+  const restored = removeTemplateBinding(result.template, result.bindingIndex)
+  assert.equal(restored.source.formKind, 'acroform')
+  assert.deepEqual(restored.fillMethod, { kind: 'pdf_acroform' })
 })
 
 test('Erste full template invalidates audited completeness while a field awaits review', () => {

@@ -1,7 +1,8 @@
-import type {
-  DocumentTemplate,
-  PdfBox,
-  TemplateBinding,
+import {
+  resolveTemplateFillMethod,
+  type DocumentTemplate,
+  type PdfBox,
+  type TemplateBinding,
 } from '@openexpert/multiform'
 
 function stableSerialize(value: unknown): string {
@@ -335,12 +336,16 @@ export function mergeAiMappingSuggestions(
   }
 
   const bindings = [...current.bindings, ...added]
+  const formKind = sourceFormKindWithAdditions(current.source.formKind, added)
   return {
     template: {
       ...structuredClone(current),
+      ...(added.length
+        ? { fillMethod: resolveTemplateFillMethod({ source: { formKind } }) }
+        : {}),
       source: {
         ...structuredClone(current.source),
-        formKind: sourceFormKindWithAdditions(current.source.formKind, added),
+        formKind,
       },
       bindings,
       coverage: {

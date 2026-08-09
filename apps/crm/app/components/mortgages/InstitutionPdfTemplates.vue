@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import type { MultiformFillMethod } from '~/types/multiform'
 import { apiErrorMessage } from '~/utils/api-error'
+import { multiformFillMethodPresentation } from '~/utils/multiform-fill-method'
 
 type TemplateSummary = {
   pages: number
+  fillMethod: MultiformFillMethod
   fillMode: string
   fieldCount: number
   mappedFieldCount: number
@@ -219,7 +222,7 @@ function formatDate(value: string | null) {
           <small>{{ coveragePercent(template) }}%</small>
           <div class="template-card__facts">
             <span>{{ (template.draft?.summary ?? template.active.summary).pages }} stron</span>
-            <span>{{ (template.draft?.summary ?? template.active.summary).fillMode }}</span>
+            <span>{{ multiformFillMethodPresentation((template.draft?.summary ?? template.active.summary).fillMethod).label }}</span>
             <span>{{ (template.draft?.summary ?? template.active.summary).manualUserActionCount }} ręcznych działań</span>
             <span>{{ (template.draft?.summary ?? template.active.summary).warnings }} ostrzeżeń</span>
           </div>

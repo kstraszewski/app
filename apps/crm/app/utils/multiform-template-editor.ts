@@ -1,6 +1,7 @@
 import {
   CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
+  resolveTemplateFillMethod,
   type CanonicalComputedBindingDefinition,
   type CanonicalFieldDefinition,
   type CanonicalFieldType,
@@ -265,6 +266,10 @@ function applyComputedFormKind(template: DocumentTemplate) {
   if (hasAcroForm && hasOverlay) template.source.formKind = 'hybrid'
   else if (hasAcroForm) template.source.formKind = 'acroform'
   else if (hasOverlay) template.source.formKind = 'overlay'
+  else return
+  template.fillMethod = resolveTemplateFillMethod({
+    source: { formKind: template.source.formKind },
+  })
 }
 
 export function recomputeTemplateCoverage(template: DocumentTemplate): DocumentTemplate {

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   ERSTE_TEMPLATE,
+  resolveTemplateFillMethod,
   type DocumentTemplate,
   type TemplateBinding,
   validateTemplateJson,
@@ -19,6 +20,7 @@ function emptyTemplate(
 ): DocumentTemplate {
   return {
     ...structuredClone(ERSTE_TEMPLATE),
+    fillMethod: resolveTemplateFillMethod({ source: { formKind } }),
     source: {
       ...structuredClone(ERSTE_TEMPLATE.source),
       formKind,
@@ -263,6 +265,18 @@ test('preserves source formKind when AI adds no target', () => {
   assert.equal(merged.skippedUnmappedCount, 1)
   assert.deepEqual(merged.template.source, base.source)
   assert.equal(merged.template.source.formKind, 'acroform')
+  assert.deepEqual(merged.template.fillMethod, { kind: 'pdf_acroform' })
+})
+
+test('AI overlay addition keeps explicit completion method in sync with hybrid source metadata', () => {
+  const base = emptyTemplate('acroform')
+  const merged = mergeAiMappingSuggestions(base, [
+    overlaySuggestion('application.date', 40, 120),
+  ])
+
+  assert.equal(merged.addedCount, 1)
+  assert.equal(merged.template.source.formKind, 'hybrid')
+  assert.deepEqual(merged.template.fillMethod, { kind: 'pdf_hybrid' })
 })
 
 test('normalizes a field semantic proposal while preserving its controlled role', () => {

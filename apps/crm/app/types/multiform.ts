@@ -1,7 +1,11 @@
+import type { TemplateFillMethod } from '@openexpert/multiform'
 import type { MortgageApplicationStatus } from './cases'
 
 export type MultiformFieldValue = string | number | boolean
 export type MultiformFieldOption = string | { label: string, value: string }
+
+export type MultiformFillMethod = TemplateFillMethod
+export type MultiformFillMethodKind = TemplateFillMethod['kind']
 
 export interface MultiformFieldCondition {
   canonicalKey: string
@@ -47,6 +51,7 @@ export interface MultiformFormField {
   requiredWhen?: MultiformFieldCondition
   validation?: {
     pattern?: string
+    maxLength?: number
     min?: number
     max?: number
     integer?: boolean
@@ -59,6 +64,7 @@ export interface MultiformPreparedDocument {
   bank?: string
   name?: string
   fileName?: string
+  fillMethod: MultiformFillMethod
 }
 
 export interface MultiformPrepareResponse {
@@ -145,7 +151,12 @@ export interface MultiformApplicationsValidation {
 export interface MultiformCrmContext {
   organization: { slug: string, name: string }
   case: { id: string, title: string }
-  applicants: Array<{ clientId: string, label: string, isPrimary: boolean }>
+  applicants: Array<{
+    clientId: string
+    label: string
+    pesel: string | null
+    isPrimary: boolean
+  }>
   applicationIds: string[]
   offerIds: string[]
   contractApplicationId: string | null

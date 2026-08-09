@@ -157,6 +157,9 @@ const GROUP_LABELS: Record<CanonicalFieldDefinition['group'], string> = {
   loan: 'Kredyt',
   investment: 'Inwestycja',
   property: 'Nieruchomość',
+  household: 'Gospodarstwo domowe',
+  liabilities: 'Zobowiązania i obciążenia',
+  declarations: 'Oświadczenia i zgody',
 }
 const ALIGNMENT_SNAP_THRESHOLD_PX = 10
 

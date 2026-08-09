@@ -6,6 +6,7 @@ import {
 import {
   getTemplate,
   getTemplates,
+  resolveTemplateFillMethod,
   validateTemplateJson,
   type DocumentTemplate,
   type TemplateValidationResult,
@@ -203,15 +204,16 @@ export function mortgageTemplateSummary(
   template: DocumentTemplate,
   validation = validateTemplateJson(template),
 ) {
-  const targetKinds = new Set(template.bindings
-    .filter(binding => binding.target.kind !== 'unmapped')
-    .map(binding => binding.target.kind))
-  const fillMode = targetKinds.size > 1
-    ? 'hybrid'
-    : targetKinds.has('overlay') ? 'overlay' : 'acroform'
+  const fillMethod = resolveTemplateFillMethod(template)
+  const fillMode = fillMethod.kind === 'pdf_acroform'
+    ? 'acroform'
+    : fillMethod.kind === 'pdf_overlay'
+      ? 'overlay'
+      : fillMethod.kind === 'pdf_hybrid' ? 'hybrid' : fillMethod.kind
 
   return {
     pages: template.source.pageCount,
+    fillMethod,
     fillMode,
     fieldCount: template.coverage.inScopeTargetCount,
     mappedFieldCount: template.coverage.mappedTargetCount,

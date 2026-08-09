@@ -17,6 +17,22 @@ import type {
   MultiformRepeatableGroup,
 } from '~/types/multiform'
 import {
+  canonicalDisbursementTypeFromIntake,
+  canonicalLoanPurposeFromIntake,
+  multiformApplicantDefaults,
+} from '~/utils/multiform-prefill'
+import {
+  multiformFillMethodIsSupported,
+  multiformFillMethodPresentation,
+} from '~/utils/multiform-fill-method'
+import {
+  changeCollectionCount,
+  collectionState,
+  normalizeCollectionActiveIndex,
+  normalizeCollectionCount,
+  supportedCollectionItemCount,
+} from '~/utils/multiform-collections'
+import {
   createEmptyMultiformIntake,
   getMultiformIntakeProgress,
   normalizeMultiformIntake,
@@ -378,6 +394,24 @@ function packagePreparedDocuments(applicationId: string) {
   ))
 }
 
+function preparedDocumentFillMethod(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return multiformFillMethodPresentation(preparedDocument.fillMethod)
+}
+
+function preparedDocumentIsSupported(
+  preparedDocument: MultiformPrepareResponse['documents'][number],
+) {
+  return multiformFillMethodIsSupported(preparedDocument.fillMethod)
+}
+
+function unsupportedPreparedDocument(applicationIds: readonly string[]) {
+  return applicationIds
+    .flatMap(applicationId => packagePreparedDocuments(applicationId))
+    .find(document => !preparedDocumentIsSupported(document))
+}
+
 function packageAvailableDocuments(applicationIds: readonly string[]) {
   const selectedApplications = new Set(applicationIds)
   const selectedFiles = new Set(selectedDocumentIds.value)
@@ -460,6 +494,14 @@ function toggleActivePackageDocuments() {
 const activePackagePreparedDocuments = computed(() => activePackageApplication.value
   ? packagePreparedDocuments(activePackageApplication.value.applicationId)
   : [])
+
+const activePackageHasUnsupportedFillMethod = computed(() => (
+  activePackagePreparedDocuments.value.some(document => !preparedDocumentIsSupported(document))
+))
+
+const selectedPackageHasUnsupportedFillMethod = computed(() => Boolean(
+  unsupportedPreparedDocument(selectedPackageApplicationIds.value),
+))
 
 const activePackageMissingRequirements = computed(() => activePackageApplication.value
   ? packageMissingRequirements(activePackageApplication.value.applicationId)
@@ -780,6 +822,7 @@ function fieldIsInvalid(field: MultiformFormField) {
   if (valueIsMissing(field)) return false
 
   const rawValue = String(values.value[field.key]).trim()
+  if (field.validation?.maxLength !== undefined && rawValue.length > field.validation.maxLength) return true
   if (field.validation?.pattern && !new RegExp(field.validation.pattern).test(rawValue)) return true
   if (['number', 'currency', 'integer', 'decimal'].includes(field.type)) {
     const numeric = Number(rawValue.replace(',', '.'))
@@ -869,25 +912,14 @@ function supportedCollectionCount(
   collection: MultiformCollectionDefinition,
   fields: MultiformFormField[],
 ) {
-  const indexes = new Set(fields.flatMap(field => (
-    field.collection?.key === collection.key ? [field.collection.index] : []
-  )))
-  let supported = 0
-  while (indexes.has(supported)) supported += 1
-  return Math.min(collection.maxItems, supported || collection.minItems)
+  return supportedCollectionItemCount(collection.key, collection.maxItems, fields)
 }
 
 function applicantDefaults(index: number) {
   const applicant = context.value?.applicants[index]
   if (!applicant) return {}
   const client = props.caseData.clients.find(item => item.id === applicant.clientId)
-  const nameParts = applicant.label.trim().split(/\s+/).filter(Boolean)
-  return {
-    firstName: nameParts.shift() ?? '',
-    lastName: nameParts.join(' '),
-    email: client?.primary_email ?? '',
-    phone: client?.primary_phone ?? '',
-  }
+  return multiformApplicantDefaults(applicant, client)
 }
 
 function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefined {
@@ -895,6 +927,12 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
     const defaults = applicantDefaults(field.collection.index)
     const relativeKey = field.collection.relativeKey as keyof typeof defaults
     if (relativeKey in defaults) return defaults[relativeKey]
+  }
+  if (field.key === 'loan.purpose') {
+    return canonicalLoanPurposeFromIntake(intakeAnswers.value.case.loanPurpose)
+  }
+  if (field.key === 'loan.disbursementType') {
+    return canonicalDisbursementTypeFromIntake(intakeAnswers.value.case.trancheDisbursement)
   }
   if (field.key === 'loan.amount') {
     const grossAmount = primaryApplication.value?.application.gross_loan_amount
@@ -946,17 +984,17 @@ function initializeForm(bundle: MultiformPrepareResponse) {
     const minimumRequested = collection.key === 'applicants'
       ? Math.max(collection.minItems, context.value?.applicants.length ?? 0)
       : collection.minItems
-    const requested = Math.max(
-      minimumRequested,
-      Math.min(supported, collectionCounts.value[collection.key] ?? minimumRequested),
-    )
-    if (requested > supported) {
+    if (minimumRequested > supported) {
       throw new Error(
-        `${collection.label}: zestaw dokumentów obsługuje ${supported}, a sprawa wymaga ${requested} pozycji.`,
+        `${collection.label}: zestaw dokumentów obsługuje ${supported}, a sprawa wymaga ${minimumRequested} pozycji.`,
       )
     }
+    const requested = normalizeCollectionCount(
+      collectionCounts.value[collection.key],
+      { minItems: minimumRequested, maxItems: supported },
+    )
     nextCounts[collection.key] = requested
-    nextTabs[collection.key] = '0'
+    nextTabs[collection.key] = requested > 0 ? '0' : ''
   }
   collectionCounts.value = nextCounts
   activeCollectionTabs.value = nextTabs
@@ -1004,9 +1042,12 @@ function collectionItems(group: MultiformRepeatableGroup) {
 }
 
 function activeCollectionIndex(group: MultiformRepeatableGroup) {
-  const raw = Number(activeCollectionTabs.value[group.collection.key] ?? 0)
-  return collectionItems(group).some(item => item.index === raw)
-    ? raw
+  const normalized = normalizeCollectionActiveIndex(
+    activeCollectionTabs.value[group.collection.key],
+    collectionItemCount(group.collection),
+  )
+  return normalized !== null && collectionItems(group).some(item => item.index === normalized)
+    ? normalized
     : collectionItems(group)[0]?.index ?? 0
 }
 
@@ -1031,10 +1072,85 @@ function collectionTabItems(group: MultiformRepeatableGroup) {
 }
 
 function updateCollectionTab(group: MultiformRepeatableGroup, value: string | number) {
+  const activeIndex = normalizeCollectionActiveIndex(value, collectionItemCount(group.collection))
+  if (activeIndex === null || !collectionItems(group).some(item => item.index === activeIndex)) return
   activeCollectionTabs.value = {
     ...activeCollectionTabs.value,
-    [group.collection.key]: String(value),
+    [group.collection.key]: String(activeIndex),
   }
+}
+
+function isApplicantCollection(group: MultiformRepeatableGroup) {
+  return group.collection.key === 'applicants'
+}
+
+function collectionLimit(group: MultiformRepeatableGroup) {
+  return supportedCollectionCount(
+    group.collection,
+    preparedBundle.value?.fields ?? [],
+  )
+}
+
+function groupCollectionState(group: MultiformRepeatableGroup) {
+  return collectionState(
+    collectionItemCount(group.collection),
+    activeCollectionTabs.value[group.collection.key],
+    {
+      minItems: group.collection.minItems,
+      maxItems: collectionLimit(group),
+    },
+  )
+}
+
+function collectionDescription(group: MultiformRepeatableGroup) {
+  if (isApplicantCollection(group)) {
+    return 'Lista wynika z klientów przypisanych do sprawy.'
+  }
+  const limit = collectionLimit(group)
+  return group.collection.minItems === 0
+    ? `Dodaj pozycje w razie potrzeby. Maksymalnie: ${limit}.`
+    : `Formularz wymaga od ${group.collection.minItems} do ${limit} pozycji.`
+}
+
+function updateCollectionState(
+  group: MultiformRepeatableGroup,
+  nextState: ReturnType<typeof groupCollectionState>,
+) {
+  collectionCounts.value = {
+    ...collectionCounts.value,
+    [group.collection.key]: nextState.count,
+  }
+  activeCollectionTabs.value = {
+    ...activeCollectionTabs.value,
+    [group.collection.key]: nextState.activeIndex === null ? '' : String(nextState.activeIndex),
+  }
+}
+
+function addCollectionItem(group: MultiformRepeatableGroup) {
+  if (isApplicantCollection(group)) return
+  const bounds = {
+    minItems: group.collection.minItems,
+    maxItems: collectionLimit(group),
+  }
+  const current = groupCollectionState(group)
+  updateCollectionState(group, changeCollectionCount(current, bounds, 'add'))
+}
+
+function removeCollectionItem(group: MultiformRepeatableGroup) {
+  if (isApplicantCollection(group)) return
+  const bounds = {
+    minItems: group.collection.minItems,
+    maxItems: collectionLimit(group),
+  }
+  const current = groupCollectionState(group)
+  const next = changeCollectionCount(current, bounds, 'remove')
+  if (next.count === current.count) return
+
+  for (const field of preparedBundle.value?.fields ?? []) {
+    if (field.collection?.key !== group.collection.key || field.collection.index < next.count) continue
+    values.value[field.key] = field.type === 'checkbox' ? false : ''
+  }
+  updateCollectionState(group, next)
 }
 
 function activeValuesPayload() {
@@ -1131,6 +1247,10 @@ async function downloadPreparedDocument(
   const templateId = preparedDocument.templateId || preparedDocument.id
   if (!templateId || individualDownloadPending.value) return
   individualDownloadError.value = ''
+  if (!preparedDocumentIsSupported(preparedDocument)) {
+    individualDownloadError.value = `${preparedDocumentFillMethod(preparedDocument).label} jest jeszcze nieobsługiwany w eksporcie Multiwniosku.`
+    return
+  }
   if (variant === 'filled') validationVisible.value = true
   if (variant === 'filled' && invalidFields.value.length) {
     fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
@@ -1232,6 +1352,11 @@ async function validatePackageForExport(
   ))
   if (!selectedApplications.some(application => application.templateIds.length > 0)) {
     fillError.value = 'Wybrane wnioski nie mają szablonu formularza do wygenerowania.'
+    return null
+  }
+  const unsupportedDocument = unsupportedPreparedDocument(applicationIds)
+  if (unsupportedDocument) {
+    fillError.value = `${preparedDocumentFillMethod(unsupportedDocument).label} jest jeszcze nieobsługiwany w eksporcie Multiwniosku.`
     return null
   }
   const missingRequirements = missingSelectedRequirementsForApplications(applicationIds)
@@ -1889,9 +2014,10 @@ onBeforeUnmount(() => {
                 <div class="case-multiform__repeatable-heading">
                   <div class="case-multiform__file-info">
                     <strong>{{ group.collection.label }}</strong>
-                    <span>Lista wynika z klientów przypisanych do sprawy.</span>
+                    <span>{{ collectionDescription(group) }}</span>
                   </div>
                   <UButton
+                    v-if="isApplicantCollection(group)"
                     :to="{ path: orgPath(`/cases/${caseData.id}`), query: { view: 'credit' }, hash: '#case-clients' }"
                     color="neutral"
                     variant="ghost"
@@ -1900,30 +2026,74 @@ onBeforeUnmount(() => {
                   >
                     Zarządzaj wnioskodawcami
                   </UButton>
+                  <div
+                    v-else-if="collectionItems(group).length"
+                    class="case-multiform__repeatable-actions"
+                  >
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      icon="i-lucide-trash-2"
+                      :disabled="!groupCollectionState(group).canRemove"
+                      @click="removeCollectionItem(group)"
+                    >
+                      Usuń pozycję
+                    </UButton>
+                    <UButton
+                      color="neutral"
+                      variant="outline"
+                      size="xs"
+                      icon="i-lucide-plus"
+                      :disabled="!groupCollectionState(group).canAdd"
+                      @click="addCollectionItem(group)"
+                    >
+                      Dodaj pozycję
+                    </UButton>
+                  </div>
                 </div>
-                <UTabs
-                  :model-value="activeCollectionTabs[group.collection.key] ?? '0'"
-                  :items="collectionTabItems(group)"
-                  :content="false"
-                  class="case-multiform__person-tabs"
-                  @update:model-value="updateCollectionTab(group, $event)"
-                />
-                <div class="case-multiform__person-panel">
-                  <div class="case-multiform__person-title">
-                    <span>Wnioskodawca {{ activeCollectionIndex(group) + 1 }}</span>
-                    <strong>{{ collectionItemLabel(group, activeCollectionIndex(group)) }}</strong>
+                <template v-if="collectionItems(group).length">
+                  <UTabs
+                    :model-value="String(activeCollectionIndex(group))"
+                    :items="collectionTabItems(group)"
+                    :content="false"
+                    class="case-multiform__person-tabs"
+                    @update:model-value="updateCollectionTab(group, $event)"
+                  />
+                  <div class="case-multiform__person-panel">
+                    <div class="case-multiform__person-title">
+                      <span>{{ group.collection.label }}</span>
+                      <strong>{{ collectionItemLabel(group, activeCollectionIndex(group)) }}</strong>
+                    </div>
+                    <div class="case-multiform__field-grid">
+                      <CaseMultiformField
+                        v-for="field in activeCollectionFields(group)"
+                        :key="field.key"
+                        :field="field"
+                        :model-value="values[field.key]"
+                        :required="fieldIsRequired(field)"
+                        :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
+                        @update:model-value="values[field.key] = $event"
+                      />
+                    </div>
                   </div>
-                  <div class="case-multiform__field-grid">
-                    <CaseMultiformField
-                      v-for="field in activeCollectionFields(group)"
-                      :key="field.key"
-                      :field="field"
-                      :model-value="values[field.key]"
-                      :required="fieldIsRequired(field)"
-                      :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
-                      @update:model-value="values[field.key] = $event"
-                    />
+                </template>
+                <div v-else class="case-multiform__repeatable-empty">
+                  <span><UIcon name="i-lucide-list-plus" /></span>
+                  <div>
+                    <strong>Brak pozycji</strong>
+                    <small>Dodaj pierwszą pozycję „{{ group.collection.itemLabel }}”, aby uzupełnić jej dane.</small>
                   </div>
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    size="xs"
+                    icon="i-lucide-plus"
+                    :disabled="!groupCollectionState(group).canAdd"
+                    @click="addCollectionItem(group)"
+                  >
+                    Dodaj pozycję
+                  </UButton>
                 </div>
               </fieldset>
             </template>
@@ -1966,7 +2136,7 @@ onBeforeUnmount(() => {
                 variant="outline"
                 icon="i-lucide-send"
                 :loading="sendPending"
-                :disabled="!selectedPackageApplicationIds.length || fillPending || sendPending"
+                :disabled="!selectedPackageApplicationIds.length || selectedPackageHasUnsupportedFillMethod || fillPending || sendPending"
                 @click="openSendModal"
               >
                 Wyślij do klientów
@@ -1975,7 +2145,7 @@ onBeforeUnmount(() => {
                 size="lg"
                 icon="i-lucide-download"
                 :loading="fillPending"
-                :disabled="!selectedPackageApplicationIds.length || fillPending || sendPending"
+                :disabled="!selectedPackageApplicationIds.length || selectedPackageHasUnsupportedFillMethod || fillPending || sendPending"
                 @click="fillAndDownload(selectedPackageApplicationIds)"
               >
                 Pobierz całość ZIP ({{ selectedPackageDocumentCount }})
@@ -2063,7 +2233,7 @@ onBeforeUnmount(() => {
                     variant="outline"
                     icon="i-lucide-download"
                     :loading="fillPending"
-                    :disabled="!activePackageApplication.templateIds.length || fillPending || sendPending"
+                    :disabled="!activePackageApplication.templateIds.length || activePackageHasUnsupportedFillMethod || fillPending || sendPending"
                     @click="fillAndDownload([activePackageApplication.applicationId])"
                   >
                     Pobierz ZIP banku
@@ -2100,6 +2270,11 @@ onBeforeUnmount(() => {
                     <div class="case-multiform__file-info">
                       <strong>{{ documentTitle(preparedDocument, index) }}</strong>
                       <small>{{ preparedDocument.fileName || 'Formularz PDF' }}</small>
+                      <span class="case-multiform__fill-method">
+                        <UIcon name="i-lucide-wand-sparkles" />
+                        Metoda: {{ preparedDocumentFillMethod(preparedDocument).label }}
+                        <em v-if="!preparedDocumentIsSupported(preparedDocument)">Jeszcze nieobsługiwane</em>
+                      </span>
                     </div>
                     <div class="case-multiform__file-actions">
                       <UButton
@@ -2107,7 +2282,7 @@ onBeforeUnmount(() => {
                         variant="soft"
                         size="sm"
                         icon="i-lucide-eye"
-                        :disabled="!templateBankId(preparedDocument) || Boolean(individualDownloadPending)"
+                        :disabled="!preparedDocumentIsSupported(preparedDocument) || !templateBankId(preparedDocument) || Boolean(individualDownloadPending)"
                         @click="openTemplatePreview(preparedDocument)"
                       >
                         Podgląd pól
@@ -2118,7 +2293,7 @@ onBeforeUnmount(() => {
                         size="sm"
                         icon="i-lucide-download"
                         :loading="individualDownloadPending === `template:filled:${preparedDocument.templateId || preparedDocument.id}`"
-                        :disabled="Boolean(individualDownloadPending)"
+                        :disabled="!preparedDocumentIsSupported(preparedDocument) || Boolean(individualDownloadPending)"
                         @click="downloadPreparedDocument(preparedDocument, 'filled')"
                       >
                         Pobierz uzupełniony
@@ -2129,7 +2304,7 @@ onBeforeUnmount(() => {
                         size="sm"
                         icon="i-lucide-file"
                         :loading="individualDownloadPending === `template:blank:${preparedDocument.templateId || preparedDocument.id}`"
-                        :disabled="Boolean(individualDownloadPending)"
+                        :disabled="!preparedDocumentIsSupported(preparedDocument) || Boolean(individualDownloadPending)"
                         @click="downloadPreparedDocument(preparedDocument, 'blank')"
                       >
                         Pusty szablon
@@ -2810,6 +2985,52 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.case-multiform__repeatable-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.case-multiform__repeatable-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px dashed var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+}
+
+.case-multiform__repeatable-empty > span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--ui-bg);
+  color: var(--ui-text-muted);
+  font-size: 18px;
+}
+
+.case-multiform__repeatable-empty > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.case-multiform__repeatable-empty strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+}
+
+.case-multiform__repeatable-empty small {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
 .case-multiform__person-tabs {
   margin-bottom: 12px;
 }
@@ -3467,6 +3688,23 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 
+.case-multiform__fill-method {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-text-toned);
+  font-size: 9px;
+}
+
+.case-multiform__fill-method em {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-warning) 14%, transparent);
+  color: var(--ui-warning);
+  font-style: normal;
+  font-weight: 700;
+}
+
 .case-multiform__file-actions {
   display: flex;
   flex: 0 0 auto;
@@ -3666,6 +3904,15 @@ onBeforeUnmount(() => {
   .case-multiform__form-heading,
   .case-multiform__repeatable-heading,
   .case-multiform__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .case-multiform__repeatable-actions {
+    flex-wrap: wrap;
+  }
+
+  .case-multiform__repeatable-empty {
     align-items: stretch;
     flex-direction: column;
   }

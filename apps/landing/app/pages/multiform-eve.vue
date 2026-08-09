@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { MULTIFORM_MODEL_DEFINITIONS } from '@openexpert/multiform'
+import {
+  MULTIFORM_MODEL_DEFINITIONS,
+  type TemplateFillMethod,
+} from '@openexpert/multiform'
 import { DEMO_TEMPLATE_IDS } from '@openexpert/multiform/demo'
 import { useEveAgent } from 'eve/vue'
 import { GENERATED_BUNDLE_STORAGE_KEY } from '~/utils/multiform-template-storage'
@@ -20,6 +23,7 @@ interface TemplateSummary {
   name: string
   fileName: string
   pages: number
+  fillMethod: TemplateFillMethod
   fillMode: string
   status: string
   ready: boolean
@@ -82,7 +86,12 @@ interface CrmContextRequirement {
 interface CrmContextResponse {
   organization: { slug: string, name: string }
   case: { id: string, title: string }
-  applicants: Array<{ clientId: string, label: string, isPrimary: boolean }>
+  applicants: Array<{
+    clientId: string
+    label: string
+    pesel: string | null
+    isPrimary: boolean
+  }>
   offer: {
     id: string
     bankId: string | null
@@ -461,6 +470,7 @@ const invalidFields = computed(() => (preparedBundle.value?.fields ?? []).filter
   if (value === undefined || value === null || String(value).trim() === '') return false
 
   const stringValue = String(value).trim()
+  if (field.validation?.maxLength !== undefined && stringValue.length > field.validation.maxLength) return true
   if (field.validation?.pattern && !new RegExp(field.validation.pattern).test(stringValue)) return true
   if (field.type === 'number' || field.type === 'currency') {
     const numericValue = Number(stringValue.replace(',', '.'))
@@ -716,13 +726,16 @@ function manualActionLabel(count: number) {
   return 'kroków ręcznych'
 }
 
-function fillModeLabel(mode: string) {
-  const labels: Record<string, string> = {
-    acroform: 'Pola PDF',
-    overlay: 'Nakładanie pól',
-    hybrid: 'Tryb mieszany',
-  }
-  return labels[mode.toLowerCase()] ?? mode
+function fillMethodLabel(method: TemplateFillMethod) {
+  if (method.kind === 'pdf_acroform') return 'Interaktywny PDF'
+  if (method.kind === 'pdf_overlay') return 'Statyczny PDF'
+  if (method.kind === 'pdf_hybrid') return 'Hybrydowy PDF'
+  if (method.kind === 'web_form') return 'Formularz internetowy'
+  return 'Integracja API'
+}
+
+function fillMethodIsSupported(method: TemplateFillMethod) {
+  return method.kind.startsWith('pdf_')
 }
 
 function documentTitle(document: PreparedDocument, index: number) {
@@ -1300,7 +1313,9 @@ onMounted(async () => {
               >{{ template.status }}</span>
             </span>
             <strong class="template-card__name">{{ template.name }}</strong>
-            <span class="template-card__file">{{ template.pages }} str. · {{ fillModeLabel(template.fillMode) }}</span>
+            <span class="template-card__file">
+              {{ template.pages }} str. · {{ fillMethodLabel(template.fillMethod) }}{{ fillMethodIsSupported(template.fillMethod) ? '' : ' · jeszcze nieobsługiwane' }}
+            </span>
             <span class="coverage-row">
               <span>Pokrycie formularza</span><strong>{{ template.mappedFieldCount }}/{{ template.fieldCount }}</strong>
             </span>

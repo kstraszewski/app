@@ -1,5 +1,6 @@
 import type {
   DocumentTemplate,
+  TemplateFillMethod,
   TemplateValidationResult,
 } from '@openexpert/multiform'
 
@@ -9,6 +10,7 @@ export interface MultiformTemplateSummary {
   name: string
   fileName: string
   pages: number
+  fillMethod: TemplateFillMethod
   fillMode: string
   status: string
   ready: boolean
@@ -33,4 +35,3 @@ export interface AdminTemplatesResponse {
   schemaVersion: 1
   templates: RegisteredAdminTemplate[]
 }
-

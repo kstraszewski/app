@@ -42,6 +42,7 @@ export interface FormField {
   requiredWhen?: FieldCondition
   validation?: {
     pattern?: string
+    maxLength?: number
     min?: number
     max?: number
     integer?: boolean

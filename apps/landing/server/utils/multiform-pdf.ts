@@ -1,6 +1,8 @@
 import fontkit from '@pdf-lib/fontkit'
 import {
+  CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
+  resolveTemplateFillMethod,
   type AcroFormTarget,
   type CanonicalFieldType,
   type DocumentTemplate,
@@ -38,6 +40,7 @@ import {
   PDFOptionList,
   PDFRadioGroup,
   PDFSignature,
+  PDFStream,
   PDFString,
   PDFTextField,
   rgb,
@@ -55,6 +58,26 @@ import {
 export type PdfScalar = string | number | boolean | Date | null | undefined
 
 export type FlatPdfValues = Readonly<Record<string, PdfScalar>>
+
+export class MultiformPdfValueError extends Error {
+  readonly canonicalKey: string
+
+  constructor(canonicalKey: string, message: string, cause: unknown) {
+    super(message, { cause })
+    this.name = 'MultiformPdfValueError'
+    this.canonicalKey = canonicalKey
+  }
+}
+
+export class UnsupportedMultiformFillMethodError extends Error {
+  readonly fillMethod: 'web_form' | 'api'
+
+  constructor(fillMethod: 'web_form' | 'api') {
+    super(`Metoda uzupełniania „${fillMethod}” nie jest obsługiwana przez renderer PDF.`)
+    this.name = 'UnsupportedMultiformFillMethodError'
+    this.fillMethod = fillMethod
+  }
+}
 
 export interface PdfBundleDocument {
   fileName: string
@@ -78,11 +101,6 @@ interface PdfRect {
   height: number
 }
 
-type StaticAcroValue
-  = | { kind: 'text', text: string, multiline: boolean }
-    | { kind: 'check', marked: boolean }
-    | { kind: 'radio', selected: string | null }
-
 const dateFormatter = new Intl.DateTimeFormat('pl-PL', {
   day: '2-digit',
   month: '2-digit',
@@ -97,7 +115,12 @@ const currencyFormatter = new Intl.NumberFormat('pl-PL', {
 })
 
 const canonicalTypes = new Map<string, CanonicalFieldType>(
-  CANONICAL_FIELDS.map(field => [field.canonicalKey, field.type]),
+  [...CANONICAL_FIELDS, ...CANONICAL_COMPUTED_BINDINGS].map(field => [field.canonicalKey, field.type]),
+)
+const canonicalMaxLengths = new Map<string, number>(
+  CANONICAL_FIELDS.flatMap(field => field.validation?.maxLength === undefined
+    ? []
+    : [[field.canonicalKey, field.validation.maxLength] as const]),
 )
 
 function mapKey(value: PdfScalar) {
@@ -121,6 +144,28 @@ function mapTargetValue(value: PdfScalar, valueMap?: AcroFormTarget['valueMap'])
   return matchingEntry
     ? { matched: true, value: matchingEntry[1] }
     : { matched: false, value: undefined }
+}
+
+function rethrowPdfValueError(canonicalKey: string, error: unknown): never {
+  if (error instanceof MultiformPdfValueError) throw error
+  if (!(error instanceof Error)) throw error
+
+  if (error.message.startsWith('Numer rachunku NRB')) {
+    throw new MultiformPdfValueError(canonicalKey, error.message, error)
+  }
+  if (
+    error.message.includes('Attempted to set text with length=')
+    || error.message.includes('ma więcej znaków niż pole comb')
+    || error.message.includes('nie mieści się w polu')
+  ) {
+    throw new MultiformPdfValueError(
+      canonicalKey,
+      'Wartość jest zbyt długa dla pola formularza bankowego.',
+      error,
+    )
+  }
+
+  throw error
 }
 
 function parseCurrencyNumber(value: string) {
@@ -161,6 +206,22 @@ function conditionMatches(binding: TemplateBinding, values: FlatPdfValues) {
     ? binding.condition.equals
     : [binding.condition.equals]
   return expected.includes(String(conditionValue))
+}
+
+function overlayBindingValue(binding: TemplateBinding, value: PdfScalar) {
+  if (binding.target.kind !== 'overlay' || !binding.condition) return value
+
+  const isMark = binding.target.rendererVersion === 2
+    ? binding.target.appearance.kind === 'mark'
+    : binding.target.format === 'mark'
+
+  // A conditioned mark represents the selected option, not the truthiness of
+  // its canonical value. This matters for paired Tak/Nie boolean targets: the
+  // `equals: 'false'` target must draw a mark after its condition matched.
+  // Unconditioned boolean checkboxes keep their ordinary true/false behavior.
+  return isMark && binding.condition.canonicalKey === binding.canonicalKey
+    ? true
+    : value
 }
 
 function meaningfulParts(values: readonly PdfScalar[]) {
@@ -228,6 +289,31 @@ function landRegisterParts(value: PdfScalar) {
   return [normalized, '', ''] as const
 }
 
+function dateParts(value: PdfScalar) {
+  const formatted = formatPolishDate(value)
+  const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(formatted)
+  return match
+    ? [match[1], match[2], match[3]] as const
+    : [formatted, '', ''] as const
+}
+
+function fractionParts(value: PdfScalar) {
+  if (value === null || value === undefined) return ['', ''] as const
+  const normalized = String(value).trim()
+  const match = /^(\d+)\s*\/\s*(\d+)$/.exec(normalized)
+  return match
+    ? [match[1], match[2]] as const
+    : [normalized, ''] as const
+}
+
+function compactPolishBankAccount(value: PdfScalar) {
+  const compact = String(value ?? '').replace(/\s/gu, '')
+  if (!/^\d{26}$/.test(compact)) {
+    throw new Error('Numer rachunku NRB musi zawierać dokładnie 26 cyfr.')
+  }
+  return compact
+}
+
 function applyValueFormat(
   format: ValueFormat,
   sourceValues: readonly PdfScalar[],
@@ -251,12 +337,24 @@ function applyValueFormat(
       return houseAndUnit(sourceValues)
     case 'date.ddMMyyyy':
       return formatPolishDate(sourceValues[0])
+    case 'date.day':
+      return dateParts(sourceValues[0])[0]
+    case 'date.month':
+      return dateParts(sourceValues[0])[1]
+    case 'date.year':
+      return dateParts(sourceValues[0])[2]
     case 'landRegister.part1':
       return landRegisterParts(sourceValues[0])[0]
     case 'landRegister.part2':
       return landRegisterParts(sourceValues[0])[1]
     case 'landRegister.part3':
       return landRegisterParts(sourceValues[0])[2]
+    case 'fraction.numerator':
+      return fractionParts(sourceValues[0])[0]
+    case 'fraction.denominator':
+      return fractionParts(sourceValues[0])[1]
+    case 'bankAccount.nrb':
+      return compactPolishBankAccount(sourceValues[0])
   }
 }
 
@@ -289,7 +387,6 @@ function resolveBindingValue(binding: TemplateBinding, values: FlatPdfValues) {
 function bindingType(binding: TemplateBinding): CanonicalFieldType {
   const type = canonicalTypes.get(binding.canonicalKey)
   if (type) return type
-  if (binding.computed) return 'text'
 
   throw new Error(`Brak definicji canonical field dla „${binding.canonicalKey}”.`)
 }
@@ -314,6 +411,27 @@ function formatFieldValue(value: PdfScalar, type: CanonicalFieldType) {
 
   if (typeof value === 'boolean') return value ? 'Tak' : 'Nie'
   return String(value)
+}
+
+function assertCanonicalMaxLength(
+  canonicalKey: string,
+  value: PdfScalar,
+  type: CanonicalFieldType,
+) {
+  const maxLength = canonicalMaxLengths.get(canonicalKey)
+  if (maxLength === undefined) return
+
+  const renderedValue = formatFieldValue(value, type)
+  if (Array.from(renderedValue).length <= maxLength) return
+
+  const cause = new Error(
+    `Wartość pola „${canonicalKey}” przekracza maksymalną długość ${maxLength} znaków.`,
+  )
+  throw new MultiformPdfValueError(
+    canonicalKey,
+    'Wartość jest zbyt długa dla pola formularza bankowego.',
+    cause,
+  )
 }
 
 function isMarked(value: PdfScalar) {
@@ -920,101 +1038,47 @@ function withCoordinateSpace(
   }
 }
 
-function defaultTextAppearance(
-  type: CanonicalFieldType,
-  field?: PDFTextField,
-): PdfTextAppearance {
-  const alignment = field?.getAlignment()
-  const maxLength = field?.getMaxLength()
-  const isComb = Boolean(field?.isCombed() && maxLength)
-
-  return {
-    kind: 'text',
-    fontId: 'dm-sans-regular',
-    fontSizePt: 10,
-    minFontSizePt: 5,
-    letterSpacingPt: 0,
-    lineHeightPt: 11,
-    wrap: type === 'textarea' || field?.isMultiline() ? 'word' : 'none',
-    overflow: 'shrink',
-    horizontalAlign: alignment === TextAlignment.Center
-      ? 'center'
-      : alignment === TextAlignment.Right
-        ? 'right'
-        : 'left',
-    verticalAlign: 'middle',
-    distribution: isComb
-      ? { kind: 'comb', cells: maxLength! }
-      : { kind: 'flow' },
-    color: { space: 'gray', value: 0 },
-    opacity: 1,
-    paddingPt: { top: 1.5, right: 1.5, bottom: 1.5, left: 1.5 },
-  }
-}
-
-function defaultMarkAppearance(role: 'checkbox' | 'radio'): PdfMarkAppearance {
-  const black = { space: 'gray', value: 0 } as const
-  return {
-    kind: 'mark',
-    role,
-    glyph: role === 'radio' ? 'dot' : 'x',
-    color: black,
-    opacity: 1,
-    insetPt: role === 'radio' ? 2.5 : 1.5,
-    strokeWidthPt: 1,
-    outline: {
-      shape: role === 'radio' ? 'circle' : 'square',
-      color: black,
-      strokeWidthPt: 0.6,
-    },
-  }
-}
-
 function writeAcroFormValue(
   field: PDFField,
   value: PdfScalar,
   type: CanonicalFieldType,
-): StaticAcroValue | null {
+): boolean {
   // PDFButton is a push button. It must never be treated as a value field.
-  if (field instanceof PDFButton || field instanceof PDFSignature) return null
+  if (field instanceof PDFButton || field instanceof PDFSignature) return false
   if (field.isReadOnly()) field.disableReadOnly()
 
   if (field instanceof PDFTextField) {
-    const text = formatFieldValue(value, type)
-    field.setText(text)
-    return { kind: 'text', text, multiline: type === 'textarea' }
+    field.setText(formatFieldValue(value, type))
+    return true
   }
 
   if (field instanceof PDFCheckBox) {
-    const marked = isMarked(value)
-    if (marked) field.check()
+    if (isMarked(value)) field.check()
     else field.uncheck()
-    return { kind: 'check', marked }
+    return true
   }
 
   if (field instanceof PDFRadioGroup) {
     if (value === null || value === undefined || value === '' || value === false) {
       field.clear()
-      return { kind: 'radio', selected: null }
+      return true
     }
 
-    const selected = formatFieldValue(value, type)
-    field.select(selected)
-    return { kind: 'radio', selected }
+    field.select(formatFieldValue(value, type))
+    return true
   }
 
   if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
     if (value === null || value === undefined || value === '') {
       field.clear()
-      return { kind: 'text', text: '', multiline: false }
+      return true
     }
 
-    const selected = formatFieldValue(value, type)
-    field.select(selected)
-    return { kind: 'text', text: selected, multiline: false }
+    field.select(formatFieldValue(value, type))
+    return true
   }
 
-  return null
+  return false
 }
 
 function widgetPage(
@@ -1034,79 +1098,217 @@ function widgetPage(
   return undefined
 }
 
-function renderStaticAcroValue(
+function placementOverrideWidgetRect(
+  page: PDFPage,
+  override: NonNullable<AcroFormTarget['placementOverrides']>[number],
+) {
+  const referenceBox = override.coordinateSpace.referenceBox === 'crop'
+    ? page.getCropBox()
+    : page.getMediaBox()
+  const userUnit = pageUserUnit(page)
+  if (!(userUnit > 0)) throw new Error(`Nieprawidłowy /UserUnit strony: ${userUnit}.`)
+
+  const rotation = override.coordinateSpace.orientation === 'visual'
+    ? normalizeRightAngle(page.getRotation().angle)
+    : 0
+  const referenceWidthPt = referenceBox.width * userUnit
+  const referenceHeightPt = referenceBox.height * userUnit
+  const visualHeightPt = rotation === 90 || rotation === 270
+    ? referenceWidthPt
+    : referenceHeightPt
+  const box = override.coordinateSpace.origin === 'top-left'
+    ? {
+        ...override.box,
+        y: visualHeightPt - override.box.y - override.box.height,
+      }
+    : override.box
+  const x = box.x / userUnit
+  const y = box.y / userUnit
+  const width = box.width / userUnit
+  const height = box.height / userUnit
+
+  if (rotation === 90) {
+    return {
+      x: referenceBox.x + referenceBox.width - y - height,
+      y: referenceBox.y + x,
+      width: height,
+      height: width,
+    }
+  }
+  if (rotation === 180) {
+    return {
+      x: referenceBox.x + referenceBox.width - x - width,
+      y: referenceBox.y + referenceBox.height - y - height,
+      width,
+      height,
+    }
+  }
+  if (rotation === 270) {
+    return {
+      x: referenceBox.x + y,
+      y: referenceBox.y + referenceBox.height - x - width,
+      width: height,
+      height: width,
+    }
+  }
+  return {
+    x: referenceBox.x + x,
+    y: referenceBox.y + y,
+    width,
+    height,
+  }
+}
+
+function prepareNativeAcroFormWidgets(
   field: PDFField,
-  staticValue: StaticAcroValue,
-  type: CanonicalFieldType,
   target: AcroFormTarget,
   pagesByRef: ReadonlyMap<string, PDFPage>,
   pagesByAnnotationRef: ReadonlyMap<string, PDFPage>,
   pdf: PDFDocument,
-  font: PDFFont,
 ) {
   const widgets = field.acroField.getWidgets()
 
-  for (const [widgetIndex, widget] of widgets.entries()) {
-    const placementOverride = target.placementOverrides?.find(item => item.widgetIndex === widgetIndex)
-    const page = placementOverride
-      ? pdf.getPages()[placementOverride.page - 1]
-      : widgetPage(widget, pagesByRef, pagesByAnnotationRef, pdf)
-    if (!page) continue
-
-    const widgetRect = widget.getRectangle()
-    const mediaBox = page.getMediaBox()
-    const userUnit = pageUserUnit(page)
-    const coordinateSpace = placementOverride?.coordinateSpace ?? {
-      units: 'pt' as const,
-      referenceBox: 'media' as const,
-      origin: 'bottom-left' as const,
-      orientation: 'unrotated' as const,
+  for (const override of target.placementOverrides ?? []) {
+    const widget = widgets[override.widgetIndex]
+    if (!widget) {
+      throw new Error(
+        `Override pola AcroForm „${target.field}” wskazuje nieistniejący widget ${override.widgetIndex}.`,
+      )
     }
-    const sourceRect = placementOverride?.box ?? {
-      x: (widgetRect.x - mediaBox.x) * userUnit,
-      y: (widgetRect.y - mediaBox.y) * userUnit,
-      width: widgetRect.width * userUnit,
-      height: widgetRect.height * userUnit,
+    const currentPage = widgetPage(widget, pagesByRef, pagesByAnnotationRef, pdf)
+    const overridePage = pdf.getPages()[override.page - 1]
+    if (!currentPage) {
+      throw new Error(`Nie można ustalić strony widgetu ${override.widgetIndex} pola „${target.field}”.`)
     }
-
-    withCoordinateSpace(page, coordinateSpace, ({ height }) => {
-      const rect = coordinateSpace.origin === 'top-left'
-        ? { ...sourceRect, y: height - sourceRect.y - sourceRect.height }
-        : sourceRect
-      if (staticValue.kind === 'text') {
-        const appearance = target.appearance?.kind === 'text'
-          ? target.appearance
-          : defaultTextAppearance(type, field instanceof PDFTextField ? field : undefined)
-        drawPreciseTextInRect(page, font, staticValue.text, rect, appearance)
-      }
-      else if (staticValue.kind === 'check') {
-        const appearance = target.appearance?.kind === 'mark'
-          ? target.appearance
-          : defaultMarkAppearance('checkbox')
-        drawPreciseMarkInRect(page, rect, appearance, staticValue.marked)
-      }
-      else if (staticValue.kind === 'radio') {
-        const appearance = target.appearance?.kind === 'mark'
-          ? target.appearance
-          : defaultMarkAppearance('radio')
-        const onValue = widget.getOnValue()
-        const selectedValue = field instanceof PDFRadioGroup
-          ? field.acroField.getValue()
-          : undefined
-        const marked = Boolean(
-          staticValue.selected
-          && onValue
-          && selectedValue
-          && onValue.toString() === selectedValue.toString(),
-        )
-        drawPreciseMarkInRect(page, rect, appearance, marked)
-      }
-    })
-
-    // The value remains in /V, while the targeted widget cannot cover or
-    // duplicate the deterministic page content in PDF viewers.
-    widget.setFlag(AnnotationFlags.Hidden)
+    if (!overridePage) {
+      throw new Error(`Nie istnieje strona ${override.page} wskazana przez override pola „${target.field}”.`)
+    }
+    if (!samePdfObject(currentPage.ref, overridePage.ref)) {
+      throw new Error(
+        `Przenoszenie widgetu pola AcroForm „${target.field}” pomiędzy stronami nie jest obsługiwane.`,
+      )
+    }
+    widget.setRectangle(placementOverrideWidgetRect(overridePage, override))
   }
+
+  if (field.isReadOnly()) field.disableReadOnly()
+  for (const widget of widgets) {
+    widget.clearFlag(AnnotationFlags.Invisible)
+    widget.clearFlag(AnnotationFlags.Hidden)
+    widget.clearFlag(AnnotationFlags.NoView)
+    widget.clearFlag(AnnotationFlags.ToggleNoView)
+    widget.clearFlag(AnnotationFlags.ReadOnly)
+    widget.clearFlag(AnnotationFlags.LockedContents)
+    widget.setFlag(AnnotationFlags.Print)
+  }
+}
+
+function assertNativeAcroFormAppearances(
+  pdf: PDFDocument,
+  fields: ReadonlySet<PDFField>,
+) {
+  for (const field of fields) {
+    for (const widget of field.acroField.getWidgets()) {
+      const normal = widget.getAppearances()?.normal
+      const appearances = normal instanceof PDFDict ? normal.values() : normal ? [normal] : []
+      if (appearances.length === 0 || appearances.some((appearance) => {
+        const stream = pdf.context.lookupMaybe(appearance, PDFStream)
+        return !stream || stream.getContentsSize() === 0
+      })) {
+        throw new Error(`Pole AcroForm „${field.getName()}” nie ma poprawnego wyglądu /AP /N.`)
+      }
+    }
+  }
+}
+
+function nativeDefaultAppearanceColor(color: PdfColor) {
+  if (color.space === 'gray') return `${color.value} g`
+  if (color.space === 'rgb') return `${color.red} ${color.green} ${color.blue} rg`
+  return `${color.cyan} ${color.magenta} ${color.yellow} ${color.black} k`
+}
+
+function withAutoFitFontSize(defaultAppearance: string | undefined, font: PDFFont) {
+  const fontName = font.name.startsWith('/') ? font.name.slice(1) : font.name
+  if (!defaultAppearance) return `/${fontName} 0 Tf 0 g`
+
+  const matches = [...defaultAppearance.matchAll(/\/([^\s/]+)\s+[-+]?(?:\d+(?:\.\d*)?|\.\d+)\s+Tf/g)]
+  const last = matches.at(-1)
+  if (last?.index === undefined) return `${defaultAppearance}\n/${fontName} 0 Tf`
+
+  const replacement = `/${last[1]} 0 Tf`
+  return `${defaultAppearance.slice(0, last.index)}${replacement}${defaultAppearance.slice(last.index + last[0].length)}`
+}
+
+function enableNativeTextAutoFit(field: PDFTextField, font: PDFFont) {
+  const fieldAppearance = field.acroField.getDefaultAppearance()
+  field.acroField.setDefaultAppearance(withAutoFitFontSize(fieldAppearance, font))
+
+  for (const widget of field.acroField.getWidgets()) {
+    const widgetAppearance = widget.getDefaultAppearance()
+    if (widgetAppearance) {
+      widget.setDefaultAppearance(withAutoFitFontSize(widgetAppearance, font))
+    }
+  }
+}
+
+function updateNativeTextFieldAppearance(
+  field: PDFTextField,
+  target: AcroFormTarget,
+  font: PDFFont,
+) {
+  const appearance = target.appearance
+  if (appearance?.kind !== 'text') {
+    field.defaultUpdateAppearances(font)
+    enableNativeTextAutoFit(field, font)
+    return
+  }
+  if (appearance.letterSpacingPt !== 0) {
+    throw new Error('Natywny wygląd AcroForm nie obsługuje niestandardowego odstępu między literami.')
+  }
+
+  field.setAlignment(
+    appearance.horizontalAlign === 'center'
+      ? TextAlignment.Center
+      : appearance.horizontalAlign === 'right'
+        ? TextAlignment.Right
+        : TextAlignment.Left,
+  )
+
+  const text = field.getText() ?? ''
+  const fontName = font.name.startsWith('/') ? font.name.slice(1) : font.name
+  for (const widget of field.acroField.getWidgets()) {
+    const rect = widget.getRectangle()
+    const borderWidth = widget.getBorderStyle()?.getWidth() ?? 0
+    const rotation = normalizeRightAngle(
+      widget.getAppearanceCharacteristics()?.getRotation() ?? 0,
+    )
+    const dimensions = rotation === 90 || rotation === 270
+      ? { width: rect.height, height: rect.width }
+      : rect
+    const bounds = {
+      x: borderWidth + appearance.paddingPt.left,
+      y: borderWidth + appearance.paddingPt.bottom,
+      width: dimensions.width
+        - borderWidth * 2
+        - appearance.paddingPt.left
+        - appearance.paddingPt.right,
+      height: dimensions.height
+        - borderWidth * 2
+        - appearance.paddingPt.top
+        - appearance.paddingPt.bottom,
+    }
+    const layout = resolveTextLayout(text, font, bounds, appearance)
+    const defaultAppearance = `/${fontName} ${layout.fontSize} Tf ${nativeDefaultAppearanceColor(appearance.color)}`
+    widget.setDefaultAppearance(defaultAppearance)
+    field.acroField.setDefaultAppearance(defaultAppearance)
+  }
+
+  // Generate a native /AP /N using the fitted font size recorded in each
+  // widget's /DA. Afterwards restore font-size 0 in the effective /DA: the
+  // generated /AP stays deterministic, while a PDF viewer can auto-fit a
+  // value that an expert edits later.
+  field.defaultUpdateAppearances(font)
+  enableNativeTextAutoFit(field, font)
 }
 
 function renderLegacyOverlay(
@@ -1248,17 +1450,65 @@ function disablePkoErrorLayer(pdf: PDFDocument) {
   }
 }
 
+function sanitizeInteractiveFormActions(
+  pdf: PDFDocument,
+  form: ReturnType<PDFDocument['getForm']>,
+) {
+  const action = PDFName.of('A')
+  const additionalActions = PDFName.of('AA')
+
+  // Bank sources may ship document and field scripts that recalculate or
+  // reset values on open/focus (PKO does). The generated PDF already contains
+  // authoritative values and appearances, so executable hooks must not survive.
+  pdf.catalog.delete(PDFName.of('OpenAction'))
+  pdf.catalog.delete(additionalActions)
+  const names = pdf.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)
+  names?.delete(PDFName.of('JavaScript'))
+
+  form.acroForm.dict.delete(PDFName.of('CO'))
+  form.acroForm.dict.delete(PDFName.of('NeedAppearances'))
+  form.acroForm.dict.delete(additionalActions)
+
+  for (const [acroField] of form.acroForm.getAllFields()) {
+    acroField.dict.delete(action)
+    acroField.dict.delete(additionalActions)
+  }
+  for (const field of form.getFields()) {
+    for (const widget of field.acroField.getWidgets()) {
+      widget.dict.delete(action)
+      widget.dict.delete(additionalActions)
+    }
+  }
+
+  for (const page of pdf.getPages()) {
+    page.node.delete(additionalActions)
+    for (const annotation of page.node.Annots()?.asArray() ?? []) {
+      const dictionary = pdf.context.lookupMaybe(annotation, PDFDict)
+      dictionary?.delete(action)
+      dictionary?.delete(additionalActions)
+    }
+  }
+}
+
 export async function fillPdfTemplate(
   template: DocumentTemplate,
   sourceBytes: Uint8Array,
   fontBytes: Uint8Array,
   values: FlatPdfValues,
 ) {
+  const fillMethod = resolveTemplateFillMethod(template)
+  if (fillMethod.kind === 'web_form' || fillMethod.kind === 'api') {
+    throw new UnsupportedMultiformFillMethodError(fillMethod.kind)
+  }
+  const acceptsAcroForm = fillMethod.kind === 'pdf_acroform' || fillMethod.kind === 'pdf_hybrid'
+  const acceptsOverlay = fillMethod.kind === 'pdf_overlay' || fillMethod.kind === 'pdf_hybrid'
+
   const pdf = await PDFDocument.load(sourceBytes, { updateMetadata: false })
   pdf.registerFontkit(fontkit)
   const font = await pdf.embedFont(fontBytes, { subset: true })
   const form = pdf.getForm()
   form.deleteXFA()
+  sanitizeInteractiveFormActions(pdf, form)
 
   const pages = pdf.getPages()
   const pagesByRef = new Map(pages.map(page => [page.ref.toString(), page]))
@@ -1268,26 +1518,89 @@ export async function fillPdfTemplate(
       pagesByAnnotationRef.set(annotation.toString(), page)
     }
   }
-  let changedAcroForm = false
+  const nativeAcroFormFields = new Set<PDFField>()
+  const nativeAcroFormFieldsByName = new Map<string, PDFField>()
+  const nativeAcroFormBindingsByName = new Map<string, {
+    canonicalKey: string
+    target: AcroFormTarget
+  }>()
+
+  for (const binding of template.bindings) {
+    if (binding.target.kind === 'overlay' && !acceptsOverlay) {
+      throw new Error(
+        `Metoda „${fillMethod.kind}” nie obsługuje targetu overlay „${binding.canonicalKey}”.`,
+      )
+    }
+    if (binding.target.kind === 'acroform' && !acceptsAcroForm) {
+      throw new Error(
+        `Metoda „${fillMethod.kind}” nie obsługuje targetu AcroForm „${binding.canonicalKey}”.`,
+      )
+    }
+  }
+
+  // Visibility and editability belong to the template mapping, not to whether
+  // this particular request happened to contain a value. This is especially
+  // important for PKO, whose optional source widgets start as Hidden+Print.
+  if (acceptsAcroForm) {
+    for (const binding of template.bindings) {
+      if (binding.target.kind !== 'acroform') continue
+      const field = form.getFieldMaybe(binding.target.field)
+      if (!field) {
+        throw new Error(`Pole AcroForm „${binding.target.field}” nie istnieje w dokumencie.`)
+      }
+      prepareNativeAcroFormWidgets(
+        field,
+        binding.target,
+        pagesByRef,
+        pagesByAnnotationRef,
+        pdf,
+      )
+      nativeAcroFormFields.add(field)
+      nativeAcroFormFieldsByName.set(binding.target.field, field)
+      nativeAcroFormBindingsByName.set(binding.target.field, {
+        canonicalKey: binding.canonicalKey,
+        target: binding.target,
+      })
+    }
+  }
 
   for (const binding of template.bindings) {
     if (!conditionMatches(binding, values)) continue
 
-    const resolved = resolveBindingValue(binding, values)
+    let resolved: ReturnType<typeof resolveBindingValue>
+    try {
+      resolved = resolveBindingValue(binding, values)
+    }
+    catch (error) {
+      rethrowPdfValueError(binding.canonicalKey, error)
+    }
     if (!resolved.present) continue
 
     const rawValue = resolved.value
     const type = bindingType(binding)
+    assertCanonicalMaxLength(binding.canonicalKey, rawValue, type)
 
     if (binding.target.kind === 'unmapped') continue
 
     if (binding.target.kind === 'overlay') {
-      renderOverlay(binding.target, type, rawValue, pages, font, template.overlayOrigin)
+      try {
+        renderOverlay(
+          binding.target,
+          type,
+          overlayBindingValue(binding, rawValue),
+          pages,
+          font,
+          template.overlayOrigin,
+        )
+      }
+      catch (error) {
+        rethrowPdfValueError(binding.canonicalKey, error)
+      }
       continue
     }
 
     const target = binding.target
-    const field = form.getFieldMaybe(target.field)
+    const field = nativeAcroFormFieldsByName.get(target.field) ?? form.getFieldMaybe(target.field)
     if (!field) {
       throw new Error(`Pole AcroForm „${target.field}” nie istnieje w dokumencie.`)
     }
@@ -1295,24 +1608,37 @@ export async function fillPdfTemplate(
     const mapped = mapTargetValue(rawValue, target.valueMap)
     if (!mapped.matched && !(field instanceof PDFCheckBox)) continue
 
-    const mappedValue = mapped.matched ? mapped.value : false
-    const staticValue = writeAcroFormValue(field, mappedValue, type)
-    if (!staticValue) continue
-
-    renderStaticAcroValue(
-      field,
-      staticValue,
-      type,
-      target,
-      pagesByRef,
-      pagesByAnnotationRef,
-      pdf,
-      font,
-    )
-    changedAcroForm = true
+    // For an individual checkbox valueMap is a selection predicate: when the
+    // canonical value matches this target, the target must be checked even if
+    // the PDF's own export value is a falsy-looking string such as `nie`.
+    // PDFCheckBox.check() writes the widget's real on-value into /V.
+    const mappedValue = field instanceof PDFCheckBox && target.valueMap
+      ? mapped.matched
+      : mapped.matched
+        ? mapped.value
+        : false
+    try {
+      if (!writeAcroFormValue(field, mappedValue, type)) continue
+    }
+    catch (error) {
+      rethrowPdfValueError(binding.canonicalKey, error)
+    }
   }
 
-  if (changedAcroForm) form.updateFieldAppearances(font)
+  if (nativeAcroFormFields.size > 0) {
+    for (const [fieldName, binding] of nativeAcroFormBindingsByName) {
+      const field = nativeAcroFormFieldsByName.get(fieldName)
+      if (!(field instanceof PDFTextField)) continue
+      try {
+        updateNativeTextFieldAppearance(field, binding.target, font)
+      }
+      catch (error) {
+        rethrowPdfValueError(binding.canonicalKey, error)
+      }
+    }
+    form.updateFieldAppearances(font)
+    assertNativeAcroFormAppearances(pdf, nativeAcroFormFields)
+  }
   if (templateIsPko(template)) disablePkoErrorLayer(pdf)
 
   return pdf.save({ updateFieldAppearances: false })

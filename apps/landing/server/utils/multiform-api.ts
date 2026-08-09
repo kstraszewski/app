@@ -1,8 +1,10 @@
 import {
   CANONICAL_FIELDS,
+  resolveTemplateFillMethod,
   type CanonicalFieldDefinition,
   type DocumentTemplate,
   type FieldCondition,
+  type TemplateFillMethod,
 } from '@openexpert/multiform'
 
 const sectionLabels: Record<CanonicalFieldDefinition['group'], string> = {
@@ -11,6 +13,9 @@ const sectionLabels: Record<CanonicalFieldDefinition['group'], string> = {
   loan: 'Parametry kredytu',
   investment: 'Finansowanie inwestycji',
   property: 'Nieruchomość',
+  household: 'Gospodarstwo domowe',
+  liabilities: 'Zobowiązania i obciążenia',
+  declarations: 'Oświadczenia i zgody',
 }
 
 const requiredKeys: ReadonlySet<string> = new Set([
@@ -20,23 +25,58 @@ const requiredKeys: ReadonlySet<string> = new Set([
   'applicants.0.lastName',
   'applicants.0.pesel',
   'loan.purpose',
+  'loan.productType',
   'loan.amount',
   'loan.termMonths',
+  'loan.repaymentDay',
+  'loan.installmentType',
+  'loan.interestType',
+  'loan.disbursementType',
+  'loan.commissionType',
+  'investment.totalCost',
+  'investment.ownFundsPaid',
+  'investment.ownFundsBeforeDisbursement',
+  'investment.ownFundsDuringInvestment',
+  'property.type',
   'property.address.street',
   'property.address.houseNumber',
   'property.address.postalCode',
   'property.address.city',
+  'property.address.county',
+  'property.address.voivodeship',
   'property.marketValue',
+  'collateralProperty.type',
+  'property.ownershipType',
+  'property.ownershipSequence',
+  'loan.currency',
+  'loan.cpiPremiumFinancing',
+  'loan.mortgageEstablishmentMode',
+  'property.appraisalSource',
+  'declarations.selectedLoanRiskVariant',
 ])
 
 const fieldLabels = new Map<string, string>(
   CANONICAL_FIELDS.map(field => [field.canonicalKey, field.label]),
 )
 
+type PdfFillMethod = Extract<TemplateFillMethod, {
+  kind: 'pdf_acroform' | 'pdf_overlay' | 'pdf_hybrid'
+}>
+type DeferredFillMethod = Exclude<TemplateFillMethod, PdfFillMethod>
+
 export type MultiformValue = string | number | boolean
 
 export function isMissingValue(value: unknown) {
   return value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+}
+
+export function canonicalMaxLengthIssue(
+  field: CanonicalFieldDefinition,
+  value: MultiformValue,
+) {
+  const maxLength = field.validation?.maxLength
+  if (maxLength === undefined || String(value).trim().length <= maxLength) return undefined
+  return `Wartość może mieć maksymalnie ${maxLength} znaków.`
 }
 
 export function isRequiredCanonicalKey(key: string) {
@@ -72,12 +112,22 @@ export function isCanonicalFieldRequired(
 }
 
 export function toUiField(field: CanonicalFieldDefinition) {
+  const booleanOptions = field.type === 'boolean'
+    ? [
+        { label: 'Tak', value: 'true' },
+        { label: 'Nie', value: 'false' },
+      ]
+    : undefined
+
   return {
     key: field.canonicalKey,
     label: field.label,
     question: field.form.question,
     helpText: field.form.helpText,
-    type: field.type === 'boolean' ? 'checkbox' : field.type,
+    // A bank declaration must distinguish an unanswered question from an
+    // explicit "Nie". A checkbox cannot represent those three states, so the
+    // client receives an explicit Tak/Nie selector with an empty placeholder.
+    type: field.type === 'boolean' ? 'select' : field.type,
     section: sectionLabels[field.group],
     required: isRequiredCanonicalKey(field.canonicalKey),
     visibleWhen: field.visibleWhen,
@@ -90,7 +140,7 @@ export function toUiField(field: CanonicalFieldDefinition) {
       exclude: [...field.aiMappingHints.exclude],
     },
     placeholder: getPlaceholder(field),
-    options: field.options?.map(option => ({ ...option })),
+    options: booleanOptions ?? field.options?.map(option => ({ ...option })),
     collection: field.collection ? { ...field.collection } : undefined,
     validation: field.validation,
   }
@@ -100,19 +150,14 @@ function getPlaceholder(field: CanonicalFieldDefinition) {
   if (field.canonicalKey.endsWith('.pesel')) return '11 cyfr'
   if (field.canonicalKey === 'property.address.postalCode') return '00-000'
   if (field.type === 'currency') return '0,00'
-  if (field.type === 'select') return 'Wybierz opcję'
+  if (field.type === 'select' || field.type === 'boolean') return 'Wybierz opcję'
   return undefined
 }
 
 export function summarizeTemplate(template: DocumentTemplate) {
-  const targetKinds = new Set(
-    template.bindings
-      .filter(binding => binding.target.kind !== 'unmapped')
-      .map(binding => binding.target.kind),
-  )
-  const fillMode = targetKinds.size > 1
-    ? 'hybrid'
-    : targetKinds.has('overlay') ? 'overlay' : 'acroform'
+  const fillMethod = resolveTemplateFillMethod(template)
+  const fillMethodSupported = pdfFillMethodIsSupported(fillMethod)
+  const fillMode = legacyFillMode(fillMethod)
   const missingCoverageTargets = Math.max(
     0,
     template.coverage.inScopeTargetCount - template.coverage.mappedTargetCount,
@@ -123,6 +168,9 @@ export function summarizeTemplate(template: DocumentTemplate) {
         ? `Pełne pokrycie formularza nie jest gotowe: brakuje ${missingCoverageTargets} z ${template.coverage.inScopeTargetCount} targetów klienta.`
         : 'Pełny inwentarz targetów formularza nie został zatwierdzony.']
   const warnings = [...new Set([
+    ...(fillMethodSupported
+      ? []
+      : [`Metoda ${fillMethod.kind} nie ma jeszcze aktywnego handlera.`]),
     ...coverageWarnings,
     ...template.bindings.flatMap((binding) => {
     const fieldLabel = fieldLabels.get(binding.canonicalKey) ?? binding.canonicalKey
@@ -142,14 +190,70 @@ export function summarizeTemplate(template: DocumentTemplate) {
     name: template.label,
     fileName: template.source.fileName,
     pages: template.source.pageCount,
+    fillMethod,
     fillMode,
-    status: warnings.length ? 'niepełny' : 'gotowy',
-    ready: warnings.length === 0,
+    status: !fillMethodSupported ? 'nieobsługiwany' : warnings.length ? 'niepełny' : 'gotowy',
+    ready: fillMethodSupported && warnings.length === 0,
     fieldCount: template.coverage.inScopeTargetCount,
     mappedFieldCount: template.coverage.mappedTargetCount,
     manualUserActionCount: template.coverage.manualUserActionCount ?? 0,
     warnings,
   }
+}
+
+export function pdfFillMethodIsSupported(
+  method: TemplateFillMethod,
+): method is PdfFillMethod {
+  return method.kind === 'pdf_acroform'
+    || method.kind === 'pdf_overlay'
+    || method.kind === 'pdf_hybrid'
+}
+
+export function firstUnsupportedTemplateFillMethod(
+  templates: readonly DocumentTemplate[],
+) {
+  for (const template of templates) {
+    const fillMethod = resolveTemplateFillMethod(template)
+    if (!pdfFillMethodIsSupported(fillMethod)) {
+      return { templateId: template.id, fillMethod }
+    }
+  }
+  return undefined
+}
+
+export function unsupportedTemplateFillMethodHttpDetails(issue: {
+  templateId: string
+  fillMethod: DeferredFillMethod
+}) {
+  const label = issue.fillMethod.kind === 'web_form'
+    ? 'Formularz internetowy'
+    : 'Integracja API'
+  return {
+    statusCode: 501,
+    statusMessage: `${label} nie jest jeszcze obsługiwany w eksporcie PDF/ZIP.`,
+    data: {
+      fillMethod: issue.fillMethod.kind,
+      templateId: issue.templateId,
+    },
+  }
+}
+
+export function toPreparedDocument(document: DocumentTemplate) {
+  return {
+    id: document.id,
+    templateId: document.id,
+    bank: bankLabel(document.bank),
+    name: document.label,
+    fileName: document.source.fileName,
+    fillMethod: resolveTemplateFillMethod(document),
+  }
+}
+
+function legacyFillMode(method: TemplateFillMethod) {
+  if (method.kind === 'pdf_acroform') return 'acroform'
+  if (method.kind === 'pdf_overlay') return 'overlay'
+  if (method.kind === 'pdf_hybrid') return 'hybrid'
+  return method.kind
 }
 
 export function bankLabel(bank: DocumentTemplate['bank']) {

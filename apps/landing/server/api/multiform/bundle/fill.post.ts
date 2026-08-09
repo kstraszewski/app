@@ -7,11 +7,14 @@ import {
 } from '@openexpert/multiform'
 import { createError, readBody, setHeader } from 'h3'
 import {
+  canonicalMaxLengthIssue,
+  firstUnsupportedTemplateFillMethod,
   isCanonicalFieldRequired,
   isCanonicalFieldVisible,
   isMissingValue,
   normalizeValues,
   readMultiformAsset,
+  unsupportedTemplateFillMethodHttpDetails,
 } from '../../../utils/multiform-api'
 import {
   downloadSelectedCrmAttachments,
@@ -25,6 +28,8 @@ import {
 import {
   createPdfBundle,
   fillPdfTemplate,
+  MultiformPdfValueError,
+  UnsupportedMultiformFillMethodError,
   safeArchiveDirectoryName,
 } from '../../../utils/multiform-pdf'
 
@@ -103,6 +108,15 @@ function validateValues(
       continue
     }
     if (value === undefined) continue
+
+    const maxLengthIssue = canonicalMaxLengthIssue(field, value)
+    if (maxLengthIssue) {
+      issues.push({
+        key: field.canonicalKey,
+        message: maxLengthIssue,
+      })
+      continue
+    }
 
     if (field.options?.length && !field.options.some(option => option.value === String(value))) {
       issues.push({ key: field.canonicalKey, message: 'Wybrano nieobsługiwaną opcję.' })
@@ -339,14 +353,6 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Zestaw template’ów nie odpowiada aktywnym wnioskom CRM. Odśwież kontekst sprawy.',
     })
   }
-  if (crmContext && !crmContext.validation.valid) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Template’y aktywnych wniosków nie są gotowe do eksportu.',
-      data: { blockers: crmContext.validation.blockers },
-    })
-  }
-
   const templateOverrides = crmContext
     ? await resolvePinnedMultiformTemplates(event, crmContext.applications)
     : []
@@ -355,9 +361,22 @@ export default defineEventHandler(async (event) => {
   if (templates.some(template => !template)) {
     throw createError({ statusCode: 400, statusMessage: 'Wybrano nieznany template dokumentu.' })
   }
+  const unsupportedTemplate = firstUnsupportedTemplateFillMethod(
+    templates.filter((template): template is DocumentTemplate => Boolean(template)),
+  )
+  if (unsupportedTemplate) {
+    throw createError(unsupportedTemplateFillMethodHttpDetails(unsupportedTemplate))
+  }
   const templatesToRender = output !== 'zip'
     ? templates.filter(template => template?.id === requestedTemplateId)
     : templates
+  if (crmContext && !crmContext.validation.valid) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Template’y aktywnych wniosków nie są gotowe do eksportu.',
+      data: { blockers: crmContext.validation.blockers },
+    })
+  }
   const archiveDirectoryByApplicationId = crmContext
     ? applicationArchiveDirectories(crmContext)
     : new Map<string, string>()
@@ -520,6 +539,25 @@ export default defineEventHandler(async (event) => {
   }
   catch (error) {
     if (error && typeof error === 'object' && 'statusCode' in error) throw error
+    if (error instanceof UnsupportedMultiformFillMethodError) {
+      const label = error.fillMethod === 'web_form'
+        ? 'Formularz internetowy'
+        : 'Integracja API'
+      throw createError({
+        statusCode: 501,
+        statusMessage: `${label} nie jest jeszcze obsługiwany w eksporcie PDF/ZIP.`,
+        data: { fillMethod: error.fillMethod },
+      })
+    }
+    if (error instanceof MultiformPdfValueError) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'Uzupełnij lub popraw dane formularza.',
+        data: {
+          errors: [{ key: error.canonicalKey, message: error.message }],
+        },
+      })
+    }
     console.error(
       'Multiform PDF bundle rendering failed:',
       error instanceof Error ? error.name : 'UnknownError',

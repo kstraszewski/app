@@ -71,6 +71,12 @@ function validationMessage() {
   if (props.required && (value === undefined || value === null || String(value).trim() === '')) {
     return 'To pole jest wymagane.'
   }
+  if (
+    props.field.validation?.maxLength !== undefined
+    && String(value ?? '').length > props.field.validation.maxLength
+  ) {
+    return `Wpisz maksymalnie ${props.field.validation.maxLength} znaków.`
+  }
   if (props.field.validation?.pattern) return 'Sprawdź format tej wartości.'
   if (props.field.validation?.min !== undefined && props.field.validation?.max !== undefined) {
     return `Podaj wartość od ${props.field.validation.min} do ${props.field.validation.max}.`
@@ -120,6 +126,7 @@ function validationMessage() {
         rows="3"
         :value="String(modelValue ?? '')"
         :placeholder="field.placeholder"
+        :maxlength="field.validation?.maxLength"
         :required="required"
         :disabled="disabled"
         :aria-invalid="showError || undefined"
@@ -150,6 +157,7 @@ function validationMessage() {
         :required="required"
         :disabled="disabled"
         :pattern="inputType(field.type) === 'text' ? field.validation?.pattern : undefined"
+        :maxlength="inputType(field.type) === 'text' ? field.validation?.maxLength : undefined"
         :min="field.validation?.min"
         :max="field.validation?.max"
         :step="inputType(field.type) === 'number' ? inputStep() : undefined"

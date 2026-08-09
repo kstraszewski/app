@@ -1,6 +1,9 @@
-import { prepareBundle, templateApplicantCapacity } from '@openexpert/multiform'
+import {
+  prepareBundle,
+  templateApplicantCapacity,
+} from '@openexpert/multiform'
 import { createError, readBody } from 'h3'
-import { bankLabel, toUiField } from '../../../utils/multiform-api'
+import { toPreparedDocument, toUiField } from '../../../utils/multiform-api'
 import {
   loadCrmMultiformContext,
   parseCrmMultiformSelection,
@@ -91,13 +94,7 @@ export default defineEventHandler(async (event) => {
 
     return {
       templateIds: bundle.templateIds,
-      documents: bundle.documents.map(document => ({
-        id: document.id,
-        templateId: document.id,
-        bank: bankLabel(document.bank),
-        name: document.label,
-        fileName: document.source.fileName,
-      })),
+      documents: bundle.documents.map(toPreparedDocument),
       fields: bundle.fields.map(toUiField),
       collections: bundle.collections.map(collection => ({
         ...collection,

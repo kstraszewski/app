@@ -10,6 +10,10 @@ import {
 import { useRuntimeConfig } from '#imports'
 import { createError, getHeader, setHeader, type H3Event } from 'h3'
 import { parseMultiformServiceCredentials } from './multiform-service-auth'
+import {
+  resolveCrmApplicantProfile,
+  type CrmApplicantPerson,
+} from './multiform-applicants'
 import { resolvePinnedMultiformTemplates } from './multiform-template-repository'
 
 export const CRM_DOCUMENT_BUCKET = 'crm-case-documents'
@@ -140,6 +144,7 @@ export interface CrmMultiformContext {
   applicants: Array<{
     clientId: string
     label: string
+    pesel: string | null
     isPrimary: boolean
   }>
   templateIds: string[]
@@ -1001,7 +1006,7 @@ export async function loadCrmMultiformContext(
   const clientIds = caseClientLinks.map(link => String(link.client_id))
 
   const documentSelect = 'id, client_id, submission_id, name, document_type, storage_bucket, storage_path, mime_type, size_bytes, sha256, status_code'
-  const [clientDocumentsResult, bankDocumentsResult, clientsResult] = await Promise.all([
+  const [clientDocumentsResult, bankDocumentsResult, clientsResult, peopleResult] = await Promise.all([
     clientAttachmentRequirementCodes.length
       ? dataApi
         .from('crm_documents')
@@ -1033,10 +1038,19 @@ export async function loadCrmMultiformContext(
           .eq('organization_id', organization.id)
           .in('id', clientIds)
       : Promise.resolve({ data: [], error: null }),
+    clientIds.length
+      ? dataApi
+          .from('crm_client_people')
+          .select('client_id, display_name, pesel, role, created_at')
+          .eq('organization_id', organization.id)
+          .in('client_id', clientIds)
+          .order('created_at')
+      : Promise.resolve({ data: [], error: null }),
   ])
   throwDatabaseError(clientDocumentsResult.error)
   throwDatabaseError(bankDocumentsResult.error)
   throwDatabaseError(clientsResult.error)
+  throwDatabaseError(peopleResult.error)
 
   const documents = [...new Map([
     ...(clientDocumentsResult.data ?? []),
@@ -1049,16 +1063,32 @@ export async function loadCrmMultiformContext(
       statusMessage: `Sprawa ma więcej niż ${MAX_CRM_ATTACHMENT_COUNT} dokumentów pasujących do checklisty. Usuń nadmiarowe pliki przed eksportem.`,
     })
   }
-  const clientLabelById = new Map(
+  const clientById = new Map(
     ((clientsResult.data ?? []) as Array<{ id: string, display_name: string }>)
-      .map(client => [String(client.id), String(client.display_name)]),
+      .map(client => [String(client.id), client]),
   )
-  const applicants = caseClientLinks.map((link, index) => ({
-    clientId: String(link.client_id),
-    label: clientLabelById.get(String(link.client_id))
-      ?? `${link.is_primary ? 'Główny wnioskodawca' : 'Wnioskodawca'} ${index + 1}`,
-    isPrimary: Boolean(link.is_primary),
-  }))
+  const peopleByClientId = new Map<string, CrmApplicantPerson[]>()
+  for (const person of (peopleResult.data ?? []) as CrmApplicantPerson[]) {
+    const clientId = String(person.client_id)
+    peopleByClientId.set(clientId, [...(peopleByClientId.get(clientId) ?? []), person])
+  }
+  const applicants = caseClientLinks.map((link, index) => {
+    const clientId = String(link.client_id)
+    const profile = resolveCrmApplicantProfile(
+      clientById.get(clientId),
+      peopleByClientId.get(clientId) ?? [],
+      `${link.is_primary ? 'Główny wnioskodawca' : 'Wnioskodawca'} ${index + 1}`,
+    )
+    return {
+      clientId,
+      label: profile.label,
+      pesel: profile.pesel,
+      isPrimary: Boolean(link.is_primary),
+    }
+  })
+  const applicantLabelByClientId = new Map(
+    applicants.map(applicant => [applicant.clientId, applicant.label]),
+  )
   const requirementForDocument = (document: CrmMultiformDocumentRow) => document.submission_id
     ? documentRequirements.find(requirement => (
         requirement.itemKind === 'bank_document'
@@ -1082,7 +1112,7 @@ export async function loadCrmMultiformContext(
       client_id: document.client_id,
       submission_id: document.submission_id,
       applicant_label: document.client_id
-        ? clientLabelById.get(document.client_id) ?? 'Wnioskodawca'
+        ? applicantLabelByClientId.get(document.client_id) ?? 'Wnioskodawca'
         : null,
       name: document.name,
       document_type: document.document_type,

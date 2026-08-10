@@ -270,6 +270,8 @@ async function submitWaitlist() {
 
       <LazyLandingJourneySection hydrate-never />
 
+      <LazyLandingMultiformSection hydrate-never />
+
       <section id="personalizuj" class="personalize-section" aria-labelledby="personalize-title">
         <div class="personalize-inner">
           <div class="personalize-copy">

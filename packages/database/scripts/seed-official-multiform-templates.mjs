@@ -116,17 +116,33 @@ export function planTemplatePublication(existing, entry) {
       || !existing.current_published_revision_id
       || existing.current_revision_action !== 'published'
       || Number(existing.current_revision_number) !== Number(existing.active_revision)
-      || !sameJson(existing.active_json, entry.templateJson)
-      || !sameJson(existing.active_validation_report, entry.validationReport)
-      || !sameJson(existing.current_revision_json, entry.templateJson)
-      || !sameJson(existing.current_revision_validation, entry.validationReport)
+      || !sameJson(existing.active_json, existing.current_revision_json)
+      || !sameJson(existing.active_validation_report, existing.current_revision_validation)
     ) {
-      throw new Error(`${entry.templateId}: published revision drift requires explicit review`)
+      throw new Error(`${entry.templateId}: published revision state is inconsistent`)
     }
     if (existing.draft_json !== null || Number(existing.draft_revision) !== 0) {
       throw new Error(`${entry.templateId}: an unpublished draft already exists`)
     }
-    return { action: 'unchanged', revision: Number(existing.active_revision) }
+    const payloadMatches = (
+      sameJson(existing.active_json, entry.templateJson)
+      && sameJson(existing.active_validation_report, entry.validationReport)
+    )
+    if (payloadMatches) {
+      if (Number(existing.registry_version) !== Number(entry.registryVersion)) {
+        throw new Error(`${entry.templateId}: registry version differs without payload drift`)
+      }
+      return { action: 'unchanged', revision: Number(existing.active_revision) }
+    }
+    if (Number(entry.registryVersion) !== Number(existing.registry_version) + 1) {
+      throw new Error(
+        `${entry.templateId}: published revision drift requires an exact registry version increment`,
+      )
+    }
+    return {
+      action: 'publish-reviewed-revision',
+      revision: Number(existing.active_revision) + 1,
+    }
   }
 
   if (
@@ -311,6 +327,21 @@ async function publishDraft(database, templateId, entry, revision) {
       published.rows[0].id,
     ],
   )
+}
+
+async function publishReviewedRevision(database, existing, entry, revision) {
+  await database.query(
+    `insert into public.mortgage_document_template_revisions (
+       template_id, action, revision, template_json, validation_report, actor_user_id
+     ) values ($1::uuid, 'draft_saved', $2, $3::jsonb, $4::jsonb, null)`,
+    [
+      existing.id,
+      revision,
+      JSON.stringify(entry.templateJson),
+      JSON.stringify(entry.validationReport),
+    ],
+  )
+  await publishDraft(database, existing.id, entry, revision)
 }
 
 async function recordPublicationEvent(database, entry, source, revision) {
@@ -611,7 +642,7 @@ async function applyManifest(database, manifest) {
   try {
     await database.query(`set local lock_timeout = '15s'`)
     await database.query(`set local statement_timeout = '120s'`)
-    const summary = { created: 0, publishedDraft: 0, unchanged: 0 }
+    const summary = { created: 0, publishedDraft: 0, reviewedRevision: 0, unchanged: 0 }
     for (const entry of manifest.entries) {
       const source = await loadExactBankFile(database, entry)
       const existing = await loadExistingDefinition(database, entry, source)
@@ -625,6 +656,11 @@ async function applyManifest(database, manifest) {
         revision = Number(existing.active_revision) + 1
         await publishDraft(database, existing.id, entry, revision)
         summary.publishedDraft += 1
+      }
+      else if (plan.action === 'publish-reviewed-revision') {
+        revision = plan.revision
+        await publishReviewedRevision(database, existing, entry, revision)
+        summary.reviewedRevision += 1
       }
       else {
         revision = plan.revision
@@ -683,7 +719,7 @@ async function main() {
     await assertRequiredSchema(database)
     const summary = await applyManifest(database, curated)
     process.stdout.write(
-      `Published official templates: ${summary.created} created, ${summary.publishedDraft} existing drafts published, ${summary.unchanged} unchanged. Product releases: ${summary.productReleases.map(release => `${release.bankSlug}/${release.productSlug}:${release.action}`).join(', ')}.\n`,
+      `Published official templates: ${summary.created} created, ${summary.publishedDraft} existing drafts published, ${summary.reviewedRevision} reviewed revisions published, ${summary.unchanged} unchanged. Product releases: ${summary.productReleases.map(release => `${release.bankSlug}/${release.productSlug}:${release.action}`).join(', ')}.\n`,
     )
   } finally {
     if (lockHeld) {

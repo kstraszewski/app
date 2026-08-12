@@ -170,7 +170,7 @@ export const ERSTE_EMPLOYMENT_INCOME_TEMPLATE: DocumentTemplate = {
   id: 'erste-employment-income-2026',
   bank: 'erste',
   label: 'Erste - Zaświadczenie albo oświadczenie o zatrudnieniu i zarobkach',
-  version: 1,
+  version: 2,
   fillMethod: { kind: 'pdf_overlay' },
   source: {
     fileName: 'erste-zaswiadczenie-albo-oswiadczenie-o-zatrudnieniu-i-zarobkach-2026-04-25.pdf',

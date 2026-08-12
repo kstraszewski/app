@@ -325,7 +325,7 @@ export const ERSTE_CLIENT_INFORMATION_CARD_TEMPLATE: DocumentTemplate = {
   id: 'erste-client-information-card-2026',
   bank: 'erste',
   label: 'Erste - Karta Informacyjna Klienta',
-  version: 1,
+  version: 2,
   fillMethod: { kind: 'pdf_overlay' },
   source: {
     fileName: 'erste-karta-informacyjna-klienta-2026-04-25.pdf',

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "openexpert.mortgage-template-publications/2.0",
+  "schemaVersion": "openexpert.mortgage-template-publications/2.1",
   "asOf": "2026-08-09",
   "entries": [
     {
@@ -15085,7 +15085,7 @@
     {
       "templateId": "erste-client-information-card-2026",
       "bankSlug": "erste",
-      "registryVersion": 1,
+      "registryVersion": 2,
       "bankFile": {
         "fileName": "erste-karta-informacyjna-klienta-2026-04-25.pdf",
         "sha256": "a68efa15f28eb014a76cf47896d0fdf68c41852d8889ccb5c8d9b72e70b5b860",
@@ -15093,13 +15093,13 @@
         "effectiveFrom": "2026-04-25",
         "effectiveTo": null
       },
-      "templateContentSha256": "f9b77f096d3ac5ad1eabc6852ec98684b558272d3c0e823977cdb51294662f88",
+      "templateContentSha256": "5f109995125b104c0b56748e47832bafe0cc4a9ffb68807c95086a747e5dca10",
       "templateJson": {
         "schemaVersion": 2,
         "id": "erste-client-information-card-2026",
         "bank": "erste",
         "label": "Erste - Karta Informacyjna Klienta",
-        "version": 1,
+        "version": 2,
         "fillMethod": {
           "kind": "pdf_overlay"
         },
@@ -22019,7 +22019,7 @@
     {
       "templateId": "erste-employment-income-2026",
       "bankSlug": "erste",
-      "registryVersion": 1,
+      "registryVersion": 2,
       "bankFile": {
         "fileName": "erste-zaswiadczenie-albo-oswiadczenie-o-zatrudnieniu-i-zarobkach-2026-04-25.pdf",
         "sha256": "3d57673da0959a1764e9a7014842c75534740d1e6be6c9a8638bc9ac017df0ef",
@@ -22027,13 +22027,13 @@
         "effectiveFrom": "2026-04-25",
         "effectiveTo": null
       },
-      "templateContentSha256": "8110d29710f0ea58723bb0ecd83e04627a4bb408fb55b1bb74deb8ff47de2815",
+      "templateContentSha256": "def74b7c83eb2c66b34d4e0a8c05ab880d6c854f6fd8e3a2a0615c02edcae956",
       "templateJson": {
         "schemaVersion": 2,
         "id": "erste-employment-income-2026",
         "bank": "erste",
         "label": "Erste - Zaświadczenie albo oświadczenie o zatrudnieniu i zarobkach",
-        "version": 1,
+        "version": 2,
         "fillMethod": {
           "kind": "pdf_overlay"
         },
@@ -34888,6 +34888,108 @@
         "pko-bp-rkm-guarantee-conditions-2026-07-10",
         "pko-bp-rkm-guarantee-application-current-2026-08-09"
       ],
+      "templatePublications": [
+        {
+          "templateId": "pko-bp-mortgage-2022",
+          "registryVersion": 3,
+          "templateContentSha256": "aa11f7d6917c0f1c8cddf8f009d9c828d81fc72738108c30e089006b109b5696"
+        },
+        {
+          "templateId": "pko-bp-applicant-data-2026-05-21",
+          "registryVersion": 1,
+          "templateContentSha256": "d25a07ece0b66edfabfa3f6f8fa80bac070a5769456c6d3b4582dfb898bae111"
+        },
+        {
+          "templateId": "pko-bp-liabilities-to-repay-2025-09-30",
+          "registryVersion": 1,
+          "templateContentSha256": "911c4f0da69650e7847e1952b39b1444b993519da9cf67e9b6ab5eaf6e4c4a85"
+        },
+        {
+          "templateId": "pko-bp-mortgage-place-2025-05-13",
+          "registryVersion": 1,
+          "templateContentSha256": "5a56e2d5406c157e89b99390145ea8bc8e86dd2b28c76b26c77702d73539aeae"
+        },
+        {
+          "templateId": "pko-bp-owned-properties-2025-05-13",
+          "registryVersion": 1,
+          "templateContentSha256": "1b0695e13a2ee57ffeac25e40d144d86351c706aed419d8f4b4c48e407a6d3b5"
+        },
+        {
+          "templateId": "pko-bp-employment-certificate-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "0d32aef7e921e70bfa87d681a642cfa333fb24a0d59318c9ee437728b9ed40a0"
+        },
+        {
+          "templateId": "pko-bp-employment-declaration-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "d94e3f7548b8be23871d3e01456afdd19ce961766aaa6b1522c965f9107049ee"
+        },
+        {
+          "templateId": "pko-bp-house-cost-estimate-2025-07-31",
+          "registryVersion": 1,
+          "templateContentSha256": "a627c8b47b4288c6aca516096da14b77511b1daeabf502433d87f003e2517392"
+        },
+        {
+          "templateId": "pko-bp-apartment-cost-estimate-2024-04-15",
+          "registryVersion": 1,
+          "templateContentSha256": "11c5d8de54b974a9e9a2d770fb52fce9b1fd07a00da7d9aa55dfb27c6ed1e3bb"
+        },
+        {
+          "templateId": "pko-bp-risk-information-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "8f63b64c76c1ad187190039e674ce2e8a73d33a8c772296ce6ed4354908f6ca9"
+        },
+        {
+          "templateId": "pko-bp-general-mortgage-information-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "eb1d31ce9f02fc93df27626adc40440d44bc43dd18915b0f01fa13f36c54f8d8"
+        },
+        {
+          "templateId": "pko-bh-general-mortgage-information-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "919c1feabfc7de2efa276c2ee5213635f03c038fe1c4eb885878334fa22d9cff"
+        },
+        {
+          "templateId": "pko-bp-benchmark-fallback-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "177b02bac991e0c6e4953ec217a99f6c8554d15d1eee24a97907312fb98a39d4"
+        },
+        {
+          "templateId": "pko-bh-benchmark-fallback-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "ca89367f5d1b89ec4bc63cb2f334fc5413d4955043abd0778d4a0812d3346c49"
+        },
+        {
+          "templateId": "pko-bp-interest-types-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "5920a7bd214676d99f74f00e40f5099479ee90b3ec7358faa8bcf2316634f819"
+        },
+        {
+          "templateId": "pko-bp-fixed-rate-information-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "9b8dd924bcbb2a93bae9a5e5318d6d24ab6d4c8b3cd73668a3e9b1fadd82d458"
+        },
+        {
+          "templateId": "pko-bp-rkm-eligibility-declaration-2026-07-10",
+          "registryVersion": 1,
+          "templateContentSha256": "69f2c76c3af5858d4543a295557a8ec0543555914e8428248d3838f26e389c7f"
+        },
+        {
+          "templateId": "pko-bp-rkm-family-repayment-conditions-2026-07-10",
+          "registryVersion": 1,
+          "templateContentSha256": "3dd89ab5597141a7013031c106555554a81a956732fb4b268bb0636c0f837350"
+        },
+        {
+          "templateId": "pko-bp-rkm-guarantee-conditions-2026-07-10",
+          "registryVersion": 1,
+          "templateContentSha256": "ef225a5540e55a988f7c3e01a4e7cff7ac41f302800fe55afde815b8d5c39ed3"
+        },
+        {
+          "templateId": "pko-bp-rkm-guarantee-application-current-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "afda789d7049df830426e5652e625c57d277e26a42bb544f94aa4695283f6a07"
+        }
+      ],
       "documentRequirements": [
         {
           "code": "identity_verification",
@@ -35361,7 +35463,7 @@
           "notes": "Dostarczane po umowie; nie blokuje złożenia pierwotnego wniosku."
         }
       ],
-      "releaseContentSha256": "34a614af11c308cdfe7bf33aba1c6910bf8a602474eba6de6785beb3b96fafd7"
+      "releaseContentSha256": "0d6efdbf76a865eac9b2e6da75cc6527710c19c709fa1ccb6f4f297a2f382efb"
     },
     {
       "bankSlug": "ing",
@@ -35374,6 +35476,33 @@
         "ing-general-mortgage-information-2026-05-31",
         "ing-appraisal-guidelines-2026-08-09",
         "ing-appraiser-conflict-statement-2026-05-31"
+      ],
+      "templatePublications": [
+        {
+          "templateId": "ing-income-certificate-2026-03-08",
+          "registryVersion": 1,
+          "templateContentSha256": "2a6351317e6e39a5a0195461cb850fd6f44ffe9824e4ca547bb786d808c1783b"
+        },
+        {
+          "templateId": "ing-business-form-2015-11-09",
+          "registryVersion": 1,
+          "templateContentSha256": "454971c5da8a9671bfb29caf54c766e85e372c13c9892788d1aea665167155b3"
+        },
+        {
+          "templateId": "ing-general-mortgage-information-2026-05-31",
+          "registryVersion": 1,
+          "templateContentSha256": "f30290c912845515c94bf80b741fcc3d4ae2e2a9420bb53d937d3241d3c3716e"
+        },
+        {
+          "templateId": "ing-appraisal-guidelines-2026-08-09",
+          "registryVersion": 1,
+          "templateContentSha256": "9defbc98f379a515429516611b7be8d9d2ec2d17b82a8b4296beb0b63d68a697"
+        },
+        {
+          "templateId": "ing-appraiser-conflict-statement-2026-05-31",
+          "registryVersion": 1,
+          "templateContentSha256": "88bc2f7162388ad812698651bed826272a03a5cad0af44534485020afc2f82f2"
+        }
       ],
       "documentRequirements": [
         {
@@ -36044,7 +36173,7 @@
           }
         }
       ],
-      "releaseContentSha256": "e2fa4302f4e73532b3eeb3a0252898556bd3162c5b04e4557faad69b273fb5ef"
+      "releaseContentSha256": "aaf9ecc2d2e31d45856a347c1c1b1dcbef5f02d3f38de32413480c18305112a4"
     },
     {
       "bankSlug": "erste",
@@ -36061,6 +36190,53 @@
         "erste-mortgage-2026",
         "erste-rkm-guarantee-conditions-2026",
         "erste-rkm-family-conditions-2026"
+      ],
+      "templatePublications": [
+        {
+          "templateId": "erste-preliminary-conditions-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "716ad72f3d61b7ede050f79f74d9e8c19958e676178b8ef69410a62968cc8154"
+        },
+        {
+          "templateId": "erste-client-information-card-2026",
+          "registryVersion": 2,
+          "templateContentSha256": "5f109995125b104c0b56748e47832bafe0cc4a9ffb68807c95086a747e5dca10"
+        },
+        {
+          "templateId": "erste-risk-cost-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "19b1edf8830436bf75b5280ba6902dd501445a92f2d9d599ebf8141210dc1669"
+        },
+        {
+          "templateId": "erste-general-mortgage-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "dec1d3bfb0cbaa11a6c433cc8bb9a35243bc8dd140740cb8e7061df7fba275e6"
+        },
+        {
+          "templateId": "erste-employment-income-2026",
+          "registryVersion": 2,
+          "templateContentSha256": "def74b7c83eb2c66b34d4e0a8c05ab880d6c854f6fd8e3a2a0615c02edcae956"
+        },
+        {
+          "templateId": "erste-investor-statement-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "0ee4653d891c034b2bb2effde3c0ededf911240531f9e98abb05fb19bc3f578f"
+        },
+        {
+          "templateId": "erste-mortgage-2026",
+          "registryVersion": 2,
+          "templateContentSha256": "0c89e8ee5a497381ac29d1514c86e97c351e8af985a6bdbfa4983c5b5386e131"
+        },
+        {
+          "templateId": "erste-rkm-guarantee-conditions-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "f87458b015292bd8f24bbe89206fe0389ea061d4efc6dde270dc02e183fa8789"
+        },
+        {
+          "templateId": "erste-rkm-family-conditions-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "f80424d5d7e45f1db9188cc4a9bb2e48a87ff8fce75d493e20cff1d92e7c314d"
+        }
       ],
       "documentRequirements": [
         {
@@ -36460,7 +36636,7 @@
           }
         }
       ],
-      "releaseContentSha256": "f5808e007700bdb7463ac5b20a67e1656568b604d70d4c21da7d72d1cabc6d9d"
+      "releaseContentSha256": "8e0ef12d21acbe36a4651d1b336e9a22b8fdec672b6f3dbfc8f1ca7685024536"
     },
     {
       "bankSlug": "mbank",
@@ -36475,6 +36651,43 @@
         "mbank-civil-contract-income-2026",
         "mbank-general-mortgage-information-2026",
         "mbank-risk-information-2026"
+      ],
+      "templatePublications": [
+        {
+          "templateId": "mbank-information-request-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "73c68cd57ddba2469ed17e64f1a792f4893b016d590bbf8c2238a7b0ae23faef"
+        },
+        {
+          "templateId": "mbank-applicant-data-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "0b9bfc072dbcf8108ff6d7ab6fbb195b1344a62f04fbd017c2b88c428504b689"
+        },
+        {
+          "templateId": "mbank-business-data-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "d7cf912d7a6ab79c48272a0d6be692d3e73edee16d14f69e637236ac496aa710"
+        },
+        {
+          "templateId": "mbank-employment-income-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "7eabc002ee4395b9d93a12e21d70db67549ba4c58b1774acc54ff45dd2a843d6"
+        },
+        {
+          "templateId": "mbank-civil-contract-income-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "adc02301930edceb52ce9b27e8a0b656d3b7deb0ba2bee4afb28f523f9e559dd"
+        },
+        {
+          "templateId": "mbank-general-mortgage-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "08fed5f8521ecc9dc9a6f58c05a6dd859f7c2b50e6e2189cc59adf7e945bd08e"
+        },
+        {
+          "templateId": "mbank-risk-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "8688ee18ce1f2b78f58063a5ebc82b2b92ff3e1f94e9784adec2f00ee011257c"
+        }
       ],
       "documentRequirements": [
         {
@@ -36946,7 +37159,7 @@
           }
         }
       ],
-      "releaseContentSha256": "db1f5b21abebd47c8f83eae44fa9694f1d1c26c48929bfd390b605361cd898f0"
+      "releaseContentSha256": "c739bc6a6a6ded1e938bf124d0cdc08748e64ba0f250b2b2749c5580f221cd5a"
     },
     {
       "bankSlug": "pekao",
@@ -36962,6 +37175,48 @@
         "pekao-applicant-employment-statement-2026",
         "pekao-business-statement-2026",
         "pekao-construction-cost-estimate-2026"
+      ],
+      "templatePublications": [
+        {
+          "templateId": "pekao-mortgage-2026-manual",
+          "registryVersion": 1,
+          "templateContentSha256": "4df26edcc77eff51825a2efb5e040c0ddcbae8df41f8a21a8ec7f2815fd758ed"
+        },
+        {
+          "templateId": "pekao-applicant-information-card-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "4ddeba8226f46a7598ee5818f6abf9e9979b3b64bcb4cfc3644dc148751660c4"
+        },
+        {
+          "templateId": "pekao-iad-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "b3023e67429411a4822f3c79662e67256289157029139e6910f19ba5da9cf006"
+        },
+        {
+          "templateId": "pekao-general-mortgage-information-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "1d426fc14760949b8c796f843318564ba31391c6f9f5f8b6f95c957d1c712a65"
+        },
+        {
+          "templateId": "pekao-employer-income-certificate-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "9d1e1c2b6cc9f392be41eb755754c2966609888f3aebeb9e7ad07aecbfaf9873"
+        },
+        {
+          "templateId": "pekao-applicant-employment-statement-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "993bae80dfbef77724141e4535c9e10578036192d3804dd8c46e6f68f6701f88"
+        },
+        {
+          "templateId": "pekao-business-statement-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "74e879a268d6b6ac10bc49770aca7769bdea9ae45ac67d1077f3636408c97b92"
+        },
+        {
+          "templateId": "pekao-construction-cost-estimate-2026",
+          "registryVersion": 1,
+          "templateContentSha256": "b064e0d0b7151e09ac50b56d1987638e390e31bd462b74060a4d71547a142c8c"
+        }
       ],
       "documentRequirements": [
         {
@@ -37686,7 +37941,7 @@
           }
         }
       ],
-      "releaseContentSha256": "5651535b36e4220783c03fa9f8b50b8d64a46fe780101b770f58db9ec9189640"
+      "releaseContentSha256": "15da176d4f459a7f831d8ac24ac558141056cb8c7d8f62d6794f5d5d83d05c10"
     }
   ]
 }

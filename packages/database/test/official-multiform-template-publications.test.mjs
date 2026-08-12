@@ -36,8 +36,14 @@ test('curated publication artifact exactly matches every reviewed DB-pinned temp
     assert.ok(release.calculatorSchemaVersion >= 2)
     assert.ok(release.templateIds.length > 0)
     for (const templateId of release.templateIds) {
-      assert.ok(curated.entries.some(entry => (
+      const entry = curated.entries.find(entry => (
         entry.bankSlug === release.bankSlug && entry.templateId === templateId
+      ))
+      assert.ok(entry)
+      assert.ok(release.templatePublications.some(publication => (
+        publication.templateId === templateId
+        && publication.registryVersion === entry.registryVersion
+        && publication.templateContentSha256 === entry.templateContentSha256
       )))
     }
   }
@@ -66,6 +72,7 @@ test('publication planner is idempotent and refuses reviewed source or payload d
     source_file_version_id: 'version-1',
     expected_file_id: 'file-1',
     expected_version_id: 'version-1',
+    registry_version: entry.registryVersion,
   }
   assert.deepEqual(planTemplatePublication(null, entry), {
     action: 'create-and-publish',
@@ -107,7 +114,31 @@ test('publication planner is idempotent and refuses reviewed source or payload d
       ...published,
       active_json: { ...entry.templateJson, label: 'unreviewed drift' },
     }, entry),
-    /published revision drift/u,
+    /published revision state is inconsistent/u,
+  )
+  const nextEntry = {
+    ...entry,
+    registryVersion: entry.registryVersion + 1,
+    templateJson: {
+      ...entry.templateJson,
+      version: entry.registryVersion + 1,
+      label: 'Reviewed label update',
+    },
+  }
+  assert.deepEqual(
+    planTemplatePublication(published, nextEntry),
+    { action: 'publish-reviewed-revision', revision: 2 },
+  )
+  assert.throws(
+    () => planTemplatePublication(published, {
+      ...nextEntry,
+      registryVersion: entry.registryVersion + 2,
+      templateJson: {
+        ...nextEntry.templateJson,
+        version: entry.registryVersion + 2,
+      },
+    }),
+    /exact registry version increment/u,
   )
   assert.throws(
     () => planTemplatePublication({

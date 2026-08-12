@@ -21,6 +21,8 @@ const migrationNames = [
   '0042_link_mortgage_templates_to_bank_files.sql',
   '0043_require_database_pinned_multiform_templates.sql',
   '0044_allow_xlsx_mortgage_document_templates.sql',
+  '0045_client_portal_account_management.sql',
+  '0046_verified_portal_booking.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

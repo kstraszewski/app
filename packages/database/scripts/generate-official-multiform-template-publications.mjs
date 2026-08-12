@@ -19,7 +19,7 @@ const publicationManifestPath = resolve(
 const assetDirectory = resolve(mortgageDataDirectory, 'official-bank-file-assets')
 
 export const PUBLICATION_MANIFEST_SCHEMA =
-  'openexpert.mortgage-template-publications/2.0'
+  'openexpert.mortgage-template-publications/2.1'
 
 function releaseIdentity(release) {
   return `${release.bankSlug}:${release.productSlug}`
@@ -127,6 +127,7 @@ export function validatePublicationManifest(value) {
       || !Array.isArray(release.templateIds)
       || release.templateIds.length === 0
       || new Set(release.templateIds).size !== release.templateIds.length
+      || !Array.isArray(release.templatePublications)
       || !Array.isArray(release.documentRequirements)
     ) {
       throw new Error(`productReleases[${index}] is not a DB-pinned release`)
@@ -141,6 +142,24 @@ export function validatePublicationManifest(value) {
     ) {
       throw new Error(
         `${releaseIdentity(release)} requirements do not exactly pin its reviewed templates`,
+      )
+    }
+    const expectedPublications = release.templateIds.map((templateId) => {
+      const entry = manifest.entries.find(candidate => (
+        candidate.bankSlug === release.bankSlug && candidate.templateId === templateId
+      ))
+      if (!entry) {
+        throw new Error(`${releaseIdentity(release)} references unpublished ${templateId}`)
+      }
+      return {
+        templateId,
+        registryVersion: entry.registryVersion,
+        templateContentSha256: entry.templateContentSha256,
+      }
+    })
+    if (canonicalJson(release.templatePublications) !== canonicalJson(expectedPublications)) {
+      throw new Error(
+        `${releaseIdentity(release)} does not pin exact reviewed template publications`,
       )
     }
     for (const templateId of release.templateIds) {
@@ -232,13 +251,29 @@ export async function buildPublicationManifest() {
     })
   }
 
+  const entryByIdentity = new Map(entries.map(entry => [
+    templateIdentity(entry.bankSlug, entry.templateId),
+    entry,
+  ]))
   const productReleases = reviewedProducts.map((item) => {
+    const templatePublications = item.version.multiformTemplateIds.map((templateId) => {
+      const entry = entryByIdentity.get(templateIdentity(item.bank.slug, templateId))
+      if (!entry) {
+        throw new Error(`${item.bank.slug}:${item.product.slug} references unpublished ${templateId}`)
+      }
+      return {
+        templateId,
+        registryVersion: entry.registryVersion,
+        templateContentSha256: entry.templateContentSha256,
+      }
+    })
     const payload = {
       bankSlug: item.bank.slug,
       productSlug: item.product.slug,
       sourceVersionKey: item.version.versionKey,
       calculatorSchemaVersion: item.version.calculatorSchemaVersion,
       templateIds: item.version.multiformTemplateIds,
+      templatePublications,
       documentRequirements: item.version.documentRequirements,
     }
     return {

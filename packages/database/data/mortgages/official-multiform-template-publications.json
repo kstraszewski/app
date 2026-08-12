@@ -15093,7 +15093,7 @@
         "effectiveFrom": "2026-04-25",
         "effectiveTo": null
       },
-      "templateContentSha256": "6c23f65919ddccd8611b7fa0e619a6d0171ed571543c922cd53abdd5dd437df8",
+      "templateContentSha256": "f9b77f096d3ac5ad1eabc6852ec98684b558272d3c0e823977cdb51294662f88",
       "templateJson": {
         "schemaVersion": 2,
         "id": "erste-client-information-card-2026",
@@ -15287,6 +15287,7 @@
           "applicants.0.firstName",
           "applicants.0.lastName",
           "applicants.0.pesel",
+          "applicants.0.birthDate",
           "applicants.0.identityDocumentType",
           "applicants.0.identityDocumentNumber",
           "applicants.0.birthPlace",
@@ -15295,6 +15296,8 @@
           "applicants.0.phone",
           "applicants.0.email",
           "applicants.0.residentialAddress",
+          "applicants.0.correspondenceSameAsResidential",
+          "applicants.0.correspondenceAddress",
           "applicants.0.maritalStatus",
           "applicants.0.housingStatus",
           "applicants.0.householdSize",
@@ -22024,7 +22027,7 @@
         "effectiveFrom": "2026-04-25",
         "effectiveTo": null
       },
-      "templateContentSha256": "c43e1decb609f37f09a6e3766cf2e13e082483f3b5a2b0321df2a0aef9efb801",
+      "templateContentSha256": "8110d29710f0ea58723bb0ecd83e04627a4bb408fb55b1bb74deb8ff47de2815",
       "templateJson": {
         "schemaVersion": 2,
         "id": "erste-employment-income-2026",
@@ -22135,7 +22138,6 @@
           "applicants.0.employmentContractDuration",
           "applicants.0.averageNetIncome",
           "applicants.0.incomeCurrency",
-          "applicants.0.averageNetIncomeInWords",
           "applicants.0.salaryPaymentMethod",
           "applicants.0.salaryGarnished",
           "applicants.0.adverseEmploymentCircumstances",
@@ -23097,7 +23099,13 @@
                   "left": 1.5
                 }
               }
-            }
+            },
+            "computed": true,
+            "valueFrom": [
+              "applicants.0.averageNetIncome",
+              "applicants.0.incomeCurrency"
+            ],
+            "valueFormat": "currency.words"
           },
           {
             "canonicalKey": "applicants.0.salaryPaymentMethod",

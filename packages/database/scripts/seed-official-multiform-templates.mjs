@@ -5,6 +5,7 @@ import { Client } from 'pg'
 import {
   buildPublicationManifest,
   canonicalJson,
+  contentSha256,
   readPublicationManifest,
 } from './generate-official-multiform-template-publications.mjs'
 
@@ -372,10 +373,34 @@ async function recordPublicationEvent(database, entry, source, revision) {
   )
 }
 
-async function verifyProductVersionPins(database, productVersionId, productRelease) {
+export function productVersionPinsMatch(rows, productRelease) {
+  const expectedById = new Map(productRelease.templatePublications.map(publication => [
+    publication.templateId,
+    publication,
+  ]))
+  const actualIds = rows.map(row => row.template_key)
+  return (
+    actualIds.length === productRelease.templateIds.length
+    && productRelease.templateIds.every(templateId => actualIds.includes(templateId))
+    && rows.every((row) => {
+      const expected = expectedById.get(row.template_key)
+      return (
+        expected
+        && row.action === 'published'
+        && row.has_source_file
+        && row.has_source_version
+        && Number(row.template_json?.version) === Number(expected.registryVersion)
+        && contentSha256(row.template_json) === expected.templateContentSha256
+      )
+    })
+  )
+}
+
+async function productVersionPinsMatchDatabase(database, productVersionId, productRelease) {
   const result = await database.query(
     `select template.template_key,
             revision.action,
+            revision.template_json,
             template.source_file_id is not null as has_source_file,
             template.source_file_version_id is not null as has_source_version
        from public.mortgage_product_version_document_templates pin
@@ -387,16 +412,13 @@ async function verifyProductVersionPins(database, productVersionId, productRelea
       order by pin.sort_order, template.template_key`,
     [productVersionId],
   )
-  const actualIds = result.rows.map(row => row.template_key)
-  if (
-    actualIds.length !== productRelease.templateIds.length
-    || productRelease.templateIds.some(templateId => !actualIds.includes(templateId))
-    || result.rows.some(row => (
-      row.action !== 'published' || !row.has_source_file || !row.has_source_version
-    ))
-  ) {
+  return productVersionPinsMatch(result.rows, productRelease)
+}
+
+async function verifyProductVersionPins(database, productVersionId, productRelease) {
+  if (!await productVersionPinsMatchDatabase(database, productVersionId, productRelease)) {
     throw new Error(
-      `${productRelease.bankSlug}:${productRelease.productSlug} does not have all immutable bank-file template pins`,
+      `${productRelease.bankSlug}:${productRelease.productSlug} does not have all exact immutable bank-file template revision pins`,
     )
   }
 }
@@ -466,8 +488,8 @@ async function publishProductRelease(database, release, manifest) {
     && current.multiform_template_policy === 'database_pinned'
     && sameJson(current.document_requirements, release.documentRequirements)
     && sameJson(current.multiform_template_ids, release.templateIds)
+    && await productVersionPinsMatchDatabase(database, current.base_version_id, release)
   ) {
-    await verifyProductVersionPins(database, current.base_version_id, release)
     return { action: 'existing-current-compliant', id: String(current.base_version_id) }
   }
 

@@ -4,11 +4,13 @@ import test from 'node:test'
 import {
   buildPublicationManifest,
   canonicalJson,
+  contentSha256,
   PUBLICATION_MANIFEST_SCHEMA,
   readPublicationManifest,
 } from '../scripts/generate-official-multiform-template-publications.mjs'
 import {
   planTemplatePublication,
+  productVersionPinsMatch,
   releasedProductVersionContentSha256,
 } from '../scripts/seed-official-multiform-templates.mjs'
 import {
@@ -59,6 +61,35 @@ test('product release identity is content-addressed from immutable base and revi
     releasedProductVersionContentSha256('b'.repeat(64), release),
     first,
   )
+})
+
+test('product release pins require the exact reviewed immutable template revisions', async () => {
+  const release = (await readPublicationManifest()).productReleases[0]
+  const rows = release.templatePublications.map(publication => ({
+    template_key: publication.templateId,
+    action: 'published',
+    template_json: {
+      version: publication.registryVersion,
+      publication: publication.templateContentSha256,
+    },
+    has_source_file: true,
+    has_source_version: true,
+  }))
+  const exactRelease = {
+    ...release,
+    templatePublications: release.templatePublications.map((publication, index) => ({
+      ...publication,
+      templateContentSha256: contentSha256(rows[index].template_json),
+    })),
+  }
+  assert.equal(productVersionPinsMatch(rows, exactRelease), true)
+  assert.equal(productVersionPinsMatch([
+    {
+      ...rows[0],
+      template_json: { ...rows[0].template_json, version: rows[0].template_json.version - 1 },
+    },
+    ...rows.slice(1),
+  ], exactRelease), false)
 })
 
 test('publication planner is idempotent and refuses reviewed source or payload drift', async () => {

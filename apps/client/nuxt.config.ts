@@ -151,6 +151,17 @@ export default defineNuxtConfig({
         privateStoreId: process.env.NUXT_VERCEL_BLOB_PRIVATE_STORE_ID || '',
       },
     },
+    bookingSecurity: {
+      trustProxy: process.env.NUXT_BOOKING_SECURITY_TRUST_PROXY === 'true'
+        || (
+          process.env.NUXT_BOOKING_SECURITY_TRUST_PROXY === undefined
+          && process.env.VERCEL === '1'
+        ),
+      trustedIpHeaders: process.env.BETTER_AUTH_IP_ADDRESS_HEADERS
+        || (process.env.VERCEL === '1' ? 'x-vercel-forwarded-for' : ''),
+      rateLimitSecret: process.env.NUXT_BOOKING_RATE_LIMIT_SECRET
+        || (isProduction ? '' : 'openexpert-local-booking-rate-limit-secret'),
+    },
     public: {
       openexpert: {
         portalBaseUrl,

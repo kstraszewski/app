@@ -2,6 +2,8 @@ import fontkit from '@pdf-lib/fontkit'
 import {
   CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
+  formatCurrencyWords,
+  resolveCanonicalValues,
   resolveTemplateFillMethod,
   type AcroFormTarget,
   type CanonicalFieldType,
@@ -332,6 +334,8 @@ function applyValueFormat(
     }
     case 'currency.sum':
       return sumCurrencyValues(sourceValues)
+    case 'currency.words':
+      return formatCurrencyWords(sourceValues[0], String(sourceValues[1] ?? 'PLN')) ?? ''
     case 'fullAddress':
       return fullAddress(values)
     case 'houseAndUnit':
@@ -1500,7 +1504,7 @@ export async function fillPdfTemplate(
   template: DocumentTemplate,
   sourceBytes: Uint8Array,
   fontBytes: Uint8Array,
-  values: FlatPdfValues,
+  inputValues: FlatPdfValues,
 ) {
   const fillMethod = resolveTemplateFillMethod(template)
   if (fillMethod.kind === 'web_form' || fillMethod.kind === 'api') {
@@ -1526,6 +1530,13 @@ export async function fillPdfTemplate(
   if (fillMethod.kind === 'pdf_manual' || fillMethod.kind === 'pdf_readonly') {
     return pdf.save({ updateFieldAppearances: false })
   }
+
+  const resolution = resolveCanonicalValues(inputValues)
+  const resolutionError = resolution.issues.find(issue => issue.severity === 'error')
+  if (resolutionError) {
+    throw new MultiformPdfValueError(resolutionError.key, resolutionError.message, resolutionError)
+  }
+  const values: FlatPdfValues = resolution.values
 
   pdf.registerFontkit(fontkit)
   const font = await pdf.embedFont(fontBytes, { subset: true })

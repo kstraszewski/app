@@ -224,6 +224,7 @@ function completeScenarioValues(activeTemplates: readonly DocumentTemplate[]) {
     'investment.ownFundsPaid': 80_000,
     'investment.ownFundsBeforeDisbursement': 90_000,
     'investment.ownFundsDuringInvestment': 50_000,
+    'investment.ownFunds': 220_000,
 
     'property.type': 'apartment',
     'property.address.street': 'Bukowska',

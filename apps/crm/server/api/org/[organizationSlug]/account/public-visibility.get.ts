@@ -1,4 +1,5 @@
-import { getRequestURL, setHeader } from 'h3'
+import { setHeader } from 'h3'
+import { bookingWidgetPublicUrl } from '#shared/utils/booking-widget-urls'
 import { serverDataBackend } from '~~/server/utils/data-api'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import {
@@ -56,6 +57,9 @@ export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
   const landingBaseUrl = String(
     runtimeConfig.public.openexpert.landingBaseUrl || 'https://www.openexpert.app',
+  )
+  const clientPortalBaseUrl = String(
+    runtimeConfig.public.openexpert.clientPortalBaseUrl || 'http://127.0.0.1:3006',
   )
 
   const [profileResult, userResult, assignmentsResult] = await Promise.all([
@@ -160,11 +164,10 @@ export default defineEventHandler(async (event) => {
         ? 'facility_only'
         : 'hidden'
 
-  const requestOrigin = getRequestURL(event).origin
   const directoryUrl = new URL('/eksperci', landingBaseUrl)
   directoryUrl.hash = `ekspert-${session.userId}`
   const bookingUrl = selectedDirectoryCard
-    ? new URL(`/book/${encodeURIComponent(selectedDirectoryCard.widgetKey)}`, requestOrigin)
+    ? new URL(bookingWidgetPublicUrl(clientPortalBaseUrl, selectedDirectoryCard.widgetKey))
     : null
   if (bookingUrl) bookingUrl.searchParams.set('expertId', session.userId)
   const facilityAppearances = [...new Map(directoryCandidates.map(candidate => [

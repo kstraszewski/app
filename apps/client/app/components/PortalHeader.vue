@@ -23,6 +23,25 @@ const messagesTo = computed(() => {
     : base
 })
 
+const accountMenuItems = computed(() => [[
+  {
+    label: props.userEmail || 'Konto klienta',
+    icon: 'i-lucide-user-round',
+    disabled: true,
+  },
+  {
+    label: 'Ustawienia konta',
+    icon: 'i-lucide-settings-2',
+    to: props.preview ? undefined : '/account',
+    disabled: props.preview,
+  },
+  {
+    label: 'Wyloguj się',
+    icon: 'i-lucide-log-out',
+    onSelect: signOut,
+  },
+]])
+
 const navigationItems = computed(() => [
   {
     label: 'Co teraz',
@@ -122,10 +141,7 @@ async function signOut() {
       <span class="portal-header__divider" aria-hidden="true" />
 
       <UDropdownMenu
-        :items="[[
-          { label: userEmail || 'Konto klienta', icon: 'i-lucide-user-round', disabled: true },
-          { label: 'Wyloguj się', icon: 'i-lucide-log-out', onSelect: signOut },
-        ]]"
+        :items="accountMenuItems"
       >
         <UButton
           color="neutral"

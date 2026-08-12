@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  resolveCanonicalValues,
+  type CanonicalResolvedValueMeta,
+} from '@openexpert/multiform'
 import type { CeidgCompanyData } from '#shared/types/ceidg-company'
 import type { ClientMultiformFormResponse } from '~/types/client-multiform'
 import type { MultiformFieldValue, MultiformFormField } from '~/types/multiform'
@@ -16,6 +20,13 @@ const saving = ref<'draft' | 'complete' | null>(null)
 const saveError = ref('')
 const validationVisible = ref(false)
 const dirty = ref(false)
+const canonicalResolution = computed(() => resolveCanonicalValues(values.value, {
+  origins: Object.fromEntries(Object.keys(values.value).map(key => [key, 'client' as const])),
+}))
+const effectiveValues = computed(() => canonicalResolution.value.values)
+const resolutionIssueByKey = computed(() => new Map(
+  canonicalResolution.value.issues.map(issue => [issue.key, issue]),
+))
 
 const emptyResponse = (): ClientMultiformFormResponse => ({
   data: {
@@ -56,18 +67,24 @@ useHead(() => ({
 
 function conditionMatches(condition?: MultiformFormField['visibleWhen']) {
   if (!condition) return true
-  const value = values.value[condition.canonicalKey]
+  const value = effectiveValues.value[condition.canonicalKey]
   if (value === undefined || value === null || value === '') return false
   const expected = Array.isArray(condition.equals) ? condition.equals : [condition.equals]
   return expected.includes(String(value))
 }
 
-function fieldIsVisible(field: MultiformFormField) {
+function fieldApplies(field: MultiformFormField) {
   return conditionMatches(field.visibleWhen)
     && (
       !field.applicableWhenAny?.length
       || field.applicableWhenAny.some(conditionMatches)
     )
+}
+
+function fieldIsVisible(field: MultiformFormField) {
+  const resolution = canonicalResolution.value.metadata[field.key]
+  return fieldApplies(field)
+    && !(resolution?.origin === 'derived' && ['clean', 'stale'].includes(resolution.status))
 }
 
 function fieldIsRequired(field: MultiformFormField) {
@@ -76,17 +93,18 @@ function fieldIsRequired(field: MultiformFormField) {
 }
 
 function valueIsMissing(field: MultiformFormField) {
-  const value = values.value[field.key]
+  const value = effectiveValues.value[field.key]
   if (field.type === 'checkbox') return value !== true
   return value === undefined || value === null || String(value).trim() === ''
 }
 
 function fieldIsInvalid(field: MultiformFormField) {
   if (!fieldIsVisible(field)) return false
+  if (resolutionIssueByKey.value.get(field.key)?.severity === 'error') return true
   if (fieldIsRequired(field) && valueIsMissing(field)) return true
   if (valueIsMissing(field)) return false
 
-  const rawValue = String(values.value[field.key]).trim()
+  const rawValue = String(effectiveValues.value[field.key]).trim()
   if (field.validation?.maxLength !== undefined && rawValue.length > field.validation.maxLength) return true
   if (field.validation?.pattern && !new RegExp(field.validation.pattern).test(rawValue)) return true
   if (['number', 'currency', 'integer', 'decimal'].includes(field.type)) {
@@ -102,12 +120,19 @@ function fieldIsInvalid(field: MultiformFormField) {
 const visibleFields = computed(() => formResponse.value.data.fields.filter(fieldIsVisible))
 const requiredFields = computed(() => visibleFields.value.filter(fieldIsRequired))
 const invalidFields = computed(() => visibleFields.value.filter(fieldIsInvalid))
+const automaticallyResolvedCount = computed(() => (
+  formResponse.value.data.fields.filter(field => (
+    fieldApplies(field)
+    &&
+    canonicalResolution.value.metadata[field.key]?.origin === 'derived'
+  )).length
+))
 const completedRequiredCount = computed(() => (
   requiredFields.value.filter(field => !valueIsMissing(field)).length
 ))
 const progress = computed(() => requiredFields.value.length
   ? Math.round((completedRequiredCount.value / requiredFields.value.length) * 100)
-  : 100)
+  : visibleFields.value.length ? 100 : 0)
 const companyNipField = computed(() => visibleFields.value.find(field => (
   field.collection?.relativeKey === 'businessNip'
 )))
@@ -144,6 +169,15 @@ function updateValue(key: string, value: MultiformFieldValue) {
   values.value[key] = value
   dirty.value = true
   saveError.value = ''
+}
+
+function fieldResolutionMeta(field: MultiformFormField): CanonicalResolvedValueMeta | undefined {
+  return canonicalResolution.value.metadata[field.key]
+}
+
+function fieldResolutionMessage(field: MultiformFormField) {
+  return resolutionIssueByKey.value.get(field.key)?.message
+    ?? fieldResolutionMeta(field)?.message
 }
 
 function applyCeidgCompany(company: CeidgCompanyData) {
@@ -267,7 +301,12 @@ async function save(completed: boolean) {
           <div>
             <small>Twoja część formularza</small>
             <strong>{{ formResponse.data.applicant.label }}</strong>
-            <p>Ekspert i pozostali wnioskodawcy nie są edytowani z tego widoku.</p>
+            <p>
+              Ekspert i pozostali wnioskodawcy nie są edytowani z tego widoku.
+              <template v-if="automaticallyResolvedCount">
+                {{ automaticallyResolvedCount }} pól uzupełniono automatycznie.
+              </template>
+            </p>
           </div>
         </div>
         <div class="client-multiform__progress">
@@ -287,7 +326,7 @@ async function save(completed: boolean) {
         </template>
         <CaseMultiformCompanyLookup
           :lookup-url="companyLookupUrl"
-          :model-value="values[companyNipField.key]"
+          :model-value="effectiveValues[companyNipField.key]"
           @update:model-value="updateValue(companyNipField.key, $event)"
           @apply="applyCeidgCompany"
         />
@@ -308,9 +347,11 @@ async function save(completed: boolean) {
             >
               <CaseMultiformField
                 :field="field"
-                :model-value="values[field.key]"
+                :model-value="effectiveValues[field.key]"
                 :required="fieldIsRequired(field)"
                 :invalid="validationVisible && fieldIsInvalid(field)"
+                :resolution="fieldResolutionMeta(field)"
+                :resolution-message="fieldResolutionMessage(field)"
                 @update:model-value="updateValue(field.key, $event)"
               />
             </div>

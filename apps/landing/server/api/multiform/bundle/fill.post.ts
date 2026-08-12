@@ -3,6 +3,7 @@ import {
   getTemplate,
   instantiateTemplate,
   prepareBundle,
+  resolveCanonicalValues,
   resolveTemplateFillMethod,
   templateApplicantCapacityIssues,
   templateInstanceIndexes,
@@ -486,13 +487,30 @@ export default defineEventHandler(async (event) => {
       data: { warnings: bundle.warnings },
     })
   }
-  const normalizedValues = normalizeValues(body.values)
+  const submittedValues = normalizeValues(body.values)
   const collectionCounts = parseCollectionCounts(
     body.collectionCounts,
     bundle.collections,
     bundle.fields,
-    normalizedValues,
+    submittedValues,
   )
+  const resolution = resolveCanonicalValues(submittedValues)
+  const normalizedValues = normalizeValues(resolution.values)
+  const resolutionIssues = resolution.issues.filter(issue => issue.severity === 'error')
+  if (resolutionIssues.length) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'Popraw dane źródłowe lub rozstrzygnij konflikt wartości.',
+      data: {
+        errors: resolutionIssues.map(issue => ({
+          key: issue.key,
+          message: issue.message,
+          code: issue.code,
+          expectedValue: issue.expectedValue,
+        })),
+      },
+    })
+  }
   if (
     crmContext
     && bundle.collections.some(collection => collection.key === 'applicants')

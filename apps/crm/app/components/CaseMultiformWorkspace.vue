@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  resolveCanonicalValues,
+  type CanonicalResolvedValueMeta,
+  type CanonicalValueOrigin,
+} from '@openexpert/multiform'
 import type {
   CaseBankApplication,
   CaseDetail,
@@ -21,6 +26,7 @@ import {
   canonicalDisbursementTypeFromIntake,
   canonicalLoanPurposeFromIntake,
   multiformApplicantDefaults,
+  splitPolishStreetAddress,
 } from '~/utils/multiform-prefill'
 import {
   multiformFillMethodIsSupported,
@@ -113,6 +119,16 @@ const sendModalModel = computed({
   },
 })
 const values = ref<Record<string, MultiformFieldValue>>({})
+const valueOrigins = ref<Record<string, CanonicalValueOrigin>>({})
+const canonicalResolution = computed(() => resolveCanonicalValues(values.value, {
+  origins: valueOrigins.value,
+}))
+const effectiveValues = computed<Record<string, MultiformFieldValue>>(() => (
+  canonicalResolution.value.values
+))
+const resolutionIssueByKey = computed(() => new Map(
+  canonicalResolution.value.issues.map(issue => [issue.key, issue]),
+))
 const collectionCounts = ref<Record<string, number>>({})
 const activeCollectionTabs = ref<Record<string, string>>({})
 const activeStep = ref(1)
@@ -199,6 +215,7 @@ const activeProperty = computed(() => (
   ?? props.caseData.properties.find(property => property.id === props.caseData.selected_property_id)
   ?? null
 ))
+const activePropertyAddress = computed(() => splitPolishStreetAddress(activeProperty.value?.address))
 
 const templateIds = computed(() => (
   context.value?.templateIds
@@ -407,7 +424,7 @@ function preparedDocumentIsApplicable(
   preparedDocument: MultiformPrepareResponse['documents'][number],
 ) {
   if (!preparedDocument.includeWhen) return true
-  const actual = values.value[preparedDocument.includeWhen.canonicalKey]
+  const actual = effectiveValues.value[preparedDocument.includeWhen.canonicalKey]
   if (actual === undefined || actual === null || actual === '') return false
   const expected = Array.isArray(preparedDocument.includeWhen.equals)
     ? preparedDocument.includeWhen.equals
@@ -705,6 +722,9 @@ async function loadDraft() {
         ).completed,
       )
       values.value = normalizeDraftValues(response.draft.formValues)
+      valueOrigins.value = Object.fromEntries(
+        Object.keys(values.value).map(key => [key, 'expert' as const]),
+      )
       collectionCounts.value = { ...response.draft.collectionCounts }
       selectedDocumentIds.value = [...response.draft.selectedDocumentIds]
       activeStep.value = Math.max(0, Math.min(4, response.draft.activeStep - 1))
@@ -714,6 +734,7 @@ async function loadDraft() {
     else {
       intakeAnswers.value = defaults.answers
       values.value = {}
+      valueOrigins.value = {}
       collectionCounts.value = {}
       selectedDocumentIds.value = []
       activeStep.value = 1
@@ -740,6 +761,7 @@ function resetWorkspace() {
   selectedDocumentIds.value = []
   excludedPackageDocumentIds.value = []
   values.value = {}
+  valueOrigins.value = {}
   collectionCounts.value = {}
   activeCollectionTabs.value = {}
   activeStep.value = 1
@@ -840,7 +862,7 @@ async function saveDraftNow() {
 
 function conditionMatches(condition?: MultiformFormField['visibleWhen']) {
   if (!condition) return true
-  const value = values.value[condition.canonicalKey]
+  const value = effectiveValues.value[condition.canonicalKey]
   if (value === undefined || value === null) return false
   const expected = Array.isArray(condition.equals) ? condition.equals : [condition.equals]
   return expected.includes(String(value))
@@ -864,13 +886,19 @@ function fieldIsActive(field: MultiformFormField) {
   return field.collection.index < collectionItemCount(collection)
 }
 
-function fieldIsVisible(field: MultiformFormField) {
+function fieldApplies(field: MultiformFormField) {
   return fieldIsActive(field)
     && conditionMatches(field.visibleWhen)
     && (
       !field.applicableWhenAny?.length
       || field.applicableWhenAny.some(conditionMatches)
     )
+}
+
+function fieldIsVisible(field: MultiformFormField) {
+  const resolution = canonicalResolution.value.metadata[field.key]
+  return fieldApplies(field)
+    && !(resolution?.origin === 'derived' && ['clean', 'stale'].includes(resolution.status))
 }
 
 function fieldIsRequired(field: MultiformFormField) {
@@ -887,17 +915,18 @@ function fieldIsRequired(field: MultiformFormField) {
 }
 
 function valueIsMissing(field: MultiformFormField) {
-  const value = values.value[field.key]
+  const value = effectiveValues.value[field.key]
   if (field.type === 'checkbox') return value !== true
   return value === undefined || value === null || String(value).trim() === ''
 }
 
 function fieldIsInvalid(field: MultiformFormField) {
   if (!fieldIsVisible(field)) return false
+  if (resolutionIssueByKey.value.get(field.key)?.severity === 'error') return true
   if (fieldIsRequired(field) && valueIsMissing(field)) return true
   if (valueIsMissing(field)) return false
 
-  const rawValue = String(values.value[field.key]).trim()
+  const rawValue = String(effectiveValues.value[field.key]).trim()
   if (field.validation?.maxLength !== undefined && rawValue.length > field.validation.maxLength) return true
   if (field.validation?.pattern && !new RegExp(field.validation.pattern).test(rawValue)) return true
   if (['number', 'currency', 'integer', 'decimal'].includes(field.type)) {
@@ -910,19 +939,45 @@ function fieldIsInvalid(field: MultiformFormField) {
   return false
 }
 
+function fieldResolutionMeta(field: MultiformFormField): CanonicalResolvedValueMeta | undefined {
+  return canonicalResolution.value.metadata[field.key]
+}
+
+function fieldResolutionMessage(field: MultiformFormField) {
+  return resolutionIssueByKey.value.get(field.key)?.message
+    ?? fieldResolutionMeta(field)?.message
+}
+
+function updateFormValue(key: string, value: MultiformFieldValue) {
+  values.value[key] = value
+  valueOrigins.value[key] = 'expert'
+}
+
 const requiredFields = computed(() => (
   preparedBundle.value?.fields.filter(fieldIsRequired) ?? []
 ))
 const invalidFields = computed(() => (
   preparedBundle.value?.fields.filter(fieldIsInvalid) ?? []
 ))
+const automaticallyResolvedCount = computed(() => (
+  preparedBundle.value?.fields.filter(field => (
+    fieldApplies(field)
+    &&
+    canonicalResolution.value.metadata[field.key]?.origin === 'derived'
+  )).length ?? 0
+))
 const completedRequiredCount = computed(() => (
   requiredFields.value.filter(field => !valueIsMissing(field)).length
 ))
 const formProgress = computed(() => (
-  requiredFields.value.length
+  !preparedBundle.value || preparedBundle.value.fields.length === 0
+    ? 0
+    : requiredFields.value.length
     ? Math.round((completedRequiredCount.value / requiredFields.value.length) * 100)
     : 100
+))
+const formStepReady = computed(() => Boolean(
+  preparedBundle.value && preparedBundle.value.fields.length > 0,
 ))
 
 function buildFormGroups(
@@ -1022,6 +1077,13 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
   if (field.key === 'loan.disbursementType') {
     return canonicalDisbursementTypeFromIntake(intakeAnswers.value.case.trancheDisbursement)
   }
+  if (field.key === 'application.submissionChannel') return 'intermediary'
+  if (field.key === 'intermediary.kind') return 'intermediary_or_partner'
+  if (field.key === 'intermediary.name') return context.value?.organization.name
+  if (field.key === 'intermediary.email') return props.caseData.owner?.email
+  if (field.key === 'intermediary.acceptingPerson' || field.key === 'intermediary.agentName') {
+    return props.caseData.owner?.full_name || undefined
+  }
   if (field.key === 'loan.amount') {
     const grossAmount = primaryApplication.value?.application.gross_loan_amount
     if (grossAmount != null) return grossAmount
@@ -1050,6 +1112,18 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
   if (field.key === 'property.address.city' && activeProperty.value?.city) {
     return activeProperty.value.city
   }
+  if (field.key === 'property.address.street' && activePropertyAddress.value.street) {
+    return activePropertyAddress.value.street
+  }
+  if (field.key === 'property.address.houseNumber' && activePropertyAddress.value.houseNumber) {
+    return activePropertyAddress.value.houseNumber
+  }
+  if (field.key === 'property.address.unitNumber' && activePropertyAddress.value.unitNumber) {
+    return activePropertyAddress.value.unitNumber
+  }
+  if (field.key === 'property.usableArea' && activeProperty.value?.area_m2 != null) {
+    return activeProperty.value.area_m2
+  }
   if (field.key === 'property.marketValue') {
     if (primaryApplication.value?.application.appraisal_value_amount != null) {
       return primaryApplication.value.application.appraisal_value_amount
@@ -1062,6 +1136,22 @@ function suggestedValue(field: MultiformFormField): MultiformFieldValue | undefi
     if (Number.isFinite(propertyValue) && propertyValue > 0) return propertyValue
   }
   return undefined
+}
+
+function suggestedValueOrigin(field: MultiformFormField): CanonicalValueOrigin {
+  if (field.collection?.key === 'applicants') {
+    if (['incomeSource', 'employmentType'].includes(field.collection.relativeKey)) return 'intake'
+    return 'crm'
+  }
+  if (field.key.startsWith('property.')) return 'case'
+  if (['loan.program', 'loan.rkmGuarantee', 'loan.purpose', 'loan.disbursementType'].includes(field.key)) {
+    return 'intake'
+  }
+  return 'case'
+}
+
+function hasMeaningfulValue(value: MultiformFieldValue | undefined) {
+  return value !== undefined && (typeof value !== 'string' || value.trim() !== '')
 }
 
 function initializeForm(bundle: MultiformPrepareResponse) {
@@ -1088,12 +1178,48 @@ function initializeForm(bundle: MultiformPrepareResponse) {
   activeCollectionTabs.value = nextTabs
 
   const nextValues: Record<string, MultiformFieldValue> = {}
+  const nextOrigins: Record<string, CanonicalValueOrigin> = {}
   for (const field of bundle.fields) {
     const previous = values.value[field.key]
     const suggested = suggestedValue(field)
-    nextValues[field.key] = previous ?? suggested ?? (field.type === 'checkbox' ? false : '')
+    if (hasMeaningfulValue(previous)) {
+      nextValues[field.key] = previous!
+      nextOrigins[field.key] = valueOrigins.value[field.key] ?? 'expert'
+    }
+    else if (hasMeaningfulValue(suggested)) {
+      nextValues[field.key] = suggested!
+      nextOrigins[field.key] = suggestedValueOrigin(field)
+    }
+    else {
+      nextValues[field.key] = field.type === 'checkbox' ? false : ''
+      nextOrigins[field.key] = 'input'
+    }
   }
   values.value = nextValues
+  valueOrigins.value = nextOrigins
+}
+
+function refreshUntouchedSuggestedValues() {
+  if (!preparedBundle.value) return
+  const nextValues = { ...values.value }
+  const nextOrigins = { ...valueOrigins.value }
+  let changed = false
+  for (const field of preparedBundle.value.fields) {
+    if (['expert', 'client'].includes(nextOrigins[field.key] ?? '')) continue
+    const suggested = suggestedValue(field)
+    if (!hasMeaningfulValue(suggested)) continue
+    if (
+      !hasMeaningfulValue(nextValues[field.key])
+      || ['crm', 'intake', 'case'].includes(nextOrigins[field.key] ?? '')
+    ) {
+      if (nextValues[field.key] !== suggested) changed = true
+      nextValues[field.key] = suggested!
+      nextOrigins[field.key] = suggestedValueOrigin(field)
+    }
+  }
+  if (!changed) return
+  values.value = nextValues
+  valueOrigins.value = nextOrigins
 }
 
 async function prepareForm(focus = true) {
@@ -1162,13 +1288,20 @@ function activeCollectionInputFields(group: MultiformRepeatableGroup) {
 function applyCeidgCompany(group: MultiformRepeatableGroup, company: CeidgCompanyData) {
   const applicantIndex = activeCollectionIndex(group)
   const availableKeys = new Set(preparedBundle.value?.fields.map(field => field.key) ?? [])
+  const previousValues = values.value
   const merge = mergeCeidgCompanyIntoEmptyFields(
-    values.value,
+    previousValues,
     availableKeys,
     applicantIndex,
     company,
   )
   values.value = merge.values
+  valueOrigins.value = {
+    ...valueOrigins.value,
+    ...Object.fromEntries(Object.entries(merge.values).flatMap(([key, value]) => (
+      value !== previousValues[key] ? [[key, 'case' as const]] : []
+    ))),
+  }
 
   toast.add({
     title: merge.filledCount ? 'Dane firmy uzupełnione' : 'Dane firmy były już wpisane',
@@ -1277,10 +1410,10 @@ function removeCollectionItem(group: MultiformRepeatableGroup) {
 
 function activeValuesPayload() {
   const activeKeys = new Set(
-    (preparedBundle.value?.fields ?? []).filter(fieldIsActive).map(field => field.key),
+    (preparedBundle.value?.fields ?? []).filter(fieldIsVisible).map(field => field.key),
   )
   return Object.fromEntries(
-    Object.entries(values.value).filter(([key]) => activeKeys.has(key)),
+    Object.entries(effectiveValues.value).filter(([key]) => activeKeys.has(key)),
   )
 }
 
@@ -1714,6 +1847,10 @@ async function handlePrimaryAction() {
     return
   }
   if (activeStep.value === 3) {
+    if (!formStepReady.value) {
+      fillError.value = 'Nie przygotowano żadnych pól formularza dla wybranych wniosków.'
+      return
+    }
     validationVisible.value = true
     if (invalidFields.value.length) {
       fillError.value = `Uzupełnij lub popraw oznaczone pola (${invalidFields.value.length}).`
@@ -1768,6 +1905,7 @@ const primaryActionDisabled = computed(() => (
   || sendPending.value
   || Boolean(individualDownloadPending.value)
   || (activeStep.value === 2 && Boolean(formPreparationBlocker.value))
+  || (activeStep.value === 3 && !formStepReady.value)
   || (activeStep.value === 4 && (!contextCanExport.value || !selectedPackageApplicationIds.value.length))
 ))
 
@@ -1811,6 +1949,12 @@ const selectionKey = computed(() => [
 watch(selectionKey, (next, previous) => {
   if (previous && next !== previous) void bootstrapWorkspace()
 })
+
+watch(
+  [context, intakeAnswers, activeProperty, primaryApplication, primaryOffer],
+  refreshUntouchedSuggestedValues,
+  { deep: true },
+)
 
 watch(
   [activeStep, intakeAnswers, values, collectionCounts, selectedDocumentIds],
@@ -2106,6 +2250,9 @@ onBeforeUnmount(() => {
                 Wartości trafią do {{ context.applications.length }} wniosków bankowych
                 i {{ applicablePreparedDocuments.length }} formularzy PDF.
               </span>
+              <span v-if="automaticallyResolvedCount">
+                {{ automaticallyResolvedCount }} pól wyliczono automatycznie i nie wymagają ponownego wpisania.
+              </span>
             </div>
             <div class="case-multiform__progress">
               <span>Wymagane pola</span>
@@ -2133,6 +2280,14 @@ onBeforeUnmount(() => {
             </template>
           </UAlert>
 
+          <UAlert
+            v-else-if="preparedBundle && !formStepReady"
+            color="warning"
+            variant="subtle"
+            title="Brak pól do uzupełnienia"
+            description="Wybrane dokumenty nie udostępniają pól formularza. Wróć do checklisty i sprawdź wybór wniosków."
+          />
+
           <template v-else-if="preparedBundle">
             <div class="case-multiform__document-strip" aria-label="Formularze w paczce">
               <span
@@ -2152,10 +2307,12 @@ onBeforeUnmount(() => {
                     v-for="field in group.fields"
                     :key="field.key"
                     :field="field"
-                    :model-value="values[field.key]"
+                    :model-value="effectiveValues[field.key]"
                     :required="fieldIsRequired(field)"
                     :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
-                    @update:model-value="values[field.key] = $event"
+                    :resolution="fieldResolutionMeta(field)"
+                    :resolution-message="fieldResolutionMessage(field)"
+                    @update:model-value="updateFormValue(field.key, $event)"
                   />
                 </div>
               </fieldset>
@@ -2219,8 +2376,8 @@ onBeforeUnmount(() => {
                     <CaseMultiformCompanyLookup
                       v-if="companyNipKey(group)"
                       :lookup-url="companyLookupUrl"
-                      :model-value="values[companyNipKey(group)]"
-                      @update:model-value="values[companyNipKey(group)] = $event"
+                      :model-value="effectiveValues[companyNipKey(group)]"
+                      @update:model-value="updateFormValue(companyNipKey(group), $event)"
                       @apply="applyCeidgCompany(group, $event)"
                     />
                     <div class="case-multiform__field-grid">
@@ -2228,10 +2385,12 @@ onBeforeUnmount(() => {
                         v-for="field in activeCollectionInputFields(group)"
                         :key="field.key"
                         :field="field"
-                        :model-value="values[field.key]"
+                        :model-value="effectiveValues[field.key]"
                         :required="fieldIsRequired(field)"
                         :invalid="validationVisible && invalidFields.some(item => item.key === field.key)"
-                        @update:model-value="values[field.key] = $event"
+                        :resolution="fieldResolutionMeta(field)"
+                        :resolution-message="fieldResolutionMessage(field)"
+                        @update:model-value="updateFormValue(field.key, $event)"
                       />
                     </div>
                   </div>

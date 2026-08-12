@@ -59,6 +59,10 @@ export interface MultiformFormField {
     max?: number
     integer?: boolean
   }
+  derivation?: {
+    mode: 'when_available'
+    dependencies: string[]
+  }
 }
 
 export interface MultiformPreparedDocument {
@@ -169,6 +173,8 @@ export interface MultiformCrmContext {
   applicants: Array<{
     clientId: string
     label: string
+    firstName: string | null
+    lastName: string | null
     pesel: string | null
     email: string | null
     phone: string | null

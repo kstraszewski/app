@@ -35,6 +35,9 @@ importers:
       '@openexpert/messaging-ui':
         specifier: workspace:*
         version: link:../../packages/messaging-ui
+      '@openexpert/mortgage':
+        specifier: workspace:*
+        version: link:../../packages/mortgage
       '@openexpert/storage':
         specifier: workspace:*
         version: link:../../packages/storage

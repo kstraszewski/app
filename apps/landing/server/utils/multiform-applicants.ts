@@ -5,6 +5,8 @@ interface CrmApplicantClient {
 export interface CrmApplicantPerson {
   client_id: unknown
   display_name?: unknown
+  first_name?: unknown
+  last_name?: unknown
   pesel?: unknown
   email?: unknown
   phone?: unknown
@@ -27,6 +29,8 @@ export function resolveCrmApplicantProfile(
     label: nonEmptyText(person?.display_name)
       ?? nonEmptyText(client?.display_name)
       ?? fallbackLabel,
+    firstName: nonEmptyText(person?.first_name) ?? null,
+    lastName: nonEmptyText(person?.last_name) ?? null,
     pesel: nonEmptyText(person?.pesel) ?? null,
     email: nonEmptyText(person?.email) ?? null,
     phone: nonEmptyText(person?.phone) ?? null,

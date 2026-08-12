@@ -4,7 +4,7 @@ import {
   type InstallmentType,
   type MortgageScenario,
 } from '@openexpert/mortgage'
-import type { BookingPaymentCalculatorSnapshot } from '#shared/types/booking-calculators'
+import type { BookingPaymentCalculatorSnapshot } from '../../../shared/types/booking-calculators'
 
 const emit = defineEmits<{
   started: []

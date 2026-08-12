@@ -35,6 +35,7 @@ const emptyDetail = (): ClientDetailResponse => ({
   owner: null,
   primary_person: null,
   people: [],
+  portal_accounts: [],
   cases: [],
   tasks: [],
   documents: [],
@@ -419,6 +420,7 @@ function appointmentTime(value: string) {
 }
 
 function activityIcon(activityType: string) {
+  if (activityType === 'client_portal_account_archived') return 'i-lucide-archive'
   if (activityType.includes('created')) return 'i-lucide-circle-plus'
   if (activityType.includes('status')) return 'i-lucide-refresh-cw'
   if (activityType.includes('document') || activityType.includes('submission')) return 'i-lucide-file-check-2'
@@ -432,12 +434,19 @@ function activityLabel(activityType: string) {
   return ({
     client_created: 'Utworzenie klienta',
     client_updated: 'Zmiana danych',
+    client_portal_account_archived: 'Archiwizacja konta panelu klienta',
     case_created: 'Nowa sprawa',
     status_changed: 'Zmiana statusu',
     note: 'Notatka',
     submission_created: 'Nowy wniosek',
     settlement_upserted: 'Aktualizacja rozliczenia',
   })[activityType] ?? activityType.replaceAll('_', ' ')
+}
+
+function portalArchiveReasonLabel(reason: string | null): string {
+  if (!reason) return ''
+  if (reason === 'self_service_request') return 'na prośbę klienta w panelu'
+  return reason.replaceAll('_', ' ')
 }
 
 type HistoryItem = {
@@ -459,7 +468,9 @@ const historyItems = computed<HistoryItem[]>(() => {
     category: activityLabel(activity.activity_type),
     title: activity.title,
     description: activity.body || 'Zdarzenie zapisane w historii klienta.',
-    meta: activity.actor?.full_name || activity.actor?.email || 'OpenExpert CRM',
+    meta: activity.activity_type === 'client_portal_account_archived'
+      ? 'Klient · panel klienta'
+      : activity.actor?.full_name || activity.actor?.email || 'OpenExpert CRM',
     tone: 'neutral' as const,
   }))
 
@@ -481,6 +492,49 @@ const historyItems = computed<HistoryItem[]>(() => {
   return [...activities, ...consents].sort((left, right) => (
     new Date(right.date).getTime() - new Date(left.date).getTime()
   ))
+})
+
+const portalAccountStatusMeta = computed(() => {
+  const accounts = data.value.portal_accounts
+  if (!accounts.length) {
+    return {
+      label: 'Brak konta',
+      detail: 'Klient nie ma konta w panelu klienta.',
+      icon: 'i-lucide-user-round-x',
+      color: 'neutral' as const,
+    }
+  }
+
+  const activeAccount = accounts.find(account => (
+    account.status === 'active' && !account.archived_at
+  ))
+  if (activeAccount) {
+    return {
+      label: 'Konto aktywne',
+      detail: `Aktywne od ${formatShortDate(activeAccount.created_at)}.`,
+      icon: 'i-lucide-user-round-check',
+      color: 'success' as const,
+    }
+  }
+
+  const account = accounts[0]!
+  if (account.status === 'archived' || account.archived_at) {
+    return {
+      label: 'Konto zarchiwizowane',
+      detail: account.archive_reason
+        ? `${formatShortDate(account.archived_at || account.updated_at)} · ${portalArchiveReasonLabel(account.archive_reason)}`
+        : `Zarchiwizowane ${formatShortDate(account.archived_at || account.updated_at)}.`,
+      icon: 'i-lucide-archive',
+      color: 'warning' as const,
+    }
+  }
+
+  return {
+    label: account.status.replaceAll('_', ' '),
+    detail: `Ostatnia zmiana ${formatShortDate(account.updated_at)}.`,
+    icon: 'i-lucide-circle-help',
+    color: 'neutral' as const,
+  }
 })
 
 const recentHistory = computed(() => historyItems.value.slice(0, 3))
@@ -1063,6 +1117,19 @@ const headerMenuItems = computed(() => [
                 <div>
                   <dt>Status</dt>
                   <dd>{{ statusMeta.label }}</dd>
+                </div>
+                <div>
+                  <dt>Panel klienta</dt>
+                  <dd class="client-portal-account-status">
+                    <UBadge
+                      :color="portalAccountStatusMeta.color"
+                      variant="subtle"
+                      :icon="portalAccountStatusMeta.icon"
+                    >
+                      {{ portalAccountStatusMeta.label }}
+                    </UBadge>
+                    <small>{{ portalAccountStatusMeta.detail }}</small>
+                  </dd>
                 </div>
                 <div>
                   <dt>Tagi</dt>
@@ -2275,6 +2342,18 @@ const headerMenuItems = computed(() => [
 
 .client-data-list a:hover {
   text-decoration: underline;
+}
+
+.client-portal-account-status {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.client-portal-account-status small {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 450;
 }
 
 .related-people,

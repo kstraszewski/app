@@ -73,16 +73,23 @@ export async function refreshAuthUser(): Promise<AuthenticatedUser | null> {
   }
 }
 
-export async function signOutAuthenticatedUser(): Promise<void> {
+export async function signOutAuthenticatedUser(options: {
+  requireServerSuccess?: boolean
+} = {}): Promise<void> {
+  let clearLocalState = options.requireServerSuccess !== true
   try {
-    await authClient.signOut()
+    const result = await authClient.signOut()
+    if (result.error && options.requireServerSuccess) throw result.error
+    if (!result.error) clearLocalState = true
   }
   finally {
-    useAuthUser().value = null
-    clearNuxtData(key => (
-      key === 'openexpert-organizations'
-      || key.startsWith('account-contexts:')
-      || key.startsWith('client-appointments:')
-    ))
+    if (clearLocalState) {
+      useAuthUser().value = null
+      clearNuxtData(key => (
+        key === 'openexpert-organizations'
+        || key.startsWith('account-contexts:')
+        || key.startsWith('client-appointments:')
+      ))
+    }
   }
 }

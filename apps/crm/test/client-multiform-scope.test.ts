@@ -120,3 +120,24 @@ test('validates required and conditional fields before marking the client form c
     'applicants.0.businessNip': '123',
   }), ['applicants.0.businessNip'])
 })
+
+test('validates PESEL checksum and reconciles its birth date', () => {
+  const fields = [
+    { key: 'applicants.0.pesel', type: 'text', required: true },
+    { key: 'applicants.0.birthDate', type: 'date', required: true },
+  ]
+
+  assert.deepEqual(invalidClientMultiformFieldKeys(fields, {
+    'applicants.0.pesel': '87020223456',
+    'applicants.0.birthDate': '1987-02-02',
+  }), ['applicants.0.pesel'])
+
+  assert.deepEqual(invalidClientMultiformFieldKeys(fields, {
+    'applicants.0.pesel': '85821435745',
+    'applicants.0.birthDate': '1986-02-14',
+  }), ['applicants.0.birthDate'])
+
+  assert.deepEqual(invalidClientMultiformFieldKeys(fields, {
+    'applicants.0.pesel': '85821435745',
+  }), [])
+})

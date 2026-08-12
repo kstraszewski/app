@@ -24,13 +24,27 @@ export interface DirectoryCoordinates {
   longitude: number
 }
 
+export interface DirectoryAvailabilityDate {
+  localDate: string
+  startsAt: string
+  serviceId: string
+}
+
+export interface DirectoryExpertAvailability {
+  status: 'available' | 'none' | 'unknown'
+  timezone: string
+  dates: DirectoryAvailabilityDate[]
+}
+
 export interface DirectoryExpert {
   expertId: string
+  slug: string
   name: string
   avatarUrl?: string | null
   services: DirectoryService[]
   facilities: DirectoryFacilityReference[]
   widgetKey: string
+  availability: DirectoryExpertAvailability
 }
 
 export interface DirectoryFacility {

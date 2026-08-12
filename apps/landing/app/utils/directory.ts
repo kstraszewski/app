@@ -20,12 +20,14 @@ export function directoryHydrationData<T>(
 }
 
 export function directoryBookingUrl(
-  crmBaseUrl: string,
+  bookingBaseUrl: string,
   widgetKey: string,
   expertId?: string,
+  serviceId?: string,
 ): string {
-  const baseUrl = new URL(crmBaseUrl)
+  const baseUrl = new URL(bookingBaseUrl)
   const bookingUrl = new URL(`/book/${encodeURIComponent(widgetKey)}`, baseUrl.origin)
   if (expertId) bookingUrl.searchParams.set('expertId', expertId)
+  if (serviceId) bookingUrl.searchParams.set('serviceId', serviceId)
   return bookingUrl.toString()
 }

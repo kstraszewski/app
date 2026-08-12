@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DirectoryPayload } from '#shared/types/directory'
+import { directoryExpertPath } from '#shared/utils/directory-expert'
 import { directoryBookingUrl, normalizeDirectoryQuery } from '~/utils/directory'
 
 const { canonicalUrl, siteOrigin } = useLandingSeo({
@@ -11,8 +12,10 @@ const { canonicalUrl, siteOrigin } = useLandingSeo({
 })
 
 const runtimeConfig = useRuntimeConfig()
-const crmBaseUrl = String(
-  runtimeConfig.public.openexpert.crmBaseUrl || 'http://127.0.0.1:3004',
+const bookingBaseUrl = String(
+  runtimeConfig.public.openexpert.clientPortalBaseUrl
+  || runtimeConfig.public.openexpert.crmBaseUrl
+  || 'http://127.0.0.1:3006',
 )
 const search = ref('')
 
@@ -55,8 +58,12 @@ const resultText = computed(() => {
 })
 const hasError = computed(() => status.value === 'error' || Boolean(error.value))
 
-function bookingHref(widgetKey: string, expertId: string) {
-  return directoryBookingUrl(crmBaseUrl, widgetKey, expertId)
+function bookingHref(widgetKey: string, expertId: string, serviceId?: string) {
+  return directoryBookingUrl(bookingBaseUrl, widgetKey, expertId, serviceId)
+}
+
+function expertProfileUrl(slug: string): string {
+  return new URL(directoryExpertPath(slug), `${siteOrigin}/`).toString()
 }
 
 useHead(() => ({
@@ -107,7 +114,8 @@ useHead(() => ({
                 position: index + 1,
                 item: {
                   '@type': 'Person',
-                  '@id': `${canonicalUrl}#ekspert-${expert.expertId}`,
+                  '@id': `${expertProfileUrl(expert.slug)}#ekspert`,
+                  url: expertProfileUrl(expert.slug),
                   name: expert.name,
                   image: expert.avatarUrl
                     ? new URL(expert.avatarUrl, `${siteOrigin}/`).toString()
@@ -154,7 +162,11 @@ useHead(() => ({
       v-for="expert in visibleExperts"
       :key="expert.expertId"
       :expert="expert"
-      :booking-href="bookingHref(expert.widgetKey, expert.expertId)"
+      :booking-href="bookingHref(
+        expert.widgetKey,
+        expert.expertId,
+        expert.availability?.dates[0]?.serviceId,
+      )"
     />
   </DirectoryCatalogFrame>
 </template>

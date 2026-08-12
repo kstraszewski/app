@@ -12,6 +12,7 @@ import {
 } from 'pdf-lib'
 
 import {
+  CANONICAL_COMPUTED_BINDINGS,
   CANONICAL_FIELDS,
   getTemplate,
   getTemplateBySourceSha256,
@@ -166,7 +167,6 @@ test('Erste income form is registered, repeated per applicant, and limited to su
     'applicants.1.employmentContractDuration',
     'applicants.1.averageNetIncome',
     'applicants.1.incomeCurrency',
-    'applicants.1.averageNetIncomeInWords',
     'applicants.1.salaryPaymentMethod',
     'applicants.1.salaryGarnished',
     'applicants.1.adverseEmploymentCircumstances',
@@ -201,7 +201,6 @@ test('canonical catalog includes the complete per-applicant income contract', ()
     'jobTitle',
     'averageNetIncome',
     'incomeCurrency',
-    'averageNetIncomeInWords',
     'salaryPaymentMethod',
     'salaryGarnished',
     'salaryGarnishmentAmount',
@@ -215,6 +214,14 @@ test('canonical catalog includes the complete per-applicant income contract', ()
         `missing applicants.${applicantIndex}.${relativeKey}`,
       )
     }
+    const words = CANONICAL_COMPUTED_BINDINGS.find(binding => (
+      binding.canonicalKey === `applicants.${applicantIndex}.averageNetIncomeInWords`
+    ))
+    assert.deepEqual(words?.valueFrom, [
+      `applicants.${applicantIndex}.averageNetIncome`,
+      `applicants.${applicantIndex}.incomeCurrency`,
+    ])
+    assert.equal(words?.valueFormat, 'currency.words')
   }
 
   const endDate = CANONICAL_FIELDS.find(field => field.canonicalKey === 'applicants.0.employmentEndDate')

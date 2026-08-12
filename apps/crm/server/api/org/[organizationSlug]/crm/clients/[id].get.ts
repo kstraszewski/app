@@ -95,6 +95,18 @@ export default defineEventHandler(async (event) => {
   const backendData = serverDataBackend(event) as any
   const canRequestConsent = isClientOwner || hasConsentManagePermission
   const accessibleFacilityIds = await listAccessibleFacilityIds(session)
+  const portalAccountsRequest = backendData
+    .from('client_portal_accounts')
+    .select('auth_user_id, organization_id, client_id, client_person_id, status, archived_at, archive_reason, revision, created_at, updated_at')
+    .eq('organization_id', session.organizationId)
+    .eq('client_id', id)
+    .order('created_at', { ascending: false })
+  const portalAccountLinksRequest = backendData
+    .from('client_account_links')
+    .select('auth_user_id, organization_id, client_id, client_person_id')
+    .eq('organization_id', session.organizationId)
+    .eq('client_id', id)
+    .is('revoked_at', null)
   let appointmentsRequest: any = backendData
     .from('appointments')
     .select(
@@ -155,6 +167,8 @@ export default defineEventHandler(async (event) => {
     appointmentsResult,
     anonymizationRequestsResult,
     consentCaptureRequestsResult,
+    portalAccountsResult,
+    portalAccountLinksResult,
   ] = await Promise.all([
     session.dataApi
       .from('crm_client_people')
@@ -186,6 +200,8 @@ export default defineEventHandler(async (event) => {
       .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(250),
+    portalAccountsRequest,
+    portalAccountLinksRequest,
   ])
 
   throwDbError(peopleResult.error)
@@ -196,6 +212,8 @@ export default defineEventHandler(async (event) => {
   throwDbError(appointmentsResult.error)
   throwDbError(anonymizationRequestsResult.error)
   throwDbError(consentCaptureRequestsResult.error)
+  throwDbError(portalAccountsResult.error)
+  throwDbError(portalAccountLinksResult.error)
 
   const people = peopleResult.data ?? []
   const caseRows = casesResult.data ?? []
@@ -475,12 +493,34 @@ export default defineEventHandler(async (event) => {
     }
   })
 
+  const activePortalAccountScopes = new Set(
+    (portalAccountLinksResult.data ?? []).map((link: any) => JSON.stringify([
+      String(link.auth_user_id),
+      String(link.organization_id),
+      String(link.client_id),
+      String(link.client_person_id),
+    ])),
+  )
+  // A verified e-mail change can transfer the active link to another Auth
+  // identity while retaining the previous lifecycle as audit history. Only an
+  // exact current link may make that historical row look active in the CRM.
+  const portalAccounts = (portalAccountsResult.data ?? []).filter((account: any) => (
+    account.status !== 'active'
+    || activePortalAccountScopes.has(JSON.stringify([
+      String(account.auth_user_id),
+      String(account.organization_id),
+      String(account.client_id),
+      String(account.client_person_id),
+    ]))
+  ))
+
   const appointmentCount = appointmentsResult.count ?? 0
   return {
     data: client,
     owner: ownerResult.data,
     primary_person: people.find((person: any) => person.role === 'primary') ?? people[0] ?? null,
     people,
+    portal_accounts: portalAccounts,
     cases,
     tasks: tasksResult.data ?? [],
     documents: documentsResult.data ?? [],

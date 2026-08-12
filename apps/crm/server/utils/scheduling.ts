@@ -2,11 +2,15 @@ import { serverDataBackend } from '~~/server/utils/data-api'
 import { useRuntimeConfig } from '#imports'
 import type { MortgageCapacityPolicy } from '@openexpert/mortgage'
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
+import {
+  bookingWidgetEmbedUrl,
+  bookingWidgetPublicUrl,
+} from '#shared/utils/booking-widget-urls'
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { getOpenExpertTrustedClientIp } from '@openexpert/auth/server'
 import {
   createError,
   getHeader,
-  getRequestIP,
   getRequestURL,
   setHeader,
   type H3Event,
@@ -504,12 +508,20 @@ export async function assertPublicBookingRateLimit(
   const config = useRuntimeConfig(event)
   const rateLimitConfig = config.bookingSecurity as {
     trustProxy?: boolean | string
+    trustedIpHeaders?: string
     rateLimitSecret?: string
   }
   const trustProxy = rateLimitConfig?.trustProxy === true || rateLimitConfig?.trustProxy === 'true'
-  const clientAddress = getRequestIP(event, { xForwardedFor: trustProxy })
-    || (trustProxy ? getHeader(event, 'x-real-ip') : null)
-    || 'unknown'
+  const clientAddress = getOpenExpertTrustedClientIp({
+    headers: event.headers,
+    directAddress: event.node.req.socket.remoteAddress,
+    trustedHeaderNames: trustProxy
+      ? String(rateLimitConfig?.trustedIpHeaders || '')
+          .split(',')
+          .map(header => header.trim().toLowerCase())
+          .filter(Boolean)
+      : [],
+  })
   const rateLimitSecret = rateLimitConfig?.rateLimitSecret
     || 'openexpert-booking-rate-limit'
   const clientKey = createHmac('sha256', rateLimitSecret)
@@ -981,9 +993,12 @@ export function decorateBookingWidget(
   serviceIds: string[] = [],
 ): Record<string, unknown> {
   const widgetKey = String(widget.public_token ?? widget.widgetKey ?? '')
-  const origin = getRequestURL(event).origin
-  const publicUrl = `${origin}/book/${encodeURIComponent(widgetKey)}`
-  const embedUrl = `${publicUrl}?embed=1`
+  const runtimeConfig = useRuntimeConfig(event)
+  const clientPortalBaseUrl = String(
+    runtimeConfig.public.openexpert.clientPortalBaseUrl || 'http://127.0.0.1:3006',
+  )
+  const publicUrl = bookingWidgetPublicUrl(clientPortalBaseUrl, widgetKey)
+  const embedUrl = bookingWidgetEmbedUrl(clientPortalBaseUrl, widgetKey)
   const escapedEmbedUrl = embedUrl.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
   const widgetType = String(widget.widget_type ?? widget.widgetType ?? 'calendar') as BookingWidgetType
   const embedTitle = widgetType === 'mortgage_capacity'

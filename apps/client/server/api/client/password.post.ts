@@ -1,4 +1,5 @@
 import { getOpenExpertPasswordIssue } from '@openexpert/auth'
+import { isOpenExpertSameOriginJsonRequest } from '@openexpert/auth/server'
 import { createError, readBody, setHeader } from 'h3'
 import { serverAuth } from '~~/server/utils/platform-auth'
 import {
@@ -14,6 +15,10 @@ function errorStatus(error: unknown): number {
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
+  const runtime = serverAuth(event)
+  if (!isOpenExpertSameOriginJsonRequest(event.headers, runtime.config.baseURL)) {
+    throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
+  }
   const session = await requireLinkedClientPortalSession(event)
   const body = asRecord(await readBody(event))
   const password = typeof body.password === 'string' ? body.password : ''
@@ -26,7 +31,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const runtime = serverAuth(event)
   const existing = await runtime.pool.query(
     `select 1
        from ${runtime.config.databaseSchema}.accounts

@@ -4,9 +4,9 @@ import { serverAuth } from '~~/server/utils/platform-auth'
 export default defineEventHandler((event) => {
   const authPath = String(getRouterParam(event, 'all') || '').replace(/^\/+|\/+$/gu, '')
 
-  // Public magic-link requests go through the existing-user endpoint, which
-  // applies enumeration resistance and a distributed limiter. New portal
-  // identities are provisioned only by the server-side invitation flow.
+  // Public magic-link requests go through purpose-specific wrappers, which
+  // apply enumeration resistance and distributed limits. New portal identities
+  // are provisioned only by a valid invitation or booking-widget intent.
   if (
     event.method === 'POST'
     && (

@@ -186,10 +186,20 @@ export default defineEventHandler(async (event) => {
       documents: preparedDocuments,
       fields: bundle.fields.map((field) => {
         const preparedField = toUiField(field, templateRequiredKeys)
+        const applicantAwareField = field.canonicalKey === 'additionalProducts.creditCardApplicantIndex'
+          && crmContext
+          ? {
+              ...preparedField,
+              options: crmContext.applicants.map((applicant, index) => ({
+                label: applicant.label,
+                value: String(index),
+              })),
+            }
+          : preparedField
         const applicability = fieldApplicability.get(field.canonicalKey)
         return applicability && !applicability.unconditional && applicability.conditions.length
-          ? { ...preparedField, applicableWhenAny: applicability.conditions }
-          : preparedField
+          ? { ...applicantAwareField, applicableWhenAny: applicability.conditions }
+          : applicantAwareField
       }),
       collections: bundle.collections.map(collection => ({
         ...collection,

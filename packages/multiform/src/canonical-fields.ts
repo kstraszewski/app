@@ -200,6 +200,12 @@ const MARITAL_STATUS_OPTIONS = [
   { value: 'widowed', label: 'Wdowa lub wdowiec' },
 ] as const
 
+const GENDER_OPTIONS = [
+  { value: 'female', label: 'Kobieta' },
+  { value: 'male', label: 'Mężczyzna' },
+] as const
+
+
 const HOUSING_STATUS_OPTIONS = [
   { value: 'cooperative_tenancy', label: 'Spółdzielcze lokatorskie' },
   { value: 'municipal_or_tbs', label: 'Mieszkanie komunalne lub TBS' },
@@ -358,6 +364,10 @@ function defineCompactField<const TCanonicalKey extends string>(
 
 export const APPLICANT_INDEXES = [0, 1, 2, 3, 4] as const
 export const MAX_APPLICANTS = APPLICANT_INDEXES.length
+const APPLICANT_REFERENCE_OPTIONS = APPLICANT_INDEXES.map(index => ({
+  value: String(index),
+  label: `Wnioskodawca ${index + 1}`,
+}))
 export const TRANCHE_INDEXES = [0, 1, 2, 3, 4, 5] as const
 export const INVESTOR_PAYMENT_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7] as const
 export const HOUSEHOLD_INDEXES = [0, 1, 2] as const
@@ -498,6 +508,37 @@ function materializeApplicantFullName(
   }
 }
 
+function materializeApplicantAverageNetIncomeInWords(
+  index: ApplicantIndex,
+): CanonicalComputedBindingDefinition {
+  const displayIndex = index + 1
+  return {
+    canonicalKey: `applicants.${index}.averageNetIncomeInWords`,
+    label: `Wynagrodzenie netto słownie — wnioskodawca ${displayIndex}`,
+    type: 'text',
+    group: 'applicants',
+    semanticDescription: `Średnie wynagrodzenie netto wnioskodawcy nr ${displayIndex} zapisane słownie i wyliczane z kwoty oraz waluty.`,
+    semanticRole: 'person.income.averageNet.words',
+    aiMappingHints: {
+      aliases: ['wynagrodzenie netto słownie', 'dochód słownie'],
+      exclude: ['kwota wynagrodzenia cyframi'],
+    },
+    collection: {
+      key: 'applicants',
+      index,
+      displayIndex,
+      relativeKey: 'averageNetIncomeInWords',
+      label: 'Wynagrodzenie netto słownie',
+    },
+    computed: true,
+    valueFrom: [
+      `applicants.${index}.averageNetIncome`,
+      `applicants.${index}.incomeCurrency`,
+    ],
+    valueFormat: 'currency.words',
+  }
+}
+
 export const CANONICAL_COLLECTIONS = [
   {
     key: 'applicants',
@@ -605,6 +646,7 @@ const APPLICANT_FIELDS = APPLICANT_INDEXES.flatMap(index => (
 const KIK_APPLICANT_FIELD_BLUEPRINTS = [
   { relativeKey: 'middleName', label: 'Drugie imię', type: 'text' },
   { relativeKey: 'birthDate', label: 'Data urodzenia', type: 'date' },
+  { relativeKey: 'gender', label: 'Płeć', type: 'select', options: GENDER_OPTIONS },
   { relativeKey: 'identityDocumentType', label: 'Typ dokumentu tożsamości', type: 'text' },
   { relativeKey: 'identityDocumentNumber', label: 'Seria i numer dokumentu tożsamości', type: 'text' },
   { relativeKey: 'birthPlace', label: 'Miejsce urodzenia', type: 'text' },
@@ -613,7 +655,13 @@ const KIK_APPLICANT_FIELD_BLUEPRINTS = [
   { relativeKey: 'phone', label: 'Numer telefonu', type: 'text' },
   { relativeKey: 'email', label: 'Adres e-mail', type: 'text', validation: { pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' } },
   { relativeKey: 'residentialAddress', label: 'Adres zamieszkania', type: 'text' },
-  { relativeKey: 'correspondenceAddress', label: 'Adres do korespondencji', type: 'text' },
+  { relativeKey: 'correspondenceSameAsResidential', label: 'Adres korespondencyjny taki sam jak zamieszkania', type: 'boolean' },
+  {
+    relativeKey: 'correspondenceAddress',
+    label: 'Adres do korespondencji',
+    type: 'text',
+    visibleWhen: { relativeKey: 'correspondenceSameAsResidential', equals: 'false' },
+  },
   { relativeKey: 'maritalStatus', label: 'Stan cywilny', type: 'select', options: MARITAL_STATUS_OPTIONS },
   { relativeKey: 'maritalPropertyCommunity', label: 'Wspólność majątkowa', type: 'boolean', visibleWhen: { relativeKey: 'maritalStatus', equals: 'married' } },
   { relativeKey: 'housingStatus', label: 'Status mieszkaniowy', type: 'select', options: HOUSING_STATUS_OPTIONS },
@@ -774,7 +822,6 @@ const INCOME_APPLICANT_FIELD_BLUEPRINTS = [
   { relativeKey: 'jobTitle', label: 'Stanowisko pracy', type: 'text' },
   { relativeKey: 'averageNetIncome', label: 'Średnie miesięczne wynagrodzenie netto', type: 'currency', validation: { min: 0 } },
   { relativeKey: 'incomeCurrency', label: 'Waluta dochodu', type: 'text' },
-  { relativeKey: 'averageNetIncomeInWords', label: 'Wynagrodzenie netto słownie', type: 'text' },
   { relativeKey: 'salaryPaymentMethod', label: 'Sposób wypłaty wynagrodzenia', type: 'select', options: SALARY_PAYMENT_METHOD_OPTIONS },
   { relativeKey: 'salaryGarnished', label: 'Wynagrodzenie obciążone wyrokami lub innymi potrąceniami', type: 'boolean' },
   { relativeKey: 'salaryGarnishmentAmount', label: 'Kwota potrącenia z wynagrodzenia', type: 'currency', validation: { min: 0 }, visibleWhen: { relativeKey: 'salaryGarnished', equals: 'true' } },
@@ -1335,6 +1382,7 @@ const STATIC_COMPUTED_BINDINGS = [
 
 export const CANONICAL_COMPUTED_BINDINGS = [
   ...APPLICANT_INDEXES.map(materializeApplicantFullName),
+  ...APPLICANT_INDEXES.map(materializeApplicantAverageNetIncomeInWords),
   ...STATIC_COMPUTED_BINDINGS,
 ] as const
 
@@ -1812,6 +1860,18 @@ const DOMAIN_FIELDS = [
     validation: { min: 0 },
   }),
   defineField({
+    canonicalKey: 'collateralProperty.sameAsFinancedProperty',
+    label: 'Zabezpieczeniem jest finansowana nieruchomość',
+    type: 'boolean',
+    group: 'property',
+    question: 'Czy zabezpieczeniem kredytu jest finansowana nieruchomość?',
+    helpText: 'Jeśli wybierzesz „Tak”, dane zabezpieczenia zostaną skopiowane automatycznie.',
+    semanticDescription: 'Relacja wskazująca, że nieruchomość finansowana jest jednocześnie zabezpieczeniem kredytu.',
+    semanticRole: 'property.collateral.sameAsFinancedProperty',
+    aliases: ['nieruchomość kredytowana jako zabezpieczenie', 'to samo zabezpieczenie'],
+    exclude: ['inna nieruchomość jako zabezpieczenie'],
+  }),
+  defineField({
     canonicalKey: 'collateralProperty.type',
     label: 'Typ nieruchomości stanowiącej zabezpieczenie',
     type: 'select',
@@ -1898,6 +1958,21 @@ const DOMAIN_FIELDS = [
     exclude: [],
     visibleWhen: { canonicalKey: 'additionalProducts.enabled', equals: 'true' },
   })),
+  defineField({
+    canonicalKey: 'additionalProducts.creditCardApplicantIndex',
+    label: 'Wnioskodawca karty kredytowej',
+    type: 'select',
+    group: 'loan',
+    question: 'Wybierz wnioskodawcę nowej karty kredytowej',
+    helpText: 'Wybierz osobę ze sprawy — imię i nazwisko zostanie wpisane do dokumentów automatycznie.',
+    semanticDescription: 'Referencja do wnioskodawcy składającego wniosek o nową kartę kredytową.',
+    semanticRole: 'loan.additionalProducts.creditCard.applicantReference',
+    aliases: ['wybór wnioskodawcy karty'],
+    exclude: ['imię wpisane ręcznie'],
+    options: APPLICANT_REFERENCE_OPTIONS,
+    visibleWhen: { canonicalKey: 'additionalProducts.creditCard', equals: 'true' },
+    requiredWhen: { canonicalKey: 'additionalProducts.creditCard', equals: 'true' },
+  }),
   defineField({
     canonicalKey: 'additionalProducts.creditCardApplicant',
     label: 'Wnioskodawca karty kredytowej',

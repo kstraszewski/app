@@ -5,7 +5,7 @@ import {
   type MortgageCapacityPolicy,
   type MortgageCapacityScenario,
 } from '@openexpert/mortgage'
-import type { BookingCapacityCalculatorSnapshot } from '#shared/types/booking-calculators'
+import type { BookingCapacityCalculatorSnapshot } from '../../../shared/types/booking-calculators'
 
 const props = defineProps<{
   policy: MortgageCapacityPolicy

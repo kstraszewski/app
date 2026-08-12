@@ -9,6 +9,8 @@ test('uses the primary person name and PESEL instead of the client relationship 
     [{
       client_id: 'client-1',
       display_name: 'Aleksandra Zielińska',
+      first_name: 'Aleksandra',
+      last_name: 'Zielińska',
       pesel: '85821435745',
       email: 'aleksandra@example.local',
       phone: '+48 500 600 700',
@@ -20,6 +22,8 @@ test('uses the primary person name and PESEL instead of the client relationship 
 
   assert.deepEqual(profile, {
     label: 'Aleksandra Zielińska',
+    firstName: 'Aleksandra',
+    lastName: 'Zielińska',
     pesel: '85821435745',
     email: 'aleksandra@example.local',
     phone: '+48 500 600 700',
@@ -36,6 +40,8 @@ test('falls back to the client label when no person record is available', () => 
     ),
     {
       label: 'Jan Kowalski',
+      firstName: null,
+      lastName: null,
       pesel: null,
       email: null,
       phone: null,

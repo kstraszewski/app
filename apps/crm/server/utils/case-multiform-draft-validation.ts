@@ -35,6 +35,7 @@ const intakeAnswersMaxBytes = 128 * 1024
 const formValuesMaxBytes = 1024 * 1024
 const collectionCountsMaxBytes = 64 * 1024
 const selectedDocumentIdsMaxItems = 250
+const MULTIFORM_FORM_SCHEMA_VERSION = 2
 
 function badRequest(statusMessage: string): never {
   throw createError({ statusCode: 400, statusMessage })
@@ -94,6 +95,7 @@ export function caseMultiformSelectionFingerprint(
 ): string {
   return createHash('sha256')
     .update(JSON.stringify({
+      formSchemaVersion: MULTIFORM_FORM_SCHEMA_VERSION,
       applicationIds: [...selection.applicationIds].sort(),
       offerIds: [...selection.offerIds].sort(),
       templateIds: [...selection.templateIds].sort(),

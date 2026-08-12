@@ -246,7 +246,7 @@ test('renderer removes document JavaScript and actions from ordinary link annota
     template,
     await overlayPdfWithDocumentAndLinkActions(),
     await fontBytesPromise,
-    { 'applicants.0.pesel': '12345678901' },
+    { 'applicants.0.pesel': '85821435745' },
   )
   const output = await PDFDocument.load(outputBytes, { updateMetadata: false })
   const names = output.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)
@@ -515,7 +515,7 @@ test('renderer v2 draws a letter-spaced value inside an explicit box', async () 
   }, 'overlay')
 
   const outputBytes = await fillPdfTemplate(template, sourceBytes, fontBytes, {
-    'applicants.0.pesel': '12345678901',
+    'applicants.0.pesel': '85821435745',
   })
 
   assert.ok(outputBytes.length > sourceBytes.length)
@@ -882,13 +882,13 @@ test('AcroForm value stays editable in a visible printable widget without static
   }, 'acroform')
 
   const outputBytes = await fillPdfTemplate(template, sourceBytes, fontBytes, {
-    'applicants.0.pesel': '12345678901',
+    'applicants.0.pesel': '85821435745',
   })
   const rendered = await PDFDocument.load(outputBytes)
   const field = rendered.getForm().getTextField('applicant.pesel')
   const [widget] = field.acroField.getWidgets()
 
-  assert.equal(field.getText(), '12345678901')
+  assert.equal(field.getText(), '85821435745')
   assert.equal(field.isCombed(), true)
   assert.equal(field.getAlignment(), TextAlignment.Right)
   assert.ok(widget, 'synthetic field should retain its widget')
@@ -945,7 +945,7 @@ test('AcroForm placement override moves the native widget on its original page',
   }, 'acroform')
 
   const outputBytes = await fillPdfTemplate(template, sourceBytes, fontBytes, {
-    'applicants.0.pesel': '12345678901',
+    'applicants.0.pesel': '85821435745',
   })
   const rendered = await PDFDocument.load(outputBytes)
   const field = rendered.getForm().getTextField('applicant.pesel')
@@ -980,7 +980,7 @@ test('AcroForm placement override rejects moving a widget between pages', async 
 
   await assert.rejects(
     fillPdfTemplate(template, await twoPageCombPdf(), await fontBytesPromise, {
-      'applicants.0.pesel': '12345678901',
+      'applicants.0.pesel': '85821435745',
     }),
     /pomiędzy stronami nie jest obsługiwane/,
   )
@@ -999,15 +999,15 @@ test('an overlong AcroForm comb value fails with a controlled error', async () =
       comb: true,
       maxLength: 11,
     },
-  }, 'acroform')
+  }, 'acroform', { canonicalKey: 'applicants.0.firstName' })
 
   await assert.rejects(
     fillPdfTemplate(template, sourceBytes, fontBytes, {
-      'applicants.0.pesel': '123456789012',
+      'applicants.0.firstName': 'Aleksandraaa',
     }),
     (error: unknown) => {
       assert.ok(error instanceof MultiformPdfValueError)
-      assert.equal(error.canonicalKey, 'applicants.0.pesel')
+      assert.equal(error.canonicalKey, 'applicants.0.firstName')
       assert.equal(error.message, 'Wartość jest zbyt długa dla pola formularza bankowego.')
       return true
     },
@@ -1022,10 +1022,10 @@ test('radio export value is mapped to the matching editable widget on-value', as
     field: 'loan.purpose',
     fieldType: 'radio',
     valueMap: { purchase_primary: 'Zakup nieruchomości' },
-  }, 'acroform')
+  }, 'acroform', { canonicalKey: 'loan.purpose' })
 
   const outputBytes = await fillPdfTemplate(template, sourceBytes, fontBytes, {
-    'applicants.0.pesel': 'purchase_primary',
+    'loan.purpose': 'purchase_primary',
   })
   const rendered = await PDFDocument.load(outputBytes)
   const field = rendered.getForm().getRadioGroup('loan.purpose')
@@ -1083,6 +1083,30 @@ test('computed currency bindings keep their canonical currency formatting', asyn
   assert.equal(text.replace(/[\s\u00a0\u202f]/g, ''), '140000,00')
 })
 
+test('computed amount-in-words bindings use the numeric amount as their single source', async () => {
+  const sourceBytes = await textFieldPdf()
+  const template = templateWithTarget({
+    kind: 'acroform',
+    field: 'computed.total',
+    fieldType: 'text',
+  }, 'acroform', {
+    canonicalKey: 'applicants.0.averageNetIncomeInWords',
+    computed: true,
+    valueFrom: ['applicants.0.averageNetIncome', 'applicants.0.incomeCurrency'],
+    valueFormat: 'currency.words',
+  })
+
+  const outputBytes = await fillPdfTemplate(template, sourceBytes, await fontBytesPromise, {
+    'applicants.0.averageNetIncome': 12_502.34,
+    'applicants.0.incomeCurrency': 'PLN',
+  })
+  const output = await PDFDocument.load(outputBytes)
+  assert.equal(
+    output.getForm().getTextField('computed.total').getText(),
+    'dwanaście tysięcy pięćset dwa złote 34/100',
+  )
+})
+
 test('PDF bundle uses fixed folders and zip-slip-safe case-insensitive attachment names', async () => {
   const sourceBytes = await blankPdf()
   const fontBytes = await fontBytesPromise
@@ -1105,7 +1129,7 @@ test('PDF bundle uses fixed folders and zip-slip-safe case-insensitive attachmen
   const archive = await createPdfBundle(
     [{ fileName: '../../WNIOSEK.PDF', template, sourceBytes }],
     fontBytes,
-    { 'applicants.0.pesel': '12345678901' },
+    { 'applicants.0.pesel': '85821435745' },
     [
       { fileName: '../../Dowód.pdf', bytes: firstAttachment },
       { fileName: 'DOWÓD.PDF', bytes: secondAttachment },
@@ -1144,7 +1168,7 @@ test('PDF bundle groups files by bank and encrypts every entry with an AES passw
   const archive = await createPdfBundle(
     [{ fileName: 'wniosek.pdf', template, sourceBytes, directory: 'Erste Bank' }],
     fontBytes,
-    { 'applicants.0.pesel': '12345678901' },
+    { 'applicants.0.pesel': '85821435745' },
     [{ fileName: 'dowod.pdf', bytes: sharedBytes, directory: 'Wspólne' }],
     { password },
   )

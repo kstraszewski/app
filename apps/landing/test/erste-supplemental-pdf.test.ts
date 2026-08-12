@@ -34,7 +34,7 @@ const PRELIMINARY_VALUES: Record<string, unknown> = {
   'applicants.2.pesel': '92020267853',
   'applicants.3.firstName': 'Jan',
   'applicants.3.lastName': 'Kowalski',
-  'applicants.3.pesel': '85030343217',
+  'applicants.3.pesel': '85030343211',
   'loan.purpose': 'purchase_primary',
   'investment.totalCost': 980000,
   'investment.renovationCost': 45000,

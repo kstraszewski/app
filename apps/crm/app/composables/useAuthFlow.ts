@@ -1,4 +1,5 @@
 import type { AccountContexts } from '~/types/account'
+import { authErrorCode, authErrorText, isFreshSessionRequired } from '~/utils/auth-error'
 import { getPasswordIssue } from '~/utils/password-validation'
 
 interface AuthErrorLike {
@@ -59,8 +60,8 @@ export function useAuthFlow() {
   }
 
   function errorMessage(error: AuthErrorLike | null | undefined) {
-    const code = String(error?.code || error?.data?.code || '').toUpperCase()
-    const originalMessage = error?.message || error?.data?.message || ''
+    const code = authErrorCode(error)
+    const originalMessage = authErrorText(error)
     const message = originalMessage.toLowerCase()
     if (
       code === 'INVALID_EMAIL_OR_PASSWORD'
@@ -132,10 +133,7 @@ export function useAuthFlow() {
     ) {
       return 'Najpierw potwierdź adres email.'
     }
-    if (
-      code === 'SESSION_NOT_FRESH'
-      || message.includes('session is not fresh')
-    ) {
+    if (isFreshSessionRequired(error)) {
       return 'Dla bezpieczeństwa zaloguj się ponownie, a następnie ponów operację.'
     }
     if (

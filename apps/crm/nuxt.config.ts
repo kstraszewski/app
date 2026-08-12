@@ -15,6 +15,12 @@ const authBaseUrl = process.env.BETTER_AUTH_URL
   || (process.env.NODE_ENV === 'production'
     ? 'https://crm.openexpert.app'
     : 'http://127.0.0.1:3004')
+const clientPortalBaseUrl = process.env.NUXT_PUBLIC_CLIENT_BASE_URL
+  || process.env.NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL
+  || process.env.NUXT_CLIENT_PORTAL_BASE_URL
+  || (process.env.NODE_ENV === 'production'
+    ? 'https://client.openexpert.app'
+    : 'http://127.0.0.1:3006')
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
   || (isProduction
     ? ''
@@ -200,10 +206,7 @@ export default defineNuxtConfig({
       },
     },
     clientPortal: {
-      baseUrl: process.env.NUXT_CLIENT_PORTAL_BASE_URL
-        || (process.env.NODE_ENV === 'production'
-          ? 'https://client.openexpert.app'
-          : 'http://127.0.0.1:3006'),
+      baseUrl: clientPortalBaseUrl,
       cookiePrefix: process.env.BETTER_AUTH_CLIENT_COOKIE_PREFIX
         || `${process.env.BETTER_AUTH_COOKIE_PREFIX
           || (process.env.NODE_ENV === 'production' ? 'openexpert' : 'openexpert-local')}-client`,
@@ -287,7 +290,13 @@ export default defineNuxtConfig({
       },
     },
     bookingSecurity: {
-      trustProxy: false,
+      trustProxy: process.env.NUXT_BOOKING_SECURITY_TRUST_PROXY === 'true'
+        || (
+          process.env.NUXT_BOOKING_SECURITY_TRUST_PROXY === undefined
+          && process.env.VERCEL === '1'
+        ),
+      trustedIpHeaders: process.env.BETTER_AUTH_IP_ADDRESS_HEADERS
+        || (process.env.VERCEL === '1' ? 'x-vercel-forwarded-for' : ''),
       rateLimitSecret: process.env.NUXT_BOOKING_RATE_LIMIT_SECRET
         || (process.env.NODE_ENV === 'production'
           ? ''
@@ -323,11 +332,7 @@ export default defineNuxtConfig({
           || (process.env.NODE_ENV === 'production'
             ? 'https://www.openexpert.app'
             : 'http://127.0.0.1:3003'),
-        clientPortalBaseUrl: process.env.NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL
-          || process.env.NUXT_CLIENT_PORTAL_BASE_URL
-          || (process.env.NODE_ENV === 'production'
-            ? 'https://client.openexpert.app'
-            : 'http://127.0.0.1:3006'),
+        clientPortalBaseUrl,
         social: {
           google: Boolean(
             process.env.BETTER_AUTH_GOOGLE_CLIENT_ID

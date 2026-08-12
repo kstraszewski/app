@@ -16,8 +16,10 @@ const { canonicalUrl, siteOrigin } = useLandingSeo({
 
 const nuxtApp = useNuxtApp()
 const runtimeConfig = useRuntimeConfig()
-const crmBaseUrl = String(
-  runtimeConfig.public.openexpert.crmBaseUrl || 'http://127.0.0.1:3004',
+const bookingBaseUrl = String(
+  runtimeConfig.public.openexpert.clientPortalBaseUrl
+  || runtimeConfig.public.openexpert.crmBaseUrl
+  || 'http://127.0.0.1:3006',
 )
 const search = ref('')
 const selectedFacilityId = ref<string | null>(null)
@@ -128,7 +130,7 @@ watch(
 )
 
 function bookingHref(widgetKey: string) {
-  return directoryBookingUrl(crmBaseUrl, widgetKey)
+  return directoryBookingUrl(bookingBaseUrl, widgetKey)
 }
 
 function formatFacilityCount(count: number) {

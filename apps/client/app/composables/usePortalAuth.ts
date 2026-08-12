@@ -3,7 +3,23 @@ interface AuthErrorLike {
   code?: string
   status?: number
   statusCode?: number
-  data?: { message?: string, code?: string, statusMessage?: string }
+  data?: {
+    message?: string
+    code?: string
+    statusMessage?: string
+    data?: { code?: string }
+  }
+}
+
+export function portalAuthErrorCode(
+  error: AuthErrorLike | null | undefined,
+): string {
+  return String(
+    error?.code
+    || error?.data?.code
+    || error?.data?.data?.code
+    || '',
+  ).toUpperCase()
 }
 
 export function usePortalAuth() {
@@ -25,7 +41,7 @@ export function usePortalAuth() {
   }
 
   function errorMessage(error: AuthErrorLike | null | undefined) {
-    const code = String(error?.code || error?.data?.code || '').toUpperCase()
+    const code = portalAuthErrorCode(error)
     const source = String(error?.message || error?.data?.message || error?.data?.statusMessage || '')
     const message = source.toLowerCase()
     if (code === 'INVALID_EMAIL_OR_PASSWORD' || message.includes('invalid email or password')) {
@@ -37,11 +53,19 @@ export function usePortalAuth() {
     if (code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN' || message.includes('expired')) {
       return 'Link wygasł albo został już użyty. Poproś o nowy link.'
     }
+    if (code === 'PORTAL_ACCOUNT_ARCHIVED') {
+      return 'To konto panelu zostało zarchiwizowane. Skontaktuj się ze swoim ekspertem, jeśli potrzebujesz ponownie uzyskać dostęp.'
+    }
     if (error?.status === 429 || error?.statusCode === 429) {
       return 'Za dużo prób. Odczekaj chwilę i spróbuj ponownie.'
     }
     return source || 'Nie udało się wykonać operacji. Spróbuj ponownie.'
   }
 
-  return { absoluteCallback, errorMessage, safeRedirect }
+  return {
+    absoluteCallback,
+    errorCode: portalAuthErrorCode,
+    errorMessage,
+    safeRedirect,
+  }
 }

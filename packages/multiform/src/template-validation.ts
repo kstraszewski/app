@@ -84,6 +84,7 @@ const valueFormats = new Set([
   'date.year',
   'application.placeAndDate',
   'currency.sum',
+  'currency.words',
   'fullName',
   'fullAddress',
   'houseAndUnit',

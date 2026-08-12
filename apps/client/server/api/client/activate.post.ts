@@ -2,13 +2,14 @@ import { createError, readBody, setHeader } from 'h3'
 import { serverDataBackend } from '~~/server/utils/data-api'
 import {
   asRecord,
-  requirePortalIdentity,
+  requireAvailablePortalIdentity,
   requiredUuid,
+  throwPortalAccountArchived,
 } from '~~/server/utils/portal-auth'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
-  const identity = await requirePortalIdentity(event)
+  const identity = await requireAvailablePortalIdentity(event)
   const body = asRecord(await readBody(event))
   const invitationId = requiredUuid(body.invitationId, 'invitationId')
   const backend = serverDataBackend(event) as any
@@ -27,6 +28,12 @@ export default defineEventHandler(async (event) => {
     }
     if (code === 'P0002') {
       throw createError({ statusCode: 404, statusMessage: 'Invitation not found' })
+    }
+    if (
+      code === '55000'
+      && String(result.error.message ?? '').includes('client_portal_account_is_archived')
+    ) {
+      throwPortalAccountArchived()
     }
     console.error('[client-portal] invitation claim failed', {
       code,

@@ -4,6 +4,8 @@ import {
   normalizeOpenExpertPhone,
 } from '@openexpert/auth'
 import QRCode from 'qrcode'
+import { isFreshSessionRequired } from '~/utils/auth-error'
+import { reauthenticationRedirect } from '~/utils/auth-reauthentication'
 import { passkeyDeviceName } from '~/utils/passkey-device-name'
 
 type AuthProvider = 'google' | 'apple'
@@ -53,6 +55,9 @@ const demoCodeUsed = ref(false)
 const passkeySupported = ref(false)
 const addPasskeyModalOpen = ref(false)
 const passkeyName = ref('')
+const passkeyError = ref('')
+const passkeyRequiresFreshSession = ref(false)
+const passkeyReauthenticating = ref(false)
 const passkeyAction = ref<'add' | 'rename' | 'delete' | null>(null)
 const pendingRenamePasskey = ref<UserPasskey | null>(null)
 const pendingDeletePasskey = ref<UserPasskey | null>(null)
@@ -420,6 +425,8 @@ async function removePhone() {
 function openPasskeyRegistration() {
   if (!passkeyEnabled.value || !passkeySupported.value) return
   passkeyName.value = ''
+  passkeyError.value = ''
+  passkeyRequiresFreshSession.value = false
   addPasskeyModalOpen.value = true
   void prefillPasskeyName()
 }
@@ -467,6 +474,8 @@ async function loadPasskeys() {
 
 async function addPasskey() {
   if (passkeyAction.value || !passkeySupported.value) return
+  passkeyError.value = ''
+  passkeyRequiresFreshSession.value = false
   const name = passkeyName.value.trim()
   if (name.length > 80) {
     toast.add({ title: 'Nazwa może mieć maksymalnie 80 znaków.', color: 'error' })
@@ -489,15 +498,30 @@ async function addPasskey() {
     })
   }
   catch (error) {
-    toast.add({
-      title: 'Nie udało się dodać klucza dostępu',
-      description: errorMessage(error as { message?: string, code?: string }),
-      color: 'error',
-      icon: 'i-lucide-triangle-alert',
-    })
+    passkeyRequiresFreshSession.value = isFreshSessionRequired(error)
+    passkeyError.value = errorMessage(error as { message?: string, code?: string })
   }
   finally {
     passkeyAction.value = null
+  }
+}
+
+async function reauthenticateForPasskey() {
+  if (passkeyReauthenticating.value) return
+  passkeyReauthenticating.value = true
+  passkeyError.value = ''
+
+  const redirect = reauthenticationRedirect(route.fullPath, 'add-passkey')
+
+  try {
+    await signOutAuthenticatedUser({ requireServerSuccess: true })
+    await navigateTo({ path: '/login', query: { redirect } })
+  }
+  catch (error) {
+    passkeyError.value = errorMessage(error as { message?: string, code?: string })
+  }
+  finally {
+    passkeyReauthenticating.value = false
   }
 }
 
@@ -662,6 +686,12 @@ async function unlinkProvider() {
 
 onMounted(() => {
   passkeySupported.value = window.isSecureContext && 'PublicKeyCredential' in window
+  if (route.query.resume === 'add-passkey' && passkeySupported.value && passkeyEnabled.value) {
+    const query = { ...route.query }
+    delete query.resume
+    void router.replace({ query })
+    openPasskeyRegistration()
+  }
   void loadAccounts()
 })
 
@@ -1065,7 +1095,7 @@ watch(twoFactorModalOpen, (open) => {
       v-model:open="addPasskeyModalOpen"
       title="Dodaj klucz dostępu"
       description="Przeglądarka poprosi o biometrię, PIN urządzenia albo użycie klucza bezpieczeństwa."
-      :dismissible="passkeyAction !== 'add'"
+      :dismissible="passkeyAction !== 'add' && !passkeyReauthenticating"
     >
       <template #body>
         <form class="phone-method-form" @submit.prevent="addPasskey">
@@ -1088,7 +1118,37 @@ watch(twoFactorModalOpen, (open) => {
             title="Klucz prywatny zostaje na urządzeniu"
             description="OpenExpert zapisze wyłącznie klucz publiczny potrzebny do weryfikacji logowania."
           />
-          <UButton type="submit" block size="lg" icon="i-lucide-fingerprint" :loading="passkeyAction === 'add'">
+          <UAlert
+            v-if="passkeyError"
+            role="alert"
+            :color="passkeyRequiresFreshSession ? 'warning' : 'error'"
+            variant="subtle"
+            :icon="passkeyRequiresFreshSession ? 'i-lucide-log-in' : 'i-lucide-triangle-alert'"
+            :title="passkeyRequiresFreshSession ? 'Potwierdź ponownie swoją tożsamość' : 'Nie udało się dodać klucza dostępu'"
+            :description="passkeyError"
+            :orientation="passkeyRequiresFreshSession ? 'vertical' : 'horizontal'"
+          >
+            <template v-if="passkeyRequiresFreshSession" #actions>
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-log-in"
+                :loading="passkeyReauthenticating"
+                @click="reauthenticateForPasskey"
+              >
+                Zaloguj się ponownie
+              </UButton>
+            </template>
+          </UAlert>
+          <UButton
+            type="submit"
+            block
+            size="lg"
+            icon="i-lucide-fingerprint"
+            :loading="passkeyAction === 'add'"
+            :disabled="passkeyRequiresFreshSession"
+          >
             Uruchom konfigurację klucza
           </UButton>
         </form>

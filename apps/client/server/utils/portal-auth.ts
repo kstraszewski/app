@@ -1,4 +1,8 @@
 import { createError, type H3Event } from 'h3'
+import {
+  hasArchivedPortalAccountLifecycle,
+  type PortalAccountLifecycleStatusRow,
+} from '../../shared/utils/portal-account.ts'
 import { selectPreferredPortalGrantScope } from '../../shared/utils/portal-grant-scope.ts'
 import { serverDataBackend } from './data-api'
 import { serverAuthSession } from './platform-auth'
@@ -24,6 +28,7 @@ export interface PortalClientLink {
     organizationId: string
     displayName: string
     role: string
+    phone: string | null
   }
 }
 
@@ -71,6 +76,7 @@ interface PortalPersonRow {
   display_name: unknown
   role: unknown
   email_normalized: unknown
+  phone: unknown
 }
 
 interface PortalGrantRow {
@@ -136,6 +142,40 @@ export async function requirePortalIdentity(event: H3Event): Promise<PortalIdent
   }
 }
 
+export function throwPortalAccountArchived(): never {
+  throw createError({
+    statusCode: 403,
+    statusMessage: 'Client portal account is archived',
+    data: { code: 'PORTAL_ACCOUNT_ARCHIVED' },
+  })
+}
+
+export async function requireAvailablePortalIdentity(
+  event: H3Event,
+): Promise<PortalIdentity> {
+  const identity = await requirePortalIdentity(event)
+  const backend = serverDataBackend(event) as any
+  const lifecycleResult = await backend
+    .from('client_portal_accounts')
+    .select('auth_user_id, status')
+    .eq('auth_user_id', identity.userId)
+    .eq('status', 'archived')
+    .limit(1)
+  throwPortalDbError(
+    lifecycleResult.error,
+    'could not validate client portal lifecycle',
+  )
+
+  if (hasArchivedPortalAccountLifecycle(
+    (lifecycleResult.data ?? []) as PortalAccountLifecycleStatusRow[],
+    identity.userId,
+  )) {
+    throwPortalAccountArchived()
+  }
+
+  return identity
+}
+
 function grantFromRow(row: PortalGrantRow): PortalGrant {
   return {
     organizationId: String(row.organization_id),
@@ -156,7 +196,7 @@ function grantFromRow(row: PortalGrantRow): PortalGrant {
 export async function loadClientPortalSession(
   event: H3Event,
 ): Promise<ClientPortalSession> {
-  const identity = await requirePortalIdentity(event)
+  const identity = await requireAvailablePortalIdentity(event)
   const backend = serverDataBackend(event) as any
   const linksResult = await backend
     .from('client_account_links')
@@ -178,7 +218,7 @@ export async function loadClientPortalSession(
 
   const peopleResult = await backend
     .from('crm_client_people')
-    .select('id, organization_id, client_id, display_name, role, email_normalized')
+    .select('id, organization_id, client_id, display_name, role, email_normalized, phone')
     .in('id', personIds)
   throwPortalDbError(peopleResult.error, 'could not validate linked CRM people')
 
@@ -220,6 +260,9 @@ export async function loadClientPortalSession(
         organizationId,
         displayName: String(person?.display_name ?? ''),
         role: String(person?.role ?? ''),
+        phone: typeof person?.phone === 'string' && person.phone.trim()
+          ? person.phone.trim()
+          : null,
       },
     })
   }

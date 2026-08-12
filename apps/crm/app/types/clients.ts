@@ -139,6 +139,19 @@ export interface ClientPerson {
   phone_normalized?: string | null
 }
 
+export interface ClientPortalAccount {
+  auth_user_id: string
+  organization_id: string
+  client_id: string
+  client_person_id: string
+  status: string
+  archived_at: string | null
+  archive_reason: string | null
+  revision: number
+  created_at: string
+  updated_at: string
+}
+
 export interface ClientCaseSummary {
   id: string
   title: string
@@ -497,6 +510,7 @@ export interface ClientDetailResponse {
   owner: ClientUserSummary | null
   primary_person: ClientPerson | null
   people: ClientPerson[]
+  portal_accounts: ClientPortalAccount[]
   cases: ClientCaseSummary[]
   tasks: ClientTask[]
   documents: ClientDocument[]

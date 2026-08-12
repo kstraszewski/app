@@ -3,14 +3,15 @@ import { serverDataBackend } from '~~/server/utils/data-api'
 import {
   asRecord,
   normalizeClientEmail,
-  requirePortalIdentity,
+  requireAvailablePortalIdentity,
   requiredUuid,
+  throwPortalAccountArchived,
   throwPortalDbError,
 } from '~~/server/utils/portal-auth'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
-  const identity = await requirePortalIdentity(event)
+  const identity = await requireAvailablePortalIdentity(event)
   const body = asRecord(await readBody(event))
   const appointmentId = requiredUuid(body.appointmentId, 'appointmentId')
   const backend = serverDataBackend(event) as any
@@ -102,6 +103,12 @@ export default defineEventHandler(async (event) => {
       statusCode: 409,
       statusMessage: 'This customer profile is already linked to another account',
     })
+  }
+  if (
+    linkResult.error?.code === '55000'
+    && String(linkResult.error.message ?? '').includes('client_portal_account_is_archived')
+  ) {
+    throwPortalAccountArchived()
   }
   throwPortalDbError(linkResult.error, 'could not claim appointment')
 

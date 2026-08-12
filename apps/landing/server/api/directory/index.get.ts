@@ -5,6 +5,7 @@ import {
   directoryCatalogSnapshot,
   type DirectoryCatalogSnapshot,
 } from '../../utils/directory-catalog'
+import { loadDirectoryExpertAvailability } from '../../utils/directory-availability'
 import { loadDirectoryCoverImages } from '../../utils/directory-cover-images'
 import { loadDirectoryFacilityMetadata } from '../../utils/directory-facilities'
 import { serverDataBackend } from '../../utils/data-api'
@@ -89,14 +90,22 @@ export default defineCachedEventHandler(async (event): Promise<DirectoryPayload>
   }
 
   const directory = buildDirectory(catalogs)
-  const [coverImages, metadata] = await Promise.all([
+  const [coverImages, metadata, availabilityByExpert] = await Promise.all([
     loadDirectoryCoverImages(backendData, directory.facilities),
     loadDirectoryFacilityMetadata(backendData, directory.facilities),
+    loadDirectoryExpertAvailability(backendData, directory.experts, catalogs),
   ])
 
   return {
     generatedAt: new Date().toISOString(),
-    ...directory,
+    experts: directory.experts.map(expert => ({
+      ...expert,
+      availability: availabilityByExpert.get(expert.expertId) ?? {
+        status: 'unknown',
+        timezone: 'Europe/Warsaw',
+        dates: [],
+      },
+    })),
     facilities: directory.facilities.map((facility) => {
       const facilityMetadata = metadata.get(facility.facilityId)!
       return {
@@ -108,7 +117,7 @@ export default defineCachedEventHandler(async (event): Promise<DirectoryPayload>
   }
 }, {
   name: 'public-directory',
-  maxAge: 5 * 60,
-  staleMaxAge: 10 * 60,
+  maxAge: 60,
+  staleMaxAge: 2 * 60,
   swr: true,
 })

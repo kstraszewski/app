@@ -261,6 +261,7 @@ export type ValueFormat =
   | 'date.year'
   | 'application.placeAndDate'
   | 'currency.sum'
+  | 'currency.words'
   | 'fullName'
   | 'fullAddress'
   | 'houseAndUnit'

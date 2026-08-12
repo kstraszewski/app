@@ -44,13 +44,15 @@ if (import.meta.server && error.value) {
   })
 }
 
-const crmBaseUrl = String(
-  runtimeConfig.public.openexpert.crmBaseUrl || 'http://127.0.0.1:3004',
+const bookingBaseUrl = String(
+  runtimeConfig.public.openexpert.clientPortalBaseUrl
+  || runtimeConfig.public.openexpert.crmBaseUrl
+  || 'http://127.0.0.1:3006',
 )
 
 const bookingHref = computed(() => (
   facility.value
-    ? directoryBookingUrl(crmBaseUrl, facility.value.widgetKey)
+    ? directoryBookingUrl(bookingBaseUrl, facility.value.widgetKey)
     : '/placowki'
 ))
 
@@ -141,7 +143,7 @@ async function shareFacility() {
 
 function bookingHrefForExpert(expert: DirectoryFacilityDetailExpert): string {
   if (!facility.value) return bookingHref.value
-  return directoryBookingUrl(crmBaseUrl, facility.value.widgetKey, expert.expertId)
+  return directoryBookingUrl(bookingBaseUrl, facility.value.widgetKey, expert.expertId)
 }
 
 const serviceNamesById = computed(() => new Map(

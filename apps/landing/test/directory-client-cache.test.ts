@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { directoryHydrationData } from '../app/utils/directory.ts'
+import {
+  directoryBookingUrl,
+  directoryHydrationData,
+} from '../app/utils/directory.ts'
 
 describe('directoryHydrationData', () => {
   const payload = {
@@ -22,6 +25,20 @@ describe('directoryHydrationData', () => {
     assert.equal(
       directoryHydrationData(false, payload, 'directory'),
       undefined,
+    )
+  })
+})
+
+describe('directoryBookingUrl', () => {
+  it('preselects the expert and service behind the advertised availability', () => {
+    assert.equal(
+      directoryBookingUrl(
+        'https://client.openexpert.app/path',
+        'widget/key',
+        'expert-id',
+        'service-id',
+      ),
+      'https://client.openexpert.app/book/widget%2Fkey?expertId=expert-id&serviceId=service-id',
     )
   })
 })

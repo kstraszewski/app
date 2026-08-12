@@ -64,49 +64,62 @@ export function invalidClientMultiformFieldKeys(
   fields: DatabaseRecord[],
   values: ClientMultiformJsonRecord,
 ): string[] {
+  const resolution = resolveCanonicalValues(values)
+  const effectiveValues: ClientMultiformJsonRecord = resolution.values
+  const fieldKeys = new Set(fields.map(field => text(field.key)))
+  const invalid = new Set(
+    resolution.issues
+      .filter(issue => issue.severity === 'error' && fieldKeys.has(issue.key))
+      .map(issue => issue.key),
+  )
   const isVisible = (field: DatabaseRecord) => (
-    (!field.visibleWhen || conditionMatches(values, field.visibleWhen))
+    (!field.visibleWhen || conditionMatches(effectiveValues, field.visibleWhen))
     && (
       !Array.isArray(field.applicableWhenAny)
       || field.applicableWhenAny.length === 0
-      || field.applicableWhenAny.some((condition: unknown) => conditionMatches(values, condition))
+      || field.applicableWhenAny.some((condition: unknown) => conditionMatches(effectiveValues, condition))
     )
   )
   const isRequired = (field: DatabaseRecord) => (
     field.required === true
-    || Boolean(field.requiredWhen && conditionMatches(values, field.requiredWhen))
+    || Boolean(field.requiredWhen && conditionMatches(effectiveValues, field.requiredWhen))
   )
 
-  return fields.flatMap((field) => {
-    if (!isVisible(field)) return []
-    const value = values[text(field.key)]
+  for (const field of fields) {
+    if (!isVisible(field)) continue
+    const key = text(field.key)
+    const value = effectiveValues[key]
     const missing = field.type === 'checkbox'
       ? value !== true
       : value === undefined || value === null || String(value).trim() === ''
-    if (missing) return isRequired(field) ? [text(field.key)] : []
+    if (missing) {
+      if (isRequired(field)) invalid.add(key)
+      continue
+    }
 
     const rawValue = String(value).trim()
     const validation = asRecord(field.validation)
     if (typeof validation.maxLength === 'number' && rawValue.length > validation.maxLength) {
-      return [text(field.key)]
+      invalid.add(key)
+      continue
     }
     if (typeof validation.pattern === 'string') {
       try {
-        if (!new RegExp(validation.pattern).test(rawValue)) return [text(field.key)]
+        if (!new RegExp(validation.pattern).test(rawValue)) invalid.add(key)
       }
       catch {
-        return [text(field.key)]
+        invalid.add(key)
       }
     }
     if (['number', 'currency', 'integer', 'decimal'].includes(String(field.type))) {
       const numeric = Number(rawValue.replace(',', '.'))
-      if (!Number.isFinite(numeric)) return [text(field.key)]
-      if (typeof validation.min === 'number' && numeric < validation.min) return [text(field.key)]
-      if (typeof validation.max === 'number' && numeric > validation.max) return [text(field.key)]
-      if (validation.integer === true && !Number.isInteger(numeric)) return [text(field.key)]
+      if (!Number.isFinite(numeric)) invalid.add(key)
+      if (typeof validation.min === 'number' && numeric < validation.min) invalid.add(key)
+      if (typeof validation.max === 'number' && numeric > validation.max) invalid.add(key)
+      if (validation.integer === true && !Number.isInteger(numeric)) invalid.add(key)
     }
-    return []
-  })
+  }
+  return [...invalid]
 }
 
 export function sanitizeClientMultiformField(
@@ -151,3 +164,4 @@ export function mergeOwnedClientMultiformValues(
   if (unknownKey) return { values: currentValues, unknownKey }
   return { values: { ...currentValues, ...submittedValues }, unknownKey: null }
 }
+import { resolveCanonicalValues } from '@openexpert/multiform'

@@ -1,3 +1,113 @@
+# Design QA — „Zaznacz wszystkie” w zgodach rezerwacji
+
+## Wynik
+
+`passed`
+
+Nad listą zgód znajduje się teraz trójstanowy checkbox „Zaznacz wszystkie”, a status wymaganej i dobrowolnej zgody jest widoczny bez wczytywania się w treść. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał i normalizacja
+
+- Źródło wizualne: `/private/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-1dba5952-5713-48ee-91ca-e596b48299b0.png`, 2590 × 960 px, zapis 144 dpi.
+- Implementacja desktop: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-select-all-implementation.png`, 1966 × 759 px; CSS viewport 2048 × 759 px, zrzut w pikselach CSS.
+- Implementacja mobile: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-select-all-mobile.png`, 390 × 844 px; CSS viewport 390 × 844 px.
+- Finalne rozróżnienie statusów — desktop: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-consent-requirement-desktop.png`, 1966 × 759 px; CSS viewport 2048 × 759 px.
+- Finalne rozróżnienie statusów — mobile: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-consent-requirement-mobile.png`, 390 × 844 px; CSS viewport 390 × 844 px.
+- Pełne porównanie: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-select-all-comparison.png`.
+- Wyrównane porównanie sekcji: `/Users/konradstraszewski/Documents/GitHub/app/tmp/booking-select-all-comparison-focused.png`, 2320 × 450 px; źródło po lewej, implementacja po prawej. Oba regiony znormalizowano do 1160 × 450 px.
+- Stan finalny: jasny motyw, krok „Dane”, jedna zgoda wymagana i dwie dobrowolne, wszystkie początkowo niezaznaczone.
+
+## Ocena wymaganych powierzchni
+
+- **Typografia:** nowa etykieta korzysta z istniejącej rodziny i wagi pomocniczej; nie konkuruje z tytułem sekcji.
+- **Spacing i rytm:** na desktopie kontrolka jest wyrównana po prawej stronie nagłówka, przed kartami; na mobile przechodzi pod opis bez poziomego przepełnienia.
+- **Kolory i tokeny:** wymagana zgoda używa semantycznego koloru `error`, lekkiego tła i mocniejszej lewej krawędzi; dobrowolne pozostają neutralne. Checkboxy nadal korzystają z istniejącego koloru akcentu.
+- **Obrazy i zasoby:** zmiana nie wymaga nowych obrazów ani ikon; istniejące logo i zasoby formularza pozostają bez zmian.
+- **Copy:** zastosowano dokładne „Zaznacz wszystkie”, status „Wymagana do rezerwacji” i „Dobrowolna” oraz krótkie objaśnienie skutku nad listą; treść prawna zgód nie została zmieniona.
+- **Dostępność:** checkbox zbiorczy ma własną etykietę, `aria-controls` wskazuje wszystkie kontrolowane zgody, a częściowy wybór wystawia `aria-checked="mixed"`. Nazwa każdej zgody zawiera jej status; zgoda wymagana wystawia `aria-required="true"`, a dobrowolne `false`.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Stan początkowy: checkbox zbiorczy i wszystkie trzy zgody miały `aria-checked="false"`.
+- Kliknięcie checkboxa zbiorczego ustawiło wszystkie cztery stany na `true`.
+- Odznaczenie jednej zgody ustawiło checkbox zbiorczy na `mixed` przy pozostałych dwóch zgodach nadal zaznaczonych.
+- Kliknięcie stanu pośredniego zaznaczyło ponownie wszystkie zgody.
+- Kolejne kliknięcie odznaczyło cały zestaw.
+- Potwierdzono `aria-required="true"` dla wymaganej zgody i `false` dla obu dobrowolnych.
+- Sprawdzono layout desktop 2048 × 759 i mobile 390 × 844.
+- Konsola nie zgłosiła błędów; widoczne były wyłącznie komunikaty deweloperskie Vite i informacja o eksperymentalnym `<Suspense>`.
+
+## Historia porównania
+
+- Pierwszy przebieg zachował karty, treści, promienie i układ źródłowego widoku, dodając wskazaną kontrolkę zbiorczą.
+- **P2 — status zgody był zbyt subtelny:** zwiększono badge, zastosowano pełny czerwony wariant dla zgody wymaganej, neutralny wariant dla dobrowolnej oraz dodano wyróżnioną krawędź i lekkie tło karty wymaganej.
+- **P2 — komponent nadpisywał semantykę wymagania:** użyto właściwości `required`, potwierdzono `aria-required` w przeglądarce i ukryto generowaną gwiazdkę, ponieważ pełny status jest już pokazany w badge.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/client typecheck` — zatrzymany przez istniejące braki równoległego przeniesienia widoku: nierozwiązany pakiet `@openexpert/mortgage` oraz nieaktualne pole `clientPortalBaseUrl`; brak błędów wskazujących dodany fragment zgód.
+- Kontrola białych znaków `apps/client/app/pages/book/[widgetKey].vue` i `git diff --check -- design-qa.md` — bez uwag.
+
+## Final result
+
+`passed`
+
+---
+
+# Design QA — najbliższe terminy na kartach ekspertów
+
+## Wynik
+
+`passed`
+
+Karty ekspertów pokazują teraz trzy najbliższe dni z rzeczywistej dostępności kalendarza. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonym stanie desktopowym i mobilnym.
+
+## Materiał porównawczy
+
+- Zrzut źródłowy: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-55954132-2a1e-42a1-a65d-dae4ff7b1f82.png`, 2742 × 1044 px.
+- Finalny widok desktop: `/Users/konradstraszewski/Documents/GitHub/app/tmp/directory-availability-qa/implementation-desktop-final.png`, 1966 × 780 px.
+- Finalny widok mobile: `/Users/konradstraszewski/Documents/GitHub/app/tmp/directory-availability-qa/implementation-mobile-final.png`, 390 × 844 px.
+- Bezpośrednie porównanie stopki przed/po: `/Users/konradstraszewski/Documents/GitHub/app/tmp/directory-availability-qa/comparison-footer.png`, 900 × 125 px.
+
+Zrzut źródłowy i implementację otwarto razem w jednym porównaniu. Stan implementacji korzystał z rzeczywistych slotów lokalnego kalendarza rezerwacji w strefie `Europe/Warsaw`.
+
+## Pełny widok i ocena wymaganych powierzchni
+
+- **Layout i spacing:** zachowano istniejący podział karty, wysokość stopki i pozycję CTA. Etykieta oraz trzy krótkie daty mieszczą się bez kolizji na desktopie; na 390 px stopka przechodzi w czytelny układ pionowy.
+- **Typografia i copy:** etykieta „Najbliższe terminy” używa istniejącego kroju mono i hierarchii podpisów. Daty mają krótki polski format, np. `12 sie`, dzięki czemu pozostają skanowalne.
+- **Kolory i powierzchnie:** zachowano neutralną paletę, obramowania, tło i czarny przycisk ze zrzutu referencyjnego.
+- **Ikony i zasoby:** wykorzystano istniejącą ikonę kalendarza oraz avatary katalogu; nie dodano własnych SVG, CSS-art ani atrap obrazów.
+- **Copy i dane:** widoczne daty są trzema najbliższymi unikalnymi dniami, w których ekspert ma co najmniej jeden wolny slot dla opublikowanej usługi. Przy błędzie lub niepotwierdzonej dostępności pozostaje bezpieczny tekst „Wybierz dogodny termin”.
+- **Dostępność:** daty są semantyczną listą elementów `<time>` z pełnymi polskimi nazwami dla czytników ekranu; grupa ma etykietę, a CTA zachowuje imienną nazwę dostępną.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Widok desktopowy i mobile pokazał trzy najbliższe dni bez poziomego overflow ani zmiany rytmu karty.
+- Link „Umów konsultację” zachował `expertId` i dodał `serviceId` usługi, dla której istnieje pierwszy reklamowany termin.
+- Konsola przeglądarki nie zawierała błędów ani ostrzeżeń.
+- Stan pustego katalogu nadal renderuje się poprawnie po wyłączeniu lokalnych danych demonstracyjnych.
+
+## Historia porównania i poprawki
+
+- **P1 — termin mógł należeć do innej usługi niż domyślnie otwarta:** CTA preselektuje teraz identyfikator usługi pierwszego pokazanego terminu.
+- **P1 — pobieranie dostępności mogło blokować katalog:** obliczenia mają wspólny deadline 3 s, limit współbieżności i fail-open do stanu bez podglądu dat.
+- **P2 — ulotne daty mogły pozostawać zbyt długo w cache:** cache katalogu i strony skrócono do przedziału liczonych w sekundach/minutach, a nie godzinach lub dobie.
+- **P2 — częściowa awaria mogła dostać etykietę „Najbliższe”:** przy choć jednym nieudanym zapytaniu daty nie są reklamowane jako kompletna lista.
+- **P2 — pierwsza struktura dat nie była optymalna dla czytników ekranu:** zastąpiono ją listą `<ul>/<li>/<time>` z pełnymi nazwami dat.
+
+## Walidacja techniczna
+
+- 27/27 wąskich testów katalogu i dostępności zakończonych powodzeniem.
+- `pnpm --filter @openexpert/landing typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/landing build` — zakończone kodem 0.
+- `git diff --check -- apps/landing` — bez błędów.
+
+## Final result
+
+`passed`
+
+---
+
 # Design QA — wybór załączników w paczce Multiwniosku
 
 ## Wynik

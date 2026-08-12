@@ -57,6 +57,7 @@ function escapeHtml(value: string): string {
 function emailContent(
   kind: 'email-verification' | 'magic-link' | 'password-reset',
   url: string,
+  metadata?: Record<string, unknown>,
 ) {
   const safeUrl = escapeHtml(url)
   if (kind === 'password-reset') {
@@ -67,6 +68,13 @@ function emailContent(
     }
   }
   if (kind === 'magic-link') {
+    if (metadata?.clientPortalBooking === true) {
+      return {
+        subject: 'Potwierdź konto i dokończ rezerwację w OpenExpert',
+        text: `Otwórz ten jednorazowy link, aby potwierdzić konto klienta i wrócić do rezerwacji spotkania:\n\n${url}\n\nLink wygasa po godzinie. Jeśli to nie Ty rozpocząłeś rezerwację, zignoruj tę wiadomość.`,
+        html: `<p>Potwierdź konto klienta, aby bezpiecznie wrócić do rezerwacji spotkania.</p><p><a href="${safeUrl}">Potwierdź konto i kontynuuj</a></p><p>Link wygasa po godzinie. Jeśli to nie Ty rozpocząłeś rezerwację, zignoruj tę wiadomość.</p>`,
+      }
+    }
     return {
       subject: 'Twój link logowania do panelu OpenExpert',
       text: `Otwórz ten jednorazowy link, aby zalogować się do panelu OpenExpert:\n\n${url}\n\nLink wygasa po godzinie. Nie przekazuj go dalej.`,
@@ -152,7 +160,11 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
     },
     emailSender: {
       async send(message) {
-        const content = emailContent(message.kind, message.url)
+        const content = emailContent(
+          message.kind,
+          message.url,
+          message.kind === 'magic-link' ? message.metadata : undefined,
+        )
         const result = await sender.send({
           to: message.to,
           ...content,

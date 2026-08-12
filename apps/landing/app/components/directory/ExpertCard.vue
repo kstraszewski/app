@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DirectoryExpert } from '#shared/types/directory'
+import { directoryExpertPath } from '#shared/utils/directory-expert'
 
 const props = defineProps<{
   expert: DirectoryExpert
@@ -14,10 +15,48 @@ const initials = computed(() => props.expert.name
   .join('')
   .toLocaleUpperCase('pl-PL'),
 )
+const profileHref = computed(() => directoryExpertPath(props.expert.slug))
+
+const availableDates = computed(() => (
+  props.expert.availability?.status === 'available'
+    ? props.expert.availability.dates
+    : []
+))
+
+const shortDateFormatter = new Intl.DateTimeFormat('pl-PL', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+})
+const fullDateFormatter = new Intl.DateTimeFormat('pl-PL', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+function dateFromIso(value: string): Date {
+  return new Date(`${value}T12:00:00.000Z`)
+}
+
+function shortDate(value: string): string {
+  return shortDateFormatter.format(dateFromIso(value)).replace(/\.$/u, '')
+}
+
+function fullDate(value: string): string {
+  return fullDateFormatter.format(dateFromIso(value))
+}
 </script>
 
 <template>
   <article :id="`ekspert-${expert.expertId}`" class="expert-card">
+    <NuxtLink
+      class="expert-card__profile-link"
+      :to="profileHref"
+      :aria-label="`Otwórz wizytówkę eksperta ${expert.name}`"
+    />
+
     <header class="expert-card__header">
       <span class="expert-card__avatar" aria-hidden="true">
         <img
@@ -61,10 +100,25 @@ const initials = computed(() => props.expert.name
     </div>
 
     <footer class="expert-card__footer">
-      <span>
+      <div class="expert-card__availability">
         <Icon name="lucide:calendar-days" aria-hidden="true" />
-        Wybierz dogodny termin
-      </span>
+        <span v-if="availableDates.length" class="expert-card__availability-copy">
+          <small :id="`ekspert-${expert.expertId}-availability-label`">Najbliższe terminy</small>
+          <ul
+            class="expert-card__dates"
+            :aria-labelledby="`ekspert-${expert.expertId}-availability-label`"
+          >
+            <li v-for="date in availableDates" :key="date.localDate">
+              <time
+                :datetime="date.localDate"
+                :aria-label="fullDate(date.localDate)"
+                :title="fullDate(date.localDate)"
+              >{{ shortDate(date.localDate) }}</time>
+            </li>
+          </ul>
+        </span>
+        <span v-else>Wybierz dogodny termin</span>
+      </div>
       <a
         :href="bookingHref"
         :aria-label="`Umów konsultację z ekspertem ${expert.name}`"
@@ -78,6 +132,7 @@ const initials = computed(() => props.expert.name
 
 <style scoped>
 .expert-card {
+  position: relative;
   display: grid;
   min-width: 0;
   grid-template-rows: auto 1fr auto;
@@ -88,6 +143,19 @@ const initials = computed(() => props.expert.name
   transition:
     border-color var(--transition-fast),
     transform var(--transition-fast);
+}
+
+.expert-card__profile-link {
+  position: absolute;
+  z-index: 1;
+  border-radius: inherit;
+  cursor: pointer;
+  inset: 0;
+}
+
+.expert-card__profile-link:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 3px;
 }
 
 .expert-card:hover {
@@ -220,20 +288,64 @@ const initials = computed(() => props.expert.name
   padding: 16px 22px;
 }
 
-.expert-card__footer > span {
-  display: inline-flex;
+.expert-card__availability {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 15px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   color: #666;
   font-size: 11px;
 }
 
-.expert-card__footer > span :deep(svg) {
+.expert-card__availability :deep(svg) {
   width: 15px;
   height: 15px;
 }
 
+.expert-card__availability-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.expert-card__availability-copy small {
+  color: #777;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.expert-card__dates {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  margin: 0;
+  padding: 0;
+  color: #222;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  list-style: none;
+}
+
+.expert-card__dates li {
+  white-space: nowrap;
+}
+
+.expert-card__dates li + li::before {
+  margin-right: 6px;
+  color: #aaa;
+  content: '·';
+}
+
 .expert-card__footer a {
+  position: relative;
+  z-index: 2;
   display: inline-flex;
   min-height: 42px;
   align-items: center;

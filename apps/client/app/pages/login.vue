@@ -2,7 +2,7 @@
 const route = useRoute()
 const authClient = useAuthClient()
 const runtimeConfig = useRuntimeConfig()
-const { absoluteCallback, errorMessage, safeRedirect } = usePortalAuth()
+const { absoluteCallback, errorCode, errorMessage, safeRedirect } = usePortalAuth()
 
 const mode = ref<'magic' | 'password'>('magic')
 const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
@@ -12,6 +12,7 @@ const sent = ref(false)
 const error = ref('')
 const passwordVisible = ref(false)
 const sessionExpired = computed(() => route.query.reason === 'session-expired')
+const accountArchived = computed(() => route.query.accountArchived === '1')
 
 const redirectPath = computed(() => safeRedirect(
   route.query.redirect ?? route.query.next,
@@ -95,6 +96,33 @@ function changeMode(nextMode: 'magic' | 'password') {
   error.value = ''
   sent.value = false
 }
+
+async function closeArchivedPortalSession() {
+  if (!accountArchived.value) return
+
+  try {
+    await $fetch('/api/client/access', {
+      headers: { 'cache-control': 'no-cache' },
+    })
+    return
+  }
+  catch (accessError) {
+    if (errorCode(accessError as Parameters<typeof errorCode>[0]) !== 'PORTAL_ACCOUNT_ARCHIVED') {
+      return
+    }
+  }
+
+  try {
+    await signOutAuthenticatedUser()
+  }
+  catch {
+    useAuthUser().value = null
+  }
+}
+
+onMounted(() => {
+  void closeArchivedPortalSession()
+})
 </script>
 
 <template>
@@ -109,6 +137,16 @@ function changeMode(nextMode: 'magic' | 'password') {
       icon="i-lucide-clock-alert"
       title="Twoja sesja wygasła"
       description="Zaloguj się ponownie. Po zalogowaniu wrócisz do poprzedniego miejsca."
+      class="login-alert"
+    />
+
+    <UAlert
+      v-if="accountArchived && !sent"
+      color="success"
+      variant="subtle"
+      icon="i-lucide-archive-check"
+      title="Konto panelu zostało zarchiwizowane"
+      description="Dostęp do panelu został wyłączony. Dokumentacja i historia relacji pozostają bezpiecznie zapisane w CRM."
       class="login-alert"
     />
 

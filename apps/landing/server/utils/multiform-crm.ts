@@ -173,6 +173,8 @@ export interface CrmMultiformContext {
   applicants: Array<{
     clientId: string
     label: string
+    firstName: string | null
+    lastName: string | null
     pesel: string | null
     email: string | null
     phone: string | null
@@ -1213,7 +1215,7 @@ export async function loadCrmMultiformContext(
     clientIds.length
       ? dataApi
           .from('crm_client_people')
-          .select('client_id, display_name, pesel, email, phone, date_of_birth, role, created_at')
+          .select('client_id, display_name, first_name, last_name, pesel, email, phone, date_of_birth, role, created_at')
           .eq('organization_id', organization.id)
           .in('client_id', clientIds)
           .order('created_at')
@@ -1254,6 +1256,8 @@ export async function loadCrmMultiformContext(
     return {
       clientId,
       label: profile.label,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
       pesel: profile.pesel,
       email: profile.email,
       phone: profile.phone,

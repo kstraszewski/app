@@ -79,6 +79,24 @@ export {
 export { validateTemplateJson } from './template-validation.ts'
 export { resolveTemplateFillMethod } from './types.ts'
 export {
+  canonicalDerivationDependenciesForKey,
+  decodePesel,
+  formatCurrencyWords,
+  integerToPolishWords,
+  resolveCanonicalValues,
+} from './value-resolution.ts'
+export type {
+  CanonicalResolutionIssue,
+  CanonicalResolutionResult,
+  CanonicalResolutionStatus,
+  CanonicalResolvedValueMeta,
+  CanonicalScalar,
+  CanonicalValueOrigin,
+  DecodedPesel,
+  PeselDecodeResult,
+  ResolveCanonicalValuesOptions,
+} from './value-resolution.ts'
+export {
   instantiateTemplate,
   templateMatchesValues,
   templateInstanceIndexes,

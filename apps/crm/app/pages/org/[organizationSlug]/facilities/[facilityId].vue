@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { BookingWidgetType } from '#shared/types/booking-calculators'
+import {
+  bookingWidgetEmbedUrl,
+  bookingWidgetScriptUrl,
+} from '#shared/utils/booking-widget-urls'
 import type { TeamGraphPayload } from '~/types/organization'
 import type {
   Appointment,
@@ -114,6 +118,10 @@ const router = useRouter()
 const { organizationSlug, orgApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
 const currentUrl = useRequestURL()
+const runtimeConfig = useRuntimeConfig()
+const clientPortalBaseUrl = String(
+  runtimeConfig.public.openexpert.clientPortalBaseUrl || 'http://127.0.0.1:3006',
+)
 
 const selectedFacilityId = ref(Array.isArray(route.params.facilityId)
   ? String(route.params.facilityId[0] ?? '')
@@ -420,12 +428,15 @@ const widgetItems = computed(() => workspace.value.widgets.data.map(widget => ({
   value: widget.id,
 })))
 const widgetPreviewUrl = computed(() => selectedWidget.value
-  ? absoluteUrl(selectedWidget.value.embedUrl || `/book/${selectedWidget.value.widgetKey}?embed=1`)
+  ? absoluteUrl(selectedWidget.value.embedUrl || bookingWidgetEmbedUrl(
+      clientPortalBaseUrl,
+      selectedWidget.value.widgetKey,
+    ))
   : '')
 const iframeSnippet = computed(() => selectedWidget.value?.embedCode || '')
 const scriptSnippet = computed(() => {
   if (!selectedWidget.value) return ''
-  return `<script src="${absoluteUrl('/booking-widget.js')}" data-openexpert-widget="${selectedWidget.value.widgetKey}" data-theme="${selectedWidget.value.theme}" async><\/script>`
+  return `<script src="${bookingWidgetScriptUrl(clientPortalBaseUrl)}" data-openexpert-widget="${selectedWidget.value.widgetKey}" data-theme="${selectedWidget.value.theme}" async><\/script>`
 })
 const filteredAppointments = computed(() => appointmentsPayload.value.data)
 const appointmentPageStart = computed(() => appointmentsPayload.value.count

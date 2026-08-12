@@ -30,6 +30,24 @@ test('boolean bank questions expose an explicit unanswered / Tak / Nie state', (
   assert.equal(field.placeholder, 'Wybierz opcję')
 })
 
+test('derived fields expose their source dependencies to the shared form clients', () => {
+  const birthDate = CANONICAL_FIELDS.find(field => (
+    field.canonicalKey === 'applicants.0.birthDate'
+  ))
+  const collateralAddress = CANONICAL_FIELDS.find(field => (
+    field.canonicalKey === 'collateralProperty.address'
+  ))
+  assert.ok(birthDate)
+  assert.ok(collateralAddress)
+  assert.deepEqual(toUiField(birthDate).derivation, {
+    mode: 'when_available',
+    dependencies: ['applicants.0.pesel'],
+  })
+  assert.ok(toUiField(collateralAddress).derivation?.dependencies.includes(
+    'collateralProperty.sameAsFinancedProperty',
+  ))
+})
+
 test('PDF-constrained text validation reaches the UI contract', () => {
   const schedule = CANONICAL_FIELDS.find(field => (
     field.canonicalKey === 'investment.ownFundsContributionDates'

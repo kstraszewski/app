@@ -225,6 +225,7 @@ function syncApplicationEnvFiles(values) {
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/client/.env'), {
     ...dataApi,
     NUXT_AUTH_BASE_URL: 'http://127.0.0.1:3006',
+    NUXT_BOOKING_RATE_LIMIT_SECRET: values.NUXT_BOOKING_RATE_LIMIT_SECRET,
     NUXT_PUBLIC_CLIENT_BASE_URL: 'http://127.0.0.1:3006',
   })
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/landing/.env'), dataApi)

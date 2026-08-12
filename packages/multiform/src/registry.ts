@@ -2,6 +2,7 @@ import { CANONICAL_COLLECTIONS, CANONICAL_FIELDS } from './canonical-fields.ts'
 import { businessCompanyFormKeysForTemplate } from './business-company-fields.ts'
 import { instantiateTemplate } from './template-instances.ts'
 import { TEMPLATES } from './templates/index.ts'
+import { canonicalDerivationDependenciesForKey } from './value-resolution.ts'
 import type {
   BundleWarning,
   CanonicalFieldDefinition,
@@ -130,6 +131,16 @@ export function prepareBundle(
       for (const key of businessCompanyFormKeysForTemplate(fieldTemplate)) {
         if (FIELD_KEYS.has(key)) requestedFields.add(key)
       }
+    }
+  }
+
+  const dependencyQueue = [...requestedFields]
+  for (let cursor = 0; cursor < dependencyQueue.length; cursor += 1) {
+    const key = dependencyQueue[cursor]!
+    for (const dependency of canonicalDerivationDependenciesForKey(key)) {
+      if (!FIELD_KEYS.has(dependency) || requestedFields.has(dependency)) continue
+      requestedFields.add(dependency)
+      dependencyQueue.push(dependency)
     }
   }
 

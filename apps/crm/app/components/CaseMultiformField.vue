@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CanonicalResolvedValueMeta } from '@openexpert/multiform'
 import type {
   MultiformFieldOption,
   MultiformFieldValue,
@@ -10,6 +11,8 @@ const props = withDefaults(defineProps<{
   modelValue?: MultiformFieldValue
   required?: boolean
   invalid?: boolean
+  resolution?: CanonicalResolvedValueMeta
+  resolutionMessage?: string
 }>(), {
   modelValue: '',
   required: false,
@@ -27,11 +30,20 @@ const fieldLabel = computed(() => (
   || props.field.label
 ))
 const fieldHelpText = computed(() => props.field.helpText || props.field.description)
+const isAutomaticallyResolved = computed(() => (
+  props.resolution?.origin === 'derived'
+  && (props.resolution.status === 'clean' || props.resolution.status === 'stale')
+))
 const selectItems = computed(() => (props.field.options ?? []).map(option => ({
   label: optionLabel(option),
   value: optionValue(option),
 })))
-const errorMessage = computed(() => props.invalid ? validationMessage() : undefined)
+const errorMessage = computed(() => (
+  props.invalid ? props.resolutionMessage || validationMessage() : undefined
+))
+const inputMode = computed(() => (
+  props.field.key.endsWith('.pesel') ? 'numeric' : undefined
+))
 
 function optionLabel(option: MultiformFieldOption) {
   return typeof option === 'string' ? option : option.label
@@ -99,6 +111,7 @@ function validationMessage() {
       :label="fieldLabel"
       :description="fieldHelpText"
       :aria-required="required"
+      :disabled="isAutomaticallyResolved"
       @update:model-value="updateValue(Boolean($event))"
     />
     <UTextarea
@@ -108,6 +121,7 @@ function validationMessage() {
       :placeholder="field.placeholder"
       :rows="3"
       :maxlength="field.validation?.maxLength"
+      :readonly="isAutomaticallyResolved"
       autoresize
       :maxrows="8"
       class="w-full"
@@ -120,6 +134,7 @@ function validationMessage() {
       :items="selectItems"
       value-key="value"
       :placeholder="field.placeholder || 'Wybierz opcję'"
+      :disabled="isAutomaticallyResolved"
       class="w-full"
       @update:model-value="updateValue"
     />
@@ -133,15 +148,34 @@ function validationMessage() {
       :min="field.validation?.min"
       :max="field.validation?.max"
       :step="inputType() === 'number' ? inputStep() : undefined"
+      :inputmode="inputMode"
+      :readonly="isAutomaticallyResolved"
       class="w-full"
       @update:model-value="updateValue"
     />
+    <div v-if="isAutomaticallyResolved" class="case-multiform-field__automatic">
+      <UIcon name="i-lucide-sparkles" />
+      <span>Uzupełniono automatycznie na podstawie innych danych.</span>
+    </div>
   </UFormField>
 </template>
 
 <style scoped>
 .case-multiform-field--wide {
   grid-column: 1 / -1;
+}
+
+.case-multiform-field__automatic {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  color: var(--ui-text-muted);
+  font-size: 0.75rem;
+}
+
+.case-multiform-field__automatic svg {
+  color: var(--ui-primary);
 }
 
 @media (max-width: 680px) {

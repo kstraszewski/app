@@ -1,4 +1,6 @@
 import {
+  formatCurrencyWords,
+  resolveCanonicalValues,
   resolveTemplateFillMethod,
   type DocumentTemplate,
   type TemplateBinding,
@@ -93,6 +95,9 @@ function resolveBindingValue(binding: TemplateBinding, values: FlatSpreadsheetVa
       break
     case 'streetHouseAndUnit':
       value = meaningfulParts([sourceValues[0], houseAndUnit(sourceValues.slice(1))]).join(' ')
+      break
+    case 'currency.words':
+      value = formatCurrencyWords(sourceValues[0], String(sourceValues[1] ?? 'PLN')) ?? ''
       break
     default:
       value = binding.computed
@@ -314,7 +319,7 @@ function validateWorkbookSnapshot(template: DocumentTemplate, files: Record<stri
 export function fillXlsxTemplate(
   template: DocumentTemplate,
   sourceBytes: Uint8Array,
-  values: FlatSpreadsheetValues,
+  inputValues: FlatSpreadsheetValues,
 ) {
   const fillMethod = resolveTemplateFillMethod(template)
   if (fillMethod.kind !== 'xlsx_native' && fillMethod.kind !== 'xlsx_manual') {
@@ -329,6 +334,12 @@ export function fillXlsxTemplate(
   }
   const { workbookXml, sheets } = validateWorkbookSnapshot(template, files)
   if (fillMethod.kind === 'xlsx_manual') return sourceBytes.slice()
+  const resolution = resolveCanonicalValues(inputValues)
+  const resolutionError = resolution.issues.find(issue => issue.severity === 'error')
+  if (resolutionError) {
+    throw new MultiformSpreadsheetValueError(resolutionError.key, resolutionError.message)
+  }
+  const values: FlatSpreadsheetValues = resolution.values
   const styles = cellXfs(strFromU8(files[stylesPath]!))
   const sheetPathByName = new Map(sheets.map(sheet => [sheet.name, sheet.path]))
 

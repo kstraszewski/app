@@ -1,5 +1,6 @@
 import {
   CANONICAL_FIELDS,
+  canonicalDerivationDependenciesForKey,
   instantiateTemplate,
   resolveTemplateFillMethod,
   type CanonicalFieldDefinition,
@@ -48,6 +49,7 @@ const requiredKeys: ReadonlySet<string> = new Set([
   'property.address.voivodeship',
   'property.marketValue',
   'collateralProperty.type',
+  'collateralProperty.sameAsFinancedProperty',
   'property.ownershipType',
   'property.ownershipSequence',
   'loan.currency',
@@ -128,6 +130,7 @@ export function toUiField(
   field: CanonicalFieldDefinition,
   additionalRequiredKeys?: ReadonlySet<string>,
 ) {
+  const derivationDependencies = canonicalDerivationDependenciesForKey(field.canonicalKey)
   const booleanOptions = field.type === 'boolean'
     ? [
         { label: 'Tak', value: 'true' },
@@ -159,6 +162,9 @@ export function toUiField(
     options: booleanOptions ?? field.options?.map(option => ({ ...option })),
     collection: field.collection ? { ...field.collection } : undefined,
     validation: field.validation,
+    derivation: derivationDependencies.length
+      ? { mode: 'when_available' as const, dependencies: [...derivationDependencies] }
+      : undefined,
   }
 }
 

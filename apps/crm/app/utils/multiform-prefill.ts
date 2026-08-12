@@ -1,5 +1,7 @@
 export interface MultiformApplicantPrefillSource {
   label: string
+  firstName?: string | null
+  lastName?: string | null
   pesel: string | null
   email?: string | null
   phone?: string | null
@@ -11,15 +13,35 @@ export interface MultiformClientContactSource {
   primary_phone?: string | null
 }
 
+export interface MultiformPropertyAddressParts {
+  street: string
+  houseNumber: string
+  unitNumber: string
+}
+
+export function splitPolishStreetAddress(value: string | null | undefined): MultiformPropertyAddressParts {
+  const firstLine = String(value ?? '').split(',')[0]?.trim() ?? ''
+  const normalized = firstLine.replace(/^(?:ul\.?|al\.?|aleja|os\.?|osiedle|pl\.?|plac)\s+/iu, '')
+  const match = /^(.*?)\s+(\d+[a-z]?(?:-\d+[a-z]?)?)(?:\/(\d+[a-z]?))?$/iu.exec(normalized)
+  if (!match) return { street: normalized, houseNumber: '', unitNumber: '' }
+  return {
+    street: match[1]?.trim() ?? '',
+    houseNumber: match[2]?.trim() ?? '',
+    unitNumber: match[3]?.trim() ?? '',
+  }
+}
+
 export function multiformApplicantDefaults(
   applicant: MultiformApplicantPrefillSource,
   client?: MultiformClientContactSource,
 ) {
   const nameParts = applicant.label.trim().split(/\s+/).filter(Boolean)
+  const fallbackFirstName = nameParts.shift() ?? ''
+  const fallbackLastName = nameParts.join(' ')
 
   return {
-    firstName: nameParts.shift() ?? '',
-    lastName: nameParts.join(' '),
+    firstName: applicant.firstName?.trim() || fallbackFirstName,
+    lastName: applicant.lastName?.trim() || fallbackLastName,
     pesel: applicant.pesel?.trim() ?? '',
     email: applicant.email?.trim() || client?.primary_email || '',
     phone: applicant.phone?.trim() || client?.primary_phone || '',

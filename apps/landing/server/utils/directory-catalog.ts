@@ -5,6 +5,10 @@ import type {
   DirectoryService,
 } from '../../shared/types/directory'
 import {
+  directoryExpertSlug,
+  directoryExpertSlugMap,
+} from '../../shared/utils/directory-expert.ts'
+import {
   selectBookableCatalogEntries,
   selectDirectorySourceKeys,
 } from './directory-selection.ts'
@@ -38,8 +42,11 @@ export type DirectoryFacilityDraft = Omit<
   'organizationSlug' | 'facilitySlug' | 'city' | 'coordinates'
 >
 
+export type DirectoryExpertDraft = Omit<DirectoryExpert, 'availability'>
+type DirectoryExpertCatalogDraft = Omit<DirectoryExpertDraft, 'slug'>
+
 export interface DirectoryBuildResult {
-  experts: DirectoryExpert[]
+  experts: DirectoryExpertDraft[]
   facilities: DirectoryFacilityDraft[]
 }
 
@@ -184,33 +191,39 @@ export function buildDirectory(
     expertIds: catalog.experts.map(expert => expert.expertId),
   })))
 
-  return {
-    experts: [...selection.expertWidgetKeys]
-      .flatMap(([expertId, widgetKey]): DirectoryExpert[] => {
-        const catalog = catalogsByWidgetKey.get(widgetKey)
-        const expert = catalog?.experts.find(
-          candidate => candidate.expertId === expertId,
-        )
-        if (!catalog || !expert) return []
+  const experts = [...selection.expertWidgetKeys]
+    .flatMap(([expertId, widgetKey]): DirectoryExpertCatalogDraft[] => {
+      const catalog = catalogsByWidgetKey.get(widgetKey)
+      const expert = catalog?.experts.find(
+        candidate => candidate.expertId === expertId,
+      )
+      if (!catalog || !expert) return []
 
-        const servicesById = new Map(
-          catalog.services.map(service => [service.key, service.value]),
-        )
-        return [{
-          expertId,
-          name: expert.name,
-          ...(expert.avatarUrl ? { avatarUrl: expert.avatarUrl } : {}),
-          services: expert.serviceKeys
-            .flatMap(key => servicesById.get(key) ?? [])
-            .sort(serviceSort),
-          facilities: [{
-            name: catalog.facility.name,
-            address: catalog.facility.address,
-          }],
-          widgetKey,
-        }]
-      })
-      .sort((left, right) => left.name.localeCompare(right.name, 'pl-PL')),
+      const servicesById = new Map(
+        catalog.services.map(service => [service.key, service.value]),
+      )
+      return [{
+        expertId,
+        name: expert.name,
+        ...(expert.avatarUrl ? { avatarUrl: expert.avatarUrl } : {}),
+        services: expert.serviceKeys
+          .flatMap(key => servicesById.get(key) ?? [])
+          .sort(serviceSort),
+        facilities: [{
+          name: catalog.facility.name,
+          address: catalog.facility.address,
+        }],
+        widgetKey,
+      }]
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, 'pl-PL'))
+  const expertSlugs = directoryExpertSlugMap(experts)
+
+  return {
+    experts: experts.map(expert => ({
+      ...expert,
+      slug: expertSlugs.get(expert.expertId) ?? directoryExpertSlug(expert.name),
+    })),
     facilities: [...selection.facilityWidgetKeys.values()]
       .flatMap((widgetKey): DirectoryFacilityDraft[] => {
         const catalog = catalogsByWidgetKey.get(widgetKey)

@@ -24,7 +24,8 @@ import {
 definePageMeta({ layout: false })
 
 const route = useRoute()
-const runtimeConfig = useRuntimeConfig()
+const authenticatedUser = useAuthUser()
+const { $portalFetch } = useNuxtApp()
 const anyExpertSelectValue = '__openexpert_any_available_expert__'
 const widgetKey = computed(() => String(route.params.widgetKey ?? ''))
 const isEmbedded = computed(() => route.query.embed === '1')
@@ -68,18 +69,50 @@ const customer = reactive({
   phone: '',
   notes: '',
 })
-const clientClaimPath = computed(() => confirmation.value
-  ? `/claim?appointmentId=${encodeURIComponent(confirmation.value.appointment.id)}`
-  : '/')
-const clientActivationLink = computed(() => {
-  const configuredBase = String(
-    runtimeConfig.public.openexpert?.clientPortalBaseUrl || 'http://127.0.0.1:3006',
-  )
-  const login = new URL('/login', configuredBase)
-  login.searchParams.set('email', customer.email.trim().toLowerCase())
-  login.searchParams.set('redirect', clientClaimPath.value)
-  return login.toString()
+const accountEmail = ref('')
+const accountLinkPending = ref(false)
+const accountLinkSent = ref(false)
+const accountLinkError = ref('')
+interface BookingProfile {
+  clientPersonId: string
+  displayName: string
+  role: string
+  phone: string | null
+}
+const bookingProfiles = ref<BookingProfile[]>([])
+const bookingProfilesPending = ref(false)
+const bookingProfilesLoaded = ref(false)
+const bookingProfilesError = ref('')
+const selectedClientPersonId = ref('')
+const hasVerifiedAccount = computed(() => (
+  authenticatedUser.value?.emailVerified === true
+  && Boolean(authenticatedUser.value.email)
+))
+const showAccountGate = computed(() => (
+  !isPreview.value && (isEmbedded.value || !hasVerifiedAccount.value)
+))
+const canonicalBookingPath = computed(() => {
+  const query = new URLSearchParams()
+  const expertId = typeof route.query.expertId === 'string' ? route.query.expertId : ''
+  const serviceId = typeof route.query.serviceId === 'string' ? route.query.serviceId : ''
+  if (expertId) query.set('expertId', expertId)
+  if (serviceId) query.set('serviceId', serviceId)
+  const search = query.toString()
+  return `/book/${encodeURIComponent(widgetKey.value)}${search ? `?${search}` : ''}`
 })
+const selectedBookingProfile = computed(() => bookingProfiles.value.find(
+  profile => profile.clientPersonId === selectedClientPersonId.value,
+))
+const bookingProfileItems = computed(() => bookingProfiles.value.map(profile => ({
+  label: profile.displayName || 'Profil klienta',
+  value: profile.clientPersonId,
+  description: profile.phone
+    ? `${profile.role || 'Klient'} · ${profile.phone}`
+    : profile.role || 'Klient',
+})))
+const bookingProfileSelectionRequired = computed(() => (
+  bookingProfiles.value.length > 1 && !selectedClientPersonId.value
+))
 
 const emptyWidgetPayload: PublicBookingWidgetPayload = {
   widget: {
@@ -276,6 +309,21 @@ const unmetRequiredConsents = computed(() => data.value.consents.filter(consent 
   consent.isRequired
   && (!consentDecisions[consent.versionId] || !consentChannelIsAvailable(consent.channel))
 )))
+const allConsentsSelection = computed<boolean | 'indeterminate'>({
+  get: () => {
+    const grantedCount = data.value.consents.filter(consent => (
+      consentDecisions[consent.versionId]
+    )).length
+    if (grantedCount === 0) return false
+    return grantedCount === data.value.consents.length ? true : 'indeterminate'
+  },
+  set: (value) => {
+    const granted = value === true
+    for (const consent of data.value.consents) {
+      consentDecisions[consent.versionId] = granted
+    }
+  },
+})
 const weekDays = computed(() => (
   weekStartDate.value
     ? buildBookingWeekDays(weekStartDate.value, slots.value, slotsTimezone.value)
@@ -434,6 +482,60 @@ function trackCalculatorStarted() {
   trackWidgetEvent('calculator_started')
 }
 
+async function sendAccountLink() {
+  accountLinkError.value = ''
+  if (!accountEmail.value.trim()) {
+    accountLinkError.value = 'Podaj adres e-mail, który ma być przypisany do konta klienta.'
+    return
+  }
+  accountLinkPending.value = true
+  try {
+    await $fetch('/api/auth/booking-magic-link', {
+      method: 'POST',
+      body: {
+        email: accountEmail.value.trim().toLowerCase(),
+        widgetKey: widgetKey.value,
+        expertId: typeof route.query.expertId === 'string' ? route.query.expertId : undefined,
+        serviceId: typeof route.query.serviceId === 'string' ? route.query.serviceId : undefined,
+      },
+    })
+    accountLinkSent.value = true
+  } catch (fetchError: unknown) {
+    const candidate = fetchError as { statusCode?: number }
+    accountLinkError.value = candidate.statusCode === 429
+      ? 'Wysłano zbyt wiele próśb. Odczekaj chwilę i spróbuj ponownie.'
+      : 'Nie udało się wysłać linku. Spróbuj ponownie za chwilę.'
+  } finally {
+    accountLinkPending.value = false
+  }
+}
+
+async function loadBookingProfiles() {
+  if (!hasVerifiedAccount.value || isEmbedded.value || isPreview.value) return
+  bookingProfilesPending.value = true
+  bookingProfilesError.value = ''
+  try {
+    const result = await ($portalFetch as typeof $fetch)<{ profiles: BookingProfile[] }>(
+      `/api/client/booking/widgets/${encodeURIComponent(widgetKey.value)}/profiles`,
+    )
+    bookingProfiles.value = result.profiles
+    if (result.profiles.length === 1) {
+      selectedClientPersonId.value = result.profiles[0]?.clientPersonId ?? ''
+    } else if (!result.profiles.some(
+      profile => profile.clientPersonId === selectedClientPersonId.value,
+    )) {
+      selectedClientPersonId.value = ''
+    }
+  } catch {
+    bookingProfiles.value = []
+    selectedClientPersonId.value = ''
+    bookingProfilesError.value = 'Nie udało się pobrać profilu klienta. Odśwież stronę i spróbuj ponownie.'
+  } finally {
+    bookingProfilesLoaded.value = true
+    bookingProfilesPending.value = false
+  }
+}
+
 async function continueFromCalculator(snapshot: BookingCalculatorSnapshot) {
   trackCalculatorStarted()
   trackWidgetEvent('calculator_completed')
@@ -463,6 +565,10 @@ async function loadSlots() {
   slotsError.value = ''
   slotsExpanded.value = false
   contactStepOpen.value = false
+  if (showAccountGate.value) {
+    slotsPending.value = false
+    return
+  }
   if (!serviceId || !rangeStart || (expertRequired.value && !expertId)) {
     slotsPending.value = false
     return
@@ -520,8 +626,8 @@ async function loadSlots() {
 async function submitBooking() {
   if (
     isPreview.value
-    ||
-    bookingUnavailableReason.value
+    || !hasVerifiedAccount.value
+    || bookingUnavailableReason.value
     || !selectedSlot.value
     || !selectedServiceId.value
     || !bookableServices.value.some(service => service.id === selectedServiceId.value)
@@ -529,6 +635,9 @@ async function submitBooking() {
     || !customer.name.trim()
     || !customer.email.trim()
     || !phoneRequirementMet.value
+    || bookingProfilesPending.value
+    || Boolean(bookingProfilesError.value)
+    || bookingProfileSelectionRequired.value
     || unmetRequiredConsents.value.length
   ) return
   bookingPending.value = true
@@ -540,8 +649,8 @@ async function submitBooking() {
       expertUserId: selectedExpertId.value || selectedSlot.value.expertUserId || null,
       startsAt: selectedSlot.value.startsAt,
       customerName: customer.name.trim(),
-      customerEmail: customer.email.trim(),
       customerPhone: customer.phone.trim() || null,
+      clientPersonId: selectedClientPersonId.value || null,
       notes: customer.notes.trim() || null,
       consentDecisions: data.value.consents.map(consent => ({
         definitionId: consent.definitionId,
@@ -555,15 +664,13 @@ async function submitBooking() {
       bookingIdempotencyIntent.value = fingerprint
       bookingIdempotencyKey.value = crypto.randomUUID()
     }
-    confirmation.value = await $fetch<PublicBookingConfirmation>(
-      `/api/booking/widgets/${encodeURIComponent(widgetKey.value)}/booking`,
+    confirmation.value = await ($portalFetch as typeof $fetch)<PublicBookingConfirmation>(
+      `/api/client/booking/widgets/${encodeURIComponent(widgetKey.value)}`,
       {
         method: 'POST',
         body: {
           ...bookingIntent,
           idempotencyKey: bookingIdempotencyKey.value,
-          isEmbedded: isEmbedded.value,
-          previewToken: previewToken.value || undefined,
           visitId: analyticsVisitId.value,
         },
       },
@@ -574,7 +681,9 @@ async function submitBooking() {
     const detail = candidate.data?.statusMessage || candidate.message || ''
     const consentCatalogueChanged = /consent definitions changed/i.test(detail)
     const calculatorChanged = /calculator settings changed/i.test(detail)
-    const ambiguousClient = /more than one client/i.test(detail)
+    const ambiguousClient = /more than one client|profile selection required/i.test(detail)
+    const profileMismatch = /profile contact mismatch/i.test(detail)
+    const archivedAccount = /portal account is archived/i.test(detail)
     const invalidConsents = /consent decisions|required consents|phone number is required/i.test(detail)
     const slotConflict = /slot|term|booking request key/i.test(detail)
     bookingError.value = consentCatalogueChanged
@@ -582,7 +691,11 @@ async function submitBooking() {
       : calculatorChanged
         ? 'Ustawienia kalkulatora zmieniły się. Wróć do kalkulatora, przelicz wynik i spróbuj ponownie.'
         : ambiguousClient
-        ? 'Te dane kontaktowe pasują do kilku klientów. Skontaktuj się bezpośrednio z placówką.'
+        ? 'To konto ma kilka profili klienta w tej placówce. Skontaktuj się z placówką, aby wskazać właściwy profil.'
+        : profileMismatch
+          ? 'Numer telefonu różni się od danych potwierdzonego profilu. Zaktualizuj dane konta lub skontaktuj się z placówką.'
+        : archivedAccount
+          ? 'To konto klienta zostało zarchiwizowane i nie może tworzyć nowych rezerwacji.'
         : invalidConsents
           ? 'Sprawdź decyzje dotyczące zgód oraz wymagane dane kontaktowe.'
           : candidate.statusCode === 409 && slotConflict
@@ -692,6 +805,23 @@ watch(selectedServiceId, (serviceId, previousServiceId) => {
   }
 }, { flush: 'sync' })
 watch([selectedServiceId, selectedExpertId], loadSlots)
+watch(hasVerifiedAccount, (verified) => {
+  if (!verified) return
+  customer.email = authenticatedUser.value?.email ?? ''
+  if (!customer.name.trim()) customer.name = authenticatedUser.value?.name ?? ''
+  void loadBookingProfiles()
+  void loadSlots()
+}, { immediate: true })
+watch(selectedBookingProfile, (profile, previousProfile) => {
+  if (profile?.phone) {
+    customer.phone = profile.phone
+  } else if (
+    previousProfile?.phone
+    && customer.phone === previousProfile.phone
+  ) {
+    customer.phone = ''
+  }
+})
 watch(canChooseExpert, (enabled) => {
   if (!enabled) selectedExpertId.value = data.value.widget.fixedExpertUserId ?? ''
 })
@@ -790,7 +920,7 @@ onBeforeUnmount(() => {
         <div class="booking-brand" aria-label="OpenExpert">
           <img
             class="booking-brand__mark"
-            :src="isDark ? '/assets/logo-dark.svg' : '/assets/logo-light.svg'"
+            src="/assets/logo-mark.svg"
             alt=""
           >
           <span>OpenExpert</span>
@@ -811,7 +941,7 @@ onBeforeUnmount(() => {
       </header>
 
       <nav
-        v-if="status !== 'pending' && !error && !bookingUnavailableReason && !showCalculator"
+        v-if="status !== 'pending' && !error && !bookingUnavailableReason && !showCalculator && !showAccountGate"
         class="booking-steps"
         aria-label="Postęp rezerwacji"
       >
@@ -877,15 +1007,11 @@ onBeforeUnmount(() => {
         <p class="booking-privacy">Rezerwację zapisano dla adresu {{ customer.email }}.</p>
         <div class="booking-confirmation__client">
           <div>
-            <strong>Zachowaj dostęp do konsultacji</strong>
-            <p>
-              {{ confirmation.portalActivation === 'sent'
-                ? 'Wysłaliśmy Ci bezpieczny link aktywacyjny. Możesz też otworzyć panel od razu.'
-                : 'Aktywuj panel klienta, aby zobaczyć ten i kolejne terminy powiązane z Twoim potwierdzonym kontaktem.' }}
-            </p>
+            <strong>Spotkanie jest już na Twoim koncie</strong>
+            <p>Termin został bezpiecznie powiązany z potwierdzonym profilem klienta.</p>
           </div>
           <UButton
-            :to="clientActivationLink"
+            to="/"
             :target="isEmbedded ? '_top' : undefined"
             size="lg"
             icon="i-lucide-calendar-heart"
@@ -911,6 +1037,100 @@ onBeforeUnmount(() => {
         <small>Spróbuj ponownie później albo skontaktuj się bezpośrednio z placówką.</small>
       </section>
 
+      <section
+        v-else-if="showAccountGate"
+        key="account-gate"
+        class="booking-account-gate"
+        aria-labelledby="booking-account-title"
+      >
+        <span class="booking-account-gate__icon" aria-hidden="true">
+          <UIcon name="i-lucide-shield-check" />
+        </span>
+        <p class="booking-kicker">Krok 1 z 4 · konto klienta</p>
+        <h2 id="booking-account-title">Najpierw potwierdź swoje konto</h2>
+        <p>
+          Rezerwacja zostanie utworzona bezpośrednio na Twoim koncie klienta.
+          Termin od razu pojawi się w panelu i nie będzie wymagał późniejszego łączenia.
+        </p>
+
+        <div v-if="isEmbedded" class="booking-account-gate__form">
+          <UAlert
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-external-link"
+            title="Dokończ rezerwację w panelu klienta"
+            description="Ze względów bezpieczeństwa potwierdzenie konta otworzy się w pełnym oknie."
+          />
+          <UButton
+            :to="canonicalBookingPath"
+            target="_top"
+            size="xl"
+            block
+            trailing-icon="i-lucide-arrow-up-right"
+          >
+            Przejdź do bezpiecznej rezerwacji
+          </UButton>
+        </div>
+
+        <form v-else class="booking-account-gate__form" @submit.prevent="sendAccountLink">
+          <UAlert
+            v-if="accountLinkSent"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-mail-check"
+            title="Sprawdź skrzynkę e-mail"
+            description="Wysłaliśmy jednorazowy link. Po jego otwarciu wrócisz tutaj jako potwierdzony klient i wybierzesz termin."
+          />
+          <template v-else>
+            <UFormField
+              name="accountEmail"
+              label="Adres e-mail konta klienta"
+              description="Może to być nowe konto albo adres, którego już używasz w OpenExpert."
+              required
+            >
+              <UInput
+                v-model="accountEmail"
+                type="email"
+                autocomplete="email"
+                icon="i-lucide-mail"
+                placeholder="twoj@email.pl"
+                size="xl"
+                required
+                class="w-full"
+              />
+            </UFormField>
+            <UAlert
+              v-if="accountLinkError"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :description="accountLinkError"
+            />
+            <UButton
+              type="submit"
+              size="xl"
+              block
+              :loading="accountLinkPending"
+              trailing-icon="i-lucide-arrow-right"
+            >
+              Potwierdź konto i kontynuuj
+            </UButton>
+          </template>
+          <UButton
+            v-if="accountLinkSent"
+            type="button"
+            color="neutral"
+            variant="ghost"
+            @click="accountLinkSent = false"
+          >
+            Wyślij link ponownie
+          </UButton>
+          <p class="booking-account-gate__privacy">
+            Link służy jednocześnie do bezpiecznego logowania i potwierdzenia adresu e-mail.
+          </p>
+        </form>
+      </section>
+
       <BookingCapacityCalculator
         v-else-if="showCalculator && data.widget.widgetType === 'mortgage_capacity'"
         key="capacity-calculator"
@@ -930,6 +1150,41 @@ onBeforeUnmount(() => {
       />
 
       <form v-else key="form" class="booking-form" @submit.prevent="submitBooking">
+        <UAlert
+          v-if="!isPreview"
+          color="success"
+          variant="subtle"
+          icon="i-lucide-badge-check"
+          title="Konto klienta potwierdzone"
+          :description="`Rezerwujesz jako ${customer.email}. Spotkanie pojawi się od razu w Twoim panelu.`"
+        />
+        <USkeleton v-if="bookingProfilesPending" class="h-16 w-full" />
+        <UAlert
+          v-else-if="bookingProfilesError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          title="Nie udało się sprawdzić profilu klienta"
+          :description="bookingProfilesError"
+        />
+        <UFormField
+          v-else-if="bookingProfiles.length > 1"
+          name="clientProfile"
+          label="Dla kogo rezerwujesz spotkanie?"
+          description="Na koncie jest kilka profili w tej placówce. Wybierz właściwą osobę."
+          required
+        >
+          <USelectMenu
+            v-model="selectedClientPersonId"
+            :items="bookingProfileItems"
+            value-key="value"
+            label-key="label"
+            description-key="description"
+            placeholder="Wybierz profil klienta"
+            class="w-full"
+            size="xl"
+          />
+        </UFormField>
         <UAlert
           v-if="isPreview"
           color="neutral"
@@ -1118,12 +1373,22 @@ onBeforeUnmount(() => {
               <UInput v-model="customer.name" class="w-full" autocomplete="name" required />
             </UFormField>
             <UFormField name="email" label="E-mail" required>
-              <UInput v-model="customer.email" class="w-full" type="email" autocomplete="email" required />
+              <UInput
+                v-model="customer.email"
+                class="w-full"
+                type="email"
+                autocomplete="email"
+                icon="i-lucide-badge-check"
+                :readonly="!isPreview"
+                required
+              />
             </UFormField>
             <UFormField
               name="phone"
               label="Telefon"
-              :description="phoneFieldDescription"
+              :description="selectedBookingProfile?.phone
+                ? 'Numer zapisany w potwierdzonym profilu klienta.'
+                : phoneFieldDescription"
               :hint="phoneRequired ? undefined : 'Opcjonalnie'"
               :required="phoneRequired"
               :error="phoneFieldError"
@@ -1134,6 +1399,7 @@ onBeforeUnmount(() => {
                 type="tel"
                 inputmode="tel"
                 autocomplete="tel"
+                :readonly="Boolean(selectedBookingProfile?.phone)"
                 :required="phoneRequired"
                 :aria-invalid="Boolean(phoneFieldError)"
               />
@@ -1148,9 +1414,18 @@ onBeforeUnmount(() => {
             class="booking-consents-step"
             aria-labelledby="booking-consents-title"
           >
-            <div>
-              <h3 id="booking-consents-title">Zgody i oświadczenia</h3>
-              <p>Zapoznaj się z aktualną treścią i zaznacz wybrane zgody.</p>
+            <div class="booking-consents-step__header">
+              <div>
+                <h3 id="booking-consents-title">Zgody i oświadczenia</h3>
+                <p>Wymagane zgody są niezbędne do rezerwacji; pozostałe są dobrowolne.</p>
+              </div>
+              <UCheckbox
+                id="booking-consents-select-all"
+                v-model="allConsentsSelection"
+                class="booking-consents-select-all"
+                label="Zaznacz wszystkie"
+                :aria-controls="data.consents.map(consent => `booking-consent-${consent.versionId}`).join(' ')"
+              />
             </div>
 
             <div class="booking-consents">
@@ -1159,9 +1434,9 @@ onBeforeUnmount(() => {
                 :id="`booking-consent-${consent.versionId}`"
                 :key="consent.versionId"
                 v-model="consentDecisions[consent.versionId]"
-                :aria-label="consent.title"
+                :aria-label="`${consent.title}. ${consent.isRequired ? 'Wymagana do rezerwacji' : 'Dobrowolna'}`"
                 :aria-describedby="`booking-consent-description-${consent.versionId}`"
-                :aria-required="consent.isRequired"
+                :required="consent.isRequired"
                 :class="['booking-consent', {
                   'booking-consent--required': consent.isRequired,
                 }]"
@@ -1175,11 +1450,16 @@ onBeforeUnmount(() => {
                   <span class="booking-consent__body">
                     <span class="booking-consent__title">
                       <strong>{{ consent.title }}</strong>
-                      <UBadge color="neutral" variant="subtle">
+                      <UBadge color="neutral" variant="outline" size="sm">
                         {{ consentChannelLabel(consent.channel) }}
                       </UBadge>
-                      <UBadge :color="consent.isRequired ? 'error' : 'neutral'" variant="outline">
-                        {{ consent.isRequired ? 'Wymagana' : 'Dobrowolna' }}
+                      <UBadge
+                        class="booking-consent__requirement"
+                        :color="consent.isRequired ? 'error' : 'neutral'"
+                        :variant="consent.isRequired ? 'solid' : 'subtle'"
+                        size="md"
+                      >
+                        {{ consent.isRequired ? 'Wymagana do rezerwacji' : 'Dobrowolna' }}
                       </UBadge>
                     </span>
                     <span
@@ -1235,7 +1515,7 @@ onBeforeUnmount(() => {
             v-else
             type="submit"
             class="booking-actionbar__button"
-            :disabled="isPreview || !selectedSlot || (expertRequired && !selectedExpertId) || !customer.name.trim() || !customer.email.trim() || !phoneRequirementMet || unmetRequiredConsents.length > 0 || bookingPending"
+            :disabled="isPreview || !selectedSlot || (expertRequired && !selectedExpertId) || !customer.name.trim() || !customer.email.trim() || !phoneRequirementMet || bookingProfilesPending || !bookingProfilesLoaded || Boolean(bookingProfilesError) || bookingProfileSelectionRequired || unmetRequiredConsents.length > 0 || bookingPending"
           >
             <UIcon v-if="bookingPending" name="i-lucide-loader-circle" class="booking-spin" />
             <span>
@@ -1253,10 +1533,26 @@ onBeforeUnmount(() => {
 <style scoped>
 .booking-page {
   --booking-frame-gutter: 24px;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", monospace;
+  --oe-radius-control: .75rem;
+  --oe-radius-surface: 1rem;
   min-height: 100vh;
   padding: 0;
   background: var(--ui-bg-muted);
   color: var(--ui-text);
+}
+
+.booking-page.dark {
+  --ui-text-dimmed: #737373;
+  --ui-text-muted: #a3a3a3;
+  --ui-text-toned: #d4d4d4;
+  --ui-text: #e5e5e5;
+  --ui-text-highlighted: #fafafa;
+  --ui-bg: #0a0a0a;
+  --ui-bg-muted: #171717;
+  --ui-bg-elevated: #262626;
+  --ui-border: #262626;
+  --ui-border-accented: #404040;
 }
 .booking-page--embedded {
   min-height: auto;
@@ -1319,6 +1615,10 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   object-fit: contain;
+}
+
+.booking-page.dark .booking-brand__mark {
+  filter: invert(1);
 }
 
 .booking-facility {
@@ -1678,6 +1978,7 @@ onBeforeUnmount(() => {
 .booking-contact-step h2,
 .booking-consents-step h3,
 .booking-confirmation h2,
+.booking-account-gate h2,
 .booking-unavailable h2 {
   margin: 0;
   color: var(--ui-text-highlighted);
@@ -1687,7 +1988,7 @@ onBeforeUnmount(() => {
 }
 
 .booking-contact-step__header span,
-.booking-consents-step > div > p {
+.booking-consents-step__header p {
   display: block;
   margin: 3px 0 0;
   color: var(--ui-text-muted);
@@ -1715,6 +2016,25 @@ onBeforeUnmount(() => {
   font-size: 17px;
 }
 
+.booking-consents-step__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.booking-consents-select-all {
+  flex: none;
+  padding-bottom: 1px;
+}
+
+.booking-consents-select-all :deep([data-slot="label"]) {
+  color: var(--ui-text-highlighted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .booking-consents {
   display: grid;
   gap: 12px;
@@ -1740,18 +2060,29 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.booking-consent :deep([data-slot="label"])::after {
+  display: none !important;
+  content: none !important;
+}
+
 .booking-consent :deep([data-slot="base"]) {
   position: relative;
   z-index: 2;
 }
 
 .booking-consent--required {
-  border-color: var(--ui-error);
+  border-color: color-mix(in srgb, var(--ui-error) 70%, var(--ui-border));
+  border-inline-start-width: 4px;
+  background: color-mix(in srgb, var(--ui-error) 4%, var(--ui-bg-muted));
 }
 
 .booking-consent:has([data-state="checked"]) {
   border-color: color-mix(in srgb, var(--booking-accent) 65%, var(--ui-border));
   background: color-mix(in srgb, var(--booking-accent) 7%, var(--ui-bg-muted));
+}
+
+.booking-consent--required:has([data-state="checked"]) {
+  border-inline-start-color: color-mix(in srgb, var(--ui-error) 70%, var(--ui-border));
 }
 
 .booking-consent__body {
@@ -1769,6 +2100,11 @@ onBeforeUnmount(() => {
 
 .booking-consent__title strong {
   margin-right: auto;
+}
+
+.booking-consent__requirement {
+  white-space: nowrap;
+  font-weight: 700;
 }
 
 .booking-consent__description {
@@ -2013,6 +2349,52 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.booking-account-gate {
+  display: grid;
+  width: min(calc(100% - (var(--booking-frame-gutter) * 2)), 620px);
+  justify-items: center;
+  gap: 12px;
+  margin: 0 auto;
+  padding: clamp(40px, 8vw, 82px) 0;
+  text-align: center;
+}
+
+.booking-account-gate__icon {
+  display: grid;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 10px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--booking-accent) 35%, var(--ui-border));
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--booking-accent) 9%, var(--ui-bg));
+  color: var(--booking-accent);
+  font-size: 29px;
+}
+
+.booking-account-gate > p:not(.booking-kicker) {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--ui-text-muted);
+  line-height: 1.6;
+}
+
+.booking-account-gate__form {
+  display: grid;
+  width: min(100%, 470px);
+  gap: 16px;
+  margin-top: 16px;
+  text-align: left;
+}
+
+.booking-account-gate__privacy {
+  margin: 0;
+  color: var(--ui-text-dimmed);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .booking-spin {
   animation: booking-spin 1s linear infinite;
 }
@@ -2113,6 +2495,7 @@ onBeforeUnmount(() => {
 
   .booking-calculator-return,
   .booking-contact-step__header,
+  .booking-consents-step__header,
   .booking-confirmation__client {
     align-items: flex-start;
     flex-direction: column;

@@ -12,6 +12,9 @@ const dataApiUrl = process.env.NUXT_DATA_API_URL
 const authBaseUrl = process.env.BETTER_AUTH_URL
   || process.env.NUXT_AUTH_BASE_URL
   || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004')
+const clientPortalBaseUrl = process.env.NUXT_PUBLIC_CLIENT_BASE_URL
+  || process.env.NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL
+  || (isProduction ? 'https://client.openexpert.app' : 'http://127.0.0.1:3006')
 const authDatabaseUrl = process.env.NUXT_AUTH_DATABASE_URL
   || (isProduction
     ? ''
@@ -205,6 +208,7 @@ export default defineNuxtConfig({
           || Boolean(process.env.BETTER_AUTH_SECRET || process.env.NUXT_AUTH_SECRET),
         crmBaseUrl: process.env.NUXT_PUBLIC_CRM_BASE_URL
           || (isProduction ? 'https://crm.openexpert.app' : 'http://127.0.0.1:3004'),
+        clientPortalBaseUrl,
         siteUrl: process.env.NUXT_PUBLIC_SITE_URL
           || (isProduction ? 'https://www.openexpert.app' : 'http://127.0.0.1:3003'),
         mapboxAccessToken: process.env.NUXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
@@ -224,7 +228,13 @@ export default defineNuxtConfig({
     },
     '/eksperci': {
       headers: {
-        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400',
+        'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120, stale-if-error=300',
+        'x-robots-tag': 'noindex, nofollow',
+      },
+    },
+    '/eksperci/**': {
+      headers: {
+        'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120, stale-if-error=300',
         'x-robots-tag': 'noindex, nofollow',
       },
     },

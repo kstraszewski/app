@@ -246,9 +246,10 @@ function clientFormResponse(input: {
   const values = Object.fromEntries(fields.map((field) => {
     const stored = storedValues[text(field.key)]
     const fallback = personDefault(access, field)
+    const storedIsBlank = stored === undefined || stored === null || (typeof stored === 'string' && !stored.trim())
     return [
       text(field.key),
-      stored ?? fallback ?? (field.type === 'checkbox' ? false : ''),
+      storedIsBlank && fallback ? fallback : stored ?? fallback ?? (field.type === 'checkbox' ? false : ''),
     ]
   }))
 

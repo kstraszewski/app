@@ -6992,6 +6992,23 @@ export type Database = {
         }
         Returns: Json
       }
+      create_verified_portal_booking: {
+        Args: {
+          p_auth_user_id: string
+          p_booking_context: Json
+          p_client_person_id?: string
+          p_consent_decisions: Json
+          p_customer_name: string
+          p_customer_phone: string
+          p_expert_user_id: string
+          p_idempotency_key: string
+          p_notes: string
+          p_service_id: string
+          p_starts_at: string
+          p_widget_token: string
+        }
+        Returns: Json
+      }
       crm_omnisearch_normalize: { Args: { input: string }; Returns: string }
       execute_crm_client_anonymization_request: {
         Args: {

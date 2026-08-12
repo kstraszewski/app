@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { authErrorCode, isFreshSessionRequired } from '~/utils/auth-error'
+import { reauthenticationRedirect } from '~/utils/auth-reauthentication'
+
 type AuthAccount = {
   id: string
   providerId: string
@@ -75,11 +78,6 @@ watch([currentPassword, newPassword, newPasswordConfirmation], () => {
 
 useHead({ title: 'Bezpieczeństwo — Ustawienia konta — OpenExpert CRM' })
 
-function authErrorCode(error: unknown): string {
-  const candidate = error as { code?: unknown, data?: { code?: unknown } } | null
-  return String(candidate?.code ?? candidate?.data?.code ?? '').toUpperCase()
-}
-
 function sessionDevice(userAgent: string | null | undefined): { label: string, icon: string } {
   const source = String(userAgent || '')
   const mobile = /android|iphone|ipad|mobile/iu.test(source)
@@ -118,7 +116,7 @@ async function loadSecurityData() {
     if (currentSessionResult.error) throw currentSessionResult.error
     currentSessionId.value = String(currentSessionResult.data?.session.id || '')
     if (sessionsResult.error) {
-      requiresFreshSession.value = authErrorCode(sessionsResult.error) === 'SESSION_NOT_FRESH'
+      requiresFreshSession.value = isFreshSessionRequired(sessionsResult.error)
       throw sessionsResult.error
     }
     sessions.value = (sessionsResult.data ?? []) as AuthSession[]
@@ -132,18 +130,19 @@ async function loadSecurityData() {
 }
 
 async function reauthenticate() {
-  const redirect = route.fullPath
-  const result = await authClient.signOut()
-  if (result.error) {
+  const redirect = reauthenticationRedirect(route.fullPath)
+  try {
+    await signOutAuthenticatedUser({ requireServerSuccess: true })
+    await navigateTo({ path: '/login', query: { redirect } })
+  }
+  catch (error) {
     toast.add({
       title: 'Nie udało się zakończyć bieżącej sesji',
-      description: errorMessage(result.error),
+      description: errorMessage(error as { message?: string, code?: string }),
       color: 'error',
       icon: 'i-lucide-triangle-alert',
     })
-    return
   }
-  await navigateTo({ path: '/login', query: { redirect } })
 }
 
 async function changePassword() {

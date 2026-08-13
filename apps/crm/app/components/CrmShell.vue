@@ -5,6 +5,7 @@ const props = defineProps<{
   title: string
   workspace?: boolean
   compact?: boolean
+  fullBleed?: boolean
   eyebrow?: string
   description?: string
   backTo?: string
@@ -32,6 +33,8 @@ const hasAuthConfig = useHasAuthConfig()
       'crm-page--workspace': props.workspace,
       'crm-content-mode--workspace': props.workspace,
       'crm-page--compact-header': props.compact && !props.workspace,
+      'crm-page--full-bleed': props.fullBleed,
+      'crm-content-mode--full-bleed': props.fullBleed,
     }"
   >
     <CrmPageHeader
@@ -88,6 +91,27 @@ const hasAuthConfig = useHasAuthConfig()
   margin-bottom: 16px;
   padding: 0 0 12px;
   background: transparent;
+}
+
+.crm-page--full-bleed {
+  min-height: 100dvh;
+  background: var(--ui-bg);
+}
+
+.crm-page--full-bleed.crm-page--compact-header :deep(.crm-page-header--compact) {
+  margin-bottom: 0;
+  padding: 16px 24px;
+  background: var(--ui-bg);
+}
+
+@media (max-width: 900px) {
+  .crm-page--full-bleed {
+    min-height: calc(100dvh - 76px);
+  }
+
+  .crm-page--full-bleed.crm-page--compact-header :deep(.crm-page-header--compact) {
+    padding-inline: 16px;
+  }
 }
 
 .crm-alert {

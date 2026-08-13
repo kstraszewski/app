@@ -992,12 +992,27 @@ async function submitUpload() {
   grid-template-columns: minmax(0, 1fr) minmax(420px, 40%);
 }
 
+.bank-files--full-bleed {
+  background: var(--ui-bg);
+}
+
+.bank-files--full-bleed:not(.bank-files--preview) {
+  padding: 24px;
+}
+
 .bank-files--preview > .bank-files__heading,
 .bank-files--preview > .bank-files__upload,
 .bank-files--preview > .bank-files__toolbar,
 .bank-files--preview > .bank-files__state {
   grid-column: 1;
   margin-right: 16px;
+}
+
+.bank-files--full-bleed.bank-files--preview > .bank-files__heading,
+.bank-files--full-bleed.bank-files--preview > .bank-files__upload,
+.bank-files--full-bleed.bank-files--preview > .bank-files__toolbar,
+.bank-files--full-bleed.bank-files--preview > .bank-files__state {
+  margin-left: 24px;
 }
 
 .bank-files--preview > .bank-files__heading {
@@ -1644,6 +1659,18 @@ async function submitUpload() {
 }
 
 @media (max-width: 760px) {
+  .bank-files--full-bleed:not(.bank-files--preview) {
+    padding: 16px;
+  }
+
+  .bank-files--full-bleed.bank-files--preview > .bank-files__heading,
+  .bank-files--full-bleed.bank-files--preview > .bank-files__upload,
+  .bank-files--full-bleed.bank-files--preview > .bank-files__toolbar,
+  .bank-files--full-bleed.bank-files--preview > .bank-files__state {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
   .bank-files__heading,
   .bank-files__search-row {
     align-items: stretch;

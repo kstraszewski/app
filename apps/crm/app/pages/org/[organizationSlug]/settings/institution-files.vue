@@ -25,6 +25,7 @@ const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator
 <template>
   <CrmShell
     compact
+    full-bleed
     title="Pliki z banków"
     eyebrow="Ustawienia administracyjne"
     description="Wspólne repozytorium procedur, formularzy i materiałów źródłowych instytucji finansowych."
@@ -41,6 +42,7 @@ const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator
     </template>
 
     <MortgagesBankFileRepository
+      class="bank-files--full-bleed"
       :organization-slug="organizationSlug"
       :initial-file-id="initialFileId"
       :initial-page="initialPage"

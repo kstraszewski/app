@@ -7,6 +7,12 @@
   width: 100%;
 }
 
+.crm-shell .crm-content:has(> .crm-content-mode--full-bleed) {
+  width: 100%;
+  padding: 0;
+  background: var(--ui-bg);
+}
+
 /* Keep the shell geometry tied to the page that is actually on screen.
    During out-in navigation Nuxt keeps the previous page mounted while the
    destination resolves, so deriving this mode from the target route would

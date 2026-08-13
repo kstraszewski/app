@@ -44,6 +44,28 @@ export interface PortalAccountConsent {
   history: PortalAccountConsentHistoryItem[]
 }
 
+export interface PortalAccountExpertBooking {
+  organizationId: string
+  organizationName: string
+  expert: {
+    id: string
+    name: string
+    avatarUrl: string | null
+    professionalTitle: string | null
+  }
+  facility: {
+    id: string
+    name: string
+    address: string | null
+  }
+  services: Array<{
+    id: string
+    name: string
+    durationMinutes: number
+  }>
+  bookingPath: string
+}
+
 export interface PortalAccountPayload {
   user: {
     id: string
@@ -51,6 +73,8 @@ export interface PortalAccountPayload {
     email: string
   }
   profiles: PortalAccountProfile[]
+  expertBookingStatus: 'available' | 'unavailable'
+  expertBookings: PortalAccountExpertBooking[]
   consents: PortalAccountConsent[]
 }
 

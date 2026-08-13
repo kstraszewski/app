@@ -12,7 +12,10 @@ import {
   type DirectoryOpeningHourRow,
   type DirectoryServiceDetailRow,
 } from '../../../../utils/directory-facility-detail'
-import { loadDirectoryFacilityGallery } from '../../../../utils/directory-cover-images'
+import {
+  directoryBundledFacilityImage,
+  loadDirectoryFacilityGallery,
+} from '../../../../utils/directory-cover-images'
 import { serverDataBackend } from '../../../../utils/data-api'
 
 function directoryNotFound(): never {
@@ -175,12 +178,18 @@ export default defineCachedEventHandler(async (
 
   let gallery
   try {
-    gallery = await loadDirectoryFacilityGallery(
+    const storedGallery = await loadDirectoryFacilityGallery(
       backendData,
       organizationId,
       facilityId,
       facilityResult.data.name,
     )
+    gallery = storedGallery.length
+      ? storedGallery
+      : [directoryBundledFacilityImage(
+          facilitySlug,
+          facilityResult.data.name,
+        )].filter(image => image !== null)
   }
   catch (error) {
     console.error('[directory] published facility gallery failed', {

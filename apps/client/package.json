@@ -11,7 +11,7 @@
     "generate": "nuxt generate",
     "prepare": "nuxt prepare",
     "preview": "nuxt preview --host 127.0.0.1 --port 3006",
-    "test:account": "node --test --experimental-strip-types test/portal-account.test.ts",
+    "test:account": "node --test --experimental-strip-types test/portal-account.test.ts test/portal-expert-booking.test.ts",
     "test:booking": "node --test --experimental-strip-types test/booking-magic-link.test.ts test/booking-profiles.test.ts test/booking-public.test.ts test/verified-booking-boundary.test.ts",
     "test:conversation-inbox": "node --test --experimental-strip-types test/portal-conversation-inbox.test.ts test/portal-preview-conversations.test.ts",
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",

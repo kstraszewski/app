@@ -118,6 +118,10 @@ export default defineNuxtConfig({
         baseName: 'mortgage-template-pdfs',
         dir: fileURLToPath(new URL('../../mock-files', import.meta.url)),
       },
+      {
+        baseName: 'intermediary-document-fonts',
+        dir: fileURLToPath(new URL('./public/fonts', import.meta.url)),
+      },
     ],
     typescript: {
       tsConfig: {

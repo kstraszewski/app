@@ -1,6 +1,7 @@
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
 
 export const BOOKING_MAGIC_LINK_RESPONSE_FLOOR_MS = 600
 
@@ -9,6 +10,7 @@ export interface BookingMagicLinkIntent {
   widgetKey: string
   expertId: string | null
   serviceId: string | null
+  date: string | null
 }
 
 interface BookingWidgetCatalog {
@@ -38,6 +40,14 @@ export function normalizeBookingMagicLinkUuid(value: unknown): string | null {
   return UUID_PATTERN.test(uuid) ? uuid : null
 }
 
+export function normalizeBookingMagicLinkDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !DATE_PATTERN.test(value)) return null
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value
+    ? value
+    : null
+}
+
 /**
  * Parses only the values the booking auth flow accepts. A browser-provided
  * callback URL is deliberately not part of the result, so callers cannot turn
@@ -58,6 +68,7 @@ export function parseBookingMagicLinkIntent(
     widgetKey,
     expertId: normalizeBookingMagicLinkUuid(input.expertId),
     serviceId: normalizeBookingMagicLinkUuid(input.serviceId),
+    date: normalizeBookingMagicLinkDate(input.date),
   }
 }
 
@@ -91,6 +102,7 @@ export function buildBookingMagicLinkCallbackPath(
   if (intent.serviceId && serviceIds.has(intent.serviceId)) {
     query.set('serviceId', intent.serviceId)
   }
+  if (intent.date) query.set('date', intent.date)
 
   const path = `/book/${encodeURIComponent(intent.widgetKey)}`
   const search = query.toString()

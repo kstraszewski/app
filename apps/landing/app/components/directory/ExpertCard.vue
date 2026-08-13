@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { DirectoryExpert } from '#shared/types/directory'
+import type { DirectoryAvailabilityDate, DirectoryExpert } from '#shared/types/directory'
 import { directoryExpertPath } from '#shared/utils/directory-expert'
+import { directoryBookingDateUrl } from '~/utils/directory'
 
 const props = defineProps<{
   expert: DirectoryExpert
@@ -46,6 +47,14 @@ function shortDate(value: string): string {
 
 function fullDate(value: string): string {
   return fullDateFormatter.format(dateFromIso(value))
+}
+
+function dateBookingHref(date: DirectoryAvailabilityDate): string {
+  return directoryBookingDateUrl(
+    props.bookingHref,
+    date.serviceId,
+    date.localDate,
+  )
 }
 </script>
 
@@ -109,17 +118,20 @@ function fullDate(value: string): string {
             :aria-labelledby="`ekspert-${expert.expertId}-availability-label`"
           >
             <li v-for="date in availableDates" :key="date.localDate">
-              <time
-                :datetime="date.localDate"
-                :aria-label="fullDate(date.localDate)"
+              <a
+                :href="dateBookingHref(date)"
+                :aria-label="`Zobacz godziny u eksperta ${expert.name}: ${fullDate(date.localDate)}`"
                 :title="fullDate(date.localDate)"
-              >{{ shortDate(date.localDate) }}</time>
+              >
+                <time :datetime="date.localDate">{{ shortDate(date.localDate) }}</time>
+              </a>
             </li>
           </ul>
         </span>
         <span v-else>Wybierz dogodny termin</span>
       </div>
       <a
+        class="expert-card__cta"
         :href="bookingHref"
         :aria-label="`Umów konsultację z ekspertem ${expert.name}`"
       >
@@ -343,7 +355,32 @@ function fullDate(value: string): string {
   content: '·';
 }
 
-.expert-card__footer a {
+.expert-card__dates a {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+  margin: -2px -3px;
+  padding: 2px 3px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.expert-card__dates a:hover {
+  background: #ecece8;
+  color: #000;
+}
+
+.expert-card__dates a:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 2px;
+}
+
+.expert-card__cta {
   position: relative;
   z-index: 2;
   display: inline-flex;
@@ -360,16 +397,16 @@ function fullDate(value: string): string {
   transition: background-color var(--transition-fast);
 }
 
-.expert-card__footer a:hover {
+.expert-card__cta:hover {
   background: #353535;
 }
 
-.expert-card__footer a :deep(svg) {
+.expert-card__cta :deep(svg) {
   width: 15px;
   height: 15px;
 }
 
-.expert-card__footer a:focus-visible {
+.expert-card__cta:focus-visible {
   outline: 2px solid #111;
   outline-offset: 3px;
 }
@@ -386,7 +423,7 @@ function fullDate(value: string): string {
     flex-direction: column;
   }
 
-  .expert-card__footer a {
+  .expert-card__cta {
     justify-content: center;
   }
 }

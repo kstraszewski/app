@@ -31,3 +31,14 @@ export function directoryBookingUrl(
   if (serviceId) bookingUrl.searchParams.set('serviceId', serviceId)
   return bookingUrl.toString()
 }
+
+export function directoryBookingDateUrl(
+  bookingHref: string,
+  serviceId: string,
+  localDate: string,
+): string {
+  const bookingUrl = new URL(bookingHref)
+  bookingUrl.searchParams.set('serviceId', serviceId)
+  bookingUrl.searchParams.set('date', localDate)
+  return bookingUrl.toString()
+}

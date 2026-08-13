@@ -4,6 +4,7 @@ import {
   BOOKING_MAGIC_LINK_RESPONSE_FLOOR_MS,
   bookingMagicLinkResponseDelay,
   buildBookingMagicLinkCallbackPath,
+  normalizeBookingMagicLinkDate,
   normalizeBookingMagicLinkEmail,
   normalizeBookingMagicLinkUuid,
   parseBookingMagicLinkIntent,
@@ -12,6 +13,7 @@ import {
 const widgetKey = '11111111-1111-4111-8111-111111111111'
 const expertId = '22222222-2222-4222-8222-222222222222'
 const serviceId = '33333333-3333-4333-8333-333333333333'
+const bookingDate = '2026-08-17'
 
 const catalog = {
   widget: { key: widgetKey },
@@ -29,6 +31,8 @@ describe('booking magic-link input', () => {
       normalizeBookingMagicLinkUuid(widgetKey.toUpperCase()),
       widgetKey,
     )
+    assert.equal(normalizeBookingMagicLinkDate(bookingDate), bookingDate)
+    assert.equal(normalizeBookingMagicLinkDate('2026-02-30'), null)
   })
 
   it('rejects an invalid required identity without preserving arbitrary callbacks', () => {
@@ -44,11 +48,13 @@ describe('booking magic-link input', () => {
       callbackURL: 'https://attacker.example/steal',
       expertId: '../../admin',
       serviceId,
+      date: 'not-a-date',
     }), {
       email: 'client@example.com',
       widgetKey,
       expertId: null,
       serviceId,
+      date: null,
     })
   })
 })
@@ -60,11 +66,12 @@ describe('booking magic-link callback', () => {
       widgetKey,
       expertId,
       serviceId,
+      date: bookingDate,
     })
     assert.ok(intent)
     assert.equal(
       buildBookingMagicLinkCallbackPath(intent, catalog),
-      `/book/${widgetKey}?expertId=${expertId}&serviceId=${serviceId}`,
+      `/book/${widgetKey}?expertId=${expertId}&serviceId=${serviceId}&date=${bookingDate}`,
     )
   })
 
@@ -74,11 +81,12 @@ describe('booking magic-link callback', () => {
       widgetKey,
       expertId: '44444444-4444-4444-8444-444444444444',
       serviceId: '55555555-5555-4555-8555-555555555555',
+      date: bookingDate,
     })
     assert.ok(intent)
     assert.equal(
       buildBookingMagicLinkCallbackPath(intent, catalog),
-      `/book/${widgetKey}`,
+      `/book/${widgetKey}?date=${bookingDate}`,
     )
     assert.equal(buildBookingMagicLinkCallbackPath(intent, {
       ...catalog,

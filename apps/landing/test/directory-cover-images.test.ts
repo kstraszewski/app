@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   DIRECTORY_COVER_IMAGE_BATCH_SIZE,
+  directoryBundledFacilityImage,
   directoryCoverImagePayload,
   directoryFacilityIdBatches,
   directoryGalleryImagePayload,
@@ -78,5 +79,28 @@ describe('directoryCoverImagePayload', () => {
       alt: 'Pokój konsultacyjny',
     })
     assert.equal('storage_path' in payload, false)
+  })
+})
+
+describe('directoryBundledFacilityImage', () => {
+  it('returns a bundled production image for a known showcase facility', () => {
+    assert.deepEqual(
+      directoryBundledFacilityImage(
+        'openexpert-gdansk-wrzeszcz',
+        'OpenExpert Gdańsk Wrzeszcz',
+      ),
+      {
+        thumbnailUrl: '/images/facilities/openexpert-gdansk-wrzeszcz.webp',
+        fallbackUrl: '/images/facilities/openexpert-gdansk-wrzeszcz.webp',
+        alt: 'Recepcja placówki OpenExpert Gdańsk Wrzeszcz',
+      },
+    )
+  })
+
+  it('does not invent a file path for an unknown facility', () => {
+    assert.equal(
+      directoryBundledFacilityImage('nieznana-placowka', 'Nieznana placówka'),
+      null,
+    )
   })
 })

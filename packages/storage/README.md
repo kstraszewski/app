@@ -18,6 +18,7 @@ turn a private namespace into a public upload.
 | `mortgage-source-documents` | private | 20 MiB |
 | `mortgage-bank-logos` | public | 2 MiB |
 | `crm-case-documents` | private | 25 MiB |
+| `crm-legal-documents` | private | 5 MiB |
 | `crm-message-attachments` | private | 25 MiB |
 | `crm-property-images` | private | 8 MiB |
 | `facility-images` | private | 8 MiB |
@@ -41,6 +42,7 @@ public store/bucket
 private store/bucket
 ├── mortgage-source-documents/<existing storage_path>
 ├── crm-case-documents/<existing storage_path>
+├── crm-legal-documents/<existing storage_path>
 ├── crm-message-attachments/<existing storage_path>
 ├── crm-property-images/<existing storage_path>
 ├── facility-images/<existing storage_path>

@@ -71,6 +71,7 @@ const archivePasswordVisible = ref(false)
 const archiveIdempotencyKey = ref('')
 const archiving = ref(false)
 const archiveError = ref('')
+const failedExpertAvatars = reactive(new Set<string>())
 
 const social = computed(() => runtimeConfig.public.openexpert.social)
 const hasPassword = computed(() => providerLinked('credential'))
@@ -127,6 +128,30 @@ function roleLabel(role: string): string {
     owner: 'Właściciel profilu',
   }
   return labels[role] || role.replaceAll('_', ' ')
+}
+
+function bookingKey(organizationId: string, expertId: string): string {
+  return `${organizationId}:${expertId}`
+}
+
+function expertInitials(name: string): string {
+  return name
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map(part => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'OE'
+}
+
+function expertAvatarUrl(organizationId: string, expertId: string, avatarUrl: string | null): string {
+  return avatarUrl && !failedExpertAvatars.has(bookingKey(organizationId, expertId))
+    ? avatarUrl
+    : ''
+}
+
+function handleExpertAvatarError(organizationId: string, expertId: string) {
+  failedExpertAvatars.add(bookingKey(organizationId, expertId))
 }
 
 function decisionPresentation(decision: PortalAccountConsentDecision): {
@@ -531,6 +556,7 @@ onMounted(loadAccounts)
         <aside class="account-nav" aria-label="Sekcje ustawień konta">
           <nav>
             <a href="#profile"><UIcon name="i-lucide-user-round" />Dane konta</a>
+            <a href="#appointments"><UIcon name="i-lucide-calendar-plus-2" />Spotkania</a>
             <a href="#login"><UIcon name="i-lucide-key-round" />Logowanie</a>
             <a href="#consents"><UIcon name="i-lucide-shield-check" />Zgody</a>
             <a href="#security"><UIcon name="i-lucide-shield-alert" />Bezpieczeństwo</a>
@@ -583,6 +609,97 @@ onMounted(loadAccounts)
                 </UBadge>
               </article>
             </div>
+          </section>
+
+          <section id="appointments" class="settings-section settings-section--appointments">
+            <header class="settings-section__header">
+              <span class="settings-section__icon settings-section__icon--appointments"><UIcon name="i-lucide-calendar-plus-2" /></span>
+              <div>
+                <p>Spotkania</p>
+                <h2>Umów się z moim ekspertem</h2>
+                <span>Wybierz rodzaj konsultacji, a następnie dogodny dzień i godzinę.</span>
+              </div>
+            </header>
+
+            <div v-if="payload.expertBookings.length" class="expert-booking-list">
+              <article
+                v-for="booking in payload.expertBookings"
+                :key="bookingKey(booking.organizationId, booking.expert.id)"
+                class="expert-booking-card"
+              >
+                <div class="expert-booking-card__identity">
+                  <span class="expert-booking-card__avatar">
+                    <img
+                      v-if="expertAvatarUrl(booking.organizationId, booking.expert.id, booking.expert.avatarUrl)"
+                      :src="expertAvatarUrl(booking.organizationId, booking.expert.id, booking.expert.avatarUrl)"
+                      alt=""
+                      @error="handleExpertAvatarError(booking.organizationId, booking.expert.id)"
+                    >
+                    <template v-else>{{ expertInitials(booking.expert.name) }}</template>
+                  </span>
+                  <div>
+                    <UBadge color="neutral" variant="subtle">{{ booking.organizationName }}</UBadge>
+                    <h3>{{ booking.expert.name }}</h3>
+                    <p>{{ booking.expert.professionalTitle || 'Ekspert prowadzący Twoją sprawę' }}</p>
+                  </div>
+                </div>
+
+                <div class="expert-booking-card__details">
+                  <div>
+                    <span><UIcon name="i-lucide-map-pin" />Miejsce spotkania</span>
+                    <strong>{{ booking.facility.name }}</strong>
+                    <small v-if="booking.facility.address">{{ booking.facility.address }}</small>
+                  </div>
+                  <div>
+                    <span><UIcon name="i-lucide-briefcase-business" />Dostępne konsultacje</span>
+                    <ul>
+                      <li v-for="service in booking.services" :key="service.id">
+                        {{ service.name }}
+                        <small v-if="service.durationMinutes">{{ service.durationMinutes }} min</small>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div class="expert-booking-card__footer">
+                  <p><UIcon name="i-lucide-shield-check" />Rezerwacja zostanie powiązana z Twoim kontem klienta.</p>
+                  <UButton
+                    :to="booking.bookingPath"
+                    color="neutral"
+                    variant="solid"
+                    icon="i-lucide-calendar-check-2"
+                    trailing
+                  >
+                    Wybierz termin
+                  </UButton>
+                </div>
+              </article>
+            </div>
+
+            <UAlert
+              v-else-if="payload.expertBookingStatus === 'unavailable'"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-calendar-x-2"
+              title="Nie udało się pobrać kalendarza eksperta"
+              description="Odśwież stronę za chwilę. Pozostałe ustawienia konta pozostają dostępne."
+            >
+              <template #actions>
+                <UButton color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refresh()">
+                  Ponów
+                </UButton>
+              </template>
+            </UAlert>
+
+            <OeEmptyState
+              v-else
+              compact
+              align="start"
+              icon="i-lucide-calendar-clock"
+              title="Rezerwacja online nie jest jeszcze dostępna"
+              description="Gdy Twój ekspert udostępni kalendarz konsultacji, możliwość wyboru terminu pojawi się właśnie tutaj."
+              title-tag="h3"
+            />
           </section>
 
           <section id="login" class="settings-section">
@@ -1138,6 +1255,11 @@ onMounted(loadAccounts)
 }
 
 .settings-section__icon svg { width: 20px; height: 20px; }
+.settings-section__icon--appointments {
+  border-color: color-mix(in srgb, var(--ui-text-highlighted) 14%, var(--ui-border));
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+}
 .settings-section__icon--danger { border-color: rgb(220 38 38 / 18%); background: rgb(254 242 242); color: var(--ui-error); }
 
 .identity-fields {
@@ -1158,6 +1280,80 @@ onMounted(loadAccounts)
 .identity-fields dd { overflow: hidden; margin: 4px 0 0; color: var(--ui-text-highlighted); font-size: 15px; font-weight: 600; text-overflow: ellipsis; }
 
 .profile-access-list { display: grid; gap: 10px; margin-top: 25px; }
+
+.expert-booking-list { display: grid; gap: 14px; }
+
+.expert-booking-card {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 18px;
+  background: var(--ui-bg);
+}
+
+.expert-booking-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  border-bottom: 1px solid var(--ui-border);
+  background: linear-gradient(135deg, var(--ui-bg-muted), var(--ui-bg));
+}
+
+.expert-booking-card__avatar {
+  display: grid;
+  overflow: hidden;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid var(--ui-border-accented);
+  border-radius: 18px;
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.expert-booking-card__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.expert-booking-card__identity > div { min-width: 0; }
+.expert-booking-card__identity h3 { margin: 8px 0 0; font-size: 20px; font-weight: 650; }
+.expert-booking-card__identity p { margin: 3px 0 0; color: var(--ui-text-muted); font-size: 12px; }
+
+.expert-booking-card__details {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0;
+  padding: 18px 20px;
+}
+
+.expert-booking-card__details > div { min-width: 0; padding: 2px 18px 2px 0; }
+.expert-booking-card__details > div + div { padding: 2px 0 2px 20px; border-left: 1px solid var(--ui-border); }
+.expert-booking-card__details span,
+.expert-booking-card__details strong,
+.expert-booking-card__details small { display: block; }
+.expert-booking-card__details span { color: var(--ui-text-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.expert-booking-card__details span svg { display: inline; width: 13px; height: 13px; margin: -2px 5px 0 0; vertical-align: middle; }
+.expert-booking-card__details strong { margin-top: 8px; font-size: 13px; font-weight: 650; }
+.expert-booking-card__details > div > small { margin-top: 4px; color: var(--ui-text-muted); font-size: 11px; line-height: 1.5; }
+.expert-booking-card__details ul { display: grid; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
+.expert-booking-card__details li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--ui-text-toned); font-size: 12px; }
+.expert-booking-card__details li::before { width: 5px; height: 5px; margin-right: 1px; border-radius: 999px; background: var(--ui-text-highlighted); content: ''; }
+.expert-booking-card__details li small { flex: 0 0 auto; margin-left: auto; color: var(--ui-text-muted); font-size: 10px; }
+
+.expert-booking-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 20px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-bg-muted);
+}
+
+.expert-booking-card__footer p { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--ui-text-muted); font-size: 10px; }
+.expert-booking-card__footer p svg { flex: 0 0 auto; width: 14px; height: 14px; color: var(--ui-success); }
+.expert-booking-card__footer a { flex: 0 0 auto; }
 .subsection-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .subsection-heading h3 { margin: 0; font-size: 14px; font-weight: 650; }
 
@@ -1314,7 +1510,7 @@ onMounted(loadAccounts)
   .account-shell { width: min(820px, calc(100% - 36px)); padding-top: 42px; }
   .account-layout { grid-template-columns: 1fr; gap: 20px; }
   .account-nav { position: static; }
-  .account-nav nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .account-nav nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .account-nav nav a { justify-content: center; }
   .account-nav__hint { display: none; }
 }
@@ -1334,6 +1530,12 @@ onMounted(loadAccounts)
   .settings-section__header > div > span { font-size: 11px; }
   .settings-section__icon { width: 40px; height: 40px; border-radius: 12px; }
   .identity-fields { grid-template-columns: 1fr; }
+  .expert-booking-card__identity { align-items: flex-start; padding: 17px; }
+  .expert-booking-card__details { grid-template-columns: 1fr; padding: 16px 17px; }
+  .expert-booking-card__details > div { padding: 0; }
+  .expert-booking-card__details > div + div { margin-top: 17px; padding: 17px 0 0; border-top: 1px solid var(--ui-border); border-left: 0; }
+  .expert-booking-card__footer { align-items: stretch; flex-direction: column; padding: 15px 17px 17px; }
+  .expert-booking-card__footer a { width: 100%; justify-content: center; }
   .profile-access-row { grid-template-columns: auto 1fr; }
   .profile-access-row > :last-child { grid-column: 2; justify-self: start; }
   .login-method { grid-template-columns: auto 1fr; align-items: start; }

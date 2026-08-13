@@ -11,6 +11,14 @@ export interface BookingWeekDay {
   slots: PublicBookingSlot[]
 }
 
+export function bookingDateQueryValue(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return ''
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value
+    ? value
+    : ''
+}
+
 export function addDaysToIsoDate(value: string, days: number): string {
   const [year = 0, month = 1, day = 1] = value.split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day + days))

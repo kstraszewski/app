@@ -23,6 +23,11 @@ export const STORAGE_NAMESPACE_DEFINITIONS = Object.freeze({
     maxBytes: 25 * 1024 * 1024,
     allowedContentTypes: Object.freeze(['application/pdf', 'image/jpeg', 'image/png']),
   }),
+  'crm-legal-documents': Object.freeze({
+    access: 'private',
+    maxBytes: 5 * 1024 * 1024,
+    allowedContentTypes: Object.freeze(['application/pdf']),
+  }),
   'crm-message-attachments': Object.freeze({
     access: 'private',
     maxBytes: 25 * 1024 * 1024,

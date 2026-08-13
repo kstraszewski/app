@@ -114,6 +114,9 @@ importers:
       '@openexpert/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@pdf-lib/fontkit':
+        specifier: ^1.1.1
+        version: 1.1.1
       '@unovis/ts':
         specifier: 1.6.7
         version: 1.6.7
@@ -135,6 +138,9 @@ importers:
       nuxt-charts:
         specifier: 2.2.1
         version: 2.2.1(vue@3.5.40(typescript@6.0.3))
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
       pdfjs-dist:
         specifier: ^6.1.200
         version: 6.1.200

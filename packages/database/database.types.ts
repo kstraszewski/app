@@ -2250,6 +2250,171 @@ export type Database = {
           },
         ]
       }
+      crm_client_legal_document_deliveries: {
+        Row: {
+          attempts: number
+          available_at: string
+          client_id: string
+          created_at: string
+          email_template_version: number
+          generated_at: string | null
+          generator_version: number
+          id: string
+          idempotency_key: string
+          intermediary_settings_revision: number | null
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          ofi_sha256: string | null
+          ofi_size_bytes: number | null
+          ofi_storage_path: string | null
+          organization_id: string
+          provider: string | null
+          provider_message_id: string | null
+          recipient_email: string | null
+          recipient_email_hash: string | null
+          rodo_sha256: string | null
+          rodo_size_bytes: number | null
+          rodo_storage_path: string | null
+          sent_at: string | null
+          status: string
+          trigger_kind: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          client_id: string
+          created_at?: string
+          email_template_version?: number
+          generated_at?: string | null
+          generator_version?: number
+          id?: string
+          idempotency_key: string
+          intermediary_settings_revision?: number | null
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          ofi_sha256?: string | null
+          ofi_size_bytes?: number | null
+          ofi_storage_path?: string | null
+          organization_id: string
+          provider?: string | null
+          provider_message_id?: string | null
+          recipient_email?: string | null
+          recipient_email_hash?: string | null
+          rodo_sha256?: string | null
+          rodo_size_bytes?: number | null
+          rodo_storage_path?: string | null
+          sent_at?: string | null
+          status?: string
+          trigger_kind?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          client_id?: string
+          created_at?: string
+          email_template_version?: number
+          generated_at?: string | null
+          generator_version?: number
+          id?: string
+          idempotency_key?: string
+          intermediary_settings_revision?: number | null
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          ofi_sha256?: string | null
+          ofi_size_bytes?: number | null
+          ofi_storage_path?: string | null
+          organization_id?: string
+          provider?: string | null
+          provider_message_id?: string | null
+          recipient_email?: string | null
+          recipient_email_hash?: string | null
+          rodo_sha256?: string | null
+          rodo_size_bytes?: number | null
+          rodo_storage_path?: string | null
+          sent_at?: string | null
+          status?: string
+          trigger_kind?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_legal_document_deliveries_client_fk"
+            columns: ["organization_id", "client_id"]
+            isOneToOne: false
+            referencedRelation: "crm_clients"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_client_legal_document_deliveries_organization_fk"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_client_legal_document_deliveries_settings_revision_fk"
+            columns: ["organization_id", "intermediary_settings_revision"]
+            isOneToOne: false
+            referencedRelation: "organization_intermediary_setting_revisions"
+            referencedColumns: ["organization_id", "revision"]
+          },
+        ]
+      }
+      crm_client_legal_document_delivery_events: {
+        Row: {
+          attempt: number
+          created_at: string
+          delivery_id: string
+          details: Json
+          event_type: string
+          from_status: string | null
+          id: string
+          organization_id: string
+          to_status: string
+          worker_id: string | null
+        }
+        Insert: {
+          attempt: number
+          created_at?: string
+          delivery_id: string
+          details?: Json
+          event_type: string
+          from_status?: string | null
+          id?: string
+          organization_id: string
+          to_status: string
+          worker_id?: string | null
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          delivery_id?: string
+          details?: Json
+          event_type?: string
+          from_status?: string | null
+          id?: string
+          organization_id?: string
+          to_status?: string
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_legal_document_delivery_events_delivery_fk"
+            columns: ["organization_id", "delivery_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_legal_document_deliveries"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       crm_client_people: {
         Row: {
           client_id: string
@@ -6066,6 +6231,100 @@ export type Database = {
           },
         ]
       }
+      organization_intermediary_setting_revisions: {
+        Row: {
+          changed_by: string
+          created_at: string
+          id: string
+          organization_id: string
+          revision: number
+          settings: Json
+        }
+        Insert: {
+          changed_by: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          revision: number
+          settings: Json
+        }
+        Update: {
+          changed_by?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          revision?: number
+          settings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_intermediary_revisions_changed_by_fk"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_intermediary_revisions_organization_fk"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_intermediary_settings: {
+        Row: {
+          created_at: string
+          created_by: string
+          organization_id: string
+          revision: number
+          settings: Json
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          organization_id: string
+          revision?: number
+          settings?: Json
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          organization_id?: string
+          revision?: number
+          settings?: Json
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_intermediary_settings_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_intermediary_settings_organization_fk"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_intermediary_settings_updated_by_fk"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_memberships: {
         Row: {
           created_at: string
@@ -6754,6 +7013,64 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      claim_client_legal_document_deliveries: {
+        Args: { p_limit?: number; p_worker_id: string }
+        Returns: {
+          attempts: number
+          available_at: string
+          client_id: string
+          created_at: string
+          email_template_version: number
+          generated_at: string | null
+          generator_version: number
+          id: string
+          idempotency_key: string
+          intermediary_settings_revision: number | null
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          ofi_sha256: string | null
+          ofi_size_bytes: number | null
+          ofi_storage_path: string | null
+          organization_id: string
+          provider: string | null
+          provider_message_id: string | null
+          recipient_email: string | null
+          recipient_email_hash: string | null
+          rodo_sha256: string | null
+          rodo_size_bytes: number | null
+          rodo_storage_path: string | null
+          sent_at: string | null
+          status: string
+          trigger_kind: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "crm_client_legal_document_deliveries"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      complete_client_legal_document_delivery: {
+        Args: {
+          p_delivery_id: string
+          p_error?: string | null
+          p_ofi_sha256?: string | null
+          p_ofi_size_bytes?: number | null
+          p_ofi_storage_path?: string | null
+          p_outcome: string
+          p_provider?: string | null
+          p_provider_message_id?: string | null
+          p_retry_delay_seconds?: number
+          p_rodo_sha256?: string | null
+          p_rodo_size_bytes?: number | null
+          p_rodo_storage_path?: string | null
+          p_worker_id: string
+        }
+        Returns: Json
       }
       consume_booking_rate_limit: {
         Args: {

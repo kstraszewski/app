@@ -3,6 +3,7 @@ definePageMeta({
   middleware: ['auth', 'organization'],
   path: 'settings/institution-files',
   alias: ['mortgages/files'],
+  crmContentMode: 'wide',
 })
 
 useHead({ title: 'Pliki z banków — OpenExpert' })

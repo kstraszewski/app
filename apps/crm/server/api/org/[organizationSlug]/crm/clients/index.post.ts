@@ -1,3 +1,4 @@
+import { scheduleOpenExpertBackgroundTask } from '@openexpert/auth/server'
 import { createError, readBody } from 'h3'
 import {
   asRecord,
@@ -5,10 +6,30 @@ import {
   textValue,
   throwDbError,
 } from '~~/server/utils/crm'
+import { nudgeClientLegalDocumentDeliveries } from '~~/server/utils/client-legal-document-deliveries'
 import { issueClientPortalInvitation } from '~~/server/utils/client-portal-invitations'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const legalDocumentDeliveryStatusValues = [
+  'pending',
+  'processing',
+  'sent',
+  'failed',
+  'blocked_missing_email',
+  'blocked_incomplete_settings',
+] as const
+
+type LegalDocumentDeliveryStatus = typeof legalDocumentDeliveryStatusValues[number]
+
+const legalDocumentDeliveryStatuses = new Set<string>(legalDocumentDeliveryStatusValues)
+
+interface LegalDocumentDeliverySummary {
+  id: string
+  status: LegalDocumentDeliveryStatus
+  revision: number | null
+}
 
 function optionalText(input: unknown, field: string, maximumLength: number): string | null {
   if (input === undefined || input === null || input === '') return null
@@ -82,6 +103,31 @@ function dateValue(input: unknown, field: string): string | null {
     throw createError({ statusCode: 400, statusMessage: `${field} must not be in the future` })
   }
   return value
+}
+
+function legalDocumentDeliverySummary(input: unknown): LegalDocumentDeliverySummary | null {
+  const row = asRecord(input)
+  const id = textValue(row.id)
+  const status = textValue(row.status)
+  const rawRevision = row.intermediary_settings_revision
+  const revision = rawRevision === null || rawRevision === undefined
+    ? null
+    : Number(rawRevision)
+
+  if (
+    !id
+    || !status
+    || !legalDocumentDeliveryStatuses.has(status)
+    || (revision !== null && (!Number.isSafeInteger(revision) || revision < 1))
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    status: status as LegalDocumentDeliveryStatus,
+    revision,
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -275,8 +321,46 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const createdClientId = textValue(createdClient.id)
+  let legalDocumentDelivery: LegalDocumentDeliverySummary | null = null
+
+  if (createdClientId) {
+    const deliveryResult = await session.dataApi
+      .from('crm_client_legal_document_deliveries')
+      .select('id, status, intermediary_settings_revision')
+      .eq('organization_id', session.organizationId)
+      .eq('client_id', createdClientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (deliveryResult.error) {
+      console.error('Unable to read the client legal document delivery status', {
+        code: String(deliveryResult.error.code ?? 'unknown'),
+      })
+    }
+    else {
+      legalDocumentDelivery = legalDocumentDeliverySummary(deliveryResult.data)
+    }
+  }
+
+  // The database trigger is the durable guarantee. This nudge only lowers the
+  // latency and must never turn a successfully created client into an API error.
+  if (createdClientId) {
+    try {
+      scheduleOpenExpertBackgroundTask(
+        nudgeClientLegalDocumentDeliveries(event),
+        event.waitUntil.bind(event),
+      )
+    }
+    catch {
+      console.warn('[crm-legal-documents] unable to schedule delivery nudge')
+    }
+  }
+
   return {
     ...created,
     portal_invitation: portalInvitation,
+    legal_document_delivery: legalDocumentDelivery,
   }
 })

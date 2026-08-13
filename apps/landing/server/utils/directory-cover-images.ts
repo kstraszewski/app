@@ -21,6 +21,14 @@ const GALLERY_IMAGE_TRANSFORM = {
   quality: 82,
 } as const
 
+const BUNDLED_FACILITY_IMAGES = new Map<string, string>([
+  ['openexpert-szczecin', 'Wejście do placówki'],
+  ['openexpert-warszawa-srodmiescie', 'Recepcja placówki'],
+  ['openexpert-poznan-jezyce', 'Pokój konsultacyjny w placówce'],
+  ['openexpert-wroclaw-centrum', 'Pokój konsultacyjny w placówce'],
+  ['openexpert-gdansk-wrzeszcz', 'Recepcja placówki'],
+])
+
 type BackendDataClient = OpenExpertDataClient
 type PublishedFacility = Pick<DirectoryFacility, 'facilityId' | 'name'>
 
@@ -80,6 +88,21 @@ export function directoryGalleryImagePayload(
     thumbnailUrl,
     fallbackUrl,
   )
+}
+
+export function directoryBundledFacilityImage(
+  facilitySlug: string,
+  facilityName: string,
+): DirectoryCoverImage | null {
+  const altPrefix = BUNDLED_FACILITY_IMAGES.get(facilitySlug)
+  if (!altPrefix) return null
+
+  const imageUrl = `/images/facilities/${facilitySlug}.webp`
+  return {
+    thumbnailUrl: imageUrl,
+    fallbackUrl: imageUrl,
+    alt: `${altPrefix} ${facilityName}`,
+  }
 }
 
 function errorMessage(error: unknown): string {

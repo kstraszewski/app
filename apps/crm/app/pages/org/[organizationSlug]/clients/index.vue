@@ -6,6 +6,7 @@ import type {
   ClientConsentVersion,
   ClientFiltersResponse,
   ClientFilterOption,
+  ClientLegalDocumentDeliverySummary,
   ClientListItem,
   ClientListQuery,
   ClientListResponse,
@@ -488,6 +489,45 @@ function compactText(value: string) {
   return trimmed || undefined
 }
 
+function clientCreatedToast(delivery: ClientLegalDocumentDeliverySummary | null) {
+  const smsHint = 'Prośby o zgodę możesz wysłać SMS-em z karty klienta.'
+  const common = 'Karta klienta została zapisana.'
+
+  switch (delivery?.status) {
+    case 'sent':
+      return {
+        description: `${common} Dokumenty OFI i RODO zostały wysłane e-mailem. ${smsHint}`,
+        color: 'success' as const,
+      }
+    case 'blocked_missing_email':
+      return {
+        description: `${common} Dokumentów OFI i RODO nie wysłano, ponieważ klient nie ma adresu e-mail. Dodaj e-mail w karcie klienta, aby wznowić wysyłkę. ${smsHint}`,
+        color: 'warning' as const,
+      }
+    case 'blocked_incomplete_settings':
+      return {
+        description: `${common} Wysyłka OFI i RODO czeka na uzupełnienie danych pośrednika w ustawieniach organizacji. ${smsHint}`,
+        color: 'warning' as const,
+      }
+    case 'failed':
+      return {
+        description: `${common} Wysyłka OFI i RODO nie powiodła się; kolejka ponowi ją automatycznie. ${smsHint}`,
+        color: 'warning' as const,
+      }
+    case 'processing':
+      return {
+        description: `${common} Dokumenty OFI i RODO są przygotowywane do wysyłki e-mailem. ${smsHint}`,
+        color: 'success' as const,
+      }
+    case 'pending':
+    default:
+      return {
+        description: `${common} Dokumenty OFI i RODO zostaną wysłane e-mailem. ${smsHint}`,
+        color: 'success' as const,
+      }
+  }
+}
+
 async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
   if (saveDisabled.value) return
 
@@ -521,7 +561,7 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
 
   saving.value = true
   try {
-    await $fetch<CreateClientResponse>(crmApiPath('/clients'), {
+    const response = await $fetch<CreateClientResponse>(crmApiPath('/clients'), {
       method: 'POST',
       body,
     })
@@ -529,10 +569,10 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
     resetCreateForm()
     page.value = 1
     await Promise.all([refreshClients(), refreshFilters()])
+    const createdToast = clientCreatedToast(response.legal_document_delivery)
     toast.add({
       title: 'Dodano klienta',
-      description: 'Karta klienta została zapisana. Prośby o zgodę możesz wysłać SMS-em z karty klienta.',
-      color: 'success',
+      ...createdToast,
     })
   } catch (caught: any) {
     const statusCode = Number(caught?.statusCode ?? caught?.response?.status ?? 0)

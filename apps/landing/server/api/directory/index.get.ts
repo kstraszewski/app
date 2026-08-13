@@ -6,7 +6,10 @@ import {
   type DirectoryCatalogSnapshot,
 } from '../../utils/directory-catalog'
 import { loadDirectoryExpertAvailability } from '../../utils/directory-availability'
-import { loadDirectoryCoverImages } from '../../utils/directory-cover-images'
+import {
+  directoryBundledFacilityImage,
+  loadDirectoryCoverImages,
+} from '../../utils/directory-cover-images'
 import { loadDirectoryFacilityMetadata } from '../../utils/directory-facilities'
 import { serverDataBackend } from '../../utils/data-api'
 
@@ -111,7 +114,11 @@ export default defineCachedEventHandler(async (event): Promise<DirectoryPayload>
       return {
         ...facility,
         ...facilityMetadata,
-        coverImage: coverImages.get(facility.facilityId) ?? null,
+        coverImage: coverImages.get(facility.facilityId)
+          ?? directoryBundledFacilityImage(
+            facilityMetadata.facilitySlug,
+            facility.name,
+          ),
       }
     }),
   }

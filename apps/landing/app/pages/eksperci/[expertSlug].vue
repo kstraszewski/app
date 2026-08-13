@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import type { DirectoryExpert, DirectoryPayload } from '#shared/types/directory'
+import type { DirectoryAvailabilityDate, DirectoryExpert, DirectoryPayload } from '#shared/types/directory'
 import {
   directoryExpertPath,
   directoryExpertRouteSlug,
 } from '#shared/utils/directory-expert'
-import { directoryBookingUrl, directoryHydrationData } from '~/utils/directory'
+import {
+  directoryBookingDateUrl,
+  directoryBookingUrl,
+  directoryHydrationData,
+} from '~/utils/directory'
 
 const route = useRoute()
 const nuxtApp = useNuxtApp()
@@ -118,6 +122,14 @@ function shortDate(value: string): string {
 
 function fullDate(value: string): string {
   return fullDateFormatter.format(dateFromIso(value))
+}
+
+function dateBookingHref(date: DirectoryAvailabilityDate): string {
+  return directoryBookingDateUrl(
+    bookingHref.value,
+    date.serviceId,
+    date.localDate,
+  )
 }
 
 const seoTitle = expert.value
@@ -278,11 +290,13 @@ useHead(() => {
                 <span>Najbliższe wolne dni</span>
                 <ul>
                   <li v-for="date in availableDates" :key="date.localDate">
-                    <time
-                      :datetime="date.localDate"
-                      :aria-label="fullDate(date.localDate)"
+                    <a
+                      :href="dateBookingHref(date)"
+                      :aria-label="`Zobacz godziny u eksperta ${expert.name}: ${fullDate(date.localDate)}`"
                       :title="fullDate(date.localDate)"
-                    >{{ shortDate(date.localDate) }}</time>
+                    >
+                      <time :datetime="date.localDate">{{ shortDate(date.localDate) }}</time>
+                    </a>
                   </li>
                 </ul>
               </div>
@@ -547,11 +561,31 @@ useHead(() => {
 .expert-profile-dates li {
   border: 1px solid #494949;
   border-radius: 999px;
-  padding: 7px 10px;
   background: #1d1d1d;
   color: #eee;
   font-size: 11px;
   font-weight: 600;
+}
+
+.expert-profile-dates li a {
+  display: block;
+  border-radius: inherit;
+  padding: 7px 10px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.expert-profile-dates li a:hover {
+  background: #fff;
+  color: #111;
+}
+
+.expert-profile-dates li a:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }
 
 .expert-profile-dates--fallback {

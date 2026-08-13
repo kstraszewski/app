@@ -31,6 +31,7 @@ const {
 } = useCrmMeetingPrototype()
 const user = useAuthUser()
 const route = useRoute()
+const usesWideContent = computed(() => route.meta.crmContentMode === 'wide')
 const hasEmbeddedEve = computed(() => (
   /\/experiments\/(?:text-editor|dynamic-content-editor)\/?$/.test(route.path)
 ))
@@ -375,6 +376,11 @@ const navGroups = computed<NavigationGroup[]>(() => {
           icon: 'i-lucide-calculator',
         },
         {
+          label: 'Pośrednik',
+          to: `${organizationBase.value}/settings/intermediary`,
+          icon: 'i-lucide-landmark',
+        },
+        {
           label: 'Design',
           to: `${organizationBase.value}/settings/design`,
           icon: 'i-lucide-component',
@@ -705,6 +711,7 @@ async function signOut() {
       :inert="mobileNavigationOpen || undefined"
       :class="{
         'crm-content--assistant': props.assistantPage,
+        'crm-content--wide': usesWideContent,
       }"
     >
       <slot />
@@ -1162,6 +1169,11 @@ async function signOut() {
   min-width: 0;
   width: min(100%, var(--ui-container));
   padding: 32px;
+}
+
+.crm-content--wide {
+  width: 100%;
+  padding-right: 16px;
 }
 
 .crm-content--assistant {

@@ -7,6 +7,7 @@ import {
   setHeader,
 } from 'h3'
 import { asRecord } from '~~/server/utils/crm'
+import { drainClientLegalDocumentDeliveries } from '~~/server/utils/client-legal-document-deliveries'
 import { drainNotificationDeliveryJobs } from '~~/server/utils/notifications'
 
 interface NotificationRuntimeConfig {
@@ -49,10 +50,28 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'limit must be between 1 and 100' })
   }
 
-  const result = await drainNotificationDeliveryJobs(
-    event,
-    `crm-notifications:${randomUUID()}`,
-    limit,
-  )
-  return { data: result }
+  const runId = randomUUID()
+  const [notificationResult, legalDocumentResult] = await Promise.all([
+    drainNotificationDeliveryJobs(
+      event,
+      `crm-notifications:${runId}`,
+      limit,
+    ),
+    drainClientLegalDocumentDeliveries(
+      event,
+      `crm-client-legal-documents:${runId}`,
+      Math.min(limit, 10),
+    ),
+  ])
+  return {
+    data: {
+      claimed: notificationResult.claimed + legalDocumentResult.claimed,
+      completed: notificationResult.completed + legalDocumentResult.completed,
+      delivered: notificationResult.delivered + legalDocumentResult.delivered,
+      failed: notificationResult.failed + legalDocumentResult.failed,
+      blocked: legalDocumentResult.blocked,
+      notifications: notificationResult,
+      legalDocuments: legalDocumentResult,
+    },
+  }
 })

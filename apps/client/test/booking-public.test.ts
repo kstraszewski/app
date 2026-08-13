@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   addDaysToIsoDate,
   BOOKING_WEEK_DAYS,
+  bookingDateQueryValue,
   bookingDateRange,
   isoDateForTimestamp,
   NEXT_AVAILABLE_SLOT_SEARCH_DAYS,
@@ -115,6 +116,8 @@ test('public catalog exposes only the booking contract', () => {
 test('slot date helpers preserve CRM range and facility timezone behavior', () => {
   assert.equal(BOOKING_WEEK_DAYS, 7)
   assert.equal(NEXT_AVAILABLE_SLOT_SEARCH_DAYS, 31)
+  assert.equal(bookingDateQueryValue('2026-08-17'), '2026-08-17')
+  assert.equal(bookingDateQueryValue('2026-02-30'), '')
   assert.equal(addDaysToIsoDate('2026-07-25', 31), '2026-08-25')
   assert.deepEqual(
     bookingDateRange('2026-07-29', BOOKING_WEEK_DAYS),

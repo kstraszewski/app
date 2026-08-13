@@ -594,7 +594,34 @@ export interface CreateClientRequest {
   consent_decisions: CreateClientConsentDecision[]
 }
 
-export type CreateClientResponse = ClientListItem | { data: ClientListItem }
+export type ClientLegalDocumentDeliveryStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'blocked_missing_email'
+  | 'blocked_incomplete_settings'
+
+export interface ClientLegalDocumentDeliverySummary {
+  id: string
+  status: ClientLegalDocumentDeliveryStatus
+  revision: number | null
+}
+
+export interface CreatedClientPortalInvitation {
+  id: string | null
+  status: 'sent' | 'failed' | 'already_active'
+  expiresAt: string | null
+  sentAt: string | null
+}
+
+export interface CreateClientResponse {
+  data: ClientListItem
+  people: ClientPerson[]
+  consents: ClientConsentEvent[]
+  portal_invitation: CreatedClientPortalInvitation | null
+  legal_document_delivery: ClientLegalDocumentDeliverySummary | null
+}
 
 export interface ClientMembersResponse {
   currentUserId: string

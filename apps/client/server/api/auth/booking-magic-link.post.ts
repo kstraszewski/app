@@ -22,6 +22,7 @@ interface BookingMagicLinkBody {
   widgetKey?: unknown
   expertId?: unknown
   serviceId?: unknown
+  date?: unknown
 }
 
 async function waitForResponseFloor(startedAt: number): Promise<void> {

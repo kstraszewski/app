@@ -18,6 +18,7 @@ import {
   chunkPortalQueryValues,
   runPortalQueryChunks,
 } from '~~/server/utils/portal-query'
+import { loadPortalExpertBookings } from '~~/server/utils/portal-expert-booking'
 
 interface OrganizationRow {
   id: unknown
@@ -63,7 +64,7 @@ export default defineEventHandler(async (event) => {
     link.clientPersonId,
   )))
 
-  const [organizationsResult, definitionsResult, lifecycleResult] = await Promise.all([
+  const [organizationsResult, definitionsResult, lifecycleResult, expertBookingResult] = await Promise.all([
     backend
       .from('organizations')
       .select('id, name')
@@ -86,6 +87,14 @@ export default defineEventHandler(async (event) => {
       .eq('auth_user_id', session.identity.userId)
       .in('organization_id', organizationIds)
       .limit(500),
+    loadPortalExpertBookings(event, session)
+      .then(bookings => ({ status: 'available' as const, bookings }))
+      .catch((error) => {
+        console.error('[client-portal] expert booking section unavailable', {
+          message: error instanceof Error ? error.message : String(error),
+        })
+        return { status: 'unavailable' as const, bookings: [] }
+      }),
   ])
   throwPortalDbError(organizationsResult.error, 'could not load account organizations')
   throwPortalDbError(definitionsResult.error, 'could not load consent definitions')
@@ -212,6 +221,11 @@ export default defineEventHandler(async (event) => {
     data: {
       user: session.identity,
       profiles,
+      expertBookingStatus: expertBookingResult.status,
+      expertBookings: expertBookingResult.bookings.map(booking => ({
+        ...booking,
+        organizationName: organizationById.get(booking.organizationId) || 'OpenExpert',
+      })),
       consents: buildPortalAccountConsents({
         scopes: session.links.map(link => ({
           organizationId: link.organizationId,

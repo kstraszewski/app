@@ -15,6 +15,7 @@ import type {
 import {
   addDaysToIsoDate,
   BOOKING_WEEK_DAYS,
+  bookingDateQueryValue,
   buildBookingWeekDays,
   formatBookingWeekRange,
   isoDateForTimestamp,
@@ -33,6 +34,7 @@ const previewToken = computed(() => (
   typeof route.query.previewToken === 'string' ? route.query.previewToken : ''
 ))
 const isPreview = computed(() => Boolean(previewToken.value))
+const requestedDate = computed(() => bookingDateQueryValue(route.query.date))
 const analyticsVisitStateKey = `booking-widget-visit:${widgetKey.value}`
 const analyticsVisitId = useState<string>(
   analyticsVisitStateKey,
@@ -97,6 +99,7 @@ const canonicalBookingPath = computed(() => {
   const serviceId = typeof route.query.serviceId === 'string' ? route.query.serviceId : ''
   if (expertId) query.set('expertId', expertId)
   if (serviceId) query.set('serviceId', serviceId)
+  if (requestedDate.value) query.set('date', requestedDate.value)
   const search = query.toString()
   return `/book/${encodeURIComponent(widgetKey.value)}${search ? `?${search}` : ''}`
 })
@@ -497,6 +500,7 @@ async function sendAccountLink() {
         widgetKey: widgetKey.value,
         expertId: typeof route.query.expertId === 'string' ? route.query.expertId : undefined,
         serviceId: typeof route.query.serviceId === 'string' ? route.query.serviceId : undefined,
+        date: requestedDate.value || undefined,
       },
     })
     accountLinkSent.value = true
@@ -890,8 +894,12 @@ watch(
 
 onMounted(() => {
   minimumDate.value = isoDateInTimezone(data.value.facility.timezone)
-  weekStartDate.value ||= minimumDate.value
-  selectedDate.value ||= minimumDate.value
+  const initialDate = requestedDate.value >= minimumDate.value
+    ? requestedDate.value
+    : minimumDate.value
+  weekStartDate.value ||= initialDate
+  selectedDate.value ||= initialDate
+  shouldFindNextAvailableDate = !requestedDate.value || requestedDate.value < minimumDate.value
   prefersDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
   resizeObserver = new ResizeObserver(postWidgetHeight)
   resizeObserver.observe(document.body)

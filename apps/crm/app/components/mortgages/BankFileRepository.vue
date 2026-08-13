@@ -754,16 +754,21 @@ async function submitUpload() {
                 <td><span>{{ formatDate(file.currentVersion.effectiveFrom ?? file.currentVersion.publishedAt) }}</span></td>
                 <td>
                   <UBadge
+                    class="bank-files__status-badge"
                     :color="statusColor(file.currentVersion.status)"
                     variant="subtle"
-                  >
-                    {{ statusLabel(file.currentVersion.status) }}
-                  </UBadge>
+                    :label="statusLabel(file.currentVersion.status)"
+                    :title="statusLabel(file.currentVersion.status)"
+                  />
                 </td>
                 <td>
-                  <UBadge :color="templateStatusColor(file)" variant="subtle">
-                    {{ templateStatusLabel(file) }}
-                  </UBadge>
+                  <UBadge
+                    class="bank-files__status-badge"
+                    :color="templateStatusColor(file)"
+                    variant="subtle"
+                    :label="templateStatusLabel(file)"
+                    :title="templateStatusLabel(file)"
+                  />
                 </td>
               </tr>
             </tbody>
@@ -1224,13 +1229,9 @@ async function submitUpload() {
 
 .bank-files__table-wrap table {
   width: 100%;
-  min-width: 650px;
+  min-width: 900px;
   border-collapse: collapse;
   table-layout: fixed;
-}
-
-.bank-files--preview .bank-files__table-wrap table {
-  min-width: 0;
 }
 
 .bank-files__table-wrap th {
@@ -1243,15 +1244,17 @@ async function submitUpload() {
   letter-spacing: .06em;
   text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.bank-files__table-wrap th:nth-child(1) { width: 27%; }
-.bank-files__table-wrap th:nth-child(2) { width: 25%; }
-.bank-files__table-wrap th:nth-child(3) { width: 9%; }
-.bank-files__table-wrap th:nth-child(4) { width: 14%; }
-.bank-files__table-wrap th:nth-child(5) { width: 7%; }
+.bank-files__table-wrap th:nth-child(1) { width: 22%; }
+.bank-files__table-wrap th:nth-child(2) { width: 16%; }
+.bank-files__table-wrap th:nth-child(3) { width: 11%; }
+.bank-files__table-wrap th:nth-child(4) { width: 12%; }
+.bank-files__table-wrap th:nth-child(5) { width: 8%; }
 .bank-files__table-wrap th:nth-child(6) { width: 10%; }
-.bank-files__table-wrap th:nth-child(7) { width: 8%; }
+.bank-files__table-wrap th:nth-child(7) { width: 9%; }
+.bank-files__table-wrap th:nth-child(8) { width: 12%; }
 
 .bank-files__table-wrap td {
   padding: 10px;
@@ -1274,6 +1277,10 @@ async function submitUpload() {
 
 .bank-files__table-wrap tbody tr.is-selected {
   box-shadow: inset 2px 0 var(--ui-text-highlighted);
+}
+
+.bank-files__status-badge {
+  max-width: 100%;
 }
 
 .bank-files__file {
@@ -1546,8 +1553,10 @@ async function submitUpload() {
 }
 
 .bank-files__metadata dd {
+  min-width: 0;
   margin: 0;
   color: var(--ui-text-highlighted);
+  overflow-wrap: anywhere;
 }
 
 .bank-files__metadata a {

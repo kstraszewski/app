@@ -4,6 +4,7 @@ import type { RouteLocationRaw } from 'vue-router'
 const props = defineProps<{
   title: string
   workspace?: boolean
+  compact?: boolean
   eyebrow?: string
   description?: string
   backTo?: string
@@ -30,11 +31,12 @@ const hasAuthConfig = useHasAuthConfig()
     :class="{
       'crm-page--workspace': props.workspace,
       'crm-content-mode--workspace': props.workspace,
+      'crm-page--compact-header': props.compact && !props.workspace,
     }"
   >
     <CrmPageHeader
       :title="props.title"
-      :compact="props.workspace"
+      :compact="props.workspace || props.compact"
       :eyebrow="props.eyebrow"
       :description="props.description"
       :back-to="props.backTo"
@@ -80,6 +82,12 @@ const hasAuthConfig = useHasAuthConfig()
   min-height: 0;
   overflow: hidden;
   flex-direction: column;
+}
+
+.crm-page--compact-header :deep(.crm-page-header--compact) {
+  margin-bottom: 16px;
+  padding: 0 0 12px;
+  background: transparent;
 }
 
 .crm-alert {

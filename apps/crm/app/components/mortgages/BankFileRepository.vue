@@ -556,68 +556,70 @@ async function submitUpload() {
       </div>
     </section>
 
-    <div class="bank-files__search-row">
-      <div ref="searchField" class="bank-files__search" role="search">
-        <UInput
-          v-model="searchInput"
-          class="w-full"
-          size="xl"
-          leading-icon="i-lucide-search"
-          placeholder="Szukaj w nazwach i treści dokumentów"
-          aria-label="Szukaj w repozytorium plików bankowych"
-        >
-          <template #trailing>
-            <div class="bank-files__search-trailing">
-              <UButton
-                v-if="searchInput"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                square
-                icon="i-lucide-x"
-                aria-label="Wyczyść wyszukiwanie"
-                @click="clearSearch"
-              />
-              <UKbd value="meta" />
-              <UKbd value="K" />
-            </div>
-          </template>
-        </UInput>
+    <div class="bank-files__toolbar">
+      <div class="bank-files__search-row">
+        <div ref="searchField" class="bank-files__search" role="search">
+          <UInput
+            v-model="searchInput"
+            class="w-full"
+            size="lg"
+            leading-icon="i-lucide-search"
+            placeholder="Szukaj w nazwach i treści dokumentów"
+            aria-label="Szukaj w repozytorium plików bankowych"
+          >
+            <template #trailing>
+              <div class="bank-files__search-trailing">
+                <UButton
+                  v-if="searchInput"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  square
+                  icon="i-lucide-x"
+                  aria-label="Wyczyść wyszukiwanie"
+                  @click="clearSearch"
+                />
+                <UKbd value="meta" />
+                <UKbd value="K" />
+              </div>
+            </template>
+          </UInput>
+        </div>
+        <span class="bank-files__result-count" aria-live="polite">{{ resultLabel }}</span>
       </div>
-      <span class="bank-files__result-count" aria-live="polite">{{ resultLabel }}</span>
-    </div>
 
-    <div class="bank-files__filters" aria-label="Filtry repozytorium">
-      <USelect
-        v-if="!lockInstitution"
-        v-model="selectedInstitution"
-        :items="institutionItems"
-        aria-label="Filtr instytucji"
-      />
-      <USelect
-        v-model="selectedMimeGroup"
-        :items="mimeItems"
-        aria-label="Filtr typu pliku"
-      />
-      <USelect
-        v-model="selectedProduct"
-        :items="productItems"
-        aria-label="Filtr produktu"
-      />
-      <USelect
-        v-model="selectedStatus"
-        :items="statusItems"
-        aria-label="Filtr statusu pliku"
-      />
-      <UButton
-        v-if="hasActiveFilters"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-filter-x"
-        @click="clearFilters"
-      >
-        Wyczyść
-      </UButton>
+      <div class="bank-files__filters" aria-label="Filtry repozytorium">
+        <USelect
+          v-if="!lockInstitution"
+          v-model="selectedInstitution"
+          :items="institutionItems"
+          aria-label="Filtr instytucji"
+        />
+        <USelect
+          v-model="selectedMimeGroup"
+          :items="mimeItems"
+          aria-label="Filtr typu pliku"
+        />
+        <USelect
+          v-model="selectedProduct"
+          :items="productItems"
+          aria-label="Filtr produktu"
+        />
+        <USelect
+          v-model="selectedStatus"
+          :items="statusItems"
+          aria-label="Filtr statusu pliku"
+        />
+        <UButton
+          v-if="hasActiveFilters"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-filter-x"
+          @click="clearFilters"
+        >
+          Wyczyść
+        </UButton>
+      </div>
     </div>
 
     <UAlert
@@ -637,7 +639,21 @@ async function submitUpload() {
     <div v-else class="bank-files__workspace" :class="{ 'bank-files__workspace--preview': selectedFile }">
       <div class="bank-files__browser">
         <aside class="bank-files__categories" aria-label="Kategorie plików">
-          <span class="bank-files__category-label">Kategorie</span>
+          <div class="bank-files__category-heading">
+            <span class="bank-files__category-label">Kategorie</span>
+            <UButton
+              v-if="data.permissions.canManageCategories"
+              class="bank-files__new-category"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-plus"
+              size="xs"
+              aria-label="Nowa kategoria"
+              title="Nowa kategoria"
+            >
+              Nowa
+            </UButton>
+          </div>
           <nav>
             <button
               v-for="category in categoryItems"
@@ -655,16 +671,6 @@ async function submitUpload() {
               <small>{{ category.count }}</small>
             </button>
           </nav>
-          <UButton
-            v-if="data.permissions.canManageCategories"
-            class="bank-files__new-category"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-plus"
-            block
-          >
-            Nowa kategoria
-          </UButton>
         </aside>
 
         <div class="bank-files__table-wrap">
@@ -988,8 +994,7 @@ async function submitUpload() {
 
 .bank-files--preview > .bank-files__heading,
 .bank-files--preview > .bank-files__upload,
-.bank-files--preview > .bank-files__search-row,
-.bank-files--preview > .bank-files__filters,
+.bank-files--preview > .bank-files__toolbar,
 .bank-files--preview > .bank-files__state {
   grid-column: 1;
   margin-right: 16px;
@@ -1013,8 +1018,8 @@ async function submitUpload() {
 
 .bank-files__heading {
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 14px;
 }
 
 .bank-files__heading h2,
@@ -1029,12 +1034,12 @@ async function submitUpload() {
 
 .bank-files__heading h2 {
   color: var(--ui-text-highlighted);
-  font-size: clamp(1.45rem, 2vw, 1.9rem);
+  font-size: clamp(1.3rem, 1.7vw, 1.65rem);
   line-height: 1.15;
 }
 
 .bank-files__heading p {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--ui-text-muted);
   font-size: 14px;
 }
@@ -1080,9 +1085,17 @@ async function submitUpload() {
   font-size: 12px;
 }
 
+.bank-files__toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .bank-files__search-row {
   gap: 14px;
-  margin-bottom: 12px;
+  min-width: 0;
 }
 
 .bank-files__search {
@@ -1104,13 +1117,13 @@ async function submitUpload() {
 }
 
 .bank-files__filters {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
-  margin-bottom: 14px;
+  min-width: 0;
 }
 
 .bank-files__filters :deep([data-slot="base"]) {
-  min-width: 150px;
+  min-width: 124px;
 }
 
 .bank-files__state {
@@ -1154,18 +1167,34 @@ async function submitUpload() {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: 16px 12px;
+  padding: 12px 10px;
   border-right: 1px solid var(--ui-border);
   background: var(--ui-bg-muted);
 }
 
+.bank-files__category-heading {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 0 4px 0 8px;
+}
+
 .bank-files__category-label {
-  padding: 0 8px;
+  margin-bottom: 0;
+  padding: 0;
 }
 
 .bank-files__categories nav {
   display: grid;
+  min-height: 0;
   gap: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .bank-files__categories nav button {
@@ -1219,7 +1248,10 @@ async function submitUpload() {
 }
 
 .bank-files__new-category {
-  margin-top: auto;
+  flex: none;
+  min-height: 28px;
+  padding-inline: 7px;
+  font-size: 10px;
 }
 
 .bank-files__table-wrap {
@@ -1577,8 +1609,7 @@ async function submitUpload() {
 
   .bank-files--preview > .bank-files__heading,
   .bank-files--preview > .bank-files__upload,
-  .bank-files--preview > .bank-files__search-row,
-  .bank-files--preview > .bank-files__filters,
+  .bank-files--preview > .bank-files__toolbar,
   .bank-files--preview > .bank-files__state {
     margin-right: 0;
   }
@@ -1592,11 +1623,23 @@ async function submitUpload() {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .bank-files__preview {
+  .bank-files__workspace--preview .bank-files__preview {
     grid-column: 1;
     grid-row: auto;
     border-top: 1px solid var(--ui-border);
     border-left: 0;
+  }
+}
+
+@media (max-width: 1700px) {
+  .bank-files--preview > .bank-files__toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .bank-files__toolbar {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1613,7 +1656,7 @@ async function submitUpload() {
 
   .bank-files__filters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .bank-files__filters :deep([data-slot="base"]) {
@@ -1625,27 +1668,39 @@ async function submitUpload() {
   }
 
   .bank-files__categories {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
     overflow-x: auto;
     border-right: 0;
     border-bottom: 1px solid var(--ui-border);
   }
 
   .bank-files__category-label {
+    display: block;
+  }
+
+  .bank-files__category-heading {
+    min-height: 38px;
+    margin-bottom: 0;
+    padding: 0;
+  }
+
+  .bank-files__category-heading .bank-files__category-label {
     display: none;
   }
 
   .bank-files__categories nav {
     display: flex;
     width: max-content;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .bank-files__categories nav button {
     width: auto;
     min-width: max-content;
-  }
-
-  .bank-files__new-category {
-    display: none;
   }
 
   .bank-files__preview {
@@ -1663,6 +1718,12 @@ async function submitUpload() {
 
   .bank-files__preview-toolbar > :deep(button) {
     width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .bank-files__filters :deep(button) {
+    min-width: 0;
   }
 }
 </style>

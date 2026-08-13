@@ -91,34 +91,21 @@ const threadTotalLabel = computed(() => {
     : 'tematów'
 })
 const pageTabs = computed(() => {
-  const tabs: Array<{
-    label: string
-    to: RouteLocationRaw
-    icon: string
-    exact?: boolean
-    active?: boolean
-  }> = [{
-    label: 'Wszystkie wątki',
-    to: allThreadsTarget.value,
-    icon: 'i-lucide-messages-square',
-    exact: true,
-  }]
-  if (activeCategory.value) {
-    tabs.push({
-      label: activeCategory.value.name,
-      to: categoryTarget(activeCategory.value.slug),
-      icon: activeCategory.value.icon || 'i-lucide-folder',
+  if (!canAccessModeration.value) return []
+
+  return [
+    {
+      label: 'Forum',
+      to: allThreadsTarget.value,
+      icon: 'i-lucide-messages-square',
       active: true,
-    })
-  }
-  if (canAccessModeration.value) {
-    tabs.push({
+    },
+    {
       label: 'Moderacja',
       to: moderationPath.value,
       icon: 'i-lucide-shield-check',
-    })
-  }
-  return tabs
+    },
+  ]
 })
 
 useHead({

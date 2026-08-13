@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { RouteLocationRaw } from 'vue-router'
 import type {
   ForumCategory,
   ForumCreateReplyPayload,
@@ -68,32 +67,21 @@ const categoryPath = computed(() => {
     : forumBasePath.value
 })
 const pageTabs = computed(() => {
-  const tabs: Array<{
-    label: string
-    to: RouteLocationRaw
-    icon: string
-    exact?: boolean
-  }> = [{
-    label: 'Wszystkie wątki',
-    to: forumBasePath.value,
-    icon: 'i-lucide-messages-square',
-    exact: true,
-  }]
-  if (selectedThread.value?.category) {
-    tabs.push({
-      label: selectedThread.value.category.name,
-      to: categoryPath.value,
-      icon: selectedThread.value.category.icon || 'i-lucide-folder',
-    })
-  }
-  if (canAccessModeration.value) {
-    tabs.push({
+  if (!canAccessModeration.value) return []
+
+  return [
+    {
+      label: 'Forum',
+      to: forumBasePath.value,
+      icon: 'i-lucide-messages-square',
+      active: true,
+    },
+    {
       label: 'Moderacja',
       to: moderationPath.value,
       icon: 'i-lucide-shield-check',
-    })
-  }
-  return tabs
+    },
+  ]
 })
 const initialCategoryId = computed(() => selectedThread.value?.category.id || '')
 const statusPresentation: Record<ForumThreadStatus, { label: string, icon: string, color: 'success' | 'warning' | 'neutral' }> = {

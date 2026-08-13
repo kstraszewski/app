@@ -44,17 +44,18 @@ const realtimeStateEndpoint = computed(() => orgApiPath('/forum/realtime'))
 const realtimeTokenEndpoint = computed(() => orgApiPath('/forum/realtime/token'))
 const activeCategories = computed(() => categories.value.filter(category => category.isActive !== false))
 const inactiveCategories = computed(() => categories.value.filter(category => category.isActive === false))
-const pageTabs = computed(() => [{
-  label: 'Wszystkie wątki',
-  to: forumBasePath.value,
-  icon: 'i-lucide-messages-square',
-  exact: true,
-}, {
-  label: 'Moderacja',
-  to: `${forumBasePath.value}/moderation`,
-  icon: 'i-lucide-shield-check',
-  active: true,
-}])
+const pageTabs = computed(() => canAccessModeration.value
+  ? [{
+      label: 'Forum',
+      to: forumBasePath.value,
+      icon: 'i-lucide-messages-square',
+    }, {
+      label: 'Moderacja',
+      to: `${forumBasePath.value}/moderation`,
+      icon: 'i-lucide-shield-check',
+      active: true,
+    }]
+  : [])
 
 function threadCountLabel(count: number): string {
   if (count === 1) return 'wątek'

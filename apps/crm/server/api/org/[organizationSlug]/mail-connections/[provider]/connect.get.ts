@@ -1,14 +1,16 @@
 import { getQuery, sendRedirect, setCookie } from 'h3'
+import type { MailProviderId } from '../../../../../../shared/types/mail.ts'
 import {
   getRequiredParam,
   requireCrmSession,
   textValue,
 } from '~~/server/utils/crm'
 import {
-  MAIL_OAUTH_COOKIE,
   encodeMailOAuthFlow,
   loadUserMailConnection,
+  mailOAuthFlowCookieName,
   mailOAuthCookieOptions,
+  pruneMailOAuthFlowCookies,
 } from '~~/server/utils/mail-connections'
 import {
   mailAuthorizationUrl,
@@ -17,50 +19,71 @@ import {
 } from '~~/server/utils/mail-providers'
 import { setPrivateMailResponseHeaders } from '~~/server/utils/mail-http'
 
+type OAuthMailProvider = Extract<MailProviderId, 'google' | 'microsoft'>
+
 export default defineEventHandler(async (event) => {
   setPrivateMailResponseHeaders(event)
-  const provider = getRequiredParam(event, 'provider')
-  if (provider !== 'google') {
+  const provider = getRequiredParam(event, 'provider') as OAuthMailProvider
+  if (!['google', 'microsoft'].includes(provider)) {
     throw createError({ statusCode: 404, statusMessage: 'Mail provider not found' })
   }
 
   const session = await requireCrmSession(event)
+  const query = getQuery(event)
   const defaultReturnTo = `/org/${encodeURIComponent(session.organizationSlug)}/mail`
   const returnTo = safeReturnTo(
-    textValue(getQuery(event).returnTo),
+    textValue(query.returnTo),
     defaultReturnTo,
   )
+  const replacementConnectionId = textValue(query.connectionId)
+  const connection = replacementConnectionId
+    ? (await loadUserMailConnection(event, session, replacementConnectionId)).connection
+    : null
+  if (replacementConnectionId && (!connection || connection.provider !== provider)) {
+    throw createError({ statusCode: 404, statusMessage: 'Mail connection not found' })
+  }
+
   const state = mailOAuthState()
   const pkce = mailOAuthPkce()
-  const { connection } = await loadUserMailConnection(event, session)
-
+  pruneMailOAuthFlowCookies(event)
   setCookie(
     event,
-    MAIL_OAUTH_COOKIE,
+    mailOAuthFlowCookieName(state),
     encodeMailOAuthFlow(event, {
       state,
-      provider: 'google',
+      provider,
       organizationSlug: session.organizationSlug,
       ownerUserId: session.userId,
       returnTo,
       codeVerifier: pkce.verifier,
       expiresAt: Date.now() + 10 * 60 * 1000,
+      replacementConnectionId: connection?.id,
       expectedAccountId: connection?.account_id,
     }),
     mailOAuthCookieOptions(event),
   )
 
-  return sendRedirect(
-    event,
-    mailAuthorizationUrl(
-      event,
-      state,
-      pkce.challenge,
-      connection?.account_email || session.email,
-    ),
-    302,
-  )
+  const loginHint = connection?.account_email || session.email
+  const authorizationUrl = provider === 'google'
+    ? mailAuthorizationUrl(event, state, pkce.challenge, loginHint)
+    : await microsoftAuthorizationUrl(event, state, pkce.challenge, loginHint)
+  return sendRedirect(event, authorizationUrl, 302)
 })
+
+async function microsoftAuthorizationUrl(
+  event: Parameters<typeof mailAuthorizationUrl>[0],
+  state: string,
+  codeChallenge: string,
+  loginHint?: string,
+): Promise<string> {
+  const module = await import('~~/server/utils/mail-microsoft-runtime')
+  return module.microsoftMailRuntimeAuthorizationUrl(
+    event,
+    state,
+    codeChallenge,
+    loginHint,
+  )
+}
 
 function safeReturnTo(value: string | undefined, defaultReturnTo: string): string {
   if (!value) return defaultReturnTo
@@ -74,7 +97,8 @@ function safeReturnTo(value: string | undefined, defaultReturnTo: string): strin
       return defaultReturnTo
     }
     return `${parsed.pathname}${parsed.search}`
-  } catch {
+  }
+  catch {
     return defaultReturnTo
   }
 }

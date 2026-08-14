@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormError, FormErrorEvent, FormSubmitEvent } from '@nuxt/ui'
-import type { MailSendPayload } from '#shared/types/mail'
+import type { MailProviderId, MailSendPayload } from '#shared/types/mail'
 import { gmailBlockedAttachmentExtension } from '#shared/utils/mail-security'
 import { apiErrorMessage } from '~/utils/api-error'
 
@@ -15,7 +15,14 @@ interface ComposerForm {
 const props = withDefaults(defineProps<{
   open: boolean
   endpoint: string
+  connectionId: string
+  provider: MailProviderId
+  providerLabel: string
+  providerIcon: string
   accountEmail: string
+  externalSentUrl?: string | null
+  maxAttachmentBytes?: number
+  maxTotalAttachmentBytes?: number
   initialTo?: string
   initialCc?: string
   initialSubject?: string
@@ -25,6 +32,9 @@ const props = withDefaults(defineProps<{
   initialCc: '',
   initialSubject: '',
   threadId: '',
+  externalSentUrl: null,
+  maxAttachmentBytes: 3 * 1024 * 1024,
+  maxTotalAttachmentBytes: 3 * 1024 * 1024,
 })
 
 const emit = defineEmits<{
@@ -73,15 +83,15 @@ const attachmentBytes = computed(() => (
 const attachmentError = computed(() => {
   if (attachments.value.length > 10) return 'Możesz dodać maksymalnie 10 załączników.'
   if (attachments.value.some(file => file.size <= 0)) return 'Załącznik nie może być pusty.'
-  if (attachments.value.some(file => file.size > 10 * 1024 * 1024)) {
-    return 'Pojedynczy załącznik nie może przekraczać 10 MB.'
+  if (attachments.value.some(file => file.size > props.maxAttachmentBytes)) {
+    return `Pojedynczy załącznik nie może przekraczać ${formatBytes(props.maxAttachmentBytes)}.`
   }
-  if (attachmentBytes.value > 16 * 1024 * 1024) {
-    return 'Łączny rozmiar załączników nie może przekraczać 16 MB.'
+  if (attachmentBytes.value > props.maxTotalAttachmentBytes) {
+    return `Łączny rozmiar załączników nie może przekraczać ${formatBytes(props.maxTotalAttachmentBytes)}.`
   }
-  const blockedFile = attachments.value.find(file => (
-    gmailBlockedAttachmentExtension(file.name)
-  ))
+  const blockedFile = props.provider === 'google'
+    ? attachments.value.find(file => gmailBlockedAttachmentExtension(file.name))
+    : undefined
   if (blockedFile) {
     const extension = gmailBlockedAttachmentExtension(blockedFile.name)
     return `Gmail blokuje załączniki .${extension}. Wybierz bezpieczny format pliku.`
@@ -110,9 +120,12 @@ const requiresSendConfirmation = computed(() => (
 const sendErrorTitle = computed(() => deliveryAmbiguous.value
   ? 'Nie udało się potwierdzić wysyłki'
   : 'Nie udało się wysłać wiadomości')
-const gmailSentUrl = computed(() => (
-  `https://mail.google.com/mail/u/${encodeURIComponent(props.accountEmail)}/#sent`
-))
+const attachmentDescription = computed(() => {
+  const base = `Do 10 plików, maks. ${formatBytes(props.maxAttachmentBytes)} każdy i ${formatBytes(props.maxTotalAttachmentBytes)} łącznie.`
+  return props.provider === 'google'
+    ? `${base} Gmail blokuje pliki wykonywalne i skrypty.`
+    : base
+})
 
 function validateComposer(state: Partial<ComposerForm>): FormError[] {
   const errors: FormError[] = []
@@ -198,6 +211,7 @@ async function sendMessage(): Promise<void> {
       lastAttemptFingerprint.value = fingerprint
     }
     const body = new FormData()
+    body.append('connectionId', props.connectionId)
     body.append('idempotencyKey', idempotencyKey.value)
     body.append('to', form.to.trim())
     body.append('cc', form.cc.trim())
@@ -262,6 +276,7 @@ async function composerFingerprint(): Promise<string> {
     bcc: normalizeRecipients(form.bcc),
     subject: form.subject.trim(),
     body: form.body,
+    connectionId: props.connectionId,
     threadId: props.threadId,
     attachments: attachmentFingerprints,
   })
@@ -330,9 +345,18 @@ function formatBytes(value: number): string {
     <template #body>
       <div class="mail-composer">
         <div class="mail-composer__account">
-          <img src="/assets/google-icon.svg" alt="">
+          <img
+            v-if="providerIcon.startsWith('/')"
+            :src="providerIcon"
+            alt=""
+          >
+          <UIcon
+            v-else
+            :name="providerIcon"
+            class="mail-composer__account-icon"
+          />
           <span>
-            <small>Nadawca</small>
+            <small>Nadawca · {{ providerLabel }}</small>
             <strong>{{ accountEmail }}</strong>
           </span>
         </div>
@@ -345,9 +369,9 @@ function formatBytes(value: number): string {
           :title="sendErrorTitle"
           :description="sendError"
         >
-          <template v-if="deliveryAmbiguous" #actions>
+          <template v-if="deliveryAmbiguous && externalSentUrl" #actions>
             <UButton
-              :href="gmailSentUrl"
+              :href="externalSentUrl"
               target="_blank"
               rel="noopener noreferrer"
               color="error"
@@ -430,7 +454,7 @@ function formatBytes(value: number): string {
           <UFormField
             name="subject"
             :label="isReply ? 'Temat wątku' : 'Temat'"
-            :description="isReply ? 'Temat jest zachowany, aby Gmail dołączył odpowiedź do wątku.' : undefined"
+            :description="isReply ? 'Temat jest zachowany, aby dostawca dołączył odpowiedź do wątku.' : undefined"
             required
           >
             <UInput
@@ -465,7 +489,7 @@ function formatBytes(value: number): string {
             name="attachments"
             label="Załączniki"
             hint="Opcjonalnie"
-            description="Do 10 plików, maks. 10 MB każdy i 16 MB łącznie. Gmail blokuje pliki wykonywalne i skrypty."
+            :description="attachmentDescription"
           >
             <UFileUpload
               v-model="attachments"
@@ -475,7 +499,7 @@ function formatBytes(value: number): string {
               position="outside"
               icon="i-lucide-paperclip"
               label="Wybierz lub przeciągnij pliki"
-              description="Pliki zostaną przekazane bezpośrednio do Gmaila."
+              :description="`Pliki zostaną przekazane bezpośrednio do ${providerLabel}.`"
               :file-image="false"
               :disabled="sending"
               :ui="{ base: 'min-h-28', files: 'mt-3' }"
@@ -602,6 +626,12 @@ function formatBytes(value: number): string {
 .mail-composer__account img {
   width: 24px;
   height: 24px;
+}
+
+.mail-composer__account-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--ui-primary);
 }
 
 .mail-composer__account span {

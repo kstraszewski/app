@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import type {
   MailAddress,
+  MailConnectionInfo,
   MailConnectionPayload,
   MailFolderId,
-  MailFolderSummary,
   MailMessageSecurity,
+  MailProviderId,
   MailSendPayload,
   MailThreadDetailPayload,
   MailThreadListPayload,
   MailThreadSummary,
 } from '#shared/types/mail'
+import type { LocationQueryRaw } from 'vue-router'
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -37,13 +39,8 @@ const folderConfiguration: Array<{
 ]
 
 const emptyConnectionPayload = (): MailConnectionPayload => ({
-  configured: false,
-  provider: {
-    id: 'google',
-    label: 'Gmail',
-    connectPath: null,
-  },
-  connection: null,
+  providers: [],
+  connections: [],
 })
 
 const emptyThreadPayload = (): MailThreadListPayload => ({
@@ -69,26 +66,109 @@ function folderFromQuery(value: unknown): MailFolderId {
 }
 
 const activeFolder = computed(() => folderFromQuery(route.query.folder))
+const requestedConnectionId = computed(() => queryText(route.query.account))
 const selectedThreadId = computed(() => {
   const value = queryText(route.query.thread)
-  return /^[A-Za-z0-9_-]{1,256}$/u.test(value) ? value : ''
+  return /^[A-Za-z0-9_-]{1,4096}$/u.test(value) ? value : ''
 })
-const searchQuery = ref(queryText(route.query.q).trim())
-const searchInput = ref(searchQuery.value)
+const searchQuery = ref('')
+const searchInput = ref('')
 const pageToken = ref('')
 const previousPageTokens = ref<string[]>([])
-const disconnectConfirmationOpen = ref(false)
-const disconnecting = ref(false)
 const refreshing = ref(false)
 const lastRefreshedAt = ref<number | null>(null)
+const connectionModalOpen = ref(false)
+const connectionModalProvider = ref<MailProviderId | null>(null)
+const reconnectConnection = ref<MailConnectionInfo | null>(null)
+const disconnectTarget = ref<MailConnectionInfo | null>(null)
+const disconnecting = ref(false)
 const composerOpen = ref(false)
 const composerKey = ref(0)
+const composerConnectionId = ref('')
 const composerDraft = reactive({
   to: '',
   cc: '',
   subject: '',
   threadId: '',
 })
+
+const {
+  data: connectionPayload,
+  status: connectionStatus,
+  error: connectionError,
+  refresh: refreshConnection,
+} = await useAsyncData<MailConnectionPayload>(
+  `mail-connections:${organizationSlug.value}`,
+  () => requestFetch<MailConnectionPayload>(orgApiPath('/mail-connections')),
+  {
+    default: emptyConnectionPayload,
+    watch: [organizationSlug],
+  },
+)
+
+const providers = computed(() => connectionPayload.value.providers)
+const connections = computed(() => connectionPayload.value.connections)
+const activeConnection = computed(() => (
+  connections.value.find(connection => connection.id === requestedConnectionId.value)
+  ?? connections.value.find(connection => connection.status === 'active')
+  ?? connections.value[0]
+  ?? null
+))
+const connectionId = computed(() => activeConnection.value?.id ?? '')
+const composerConnection = computed(() => (
+  connections.value.find(connection => connection.id === composerConnectionId.value)
+  ?? activeConnection.value
+))
+const selectedConnectionId = computed({
+  get: () => connectionId.value,
+  set: (value: string) => switchMailbox(value),
+})
+const accountItems = computed(() => connections.value.map(connection => ({
+  label: connection.displayName || connection.accountEmail,
+  description: `${connection.providerLabel} · ${connection.accountEmail}`,
+  value: connection.id,
+  icon: connection.providerIcon.startsWith('/')
+    ? 'i-lucide-mail'
+    : connection.providerIcon,
+})))
+const canRead = computed(() => (
+  activeConnection.value?.status === 'active'
+  && activeConnection.value.capabilities.canRead
+))
+const canSend = computed(() => (
+  activeConnection.value?.status === 'active'
+  && activeConnection.value.capabilities.canSend
+))
+const showReconnectNotice = computed(() => (
+  activeConnection.value?.status === 'revoked'
+  || activeConnection.value?.status === 'error'
+))
+const connectionsPath = computed(() => orgApiPath('/mail-connections'))
+const sendEndpoint = computed(() => orgApiPath('/mail/messages'))
+
+watch(
+  [() => connectionPayload.value.connections, connectionStatus],
+  ([availableConnections, status]) => {
+    if (status === 'idle' || status === 'pending') return
+    if (!availableConnections.length) {
+      if (route.query.account || route.query.thread) {
+        const query = { ...route.query }
+        delete query.account
+        delete query.thread
+        void router.replace({ path: route.path, query })
+      }
+      return
+    }
+    const requested = requestedConnectionId.value
+    if (availableConnections.some(connection => connection.id === requested)) return
+    const fallback = availableConnections.find(connection => connection.status === 'active')
+      ?? availableConnections[0]
+    const query: LocationQueryRaw = { ...route.query, account: fallback!.id }
+    delete query.thread
+    void router.replace({ path: route.path, query })
+  },
+  { immediate: true },
+)
 
 watch(searchQuery, (value) => {
   searchInput.value = value
@@ -99,28 +179,14 @@ watch([activeFolder, searchQuery, organizationSlug], () => {
   previousPageTokens.value = []
 })
 
-const {
-  data: connectionPayload,
-  status: connectionStatus,
-  error: connectionError,
-  refresh: refreshConnection,
-} = await useAsyncData<MailConnectionPayload>(
-  `mail-connection:${organizationSlug.value}`,
-  () => requestFetch<MailConnectionPayload>(orgApiPath('/mail-connections')),
-  {
-    default: emptyConnectionPayload,
-    watch: [organizationSlug],
-  },
-)
-
-const connection = computed(() => connectionPayload.value.connection)
-const connectionId = computed(() => connection.value?.id ?? '')
-const hasSendPermission = computed(() => Boolean(connection.value?.capabilities.canSend))
-const canSend = computed(() => (
-  connection.value?.status === 'active'
-  && hasSendPermission.value
-))
-const sendEndpoint = computed(() => orgApiPath('/mail/messages'))
+watch(connectionId, (next, previous) => {
+  if (!previous || next === previous) return
+  searchQuery.value = ''
+  searchInput.value = ''
+  pageToken.value = ''
+  previousPageTokens.value = []
+  lastRefreshedAt.value = null
+})
 
 const {
   data: threadPayload,
@@ -130,11 +196,14 @@ const {
 } = await useAsyncData<MailThreadListPayload>(
   `mail-threads:${organizationSlug.value}`,
   async () => {
-    if (!connectionId.value) return emptyThreadPayload()
+    if (!connectionId.value || !activeConnection.value?.capabilities.canRead) {
+      return emptyThreadPayload()
+    }
     if (searchQuery.value) {
       return requestFetch<MailThreadListPayload>(orgApiPath('/mail/threads/search'), {
         method: 'POST',
         body: {
+          connectionId: connectionId.value,
           folder: activeFolder.value,
           q: searchQuery.value,
           pageToken: pageToken.value || undefined,
@@ -143,6 +212,7 @@ const {
     }
     return requestFetch<MailThreadListPayload>(orgApiPath('/mail/threads'), {
       query: {
+        connectionId: connectionId.value,
         folder: activeFolder.value,
         pageToken: pageToken.value || undefined,
       },
@@ -173,6 +243,7 @@ const {
     if (!connectionId.value || !selectedThreadId.value) return null
     return requestFetch<MailThreadDetailPayload>(
       orgApiPath(`/mail/threads/${encodeURIComponent(selectedThreadId.value)}`),
+      { query: { connectionId: connectionId.value } },
     )
   },
   {
@@ -199,6 +270,7 @@ const folderTabs = computed(() => folderConfiguration.map((folder) => {
     to: {
       path: route.path,
       query: {
+        account: connectionId.value,
         folder: folder.query,
       },
     },
@@ -209,16 +281,6 @@ const activeFolderLabel = computed(() => (
 ))
 const currentPageNumber = computed(() => previousPageTokens.value.length + 1)
 const hasPreviousPage = computed(() => previousPageTokens.value.length > 0)
-const gmailAccountUrl = computed(() => {
-  const email = connection.value?.accountEmail
-  return email
-    ? `https://mail.google.com/mail/u/${encodeURIComponent(email)}/`
-    : 'https://mail.google.com/'
-})
-const showReconnectNotice = computed(() => (
-  connection.value?.status === 'revoked'
-  || connection.value?.status === 'error'
-))
 const resultAnnouncement = computed(() => {
   if (threadsStatus.value === 'pending') return 'Ładowanie wiadomości'
   const count = threadPayload.value.data.length
@@ -235,7 +297,7 @@ const lastRefreshedLabel = computed(() => {
 })
 
 watch(threadsStatus, (status) => {
-  if (status === 'success') lastRefreshedAt.value = Date.now()
+  if (status === 'success' && connectionId.value) lastRefreshedAt.value = Date.now()
 }, { immediate: true })
 
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60_000
@@ -247,6 +309,7 @@ function refreshWhenVisible(): void {
     document.visibilityState !== 'visible'
     || refreshing.value
     || composerOpen.value
+    || connectionModalOpen.value
     || !connectionId.value
   ) return
   if (
@@ -262,47 +325,55 @@ onMounted(() => {
   autoRefreshTimer = window.setInterval(refreshWhenVisible, AUTO_REFRESH_INTERVAL_MS)
 
   const status = queryText(route.query.mailStatus)
+  const providerId = queryText(route.query.mailProvider) as MailProviderId
+  const providerLabel = providers.value.find(provider => provider.id === providerId)?.label
+    ?? 'Dostawca poczty'
   if (status === 'connected') {
     toast.add({
-      title: 'Gmail został połączony',
-      description: 'Możesz teraz przeglądać i wysyłać wiadomości w CRM.',
+      title: 'Skrzynka została połączona',
+      description: `${providerLabel} jest gotowy do odczytu i wysyłania wiadomości.`,
       color: 'success',
       icon: 'i-lucide-circle-check',
     })
-  } else if (status === 'cancelled') {
+  }
+  else if (status === 'cancelled') {
     toast.add({
       title: 'Łączenie anulowane',
-      description: 'Google nie udzielił dostępu do skrzynki.',
+      description: 'Dostawca nie udzielił dostępu do skrzynki.',
       color: 'warning',
       icon: 'i-lucide-circle-alert',
     })
-  } else if (status === 'permission_missing') {
+  }
+  else if (status === 'permission_missing') {
     toast.add({
-      title: 'Wysyłanie nie zostało włączone',
-      description: 'Google nie otrzymał zgody na wysyłanie wiadomości. Odczyt poczty nadal działa.',
+      title: 'Brakuje wymaganych uprawnień',
+      description: 'Zezwól na odczyt i wysyłanie wiadomości, aby korzystać z klienta poczty.',
       color: 'warning',
-      icon: 'i-lucide-send-horizontal',
+      icon: 'i-lucide-shield-alert',
     })
-  } else if (status === 'account_mismatch') {
+  }
+  else if (status === 'account_mismatch') {
     toast.add({
-      title: 'Wybrano inne konto Gmail',
-      description: `Aby rozszerzyć uprawnienia, wybierz konto ${connection.value?.accountEmail || 'połączone z CRM'}.`,
+      title: 'Wybrano inne konto',
+      description: 'Przy ponownym łączeniu wybierz tę samą skrzynkę co wcześniej.',
       color: 'warning',
       icon: 'i-lucide-user-round-x',
     })
-  } else if (status === 'error') {
+  }
+  else if (status === 'error') {
     toast.add({
-      title: 'Nie udało się połączyć Gmaila',
-      description: 'Sprawdź konfigurację OAuth i spróbuj ponownie.',
+      title: 'Nie udało się połączyć skrzynki',
+      description: 'Sprawdź konfigurację dostawcy i spróbuj ponownie.',
       color: 'error',
       icon: 'i-lucide-circle-x',
     })
   }
-  if (status || route.query.q !== undefined) {
+  if (status || route.query.q !== undefined || route.query.mailProvider !== undefined) {
     const query = { ...route.query }
     delete query.mailStatus
+    delete query.mailProvider
     delete query.q
-    void router.replace({ query })
+    void router.replace({ path: route.path, query })
   }
 })
 
@@ -316,51 +387,93 @@ function positiveCount(value: number | null | undefined): number | undefined {
   return typeof value === 'number' && value > 0 ? value : undefined
 }
 
-function submitSearch() {
-  const q = searchInput.value.trim()
-  searchQuery.value = q
+function switchMailbox(nextConnectionId: string): void {
+  if (!nextConnectionId || nextConnectionId === connectionId.value) return
+  if (composerOpen.value) {
+    toast.add({
+      title: 'Dokończ lub odrzuć wiadomość',
+      description: 'Konto nadawcy pozostaje zablokowane podczas edycji szkicu.',
+      color: 'info',
+      icon: 'i-lucide-file-pen-line',
+    })
+    return
+  }
+  searchQuery.value = ''
+  searchInput.value = ''
   pageToken.value = ''
   previousPageTokens.value = []
-  void router.replace({
+  clearSelectedThread()
+  void router.push({
     path: route.path,
     query: {
-      folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query,
+      account: nextConnectionId,
+      folder: 'inbox',
     },
   })
 }
 
-function clearSearch() {
+function submitSearch(): void {
+  if (!activeConnection.value?.capabilities.canSearch) return
+  searchQuery.value = searchInput.value.trim()
+  pageToken.value = ''
+  previousPageTokens.value = []
+  const query: Record<string, string> = {
+    account: connectionId.value,
+    folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query || 'inbox',
+  }
+  void router.replace({ path: route.path, query })
+}
+
+function clearSearch(): void {
   searchInput.value = ''
   submitSearch()
 }
 
-function selectThread(thread: MailThreadSummary) {
+function selectThread(thread: MailThreadSummary): void {
   void router.push({
     path: route.path,
     query: {
-      folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query,
+      account: connectionId.value,
+      folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query || 'inbox',
       thread: thread.id,
     },
   })
 }
 
-function closeThread() {
+function closeThread(): void {
   const query = { ...route.query }
   delete query.thread
   clearSelectedThread()
   void router.push({ path: route.path, query })
 }
 
-function connectGmail() {
-  const connectPath = connectionPayload.value.provider.connectPath
-  if (import.meta.client && connectPath) window.location.assign(connectPath)
+function openConnectionModal(
+  provider: MailProviderId | null = null,
+  connection: MailConnectionInfo | null = null,
+): void {
+  connectionModalProvider.value = provider
+  reconnectConnection.value = connection
+  connectionModalOpen.value = true
+}
+
+async function handleConnectionCreated(connection: MailConnectionInfo): Promise<void> {
+  await refreshConnection()
+  reconnectConnection.value = null
+  connectionModalProvider.value = null
+  switchMailbox(connection.id)
+}
+
+function openReconnect(): void {
+  if (!activeConnection.value) return
+  openConnectionModal(activeConnection.value.provider, activeConnection.value)
 }
 
 function openNewMessage(): void {
-  if (!canSend.value) {
-    connectGmail()
+  if (!canSend.value || !activeConnection.value) {
+    openReconnect()
     return
   }
+  composerConnectionId.value = activeConnection.value.id
   composerDraft.to = ''
   composerDraft.cc = ''
   composerDraft.subject = ''
@@ -370,13 +483,13 @@ function openNewMessage(): void {
 }
 
 function openReply(): void {
-  if (!canSend.value) {
-    connectGmail()
+  if (!canSend.value || !activeConnection.value) {
+    openReconnect()
     return
   }
   const thread = selectedThread.value
   const latest = thread?.messages.at(-1)
-  const accountEmail = connection.value?.accountEmail.trim().toLowerCase() || ''
+  const accountEmail = activeConnection.value.accountEmail.trim().toLowerCase()
   if (!thread || !latest || !accountEmail) return
 
   const fromEmail = latest.from?.email?.toLowerCase() || ''
@@ -386,13 +499,14 @@ function openReply(): void {
   if (!primary.length) {
     toast.add({
       title: 'Nie znaleziono odbiorcy odpowiedzi',
-      description: 'Otwórz wątek w Gmailu, aby odpowiedzieć na tę wiadomość.',
+      description: 'Otwórz wiadomość u dostawcy, aby odpowiedzieć bezpośrednio.',
       color: 'warning',
       icon: 'i-lucide-circle-alert',
     })
     return
   }
 
+  composerConnectionId.value = activeConnection.value.id
   composerDraft.to = primary.join(', ')
   composerDraft.cc = ''
   composerDraft.subject = thread.subject
@@ -415,9 +529,10 @@ function uniqueAddressEmails(addresses: MailAddress[], excludedEmail: string): s
 
 async function handleMessageSent(result: MailSendPayload['data']): Promise<void> {
   const wasReply = Boolean(composerDraft.threadId)
+  const sender = composerConnection.value
   toast.add({
     title: wasReply ? 'Odpowiedź została wysłana' : 'Wiadomość została wysłana',
-    description: `Gmail zapisał ją w folderze Wysłane konta ${connection.value?.accountEmail || ''}.`,
+    description: `Dostawca potwierdził wysyłkę z konta ${sender?.accountEmail || ''}.`,
     color: 'success',
     icon: 'i-lucide-send',
   })
@@ -427,8 +542,8 @@ async function handleMessageSent(result: MailSendPayload['data']): Promise<void>
   }
 }
 
-async function refreshMailbox(showToast = true) {
-  if (refreshing.value) return
+async function refreshMailbox(showToast = true): Promise<void> {
+  if (refreshing.value || !connectionId.value) return
   refreshing.value = true
   try {
     await refreshConnection()
@@ -438,11 +553,13 @@ async function refreshMailbox(showToast = true) {
     if (showToast) {
       toast.add({
         title: 'Poczta odświeżona',
+        description: activeConnection.value?.accountEmail,
         color: 'success',
         icon: 'i-lucide-refresh-cw',
       })
     }
-  } catch (error) {
+  }
+  catch (error) {
     if (showToast) {
       toast.add({
         title: 'Nie udało się odświeżyć poczty',
@@ -450,44 +567,51 @@ async function refreshMailbox(showToast = true) {
         color: 'error',
       })
     }
-  } finally {
+  }
+  finally {
     refreshing.value = false
   }
 }
 
-async function disconnectGmail() {
-  if (!connection.value || disconnecting.value) return
+async function disconnectMailbox(): Promise<void> {
+  const target = disconnectTarget.value
+  if (!target || disconnecting.value) return
   disconnecting.value = true
   try {
     await $fetch(
-      orgApiPath(`/mail-connections/${encodeURIComponent(connection.value.id)}`),
+      orgApiPath(`/mail-connections/${encodeURIComponent(target.id)}`),
       { method: 'DELETE' },
     )
-    disconnectConfirmationOpen.value = false
-    composerOpen.value = false
-    pageToken.value = ''
-    previousPageTokens.value = []
+    if (composerConnectionId.value === target.id) composerOpen.value = false
+    disconnectTarget.value = null
     await refreshConnection()
-    await refreshThreads()
-    closeThread()
+    if (connectionId.value === target.id) {
+      clearSelectedThread()
+      const query = { ...route.query }
+      delete query.account
+      delete query.thread
+      void router.replace({ path: route.path, query })
+    }
     toast.add({
-      title: 'Gmail został odłączony',
-      description: 'Token dostępu usunięto z CRM.',
+      title: 'Skrzynka została odłączona',
+      description: `${target.accountEmail} usunięto z OpenExpert.`,
       color: 'success',
       icon: 'i-lucide-unplug',
     })
-  } catch (error) {
+  }
+  catch (error) {
     toast.add({
-      title: 'Nie udało się odłączyć Gmaila',
+      title: 'Nie udało się odłączyć skrzynki',
       description: apiErrorMessage(error),
       color: 'error',
     })
-  } finally {
+  }
+  finally {
     disconnecting.value = false
   }
 }
 
-function nextPage() {
+function nextPage(): void {
   const nextToken = threadPayload.value.nextPageToken
   if (!nextToken) return
   previousPageTokens.value.push(pageToken.value)
@@ -495,7 +619,7 @@ function nextPage() {
   closeThread()
 }
 
-function previousPage() {
+function previousPage(): void {
   const previousToken = previousPageTokens.value.pop()
   if (previousToken === undefined) return
   pageToken.value = previousToken
@@ -561,7 +685,7 @@ function senderInitial(value: string): string {
 function securityWarningDescription(security: MailMessageSecurity): string {
   const warnings: string[] = []
   if (security.authentication === 'fail') {
-    warnings.push('Gmail nie potwierdził SPF, DKIM lub DMARC tej wiadomości')
+    warnings.push('dostawca nie potwierdził SPF, DKIM lub DMARC tej wiadomości')
   }
   if (security.replyToMismatch) {
     warnings.push('adres odpowiedzi ma inną domenę niż widoczny nadawca')
@@ -575,649 +699,704 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     <CrmShell
       title="Poczta"
       eyebrow="Komunikacja"
-      description="Przeglądaj i wysyłaj wiadomości z połączonej skrzynki Gmail bez opuszczania CRM."
-      :tabs="connection ? folderTabs : []"
+      description="Czytaj i wysyłaj wiadomości z Gmaila, Outlooka lub dowolnej skrzynki IMAP/SMTP."
+      :tabs="activeConnection ? folderTabs : []"
     >
-    <template v-if="connection" #meta>
-      <div class="mail-account-meta">
-        <img src="/assets/google-icon.svg" alt="" class="mail-account-meta__icon">
-        <span>{{ connection.accountEmail }}</span>
-        <UBadge
-          :color="connection.status === 'active' ? 'success' : 'warning'"
-          variant="subtle"
-          size="sm"
-        >
-          {{ connection.status === 'active' ? 'Połączono' : 'Wymaga uwagi' }}
-        </UBadge>
-        <UBadge color="neutral" variant="subtle" size="sm">
-          {{ hasSendPermission ? 'Odczyt i wysyłanie' : 'Tylko odczyt' }}
-        </UBadge>
-      </div>
-    </template>
-
-    <template v-if="connection" #actions>
-      <UButton
-        v-if="canSend"
-        icon="i-lucide-square-pen"
-        @click="openNewMessage"
-      >
-        Napisz
-      </UButton>
-      <UButton
-        v-else-if="connectionPayload.provider.connectPath"
-        icon="i-lucide-send"
-        @click="connectGmail"
-      >
-        {{ showReconnectNotice ? 'Połącz ponownie' : 'Włącz wysyłanie' }}
-      </UButton>
-      <UButton
-        color="neutral"
-        variant="outline"
-        square
-        icon="i-lucide-refresh-cw"
-        :loading="refreshing"
-        aria-label="Odśwież pocztę"
-        title="Odśwież pocztę"
-        @click="refreshMailbox()"
-      />
-      <UButton
-        v-if="canSend && connectionPayload.provider.connectPath"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-rotate-ccw-key"
-        @click="connectGmail"
-      >
-        Połącz ponownie
-      </UButton>
-      <UButton
-        color="error"
-        variant="soft"
-        icon="i-lucide-unplug"
-        @click="disconnectConfirmationOpen = true"
-      >
-        Odłącz
-      </UButton>
-    </template>
-
-    <UAlert
-      v-if="connectionError"
-      class="mail-alert"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-database-zap"
-      title="Nie udało się odczytać konfiguracji poczty"
-      :description="apiErrorMessage(connectionError)"
-    />
-
-    <div
-      v-else-if="connectionStatus === 'pending'"
-      class="mail-connection-loading"
-      aria-label="Ładowanie integracji Gmail"
-    >
-      <USkeleton class="h-72 w-full rounded-[var(--oe-radius-surface)]" />
-    </div>
-
-    <UCard v-else-if="!connection" class="mail-connect-card">
-      <div class="mail-connect-card__content">
-        <div class="mail-connect-card__logo" aria-hidden="true">
-          <img src="/assets/google-icon.svg" alt="">
+      <template v-if="activeConnection" #meta>
+        <div class="mail-account-switcher">
+          <USelectMenu
+            v-model="selectedConnectionId"
+            :items="accountItems"
+            value-key="value"
+            label-key="label"
+            class="mail-account-switcher__select"
+            :disabled="composerOpen"
+            aria-label="Wybierz konto pocztowe"
+          />
+          <span class="mail-account-switcher__identity">
+            <img
+              v-if="activeConnection.providerIcon.startsWith('/')"
+              :src="activeConnection.providerIcon"
+              alt=""
+            >
+            <UIcon v-else :name="activeConnection.providerIcon" />
+            <span>{{ activeConnection.accountEmail }}</span>
+          </span>
+          <UBadge
+            :color="activeConnection.status === 'active' ? 'success' : 'warning'"
+            variant="subtle"
+            size="sm"
+          >
+            {{ activeConnection.status === 'active' ? 'Połączono' : 'Wymaga uwagi' }}
+          </UBadge>
         </div>
-        <p class="mail-connect-card__eyebrow">Gmail dla OpenExpert</p>
-        <h2>Połącz swoją skrzynkę Gmail</h2>
-        <p class="mail-connect-card__description">
-          Odczytuj wiadomości, wyszukuj korespondencję i wysyłaj odpowiedzi w CRM.
-          Integracja nie może usuwać wiadomości ani zmieniać ich oznaczeń.
-        </p>
+      </template>
 
-        <UAlert
-          v-if="!connectionPayload.configured"
-          class="mail-connect-card__notice"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-settings-2"
-          title="Integracja Gmail nie jest jeszcze skonfigurowana"
-          description="Administrator musi uzupełnić dane OAuth Google po stronie serwera."
+      <template #actions>
+        <UButton
+          v-if="canSend"
+          icon="i-lucide-square-pen"
+          @click="openNewMessage"
+        >
+          Napisz
+        </UButton>
+        <UButton
+          v-else-if="activeConnection"
+          icon="i-lucide-rotate-ccw-key"
+          @click="openReconnect"
+        >
+          Połącz ponownie
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-plus"
+          :disabled="composerOpen"
+          @click="openConnectionModal()"
+        >
+          Dodaj konto
+        </UButton>
+        <UButton
+          v-if="activeConnection"
+          color="neutral"
+          variant="outline"
+          square
+          icon="i-lucide-refresh-cw"
+          :loading="refreshing"
+          aria-label="Odśwież aktywną skrzynkę"
+          title="Odśwież aktywną skrzynkę"
+          @click="refreshMailbox()"
         />
+        <UButton
+          v-if="activeConnection"
+          color="error"
+          variant="soft"
+          square
+          icon="i-lucide-unplug"
+          aria-label="Odłącz aktywną skrzynkę"
+          title="Odłącz aktywną skrzynkę"
+          :disabled="composerOpen"
+          @click="disconnectTarget = activeConnection"
+        />
+      </template>
+
+      <UAlert
+        v-if="connectionError"
+        class="mail-alert"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-database-zap"
+        title="Nie udało się odczytać konfiguracji poczty"
+        :description="apiErrorMessage(connectionError)"
+      />
+
+      <div
+        v-else-if="connectionStatus === 'pending'"
+        class="mail-connection-loading"
+        aria-label="Ładowanie kont pocztowych"
+      >
+        <USkeleton class="h-72 w-full rounded-[var(--oe-radius-surface)]" />
+      </div>
+
+      <section v-else-if="!activeConnection" class="mail-onboarding">
+        <div class="mail-onboarding__hero">
+          <span class="mail-onboarding__hero-icon" aria-hidden="true">
+            <UIcon name="i-lucide-mails" />
+          </span>
+          <p class="mail-onboarding__eyebrow">Poczta w jednym miejscu</p>
+          <h2>Połącz pierwszą skrzynkę</h2>
+          <p class="mail-onboarding__description">
+            Przeglądaj korespondencję i odpowiadaj bez opuszczania OpenExpert.
+            Możesz dodać kilka prywatnych kont i przełączać je jednym kliknięciem.
+          </p>
+        </div>
+
+        <div class="mail-onboarding__providers">
+          <button
+            v-for="provider in providers"
+            :key="provider.id"
+            type="button"
+            class="mail-onboarding__provider"
+            @click="openConnectionModal(provider.id)"
+          >
+            <span aria-hidden="true">
+              <img v-if="provider.icon.startsWith('/')" :src="provider.icon" alt="">
+              <UIcon v-else :name="provider.icon" />
+            </span>
+            <strong>{{ provider.label }}</strong>
+            <small>{{ provider.description }}</small>
+            <UBadge
+              v-if="!provider.configured"
+              color="warning"
+              variant="subtle"
+              size="xs"
+            >
+              Wymaga konfiguracji
+            </UBadge>
+          </button>
+        </div>
 
         <UButton
           size="lg"
-          icon="i-lucide-log-in"
-          :disabled="!connectionPayload.provider.connectPath"
-          @click="connectGmail"
+          icon="i-lucide-plus"
+          @click="openConnectionModal()"
         >
-          Połącz z Gmailem
+          Dodaj konto pocztowe
         </UButton>
 
-        <div class="mail-connect-card__assurances" aria-label="Informacje o dostępie">
-          <span><UIcon name="i-lucide-eye" /> Odczyt wiadomości</span>
-          <span><UIcon name="i-lucide-send" /> Wysyłanie poczty</span>
-          <span><UIcon name="i-lucide-lock-keyhole" /> Szyfrowane tokeny</span>
-          <span><UIcon name="i-lucide-image-off" /> Bez zdalnych obrazów śledzących</span>
-          <span><UIcon name="i-lucide-user-lock" /> Dostęp tylko dla właściciela skrzynki</span>
-          <span><UIcon name="i-lucide-unplug" /> Możesz odłączyć konto</span>
+        <div class="mail-onboarding__assurances" aria-label="Informacje o bezpieczeństwie">
+          <span><UIcon name="i-lucide-lock-keyhole" /> Szyfrowane poświadczenia</span>
+          <span><UIcon name="i-lucide-image-off" /> Bez obrazów śledzących</span>
+          <span><UIcon name="i-lucide-user-lock" /> Dostęp tylko dla właściciela</span>
+          <span><UIcon name="i-lucide-unplug" /> Konto można odłączyć</span>
         </div>
-      </div>
-    </UCard>
+      </section>
 
-    <template v-else>
-      <UAlert
-        v-if="showReconnectNotice"
-        class="mail-alert"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-key-round"
-        title="Gmail wymaga ponownego połączenia"
-        description="Google odrzucił zapisane uprawnienie lub poprzednia próba dostępu nie powiodła się."
-      >
-        <template #actions>
-          <UButton
-            v-if="connectionPayload.provider.connectPath"
-            color="warning"
-            variant="solid"
-            size="sm"
-            @click="connectGmail"
-          >
-            Połącz ponownie
-          </UButton>
-        </template>
-      </UAlert>
-
-      <UAlert
-        v-else-if="!hasSendPermission"
-        class="mail-alert"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-send"
-        title="Włącz wysyłanie wiadomości"
-        description="To konto połączono wcześniej tylko do odczytu. Google poprosi o dodatkową zgodę na wysyłanie poczty."
-      >
-        <template #actions>
-          <UButton
-            v-if="connectionPayload.provider.connectPath"
-            color="info"
-            variant="solid"
-            size="sm"
-            @click="connectGmail"
-          >
-            Zezwól na wysyłanie
-          </UButton>
-        </template>
-      </UAlert>
-
-      <UAlert
-        v-if="disconnectConfirmationOpen"
-        class="mail-alert"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-unplug"
-        title="Odłączyć Gmail?"
-        description="CRM usunie zapisany token. Skrzynkę będzie można połączyć ponownie."
-      >
-        <template #actions>
-          <div class="mail-confirm-actions">
-            <UButton
-              color="error"
-              variant="solid"
-              size="sm"
-              :loading="disconnecting"
-              @click="disconnectGmail"
-            >
-              Odłącz konto
+      <template v-else>
+        <UAlert
+          v-if="showReconnectNotice"
+          class="mail-alert"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-key-round"
+          title="Ta skrzynka wymaga ponownego połączenia"
+          :description="activeConnection.errorMessage || 'Dostawca odrzucił zapisane uprawnienie albo poprzednia próba dostępu nie powiodła się.'"
+        >
+          <template #actions>
+            <UButton color="warning" variant="solid" size="sm" @click="openReconnect">
+              Połącz ponownie
             </UButton>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :disabled="disconnecting"
-              @click="disconnectConfirmationOpen = false"
-            >
-              Anuluj
+          </template>
+        </UAlert>
+
+        <UAlert
+          v-else-if="!activeConnection.capabilities.canSend"
+          class="mail-alert"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-send"
+          title="Wysyłanie nie jest dostępne"
+          description="Połącz konto ponownie i udziel zgody na wysyłanie wiadomości."
+        >
+          <template #actions>
+            <UButton color="info" variant="solid" size="sm" @click="openReconnect">
+              Sprawdź połączenie
             </UButton>
-          </div>
-        </template>
-      </UAlert>
+          </template>
+        </UAlert>
 
-      <section
-        class="mail-browser"
-        :class="{ 'mail-browser--thread-open': selectedThreadId }"
-        aria-label="Skrzynka Gmail"
-      >
-        <div class="mail-list-pane">
-          <form class="mail-toolbar" role="search" @submit.prevent="submitSearch">
-            <UInput
-              v-model="searchInput"
-              class="mail-search"
-              icon="i-lucide-search"
-              placeholder="Szukaj w poczcie"
-              aria-label="Szukaj w poczcie Gmail"
-              :maxlength="500"
-              autocomplete="off"
-              :spellcheck="false"
-            >
-              <template v-if="searchInput" #trailing>
-                <UButton
-                  color="neutral"
-                  variant="link"
-                  square
-                  size="xs"
-                  icon="i-lucide-x"
-                  aria-label="Wyczyść wyszukiwanie"
-                  @click="clearSearch"
-                />
-              </template>
-            </UInput>
-            <UButton type="submit" color="neutral" variant="solid">
-              Szukaj
-            </UButton>
-          </form>
-
-          <div class="mail-list-summary">
-            <div>
-              <p>{{ activeFolderLabel }}</p>
-              <span v-if="searchQuery">Wyniki dla „{{ searchQuery }}”</span>
-              <span v-else>Strona {{ currentPageNumber }}</span>
-              <span v-if="lastRefreshedLabel">Odświeżono o {{ lastRefreshedLabel }}</span>
-            </div>
-            <span aria-live="polite" class="mail-result-count">
-              {{ threadPayload.data.length }}
-            </span>
-          </div>
-          <ClientOnly>
-            <p class="sr-only" aria-live="polite">{{ resultAnnouncement }}</p>
-          </ClientOnly>
-
-          <UAlert
-            v-if="threadPayload.partialFailureCount"
-            class="mail-list-warning"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-cloud-alert"
-            title="Niektórych wiadomości nie udało się pobrać"
-            :description="`Pominięto ${threadPayload.partialFailureCount} wątków. Odśwież skrzynkę, aby spróbować ponownie.`"
-          />
-
-          <div
-            v-if="threadsStatus === 'idle' || threadsStatus === 'pending'"
-            class="mail-thread-skeletons"
-          >
-            <div v-for="index in 7" :key="index" class="mail-thread-skeleton">
-              <USkeleton class="h-4 w-2/5" />
-              <USkeleton class="h-4 w-4/5" />
-              <USkeleton class="h-3 w-full" />
-            </div>
-          </div>
-
-          <OeEmptyState
-            v-else-if="threadsError"
-            kind="error"
-            title="Nie udało się pobrać wiadomości"
-            :description="apiErrorMessage(threadsError)"
-          >
-            <template #actions>
+        <section
+          class="mail-browser"
+          :class="{ 'mail-browser--thread-open': selectedThreadId }"
+          aria-label="Skrzynka pocztowa"
+        >
+          <div class="mail-list-pane">
+            <form class="mail-toolbar" role="search" @submit.prevent="submitSearch">
+              <UInput
+                v-model="searchInput"
+                class="mail-search"
+                icon="i-lucide-search"
+                placeholder="Szukaj w tej skrzynce"
+                aria-label="Szukaj w aktywnej skrzynce"
+                :maxlength="500"
+                autocomplete="off"
+                :spellcheck="false"
+                :disabled="!activeConnection.capabilities.canSearch"
+              >
+                <template v-if="searchInput" #trailing>
+                  <UButton
+                    color="neutral"
+                    variant="link"
+                    square
+                    size="xs"
+                    icon="i-lucide-x"
+                    aria-label="Wyczyść wyszukiwanie"
+                    @click="clearSearch"
+                  />
+                </template>
+              </UInput>
               <UButton
-                v-if="connectionPayload.provider.connectPath"
+                type="submit"
                 color="neutral"
                 variant="solid"
-                icon="i-lucide-rotate-ccw-key"
-                @click="connectGmail"
+                :disabled="!activeConnection.capabilities.canSearch"
               >
-                Połącz ponownie
+                Szukaj
               </UButton>
-              <UButton v-else color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refreshThreads()">
-                Spróbuj ponownie
-              </UButton>
-            </template>
-          </OeEmptyState>
+            </form>
 
-          <OeEmptyState
-            v-else-if="!threadPayload.data.length"
-            :kind="searchQuery ? 'filtered' : 'empty'"
-            :icon="searchQuery ? 'i-lucide-search-x' : 'i-lucide-mail-open'"
-            :title="searchQuery ? 'Brak wyników' : 'Ten folder jest pusty'"
-            :description="searchQuery
-              ? 'Spróbuj krótszego zapytania albo użyj składni wyszukiwarki Gmail.'
-              : 'Gdy w Gmailu pojawią się wiadomości, zobaczysz je tutaj.'"
-          >
-            <template v-if="searchQuery" #actions>
-              <UButton color="neutral" variant="outline" @click="clearSearch">
-                Wyczyść wyszukiwanie
-              </UButton>
-            </template>
-          </OeEmptyState>
+            <div class="mail-list-summary">
+              <div>
+                <p>{{ activeFolderLabel }}</p>
+                <span v-if="searchQuery">Wyniki dla „{{ searchQuery }}”</span>
+                <span v-else>Strona {{ currentPageNumber }}</span>
+                <span v-if="lastRefreshedLabel">Odświeżono o {{ lastRefreshedLabel }}</span>
+              </div>
+              <span aria-live="polite" class="mail-result-count">
+                {{ threadPayload.data.length }}
+              </span>
+            </div>
+            <ClientOnly>
+              <p class="sr-only" aria-live="polite">{{ resultAnnouncement }}</p>
+            </ClientOnly>
 
-          <div
-            v-else
-            class="mail-thread-list"
-            role="listbox"
-            aria-label="Wątki wiadomości"
-          >
-            <button
-              v-for="thread in threadPayload.data"
-              :key="thread.id"
-              type="button"
-              role="option"
-              class="mail-thread"
-              :class="{
-                'mail-thread--active': selectedThreadId === thread.id,
-                'mail-thread--unread': thread.unread,
-              }"
-              :aria-selected="selectedThreadId === thread.id"
-              @click="selectThread(thread)"
+            <UAlert
+              v-if="threadPayload.partialFailureCount"
+              class="mail-list-warning"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-cloud-alert"
+              title="Niektórych wiadomości nie udało się pobrać"
+              :description="`Pominięto ${threadPayload.partialFailureCount} wątków. Odśwież skrzynkę, aby spróbować ponownie.`"
+            />
+
+            <div
+              v-if="threadsStatus === 'idle' || threadsStatus === 'pending'"
+              class="mail-thread-skeletons"
             >
-              <span class="mail-thread__topline">
-                <span class="mail-thread__sender">
-                  <span v-if="thread.unread" class="mail-unread-dot" aria-hidden="true" />
-                  <span class="mail-thread__sender-label">{{ thread.participantsLabel }}</span>
-                  <span v-if="thread.messageCount > 1" class="mail-thread__count">
-                    {{ thread.messageCount }}
+              <div v-for="index in 7" :key="index" class="mail-thread-skeleton">
+                <USkeleton class="h-4 w-2/5" />
+                <USkeleton class="h-4 w-4/5" />
+                <USkeleton class="h-3 w-full" />
+              </div>
+            </div>
+
+            <OeEmptyState
+              v-else-if="threadsError"
+              kind="error"
+              title="Nie udało się pobrać wiadomości"
+              :description="apiErrorMessage(threadsError)"
+            >
+              <template #actions>
+                <UButton
+                  color="neutral"
+                  variant="solid"
+                  icon="i-lucide-rotate-ccw-key"
+                  @click="openReconnect"
+                >
+                  Sprawdź połączenie
+                </UButton>
+                <UButton color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refreshThreads()">
+                  Spróbuj ponownie
+                </UButton>
+              </template>
+            </OeEmptyState>
+
+            <OeEmptyState
+              v-else-if="!threadPayload.data.length"
+              :kind="searchQuery ? 'filtered' : 'empty'"
+              :icon="searchQuery ? 'i-lucide-search-x' : 'i-lucide-mail-open'"
+              :title="searchQuery ? 'Brak wyników' : 'Ten folder jest pusty'"
+              :description="searchQuery
+                ? 'Spróbuj krótszej frazy lub sprawdź inny folder.'
+                : 'Nowe wiadomości pojawią się tutaj po odświeżeniu skrzynki.'"
+            >
+              <template v-if="searchQuery" #actions>
+                <UButton color="neutral" variant="outline" @click="clearSearch">
+                  Wyczyść wyszukiwanie
+                </UButton>
+              </template>
+            </OeEmptyState>
+
+            <div
+              v-else
+              class="mail-thread-list"
+              role="listbox"
+              aria-label="Wątki wiadomości"
+            >
+              <button
+                v-for="thread in threadPayload.data"
+                :key="thread.id"
+                type="button"
+                role="option"
+                class="mail-thread"
+                :class="{
+                  'mail-thread--active': selectedThreadId === thread.id,
+                  'mail-thread--unread': thread.unread,
+                }"
+                :aria-selected="selectedThreadId === thread.id"
+                @click="selectThread(thread)"
+              >
+                <span class="mail-thread__topline">
+                  <span class="mail-thread__sender">
+                    <span v-if="thread.unread" class="mail-unread-dot" aria-hidden="true" />
+                    <span class="mail-thread__sender-label">{{ thread.participantsLabel }}</span>
+                    <span v-if="thread.messageCount > 1" class="mail-thread__count">
+                      {{ thread.messageCount }}
+                    </span>
+                    <span v-if="thread.unread" class="sr-only">Nieprzeczytana</span>
                   </span>
-                  <span v-if="thread.unread" class="sr-only">Nieprzeczytana</span>
+                  <span class="mail-thread__date">{{ formatThreadDate(thread.latestAt) }}</span>
                 </span>
-                <span class="mail-thread__date">{{ formatThreadDate(thread.latestAt) }}</span>
-              </span>
-              <span class="mail-thread__subject">
-                <UIcon v-if="thread.starred" name="i-lucide-star" aria-label="Oznaczona gwiazdką" />
-                <UIcon v-else-if="thread.draft" name="i-lucide-file-pen-line" aria-label="Szkic" />
-                <span>{{ thread.subject }}</span>
-                <UIcon
-                  v-if="thread.hasAttachments"
-                  name="i-lucide-paperclip"
-                  class="mail-thread__attachment"
-                  aria-label="Zawiera załącznik"
-                />
-              </span>
-              <span class="mail-thread__snippet">{{ thread.snippet || 'Brak podglądu treści.' }}</span>
-            </button>
-          </div>
+                <span class="mail-thread__subject">
+                  <UIcon v-if="thread.starred" name="i-lucide-star" aria-label="Oznaczona gwiazdką" />
+                  <UIcon v-else-if="thread.draft" name="i-lucide-file-pen-line" aria-label="Szkic" />
+                  <span>{{ thread.subject }}</span>
+                  <UIcon
+                    v-if="thread.hasAttachments"
+                    name="i-lucide-paperclip"
+                    class="mail-thread__attachment"
+                    aria-label="Zawiera załącznik"
+                  />
+                </span>
+                <span class="mail-thread__snippet">{{ thread.snippet || 'Brak podglądu treści.' }}</span>
+              </button>
+            </div>
 
-          <footer
-            v-if="hasPreviousPage || threadPayload.nextPageToken"
-            class="mail-pagination"
-            aria-label="Stronicowanie poczty"
-          >
-            <UButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-chevron-left"
-              :disabled="!hasPreviousPage"
-              @click="previousPage"
+            <footer
+              v-if="hasPreviousPage || threadPayload.nextPageToken"
+              class="mail-pagination"
+              aria-label="Stronicowanie poczty"
             >
-              Wstecz
-            </UButton>
-            <span>Strona {{ currentPageNumber }}</span>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              trailing-icon="i-lucide-chevron-right"
-              :disabled="!threadPayload.nextPageToken"
-              @click="nextPage"
-            >
-              Dalej
-            </UButton>
-          </footer>
-        </div>
-
-        <article class="mail-detail-pane" aria-label="Treść wątku">
-          <OeEmptyState
-            v-if="!selectedThreadId"
-            kind="selection"
-            icon="i-lucide-mails"
-            title="Wybierz wiadomość"
-            description="Treść wybranego wątku pojawi się w tym miejscu."
-          >
-            <template #actions>
-              <UButton v-if="canSend" icon="i-lucide-square-pen" @click="openNewMessage">
-                Napisz wiadomość
-              </UButton>
-            </template>
-          </OeEmptyState>
-
-          <div
-            v-else-if="selectedThreadStatus === 'idle' || selectedThreadStatus === 'pending'"
-            class="mail-detail-loading"
-          >
-            <USkeleton class="h-8 w-3/4" />
-            <USkeleton class="h-4 w-2/5" />
-            <USkeleton class="mt-8 h-44 w-full" />
-            <USkeleton class="h-40 w-full" />
-          </div>
-
-          <OeEmptyState
-            v-else-if="selectedThreadError"
-            kind="error"
-            icon="i-lucide-message-circle-x"
-            title="Nie udało się otworzyć wątku"
-            :description="apiErrorMessage(selectedThreadError)"
-          >
-            <template #actions>
-              <UButton color="neutral" variant="outline" @click="refreshSelectedThread()">
-                Spróbuj ponownie
-              </UButton>
-            </template>
-          </OeEmptyState>
-
-          <div v-else-if="selectedThread" class="mail-detail">
-            <div class="mail-detail__mobile-back">
               <UButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-arrow-left"
-                @click="closeThread"
+                icon="i-lucide-chevron-left"
+                :disabled="!hasPreviousPage"
+                @click="previousPage"
               >
-                Wróć do wiadomości
+                Wstecz
               </UButton>
+              <span>Strona {{ currentPageNumber }}</span>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                trailing-icon="i-lucide-chevron-right"
+                :disabled="!threadPayload.nextPageToken"
+                @click="nextPage"
+              >
+                Dalej
+              </UButton>
+            </footer>
+          </div>
+
+          <article class="mail-detail-pane" aria-label="Treść wątku">
+            <OeEmptyState
+              v-if="!selectedThreadId"
+              kind="selection"
+              icon="i-lucide-mails"
+              title="Wybierz wiadomość"
+              description="Treść wybranego wątku pojawi się w tym miejscu."
+            >
+              <template #actions>
+                <UButton v-if="canSend" icon="i-lucide-square-pen" @click="openNewMessage">
+                  Napisz wiadomość
+                </UButton>
+              </template>
+            </OeEmptyState>
+
+            <div
+              v-else-if="selectedThreadStatus === 'idle' || selectedThreadStatus === 'pending'"
+              class="mail-detail-loading"
+            >
+              <USkeleton class="h-8 w-3/4" />
+              <USkeleton class="h-4 w-2/5" />
+              <USkeleton class="mt-8 h-44 w-full" />
+              <USkeleton class="h-40 w-full" />
             </div>
 
-            <header class="mail-detail__header">
-              <div>
-                <p class="mail-detail__eyebrow">
-                  Wątek · {{ selectedThread.messages.length }} wiadomości
-                </p>
-                <h2>{{ selectedThread.subject }}</h2>
-              </div>
-              <div class="mail-detail__actions">
-                <UButton
-                  v-if="canSend"
-                  icon="i-lucide-reply"
-                  @click="openReply"
-                >
-                  Odpowiedz
+            <OeEmptyState
+              v-else-if="selectedThreadError"
+              kind="error"
+              icon="i-lucide-message-circle-x"
+              title="Nie udało się otworzyć wątku"
+              :description="apiErrorMessage(selectedThreadError)"
+            >
+              <template #actions>
+                <UButton color="neutral" variant="outline" @click="refreshSelectedThread()">
+                  Spróbuj ponownie
                 </UButton>
+              </template>
+            </OeEmptyState>
+
+            <div v-else-if="selectedThread" class="mail-detail">
+              <div class="mail-detail__mobile-back">
                 <UButton
-                  :href="selectedThread.externalUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
                   color="neutral"
-                  variant="outline"
-                  icon="i-lucide-external-link"
+                  variant="ghost"
+                  icon="i-lucide-arrow-left"
+                  @click="closeThread"
                 >
-                  Otwórz w Gmailu
+                  Wróć do wiadomości
                 </UButton>
               </div>
-            </header>
 
-            <UAlert
-              v-if="selectedThread.omittedMessageCount"
-              class="mail-detail__notice"
-              color="info"
-              variant="subtle"
-              icon="i-lucide-info"
-              :title="`Pominięto ${selectedThread.omittedMessageCount} starszych wiadomości`"
-              description="Pełny wątek możesz otworzyć bezpośrednio w Gmailu."
-            />
-
-            <div class="mail-message-stack">
-              <section
-                v-for="message in selectedThread.messages"
-                :key="message.id"
-                class="mail-message"
-              >
-                <header class="mail-message__header">
-                  <span class="mail-message__avatar" aria-hidden="true">
-                    {{ senderInitial(message.from?.label || '') }}
-                  </span>
-                  <div class="mail-message__identity">
-                    <div class="mail-message__sender-row">
-                      <strong>{{ message.from?.label || 'Nieznany nadawca' }}</strong>
-                      <UBadge v-if="message.unread" color="primary" variant="subtle" size="xs">
-                        Nieprzeczytana
-                      </UBadge>
-                      <UBadge
-                        v-if="message.security.authentication === 'pass'"
-                        color="success"
-                        variant="subtle"
-                        size="xs"
-                        title="Wynik SPF, DKIM lub DMARC przekazany przez Gmaila jest poprawny. Nie oznacza to, że treść wiadomości jest bezpieczna."
-                      >
-                        Domena uwierzytelniona
-                      </UBadge>
-                    </div>
-                    <span v-if="message.from?.email">{{ message.from.email }}</span>
-                    <span title="Odbiorcy">
-                      do: {{ addressListLabel(message.to) }}
-                    </span>
-                    <span v-if="message.cc.length" title="Kopia">
-                      DW: {{ addressListLabel(message.cc) }}
-                    </span>
-                  </div>
-                  <time :datetime="message.sentAt || undefined">
-                    {{ formatMessageDate(message.sentAt) }}
-                  </time>
-                </header>
-
-                <UAlert
-                  v-if="message.security.authentication === 'fail' || message.security.replyToMismatch"
-                  class="mail-message__security-warning"
-                  color="warning"
-                  variant="subtle"
-                  icon="i-lucide-shield-alert"
-                  title="Zweryfikuj nadawcę"
-                  :description="securityWarningDescription(message.security)"
-                />
-
-                <div class="mail-message__body">
-                  {{ message.bodyText || 'Ta wiadomość nie zawiera tekstu możliwego do wyświetlenia.' }}
+              <header class="mail-detail__header">
+                <div>
+                  <p class="mail-detail__eyebrow">
+                    Wątek · {{ selectedThread.messages.length }} wiadomości
+                  </p>
+                  <h2>{{ selectedThread.subject }}</h2>
                 </div>
+                <div class="mail-detail__actions">
+                  <UButton v-if="canSend" icon="i-lucide-reply" @click="openReply">
+                    Odpowiedz
+                  </UButton>
+                  <UButton
+                    v-if="selectedThread.externalUrl"
+                    :href="selectedThread.externalUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-external-link"
+                  >
+                    Otwórz u dostawcy
+                  </UButton>
+                </div>
+              </header>
 
-                <UAlert
-                  v-if="message.bodyTruncated"
-                  class="mail-message__truncated"
-                  color="info"
-                  variant="subtle"
-                  icon="i-lucide-scissors-line-dashed"
-                  title="Podgląd został skrócony"
-                  description="Pełną treść zobaczysz po otwarciu wątku w Gmailu."
-                />
+              <UAlert
+                v-if="selectedThread.omittedMessageCount"
+                class="mail-detail__notice"
+                color="info"
+                variant="subtle"
+                icon="i-lucide-info"
+                :title="`Pominięto ${selectedThread.omittedMessageCount} starszych wiadomości`"
+                description="Pełny wątek możesz otworzyć bezpośrednio u dostawcy poczty."
+              />
 
-                <div v-if="message.attachments.length" class="mail-attachments">
-                  <p><UIcon name="i-lucide-paperclip" /> Załączniki</p>
-                  <div class="mail-attachments__list">
-                    <div
-                      v-for="attachment in message.attachments"
-                      :key="`${message.id}:${attachment.filename}:${attachment.id}`"
-                      class="mail-attachment"
-                    >
-                      <UIcon name="i-lucide-file" />
-                      <span>
-                        <strong>{{ attachment.filename }}</strong>
-                        <small>
-                          {{ attachment.mimeType }}
-                          <template v-if="attachment.size"> · {{ formatBytes(attachment.size) }}</template>
-                        </small>
+              <div class="mail-message-stack">
+                <section
+                  v-for="message in selectedThread.messages"
+                  :key="message.id"
+                  class="mail-message"
+                >
+                  <header class="mail-message__header">
+                    <span class="mail-message__avatar" aria-hidden="true">
+                      {{ senderInitial(message.from?.label || '') }}
+                    </span>
+                    <div class="mail-message__identity">
+                      <div class="mail-message__sender-row">
+                        <strong>{{ message.from?.label || 'Nieznany nadawca' }}</strong>
+                        <UBadge v-if="message.unread" color="primary" variant="subtle" size="xs">
+                          Nieprzeczytana
+                        </UBadge>
+                        <UBadge
+                          v-if="message.security.authentication === 'pass'"
+                          color="success"
+                          variant="subtle"
+                          size="xs"
+                          title="Wynik SPF, DKIM lub DMARC przekazany przez dostawcę jest poprawny. Nie oznacza to, że treść wiadomości jest bezpieczna."
+                        >
+                          Domena uwierzytelniona
+                        </UBadge>
+                      </div>
+                      <span v-if="message.from?.email">{{ message.from.email }}</span>
+                      <span title="Odbiorcy">do: {{ addressListLabel(message.to) }}</span>
+                      <span v-if="message.cc.length" title="Kopia">
+                        DW: {{ addressListLabel(message.cc) }}
                       </span>
                     </div>
+                    <time :datetime="message.sentAt || undefined">
+                      {{ formatMessageDate(message.sentAt) }}
+                    </time>
+                  </header>
+
+                  <UAlert
+                    v-if="message.security.authentication === 'fail' || message.security.replyToMismatch"
+                    class="mail-message__security-warning"
+                    color="warning"
+                    variant="subtle"
+                    icon="i-lucide-shield-alert"
+                    title="Zweryfikuj nadawcę"
+                    :description="securityWarningDescription(message.security)"
+                  />
+
+                  <div class="mail-message__body">
+                    {{ message.bodyText || 'Ta wiadomość nie zawiera tekstu możliwego do wyświetlenia.' }}
                   </div>
-                  <p class="mail-attachments__notice">
-                    Pobieranie załączników pozostaje w Gmailu, aby pliki nie trafiały do CRM.
-                  </p>
-                </div>
-              </section>
+
+                  <UAlert
+                    v-if="message.bodyTruncated"
+                    class="mail-message__truncated"
+                    color="info"
+                    variant="subtle"
+                    icon="i-lucide-scissors-line-dashed"
+                    title="Podgląd został skrócony"
+                    description="Pełną treść zobaczysz po otwarciu wiadomości u dostawcy."
+                  />
+
+                  <div v-if="message.attachments.length" class="mail-attachments">
+                    <p><UIcon name="i-lucide-paperclip" /> Załączniki</p>
+                    <div class="mail-attachments__list">
+                      <div
+                        v-for="attachment in message.attachments"
+                        :key="`${message.id}:${attachment.filename}:${attachment.id}`"
+                        class="mail-attachment"
+                      >
+                        <UIcon name="i-lucide-file" />
+                        <span>
+                          <strong>{{ attachment.filename }}</strong>
+                          <small>
+                            {{ attachment.mimeType }}
+                            <template v-if="attachment.size"> · {{ formatBytes(attachment.size) }}</template>
+                          </small>
+                        </span>
+                      </div>
+                    </div>
+                    <p class="mail-attachments__notice">
+                      Odebrane pliki pozostają u dostawcy i nie są pobierane do CRM.
+                    </p>
+                  </div>
+                </section>
+              </div>
             </div>
-          </div>
-        </article>
-      </section>
-    </template>
+          </article>
+        </section>
+      </template>
     </CrmShell>
 
+    <MailConnectionModal
+      v-model:open="connectionModalOpen"
+      :providers="providers"
+      :connections-path="connectionsPath"
+      :initial-provider="connectionModalProvider"
+      :reconnect-connection="reconnectConnection"
+      @connected="handleConnectionCreated"
+    />
+
     <MailComposerSlideover
-      v-if="connection"
+      v-if="composerConnection"
       :key="composerKey"
       v-model:open="composerOpen"
       :endpoint="sendEndpoint"
-      :account-email="connection.accountEmail"
+      :connection-id="composerConnection.id"
+      :provider="composerConnection.provider"
+      :provider-label="composerConnection.providerLabel"
+      :provider-icon="composerConnection.providerIcon"
+      :account-email="composerConnection.accountEmail"
+      :external-sent-url="composerConnection.externalSentUrl"
+      :max-attachment-bytes="composerConnection.capabilities.maxAttachmentBytes"
+      :max-total-attachment-bytes="composerConnection.capabilities.maxTotalAttachmentBytes"
       :initial-to="composerDraft.to"
       :initial-cc="composerDraft.cc"
       :initial-subject="composerDraft.subject"
       :thread-id="composerDraft.threadId"
       @sent="handleMessageSent"
     />
+
+    <UModal
+      :open="Boolean(disconnectTarget)"
+      title="Odłączyć skrzynkę?"
+      :description="disconnectTarget
+        ? `${disconnectTarget.accountEmail} zniknie z OpenExpert. Wiadomości pozostaną u dostawcy.`
+        : undefined"
+      :dismissible="!disconnecting"
+      :ui="{ footer: 'justify-end' }"
+      @update:open="value => { if (!value && !disconnecting) disconnectTarget = null }"
+    >
+      <template #body>
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-shield-alert"
+          title="Usuniemy tylko połączenie"
+          description="OpenExpert usunie zapisane tokeny lub szyfrowane poświadczenia. Żadna wiadomość nie zostanie usunięta ze skrzynki."
+        />
+      </template>
+      <template #footer>
+        <UButton
+          color="neutral"
+          variant="outline"
+          :disabled="disconnecting"
+          @click="disconnectTarget = null"
+        >
+          Anuluj
+        </UButton>
+        <UButton
+          color="error"
+          icon="i-lucide-unplug"
+          :loading="disconnecting"
+          @click="disconnectMailbox"
+        >
+          Odłącz konto
+        </UButton>
+      </template>
+    </UModal>
   </div>
 </template>
 
 <style scoped>
-.mail-account-meta {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-}
-
-.mail-account-meta__icon {
-  width: 18px;
-  height: 18px;
-}
-
 .mail-alert {
   margin-bottom: 18px;
 }
 
-.mail-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.mail-connection-loading,
-.mail-connect-card {
-  width: min(100%, 720px);
+.mail-connection-loading {
+  width: min(100%, 780px);
   margin-inline: auto;
 }
 
-.mail-connect-card {
-  min-height: 430px;
+.mail-account-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.mail-connect-card__content {
-  display: flex;
-  flex-direction: column;
+.mail-account-switcher__select {
+  width: min(280px, 72vw);
+}
+
+.mail-account-switcher__identity {
+  display: inline-flex;
+  max-width: 300px;
   align-items: center;
-  justify-content: center;
-  min-height: 380px;
-  padding: 24px;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-account-switcher__identity img,
+.mail-account-switcher__identity :deep(svg) {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+}
+
+.mail-onboarding {
+  display: grid;
+  width: min(100%, 880px);
+  justify-items: center;
+  gap: 24px;
+  margin-inline: auto;
+  padding: clamp(28px, 5vw, 56px) clamp(16px, 4vw, 40px);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-surface);
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--ui-primary) 10%, transparent), transparent 42%),
+    var(--ui-bg);
   text-align: center;
 }
 
-.mail-connect-card__logo {
+.mail-onboarding__hero {
   display: grid;
-  place-items: center;
-  width: 68px;
-  height: 68px;
-  margin-bottom: 22px;
-  border: 1px solid var(--ui-border);
-  border-radius: 20px;
-  background: var(--ui-bg);
-  box-shadow: 0 12px 36px color-mix(in srgb, var(--ui-text-highlighted) 8%, transparent);
+  justify-items: center;
 }
 
-.mail-connect-card__logo img {
+.mail-onboarding__hero-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: 22px;
+  color: var(--ui-text-highlighted);
+  background: var(--ui-bg-elevated);
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--ui-text-highlighted) 8%, transparent);
+}
+
+.mail-onboarding__hero-icon :deep(svg) {
   width: 34px;
   height: 34px;
 }
 
-.mail-connect-card__eyebrow {
-  margin: 0 0 7px;
+.mail-onboarding__eyebrow {
+  margin: 0 0 8px;
   color: var(--ui-text-muted);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1226,39 +1405,94 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   text-transform: uppercase;
 }
 
-.mail-connect-card h2 {
+.mail-onboarding h2 {
   margin: 0;
   color: var(--ui-text-highlighted);
-  font-size: clamp(25px, 3vw, 34px);
-  font-weight: 450;
-  line-height: 1.15;
+  font-size: clamp(27px, 4vw, 40px);
+  font-weight: 430;
+  line-height: 1.12;
 }
 
-.mail-connect-card__description {
-  max-width: 560px;
-  margin: 14px 0 22px;
+.mail-onboarding__description {
+  max-width: 620px;
+  margin: 14px 0 0;
   color: var(--ui-text-muted);
   font-size: 14px;
   line-height: 1.65;
 }
 
-.mail-connect-card__notice {
-  width: min(100%, 540px);
-  margin: 0 0 20px;
-  text-align: left;
+.mail-onboarding__providers {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.mail-connect-card__assurances {
+.mail-onboarding__provider {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 7px;
+  padding: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-control);
+  color: var(--ui-text);
+  background: var(--ui-bg-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--oe-motion-fast),
+    background-color var(--oe-motion-fast),
+    transform var(--oe-motion-fast);
+}
+
+.mail-onboarding__provider:hover {
+  border-color: var(--ui-border-accented);
+  background: var(--ui-bg-elevated);
+  transform: translateY(-2px);
+}
+
+.mail-onboarding__provider:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+.mail-onboarding__provider > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--ui-bg);
+}
+
+.mail-onboarding__provider img,
+.mail-onboarding__provider :deep(svg) {
+  width: 22px;
+  height: 22px;
+}
+
+.mail-onboarding__provider strong {
+  color: var(--ui-text-highlighted);
+  font-size: 14px;
+}
+
+.mail-onboarding__provider small {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mail-onboarding__assurances {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px 18px;
-  margin-top: 24px;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.mail-connect-card__assurances span {
+.mail-onboarding__assurances span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1435,13 +1669,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   background: var(--ui-primary);
 }
 
-.mail-thread__count {
-  flex: 0 0 auto;
-  color: var(--ui-text-dimmed);
-  font-family: var(--font-mono);
-  font-size: 9px;
-}
-
+.mail-thread__count,
 .mail-thread__date {
   flex: 0 0 auto;
   color: var(--ui-text-muted);
@@ -1472,42 +1700,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   line-height: 1.45;
 }
 
-.mail-list-state,
-.mail-detail-empty {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 300px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 36px 24px;
-  text-align: center;
-}
-
-.mail-list-state > :deep(svg) {
-  width: 34px;
-  height: 34px;
-  margin-bottom: 16px;
-  color: var(--ui-text-dimmed);
-}
-
-.mail-list-state h2,
-.mail-detail-empty h2 {
-  margin: 0;
-  color: var(--ui-text-highlighted);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.mail-list-state p,
-.mail-detail-empty p {
-  max-width: 390px;
-  margin: 9px 0 18px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 .mail-pagination {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1530,23 +1722,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--ui-bg-muted);
-}
-
-.mail-detail-empty__icon {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 18px;
-  border: 1px solid var(--ui-border);
-  border-radius: 20px;
-  color: var(--ui-text-dimmed);
-  background: var(--ui-bg);
-}
-
-.mail-detail-empty__icon :deep(svg) {
-  width: 28px;
-  height: 28px;
 }
 
 .mail-detail-loading {
@@ -1787,12 +1962,36 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   }
 }
 
-@media (max-width: 680px) {
-  .mail-connect-card__content {
-    padding: 12px 4px;
+@media (max-width: 760px) {
+  .mail-onboarding__providers {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .mail-connect-card__assurances {
+  .mail-onboarding__provider {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .mail-onboarding__provider > span:first-child {
+    grid-row: 1 / span 3;
+  }
+
+  .mail-onboarding__provider small,
+  .mail-onboarding__provider :deep(.badge) {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 680px) {
+  .mail-account-switcher__identity {
+    display: none;
+  }
+
+  .mail-onboarding {
+    padding-inline: 14px;
+  }
+
+  .mail-onboarding__assurances {
     display: grid;
   }
 
@@ -1842,7 +2041,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mail-thread {
+  .mail-thread,
+  .mail-onboarding__provider {
     transition: none;
   }
 }

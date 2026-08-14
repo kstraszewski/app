@@ -16,6 +16,7 @@ const releaseTail = [
   '0049_mortgage_application_process.sql',
   '0050_document_storage_cleanup_outbox.sql',
   '0051_mortgage_application_strict_lifecycle.sql',
+  '0052_multi_provider_mail_connections.sql',
 ]
 
 test('production migration dry-run includes the ordered release tail', () => {
@@ -44,7 +45,13 @@ test('production migration assumes the application owner before locks and checks
   )
   const setRoleIndex = source.indexOf("await client.query('SET LOCAL ROLE openexpert_owner')")
   const activeRoleCheckIndex = source.indexOf("SELECT current_user AS migration_role")
-  const advisoryLockIndex = source.indexOf('SELECT pg_advisory_xact_lock')
+  // The bootstrap transaction also takes the same lock before the dedicated
+  // role necessarily exists. Assert against the migration-loop lock that
+  // follows the verified SET LOCAL ROLE, not that earlier bootstrap lock.
+  const advisoryLockIndex = source.indexOf(
+    'SELECT pg_advisory_xact_lock',
+    activeRoleCheckIndex,
+  )
   const checksumLookupIndex = source.indexOf(
     'SELECT checksum FROM app_migrations.schema_migrations WHERE name = $1',
   )

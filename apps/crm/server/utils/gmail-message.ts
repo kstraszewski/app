@@ -47,6 +47,7 @@ export interface GmailThreadResource {
 const MESSAGE_BODY_CHARACTER_LIMIT = 160_000
 const THREAD_BODY_CHARACTER_LIMIT = 500_000
 const MAX_THREAD_MESSAGES = 20
+const GMAIL_AUTHENTICATION_RESULTS_AUTHSERV_ID = 'mx.google.com'
 
 export function gmailThreadSummary(
   thread: GmailThreadResource,
@@ -143,6 +144,11 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
 
 export function gmailMessageSecurity(message: GmailMessageResource): MailMessageSecurity {
   const results = headerValues(message.payload?.headers, 'authentication-results')
+    // Gmail's own authentication verdict is stamped with `mx.google.com` as
+    // authserv-id. Other Authentication-Results fields are transit data or
+    // sender-controlled input and must not produce a pass/fail badge.
+    // https://support.google.com/mail/answer/180707
+    .filter(value => authenticationResultsAuthservId(value) === GMAIL_AUTHENTICATION_RESULTS_AUTHSERV_ID)
     .join(' ')
     .toLowerCase()
   const statusByMechanism = new Map<string, string>()
@@ -186,6 +192,11 @@ export function gmailMessageSecurity(message: GmailMessageResource): MailMessage
       && replyToDomains.some(domain => domain !== fromDomain),
     ),
   }
+}
+
+function authenticationResultsAuthservId(value: string): string | null {
+  const firstClause = value.split(';', 1)[0]?.trim().toLowerCase() || ''
+  return /^[a-z0-9.-]+$/u.test(firstClause) ? firstClause : null
 }
 
 export function parseMailAddresses(value: string): MailAddress[] {

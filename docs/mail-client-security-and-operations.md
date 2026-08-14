@@ -1,54 +1,171 @@
-# Klient Gmail — bezpieczeństwo i eksploatacja
+# Klient pocztowy — bezpieczeństwo i eksploatacja
 
-## Granice dostępu
+## Zakres wersji
 
-- Każde połączenie Gmail należy do konkretnego użytkownika i organizacji. Rola administratora nie daje dostępu do skrzynek innych ekspertów.
-- Aplikacja używa wyłącznie `gmail.readonly` i `gmail.send`. Nie może usuwać wiadomości, zmieniać etykiet ani zarządzać ustawieniami Gmaila.
-- Treść wiadomości i odebrane załączniki nie są utrwalane w bazie CRM. Lista i podgląd są pobierane na żądanie z Gmaila, a odpowiedzi API mają `private, no-store`.
-- Wysłane treści, adresaci i nazwy załączników nie trafiają do tabeli idempotencji. Przechowywany jest wyłącznie jednokierunkowy hash żądania i identyfikatory techniczne Gmaila.
+Klient obsługuje wiele prywatnych kont jednego użytkownika:
 
-## OAuth i tokeny
+- Gmail przez Google OAuth i Gmail API,
+- Outlook.com, Hotmail, Live oraz Microsoft 365 przez Microsoft OAuth i Graph,
+- pozostałych dostawców przez szyfrowane IMAP + SMTP.
 
-- Logowanie Google i zgoda Gmail są oddzielnymi przepływami OAuth.
-- Przepływ Gmail używa losowego `state`, PKCE S256, szyfrowanego ciasteczka `HttpOnly`, krótkiego terminu ważności i ścisłego powiązania z użytkownikiem.
-- Tokeny są szyfrowane AES-256-GCM przed zapisem i nigdy nie są zwracane do przeglądarki.
-- Odłączenie usuwa token lokalnie i próbuje unieważnić zgodę w Google. Token pozyskany dla odrzuconego konta lub niepełnego zakresu jest również unieważniany.
-- Błędy `invalid_grant`, 401 i 403 oznaczają połączenie jako wymagające ponownej zgody.
+Nie ma wspólnej skrzynki wszystkich ekspertów, procesów działających w tle, IMAP
+IDLE, watcherów, analizy AI ani automatycznych akcji na sprawach. Lista jest
+pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
 
-## Odczyt i prezentacja
+## Granice dostępu i prywatność
 
-- HTML jest zamieniany na zwykły tekst. Skrypty, style, aktywne linki, iframe i zdalne obrazy nie są wykonywane, co ogranicza XSS i piksele śledzące.
-- Niebezpieczne znaki sterujące i znaczniki zmiany kierunku tekstu są usuwane z nagłówków oraz nazw plików.
-- Klient pokazuje wynik SPF/DKIM/DMARC przekazany przez Gmaila i ostrzega, gdy domena `Reply-To` różni się od domeny nadawcy. Pozytywny wynik uwierzytelnienia domeny nie jest gwarancją uczciwości treści.
-- Odebrane załączniki są prezentowane wyłącznie jako metadane. Pobranie pozostaje w Gmailu, aby pliki nie przechodziły przez serwery CRM.
-- Zapytania wyszukiwania pozostają w pamięci karty i nie są zapisywane w adresie URL ani historii przeglądarki.
+- Każde połączenie należy do konkretnego użytkownika i organizacji. Rola
+  administratora nie daje dostępu do skrzynek innych ekspertów.
+- Każde API skrzynki wymaga należącego do bieżącego użytkownika `connectionId`.
+  Przełączenie konta czyści wątek, wyszukiwanie i stronicowanie.
+- Treść wiadomości, odebrane załączniki, odbiorcy, tematy i wyszukiwane frazy nie
+  są utrwalane w CRM. Odpowiedzi API mają `private, no-store`.
+- Rekord wysyłki zawiera jedynie hash żądania, stabilny `Message-ID`, status oraz
+  identyfikatory techniczne dostawcy.
+- Odebrane załączniki są pokazywane jako metadane. Pobieranie pozostaje u
+  dostawcy, więc pliki nie przechodzą przez serwer CRM.
 
-## Wysyłka
+## OAuth i poświadczenia
 
-- Adresaci, temat, identyfikatory wątku, nagłówki odpowiedzi, typy MIME i nazwy plików są walidowane po stronie serwera. Znaki CR/LF/NUL w nagłówkach są odrzucane.
-- Wysyłka ma idempotency key, deterministyczny `Message-ID`, wykrywanie wcześniejszej wiadomości w folderze Wysłane i osobny stan „wynik nieznany”. Nie wolno automatycznie ponawiać niejednoznacznej wysyłki.
-- Własne limity CRM ograniczają wysyłkę do 10 prób na minutę i 100 prób na godzinę dla użytkownika; obowiązują również limity Gmaila.
-- Maksymalnie 10 załączników, 10 MB na plik, 16 MB łącznie i 24 MB całego żądania. Rozszerzenia blokowane przez Gmail są odrzucane przed wysłaniem; Gmail pozostaje końcowym skanerem antywirusowym.
-- Wiadomości z załącznikami, UDW lub wieloma odbiorcami wymagają dodatkowego potwierdzenia. Niezapisana treść chroni się przed przypadkowym zamknięciem karty.
-- Wiadomości są tekstowe, dzięki czemu pozostają czytelne dla technologii asystujących i odporniejsze na różnice między klientami pocztowymi.
+- Gmail używa `gmail.readonly` i `gmail.send`.
+- Microsoft używa delegowanych `offline_access`, `User.Read`, `Mail.ReadWrite`
+  i `Mail.Send`. `Mail.ReadWrite` nie obejmuje wysyłki.
+- Oba przepływy używają losowego `state`, PKCE S256, szyfrowanego ciasteczka
+  `HttpOnly`, krótkiej ważności oraz ścisłego powiązania z użytkownikiem,
+  organizacją i — przy reconnect — konkretnym kontem. Osobne ciasteczko związane
+  AAD ze `state` pozwala bezpiecznie prowadzić do czterech równoległych flow
+  Google/Microsoft bez nadpisywania innej karty.
+- Tokeny i hasła aplikacji są szyfrowane AES-256-GCM z AAD zawierającym
+  organizację, właściciela, połączenie i przeznaczenie sekretu. Nie są zwracane
+  do przeglądarki ani logowane.
+- Rotowany refresh token Microsoft zastępuje poprzedni. `invalid_grant`, 401 i
+  403 oznaczają konieczność ponownego połączenia.
+- Odłączenie Gmaila próbuje unieważnić token w Google. Microsoft i IMAP/SMTP są
+  odłączane przez bezpieczne usunięcie lokalnych sekretów; nie używamy szerokiego
+  Microsoft `revokeSignInSessions`.
 
-## Niezawodność
+## IMAP i SMTP
 
-- Bezpieczne operacje odczytu są ponawiane maksymalnie dwa razy z ograniczonym exponential backoff i obsługą `Retry-After`. Wysyłka nie jest automatycznie ponawiana, ponieważ wynik żądania może być niejednoznaczny.
-- Lista wątków ma ograniczoną współbieżność i może zwrócić częściowy wynik z czytelnym ostrzeżeniem. Jeśli nie uda się pobrać żadnego wątku, całe żądanie kończy się błędem.
-- Aktywna karta odświeża się co pięć minut i po odzyskaniu fokusu, jeśli dane są starsze niż minutę. Ręczne odświeżenie jest zawsze dostępne.
+- Serwer wykonuje krótkie operacje connect → read/send → logout. Nie utrzymuje
+  połączeń ani IMAP IDLE w pamięci funkcji serverless.
+- Dozwolone są wyłącznie IMAP 993/TLS lub 143/wymagany STARTTLS oraz SMTP
+  465/TLS lub 587/wymagany STARTTLS. Port 25, plaintext, self-signed certyfikaty
+  i własne CA są odrzucane; minimalna wersja to TLS 1.2.
+- Host musi być publiczną nazwą DNS. Wszystkie odpowiedzi A/AAAA są sprawdzane;
+  jeśli którakolwiek wskazuje adres lokalny, prywatny, dokumentacyjny lub
+  specjalnego przeznaczenia, całe połączenie jest odrzucane. Transport łączy się
+  z zatwierdzonym adresem IP, zachowując oryginalną nazwę do SNI i weryfikacji
+  certyfikatu, co ogranicza SSRF i DNS rebinding.
+- Logowanie protokołu i surowych wiadomości jest wyłączone. Połączenia mają
+  ograniczone timeouty, rozmiary źródeł MIME i okna wyszukiwania.
+- Gmail i prywatne domeny Microsoft są kierowane do OAuth. Dla innych dostawców
+  należy używać osobnego hasła aplikacji, jeśli jest dostępne.
 
-## Wymagania przed publicznym uruchomieniem
+## Bezpieczny podgląd
 
-- Przejść weryfikację aplikacji OAuth Google dla `gmail.readonly` (zakres restricted) i `gmail.send` (zakres sensitive), opublikować politykę prywatności i spełnić Google API Services User Data Policy.
-- Jeżeli dane z zakresu restricted będą przechowywane lub przekazywane poza chwilowy podgląd użytkownika, przeprowadzić wymaganą przez Google ocenę bezpieczeństwa przed uruchomieniem dla klientów.
-- Włączyć alertowanie błędów OAuth/Gmail bez logowania tokenów, treści, adresatów i zapytań wyszukiwania.
-- Ustalić i udokumentować okres retencji technicznych rekordów idempotencji.
-- Dla zdarzeń w czasie zbliżonym do rzeczywistego skonfigurować Gmail `watch` + Google Cloud Pub/Sub, odnawiać `watch` codziennie i okresowo uzgadniać `history.list`. Powiadomienie ma uruchamiać pobranie z Gmaila; nie powinno zawierać ani utrwalać treści wiadomości.
+- HTML jest zamieniany na zwykły, inertny tekst. Skrypty, style, aktywne linki,
+  iframe, zdalne obrazy i piksele śledzące nie są wykonywane.
+- Znaki sterujące i znaczniki zmiany kierunku tekstu są usuwane z nagłówków oraz
+  nazw plików.
+- Klient pokazuje wynik SPF/DKIM/DMARC tylko, gdy pochodzi z zaufanego źródła
+  dostawcy, i ostrzega przy różnej domenie `Reply-To`. Gmail akceptuje wyłącznie
+  `Authentication-Results` z dokładnym `authserv-id` `mx.google.com`; obcy lub
+  podobny identyfikator jest ignorowany. Graph udostępnia nagłówki RFC 5322 bez
+  wiarygodnej informacji, który egzemplarz został dodany na zaufanej granicy
+  Microsoft, dlatego dla Outlooka wynik pozostaje `unknown` zamiast ufać
+  potencjalnie wstrzykniętemu `pass`. Pozytywny wynik nie jest gwarancją
+  uczciwości treści.
+- Identyfikatory wątków IMAP i Microsoft oraz kursory stron są nieprzezroczyste,
+  uwierzytelnione i związane z konkretnym połączeniem. Klient nie może podsunąć
+  serwerowi dowolnego Graph `nextLink` ani surowej nazwy folderu.
+- Detail wątku Microsoft wykonuje jedno zapytanie Graph newest-first z
+  `$top=20`, ograniczonym `$select` i dokładnym `$count`, a następnie zwraca
+  wybrane wiadomości chronologicznie. Nie pobiera najpierw setek pełnych body i
+  nagłówków. Lista grupuje `conversationId` w obrębie bieżącej strony Graph;
+  bardzo długi wątek przecinający granicę stron może więc pojawić się ponownie
+  na kolejnej stronie. Detail wątku jest źródłem autorytatywnym.
 
-## AI i dynamiczne akcje
+## Wysyłka i niezawodność
 
-- Analiza AI powinna działać dopiero po zdarzeniu Gmail i na minimalnym fragmencie potrzebnym do klasyfikacji.
-- Model może tworzyć wyłącznie propozycję akcji, np. „Dodaj decyzję kredytową do sprawy”. Zapis do sprawy, wysłanie odpowiedzi lub udostępnienie dokumentu wymaga jawnego zatwierdzenia eksperta.
-- Dopasowanie sprawy musi pokazywać źródło, poziom pewności i alternatywy. Przy niskiej pewności system nie wykonuje automatycznego powiązania.
-- Treść maila i załączniki są danymi niezaufanymi. Instrukcje zawarte w wiadomości nie mogą zmieniać zasad agenta ani wywoływać narzędzi bez autoryzacji użytkownika.
+- Odbiorcy, temat, identyfikatory odpowiedzi, nagłówki, MIME i nazwy plików są
+  walidowane po stronie serwera. CR/LF/NUL w nagłówkach są odrzucane, a Bcc dla
+  SMTP istnieje tylko w envelope i nie trafia do kopii MIME w Wysłanych.
+- Każda wysyłka ma idempotency key i deterministyczny `Message-ID` związany z
+  konkretnym połączeniem. Zapisane wcześniej wartości pozostają źródłem prawdy. Po
+  niejednoznacznym błędzie nie wolno automatycznie wysłać wiadomości ponownie;
+  najpierw sprawdzany jest folder Wysłane.
+- Microsoft wysyła przez create draft → utrwalenie immutable ID → załączniki →
+  send. Załączniki od 3 MiB używają upload session. `Prefer: IdType="ImmutableId"`
+  jest stosowane do identyfikatorów Graph.
+- SMTP zapisuje tę samą wiadomość MIME w folderze Wysłane przez IMAP, jeśli
+  serwer go udostępnia. Brak kopii nie zmienia zaakceptowanej dostawy w błąd i
+  nie powoduje duplikatu.
+- Bezpieczne odczyty Microsoft mogą być ponowione po 429/5xx z ograniczonym
+  backoff i `Retry-After`. Operacje wysyłki nie są automatycznie powtarzane.
+- Limit CRM to 10 prób na minutę i 100 na godzinę na użytkownika. Atomowe buckety
+  PostgreSQL są rezerwowane przed utworzeniem rekordu wysyłki; replay istniejącego
+  klucza nadal może odzyskać wynik bez zużywania nowej próby. Formularz wysyłki
+  ma limit 4 MiB całego requestu, aby pozostać poniżej limitu Vercel Functions.
+  Można dodać maks. 10 załączników; pojedynczy plik i wszystkie pliki łącznie
+  mogą mieć najwyżej 3 MiB. Zostawia to zapas na treść do 200 000 znaków UTF-8,
+  odbiorców, nazwy plików i narzut multipart. Dostawca może zastosować niższy
+  limit.
+- Załączniki, UDW lub wielu odbiorców wymagają dodatkowego potwierdzenia. Edytor
+  chroni niezapisaną wiadomość przed przypadkowym zamknięciem.
+
+## Konfiguracja środowiska
+
+Wymagane dla wszystkich sekretów:
+
+```text
+NUXT_MAIL_OAUTH_ENCRYPTION_KEY=<losowy sekret o wysokiej entropii, min. 32 bajty UTF-8>
+NUXT_MAIL_OAUTH_LEGACY_ENCRYPTION_KEY=<opcjonalny poprzedni klucz tylko do odszyfrowania podczas rotacji>
+```
+
+Nowe sekrety i identyfikatory referencyjne zawsze używają wyłącznie bieżącego
+klucza. `LEGACY_ENCRYPTION_KEY` może być historycznie krótszy, ale służy tylko
+do odczytu istniejących kopert v1/v2. Po odświeżeniu lub ponownym połączeniu
+wszystkich skrzynek należy go usunąć.
+
+Google:
+
+```text
+NUXT_MAIL_OAUTH_GOOGLE_CLIENT_ID=
+NUXT_MAIL_OAUTH_GOOGLE_CLIENT_SECRET=
+NUXT_MAIL_OAUTH_GOOGLE_REDIRECT_URI=https://openexpert-crm.vercel.app/api/mail/oauth/google/callback
+```
+
+Microsoft (rejestracja wspierająca konta w dowolnym katalogu i konta osobiste):
+
+```text
+NUXT_MAIL_OAUTH_MICROSOFT_CLIENT_ID=
+NUXT_MAIL_OAUTH_MICROSOFT_CLIENT_SECRET=
+NUXT_MAIL_OAUTH_MICROSOFT_REDIRECT_URI=https://openexpert-crm.vercel.app/api/mail/oauth/microsoft/callback
+NUXT_MAIL_OAUTH_MICROSOFT_TENANT=common
+```
+
+Po zmianie sekretów trzeba wykonać nowy deployment. Klucza szyfrowania nie wolno
+rotować przez proste nadpisanie, bo istniejące tokeny i poświadczenia przestaną
+być odszyfrowywalne. Podczas rotacji poprzedni klucz należy zachować w
+`NUXT_MAIL_OAUTH_LEGACY_ENCRYPTION_KEY`, dopóki wszystkie stare rekordy nie zostaną
+ponownie zaszyfrowane przy odświeżeniu lub ponownym połączeniu konta. Dopiero po
+zweryfikowaniu braku starych szyfrogramów można usunąć klucz legacy.
+
+## Kontrola przed wdrożeniem
+
+1. Uruchomić migrację `0052_multi_provider_mail_connections.sql` przed kodem.
+2. Uruchomić `pnpm --filter @openexpert/crm test:mail` i produkcyjny build Nuxt.
+3. Sprawdzić osobno OAuth Google, osobiste konto Microsoft, konto Microsoft 365
+   oraz IMAP/SMTP z hasłem aplikacji.
+4. Zweryfikować dwa konta tego samego dostawcy, reconnect dokładnego konta,
+   odłączenie, zmianę konta przy szkicu i odrzucenie obcego `connectionId`.
+5. Sprawdzić listę, wyszukiwanie, paging, detail, reply, nową wiadomość,
+   załączniki, Bcc, 429 oraz recovery niejednoznacznej wysyłki.
+
+## Świadomie odłożone
+
+Watchery Gmail/Graph, webhooki, Microsoft subscriptions, IMAP IDLE, analiza AI i
+dynamiczne przyciski nie należą do tej wersji. Gdy powstaną, mają jedynie
+tworzyć propozycje z jawnym zatwierdzeniem eksperta; treść e-maila pozostaje
+danymi niezaufanymi i nie może wydawać agentowi poleceń ani samodzielnie zapisywać
+czegokolwiek do sprawy.

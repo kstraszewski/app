@@ -28,6 +28,7 @@ const migrationNames = [
   '0049_mortgage_application_process.sql',
   '0050_document_storage_cleanup_outbox.sql',
   '0051_mortgage_application_strict_lifecycle.sql',
+  '0052_multi_provider_mail_connections.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

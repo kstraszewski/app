@@ -1,6 +1,4 @@
 import {
-  createCipheriv,
-  createDecipheriv,
   createHash,
   randomBytes,
 } from 'node:crypto'
@@ -19,6 +17,7 @@ import {
   type GmailThreadResource,
 } from './gmail-message.ts'
 import type { GmailSendPayload } from './gmail-send.ts'
+import { mailEncryptionSecretIsStrong } from './mail-crypto-core.ts'
 
 export type MailProviderName = 'google'
 
@@ -82,7 +81,6 @@ const GMAIL_SEND_CAPABLE_SCOPES = new Set([
 const GOOGLE_MAIL_SCOPES = [
   'openid',
   'email',
-  'profile',
   GMAIL_READONLY_SCOPE,
   GMAIL_SEND_SCOPE,
 ]
@@ -102,7 +100,7 @@ function providerConfig(event: H3Event) {
   if (
     !config.google?.clientId
     || !config.google.clientSecret
-    || !config.encryptionKey
+    || !mailEncryptionSecretIsStrong(config.encryptionKey)
   ) {
     throw createError({
       statusCode: 503,
@@ -120,7 +118,7 @@ function providerConfig(event: H3Event) {
 export function mailProviderAvailability(event: H3Event): boolean {
   const config = mailConfig(event)
   return Boolean(
-    config.encryptionKey
+    mailEncryptionSecretIsStrong(config.encryptionKey)
     && config.google?.clientId
     && config.google.clientSecret,
   )
@@ -495,42 +493,6 @@ export async function revokeMailOAuthToken(token: string): Promise<void> {
   }
 }
 
-export function encryptMailSecret(event: H3Event, value: string | null): string | null {
-  if (!value) return null
-  const secret = providerConfig(event).encryptionKey
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', encryptionKey(secret), iv)
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
-  const tag = cipher.getAuthTag()
-  return ['v1', iv.toString('base64url'), tag.toString('base64url'), encrypted.toString('base64url')].join('.')
-}
-
-export function decryptMailSecret(
-  event: H3Event,
-  value: string | null | undefined,
-): string | null {
-  if (!value) return null
-  const secret = providerConfig(event).encryptionKey
-  const [version, ivValue, tagValue, encryptedValue] = value.split('.')
-  if (version !== 'v1' || !ivValue || !tagValue || !encryptedValue) {
-    throw createError({ statusCode: 500, statusMessage: 'Stored mail token has an invalid format' })
-  }
-  try {
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      encryptionKey(secret),
-      Buffer.from(ivValue, 'base64url'),
-    )
-    decipher.setAuthTag(Buffer.from(tagValue, 'base64url'))
-    return Buffer.concat([
-      decipher.update(Buffer.from(encryptedValue, 'base64url')),
-      decipher.final(),
-    ]).toString('utf8')
-  } catch {
-    throw createError({ statusCode: 500, statusMessage: 'Stored mail token cannot be decrypted' })
-  }
-}
-
 async function exchangeGoogleToken(
   body: URLSearchParams,
   refreshing: boolean,
@@ -586,10 +548,6 @@ function mailFolderSummaries(labels: GoogleLabel[]): MailFolderSummary[] {
         : Math.max(0, Number(label.messagesUnread) || 0),
     }
   })
-}
-
-function encryptionKey(secret: string): Buffer {
-  return createHash('sha256').update(secret, 'utf8').digest()
 }
 
 function extractMessageIds(value: string): string[] {

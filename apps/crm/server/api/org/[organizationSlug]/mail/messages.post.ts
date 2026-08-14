@@ -3,18 +3,25 @@ import {
   getHeader,
 } from 'h3'
 import type { MailSendPayload } from '../../../../../shared/types/mail.ts'
+import type { ImapSmtpSendResult } from '~~/server/utils/mail-imap-smtp'
 import { gmailBlockedAttachmentExtension } from '../../../../../shared/utils/mail-security.ts'
 import { requireCrmSession } from '~~/server/utils/crm'
 import {
   activeMailAccessToken,
   markMailConnectionStatus,
   requireUserMailConnection,
+  type MailConnectionRow,
 } from '~~/server/utils/mail-connections'
 import {
   buildGmailSendPayload,
   parseGmailRecipientList,
   type GmailSendAttachment,
 } from '~~/server/utils/gmail-send'
+import { imapSmtpRuntimeForConnection } from '~~/server/utils/mail-imap-runtime'
+import {
+  imapSmtpConnectionFailureReason,
+  safeImapSmtpError,
+} from '~~/server/utils/mail-imap-errors'
 import {
   readBoundedMultipartFormData,
   type MailMultipartPart,
@@ -24,10 +31,10 @@ import {
   setPrivateMailResponseHeaders,
 } from '~~/server/utils/mail-http'
 import {
-  claimMailSendRequest,
-  enforceMailSendRateLimit,
+  claimRateLimitedMailSendRequest,
   mailSendRequestHash,
   markMailSendRequestOutcome,
+  markMailSendRequestProviderAccepted,
   markMailSendRequestSent,
   type MailSendRequestRow,
 } from '~~/server/utils/mail-send-requests'
@@ -37,26 +44,44 @@ import {
   mailTokenIncludesSendAccess,
   sendGmailMessage,
 } from '~~/server/utils/mail-providers'
+import { connectionReferenceSecret } from '~~/server/utils/mail-thread-page'
 
-const MAX_REQUEST_BYTES = 24 * 1024 * 1024
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
-const MAX_ATTACHMENTS_BYTES = 16 * 1024 * 1024
+// Vercel Functions reject request bodies above 4.5 MB before the handler runs.
+// Keep the complete multipart envelope at 4 MiB and reserve enough headroom for
+// a 200k-character UTF-8 body, recipients, filenames and multipart boundaries.
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
+const MAX_ATTACHMENTS_BYTES = 3 * 1024 * 1024
 const MAX_GMAIL_RAW_CHARACTERS = 30 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
 const MAX_BODY_CHARACTERS = 200_000
 const MAX_SUBJECT_CHARACTERS = 500
+const MAX_THREAD_REFERENCE_CHARACTERS = 4_096
+const SMTP_PARTIAL_DELIVERY_ERROR_CODE = 'SMTP_PARTIAL_DELIVERY'
+
+type ProviderRuntime =
+  | {
+      provider: 'google'
+      accessToken: string
+      referenceSecret: string
+    }
+  | {
+      provider: 'microsoft'
+      accessToken: string
+      referenceSecret: string
+    }
+  | { provider: 'imap'; config: ReturnType<typeof imapSmtpRuntimeForConnection> }
+
+interface ReplyContext {
+  subject: string
+  inReplyTo?: string
+  references?: string[]
+}
 
 export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   setPrivateMailResponseHeaders(event)
   requireSameOriginMultipartRequest(event)
   const session = await requireCrmSession(event)
-  const { backendData, connection } = await requireUserMailConnection(event, session)
-  if (!mailTokenIncludesSendAccess(connection.scopes)) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Połącz Gmail ponownie i zezwól na wysyłanie wiadomości.',
-    })
-  }
 
   const contentLengthHeader = getHeader(event, 'content-length')?.trim() || ''
   const contentLength = Number(contentLengthHeader)
@@ -75,7 +100,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (contentLength > MAX_REQUEST_BYTES) {
     throw createError({
       statusCode: 413,
-      statusMessage: 'Wiadomość z załącznikami nie może przekraczać 24 MB.',
+      statusMessage: 'Wiadomość z załącznikami nie może przekraczać 4 MiB.',
     })
   }
 
@@ -83,9 +108,23 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (!parts) {
     throw createError({ statusCode: 400, statusMessage: 'Wymagany jest formularz wiadomości.' })
   }
-  if (parts.length > MAX_ATTACHMENTS + 8) {
+  if (parts.length > MAX_ATTACHMENTS + 9) {
     throw createError({ statusCode: 400, statusMessage: 'Formularz zawiera zbyt wiele pól.' })
   }
+
+  const connectionId = multipartText(parts, 'connectionId')
+  if (!connectionId) {
+    throw createError({ statusCode: 400, statusMessage: 'Wybierz konto, z którego wysyłasz wiadomość.' })
+  }
+  const { backendData, connection } = await requireUserMailConnection(
+    event,
+    session,
+    connectionId,
+  )
+  if (connection.status === 'revoked') {
+    throw reconnectError(connection)
+  }
+
   const idempotencyKey = multipartText(parts, 'idempotencyKey').toLowerCase()
   if (
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
@@ -109,7 +148,10 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   }
 
   const threadId = multipartText(parts, 'threadId')
-  if (threadId && !/^[A-Za-z0-9_-]{1,256}$/u.test(threadId)) {
+  if (
+    threadId
+    && !new RegExp(`^[A-Za-z0-9_-]{1,${MAX_THREAD_REFERENCE_CHARACTERS}}$`, 'u').test(threadId)
+  ) {
     throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowy identyfikator wątku.' })
   }
   let subject = multipartText(parts, 'subject')
@@ -140,17 +182,19 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     if (part.data.length > MAX_ATTACHMENT_BYTES) {
       throw createError({
         statusCode: 413,
-        statusMessage: 'Pojedynczy załącznik nie może przekraczać 10 MB.',
+        statusMessage: 'Pojedynczy załącznik nie może przekraczać 3 MiB.',
       })
     }
     attachmentsBytes += part.data.length
     const filename = safeAttachmentFilename(part.filename, index)
-    const blockedExtension = gmailBlockedAttachmentExtension(filename)
-    if (blockedExtension) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Gmail blokuje załączniki .${blockedExtension}. Wybierz bezpieczny format pliku.`,
-      })
+    if (connection.provider === 'google') {
+      const blockedExtension = gmailBlockedAttachmentExtension(filename)
+      if (blockedExtension) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: `Gmail blokuje załączniki .${blockedExtension}. Wybierz bezpieczny format pliku.`,
+        })
+      }
     }
     return {
       filename,
@@ -161,7 +205,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (attachmentsBytes > MAX_ATTACHMENTS_BYTES) {
     throw createError({
       statusCode: 413,
-      statusMessage: 'Łączny rozmiar załączników nie może przekraczać 16 MB.',
+      statusMessage: 'Łączny rozmiar załączników nie może przekraczać 3 MiB.',
     })
   }
   if (!body.trim() && !attachments.length) {
@@ -171,11 +215,12 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     })
   }
 
-  const accessToken = await activeMailAccessToken(event, backendData, connection)
   let claimedRequest: MailSendRequestRow | null = null
+  let providerObjectPersisted = false
   try {
+    const runtime = await providerRuntime(event, backendData, connection)
     const reply = threadId
-      ? await fetchGmailReplyContext(accessToken, threadId)
+      ? await providerReplyContext(runtime, connection, threadId)
       : null
     if (reply) subject = reply.subject
 
@@ -188,7 +233,8 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       threadId,
       attachments,
     })
-    const claim = await claimMailSendRequest(
+    const claim = await claimRateLimitedMailSendRequest(
+      event,
       backendData,
       session,
       connection,
@@ -200,29 +246,207 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         data: await resolveExistingSendRequest(
           backendData,
           claim.row,
-          accessToken,
+          runtime,
+          connection,
         ),
       }
     }
     claimedRequest = claim.row
-    await enforceMailSendRateLimit(backendData, session)
 
+    const sent = await sendProviderMessage({
+      runtime,
+      connection,
+      to,
+      cc,
+      bcc,
+      subject,
+      body,
+      threadId,
+      idempotencyKey,
+      attachments,
+      reply,
+      messageId: claim.row.message_id_header,
+      onProviderObjectCreated: async (providerMessageId, providerThreadId) => {
+        await markMailSendRequestProviderAccepted(
+          backendData,
+          claim.row,
+          providerMessageId,
+          providerThreadId,
+        )
+        providerObjectPersisted = true
+        if (claimedRequest) {
+          claimedRequest.provider_message_id = providerMessageId
+          claimedRequest.provider_thread_id = providerThreadId
+        }
+      },
+    })
+    try {
+      await markMailSendRequestSent(
+        backendData,
+        claim.row,
+        sent.id,
+        sent.threadId,
+      )
+    }
+    catch {
+      throw createError({
+        statusCode: 502,
+        statusMessage: 'Wiadomość mogła zostać wysłana. Sprawdź folder Wysłane przed ponowieniem.',
+        data: { deliveryAmbiguous: true },
+      })
+    }
+    if (connection.status !== 'active') {
+      try {
+        await markMailConnectionStatus(backendData, connection, 'active', null, true)
+      }
+      catch {
+        // Delivery is durable; a cosmetic connection status must not turn it into a retry.
+      }
+    }
+    return { data: sent }
+  }
+  catch (error) {
+    const statusCode = Number((error as { statusCode?: number })?.statusCode)
+    const ambiguous = deliveryIsAmbiguous(error)
+    if (claimedRequest) {
+      try {
+        await markMailSendRequestOutcome(
+          backendData,
+          claimedRequest,
+          ambiguous ? 'unknown' : 'failed',
+          providerErrorCode(error, statusCode, providerObjectPersisted),
+        )
+      }
+      catch {
+        // Preserve the provider error; stale pending rows are recovered on a later request.
+      }
+    }
+    if (connection.provider !== 'imap' && (statusCode === 401 || statusCode === 403)) {
+      await markMailConnectionStatus(
+        backendData,
+        connection,
+        'revoked',
+        `${providerLabel(connection)} no longer authorizes mailbox access`,
+      )
+      throw reconnectError(connection)
+    }
+    if (connection.provider === 'imap') {
+      const failureReason = imapSmtpConnectionFailureReason(error)
+      if (failureReason) {
+        try {
+          await markMailConnectionStatus(
+            backendData,
+            connection,
+            'error',
+            failureReason,
+          )
+        }
+        catch {
+          // Preserve the sanitized SMTP error if the status update fails.
+        }
+      }
+    }
+    throw error
+  }
+})
+
+async function providerRuntime(
+  event: Parameters<typeof imapSmtpRuntimeForConnection>[0],
+  backendData: any,
+  connection: MailConnectionRow,
+): Promise<ProviderRuntime> {
+  if (connection.provider === 'imap') {
+    if (!connection.smtp_host) {
+      throw createError({ statusCode: 409, statusMessage: 'Dla tej skrzynki nie skonfigurowano wysyłki SMTP.' })
+    }
+    try {
+      return {
+        provider: 'imap',
+        config: imapSmtpRuntimeForConnection(event, connection),
+      }
+    }
+    catch (error) {
+      throw safeImapSmtpError(error, 'send')
+    }
+  }
+
+  if (connection.provider === 'google') {
+    if (!mailTokenIncludesSendAccess(connection.scopes)) throw reconnectError(connection)
+  }
+  else {
+    const microsoft = await import('~~/server/utils/mail-microsoft')
+    if (!microsoft.microsoftMailTokenIncludesSendAccess(connection.scopes)) {
+      throw reconnectError(connection)
+    }
+  }
+  return {
+    provider: connection.provider,
+    accessToken: await activeMailAccessToken(event, backendData, connection),
+    referenceSecret: connectionReferenceSecret(event, connection),
+  }
+}
+
+async function providerReplyContext(
+  runtime: ProviderRuntime,
+  connection: MailConnectionRow,
+  threadId: string,
+): Promise<ReplyContext> {
+  if (runtime.provider === 'google') {
+    return fetchGmailReplyContext(runtime.accessToken, threadId)
+  }
+  if (runtime.provider === 'microsoft') {
+    const microsoft = await import('~~/server/utils/mail-microsoft')
+    return microsoft.fetchMicrosoftMailReplyContext(
+      runtime.accessToken,
+      connection.account_email,
+      threadId,
+      { referenceSecret: runtime.referenceSecret },
+    )
+  }
+  const config = runtime.config
+  try {
+    const imap = await import('~~/server/utils/mail-imap-smtp')
+    return await imap.fetchImapSmtpReplyContext(config, threadId)
+  }
+  catch (error) {
+    throw safeImapSmtpError(error, 'send')
+  }
+}
+
+async function sendProviderMessage(input: {
+  runtime: ProviderRuntime
+  connection: MailConnectionRow
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  body: string
+  threadId: string
+  idempotencyKey: string
+  messageId: string
+  attachments: GmailSendAttachment[]
+  reply: ReplyContext | null
+  onProviderObjectCreated: (messageId: string, threadId: string) => Promise<void>
+}): Promise<MailSendPayload['data']> {
+  const runtime = input.runtime
+  if (runtime.provider === 'google') {
     let payload
     try {
       payload = buildGmailSendPayload({
-        from: connection.account_email,
-        to,
-        cc,
-        bcc,
-        subject,
-        text: body,
-        attachments,
-        messageId: claim.row.message_id_header,
-        threadId: threadId || undefined,
-        inReplyTo: reply?.inReplyTo,
-        references: reply?.references,
+        from: input.connection.account_email,
+        to: input.to,
+        cc: input.cc,
+        bcc: input.bcc,
+        subject: input.subject,
+        text: input.body,
+        attachments: input.attachments,
+        messageId: input.messageId,
+        threadId: input.threadId || undefined,
+        inReplyTo: input.reply?.inReplyTo,
+        references: input.reply?.references,
       })
-    } catch {
+    }
+    catch {
       throw createError({
         statusCode: 400,
         statusMessage: 'Nie udało się przygotować bezpiecznej wiadomości.',
@@ -234,68 +458,75 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         statusMessage: 'Wiadomość jest zbyt duża do wysłania przez Gmail.',
       })
     }
-
-    const sent = await sendGmailMessage(accessToken, payload)
-    try {
-      await markMailSendRequestSent(
-        backendData,
-        claim.row,
-        sent.id,
-        sent.threadId,
-      )
-    } catch {
-      throw createError({
-        statusCode: 502,
-        statusMessage: 'Wiadomość mogła zostać wysłana. Sprawdź folder Wysłane przed ponowieniem.',
-        data: { deliveryAmbiguous: true },
-      })
-    }
-    if (connection.status !== 'active') {
-      try {
-        await markMailConnectionStatus(backendData, connection, 'active', null)
-      } catch {
-        // The send result is durable; a cosmetic connection status must not turn it into a retry.
-      }
-    }
-    return { data: sent }
-  } catch (error) {
-    const statusCode = Number((error as { statusCode?: number })?.statusCode)
-    if (claimedRequest) {
-      const ambiguous = Boolean(
-        (error as { data?: { deliveryAmbiguous?: boolean } })?.data?.deliveryAmbiguous,
-      )
-      try {
-        await markMailSendRequestOutcome(
-          backendData,
-          claimedRequest,
-          ambiguous ? 'unknown' : 'failed',
-          statusCode ? `HTTP_${statusCode}` : 'SEND_ERROR',
-        )
-      } catch {
-        // Preserve the provider error; the next request will treat a stale pending row as unknown.
-      }
-    }
-    if (statusCode === 401 || statusCode === 403) {
-      await markMailConnectionStatus(
-        backendData,
-        connection,
-        'revoked',
-        'Google no longer authorizes access to this Gmail account',
-      )
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'Połącz Gmail ponownie, aby wysyłać wiadomości.',
-      })
-    }
-    throw error
+    return sendGmailMessage(runtime.accessToken, payload)
   }
-})
+
+  if (runtime.provider === 'microsoft') {
+    const microsoft = await import('~~/server/utils/mail-microsoft')
+    return microsoft.sendMicrosoftMailMessage(
+      runtime.accessToken,
+      {
+        to: input.to,
+        cc: input.cc,
+        bcc: input.bcc,
+        subject: input.subject,
+        text: input.body,
+        messageId: input.messageId,
+        threadId: input.threadId || undefined,
+        attachments: input.attachments,
+      },
+      {
+        referenceSecret: runtime.referenceSecret,
+        accountEmail: input.connection.account_email,
+        onDraftCreated: draft => input.onProviderObjectCreated(draft.id, draft.threadId),
+      },
+    )
+  }
+
+  const config = runtime.config
+  let sent: ImapSmtpSendResult
+  try {
+    const imap = await import('~~/server/utils/mail-imap-smtp')
+    sent = await imap.sendImapSmtpMessage(config, {
+      idempotencyKey: input.idempotencyKey,
+      messageId: input.messageId,
+      to: input.to,
+      cc: input.cc,
+      bcc: input.bcc,
+      subject: input.subject,
+      text: input.body,
+      attachments: input.attachments,
+      inReplyTo: input.reply?.inReplyTo,
+      references: input.reply?.references,
+    })
+  }
+  catch (error) {
+    throw safeImapSmtpError(error, 'send')
+  }
+  if (sent.partial || sent.rejected.length > 0) {
+    try {
+      await input.onProviderObjectCreated(sent.id, sent.threadId)
+    }
+    catch {
+      // Some recipients already received the message. Preserve the explicit
+      // partial-delivery outcome even if saving its Sent reference failed.
+    }
+    throw smtpPartialDeliveryError()
+  }
+  return { id: sent.id, threadId: sent.threadId }
+}
 
 async function resolveExistingSendRequest(
   backendData: any,
   row: MailSendRequestRow,
-  accessToken: string,
+  runtime: ProviderRuntime,
+  connection: MailConnectionRow,
 ): Promise<MailSendPayload['data']> {
+  if (row.error_code === SMTP_PARTIAL_DELIVERY_ERROR_CODE) {
+    // This is terminal for this idempotency key: retrying could duplicate the
+    // message for recipients the SMTP server already accepted.
+    throw smtpPartialDeliveryError()
+  }
   if (
     row.status === 'sent'
     && row.provider_message_id
@@ -331,7 +562,32 @@ async function resolveExistingSendRequest(
     })
   }
 
-  const found = await findGmailSentMessage(accessToken, row.message_id_header)
+  let found: MailSendPayload['data'] | null = null
+  if (runtime.provider === 'google') {
+    found = await findGmailSentMessage(runtime.accessToken, row.message_id_header)
+  }
+  else if (runtime.provider === 'microsoft') {
+    const microsoft = await import('~~/server/utils/mail-microsoft')
+    found = await microsoft.findMicrosoftSentMessage(
+      runtime.accessToken,
+      row.message_id_header,
+      {
+        referenceSecret: runtime.referenceSecret,
+        accountEmail: connection.account_email,
+        providerMessageId: row.provider_message_id || undefined,
+      },
+    )
+  }
+  else {
+    const config = runtime.config
+    try {
+      const imap = await import('~~/server/utils/mail-imap-smtp')
+      found = await imap.findImapSmtpSentMessage(config, row.message_id_header)
+    }
+    catch (error) {
+      throw safeImapSmtpError(error, 'send')
+    }
+  }
   if (found) {
     await markMailSendRequestSent(
       backendData,
@@ -366,10 +622,7 @@ function requireSameOriginMultipartRequest(event: Parameters<typeof requireSameO
   requireSameOriginMailRequest(event)
 }
 
-function multipartValue(
-  parts: MailMultipartPart[],
-  name: string,
-): string {
+function multipartValue(parts: MailMultipartPart[], name: string): string {
   const matches = parts.filter(part => part.name === name && !part.filename)
   if (matches.length > 1) {
     throw createError({ statusCode: 400, statusMessage: `Pole ${name} zostało powtórzone.` })
@@ -377,17 +630,15 @@ function multipartValue(
   return matches[0]?.data.toString('utf8') ?? ''
 }
 
-function multipartText(
-  parts: MailMultipartPart[],
-  name: string,
-): string {
+function multipartText(parts: MailMultipartPart[], name: string): string {
   return multipartValue(parts, name).trim()
 }
 
 function parseRecipients(value: string, label: string): string[] {
   try {
     return parseGmailRecipientList(value)
-  } catch {
+  }
+  catch {
     throw createError({
       statusCode: 400,
       statusMessage: `${label}: podaj poprawne adresy e-mail oddzielone przecinkami.`,
@@ -407,11 +658,7 @@ function uniqueRecipientGroups(
     seen.add(key)
     return true
   })
-  return {
-    to: unique(to),
-    cc: unique(cc),
-    bcc: unique(bcc),
-  }
+  return { to: unique(to), cc: unique(cc), bcc: unique(bcc) }
 }
 
 function safeAttachmentFilename(value: string | undefined, index: number): string {
@@ -439,4 +686,50 @@ function truncateUtf8(value: string, maxBytes: number): string {
     result += character
   }
   return result || 'zalacznik'
+}
+
+function deliveryIsAmbiguous(error: unknown): boolean {
+  const value = error as {
+    deliveryAmbiguous?: boolean
+    data?: { deliveryAmbiguous?: boolean }
+  }
+  return Boolean(value?.deliveryAmbiguous || value?.data?.deliveryAmbiguous)
+}
+
+function smtpPartialDeliveryError() {
+  return createError({
+    statusCode: 502,
+    statusMessage: 'Serwer SMTP przyjął wiadomość tylko dla części odbiorców. Sprawdź adresy i folder Wysłane przed utworzeniem nowej wysyłki.',
+    data: {
+      deliveryAmbiguous: true,
+      deliveryPartial: true,
+    },
+  })
+}
+
+function providerErrorCode(
+  error: unknown,
+  statusCode: number,
+  providerObjectPersisted: boolean,
+): string {
+  if (Boolean((error as { data?: { deliveryPartial?: boolean } })?.data?.deliveryPartial)) {
+    return SMTP_PARTIAL_DELIVERY_ERROR_CODE
+  }
+  const code = String((error as { code?: unknown })?.code || '').trim()
+  if (code) return code.slice(0, 100)
+  if (statusCode) return `HTTP_${statusCode}`
+  return providerObjectPersisted ? 'SEND_ERROR_AFTER_PROVIDER_OBJECT' : 'SEND_ERROR'
+}
+
+function reconnectError(connection: MailConnectionRow) {
+  return createError({
+    statusCode: 409,
+    statusMessage: `Połącz ponownie konto ${providerLabel(connection)} i zezwól na wysyłanie wiadomości.`,
+  })
+}
+
+function providerLabel(connection: MailConnectionRow): string {
+  if (connection.provider === 'google') return 'Gmail'
+  if (connection.provider === 'microsoft') return 'Outlook'
+  return 'IMAP/SMTP'
 }

@@ -1,3 +1,7 @@
+export type MailProviderId = 'google' | 'microsoft' | 'imap'
+
+export type MailConnectionStatus = 'active' | 'error' | 'revoked'
+
 export type MailFolderId = 'INBOX' | 'STARRED' | 'SENT' | 'DRAFT'
 
 export interface MailAddress {
@@ -6,26 +10,43 @@ export interface MailAddress {
   label: string
 }
 
+export interface MailProviderOption {
+  id: MailProviderId
+  label: string
+  description: string
+  icon: string
+  connectionKind: 'oauth' | 'credentials'
+  configured: boolean
+  connectPath: string | null
+}
+
+export interface MailConnectionCapabilities {
+  canRead: boolean
+  canSearch: boolean
+  canSend: boolean
+  maxAttachmentBytes: number
+  maxTotalAttachmentBytes: number
+}
+
 export interface MailConnectionInfo {
   id: string
-  provider: 'google'
+  provider: MailProviderId
+  providerLabel: string
+  providerIcon: string
+  displayName: string
   accountEmail: string
-  capabilities: {
-    canSend: boolean
-  }
-  status: 'active' | 'error' | 'revoked'
+  capabilities: MailConnectionCapabilities
+  status: MailConnectionStatus
   errorMessage: string | null
+  externalMailboxUrl: string | null
+  externalSentUrl: string | null
+  lastVerifiedAt: string | null
   updatedAt: string
 }
 
 export interface MailConnectionPayload {
-  configured: boolean
-  provider: {
-    id: 'google'
-    label: 'Gmail'
-    connectPath: string | null
-  }
-  connection: MailConnectionInfo | null
+  providers: MailProviderOption[]
+  connections: MailConnectionInfo[]
 }
 
 export interface MailFolderSummary {
@@ -84,7 +105,7 @@ export interface MailThreadDetail {
   subject: string
   messages: MailMessageDetail[]
   omittedMessageCount: number
-  externalUrl: string
+  externalUrl: string | null
 }
 
 export interface MailThreadListPayload {
@@ -104,4 +125,23 @@ export interface MailSendPayload {
     id: string
     threadId: string
   }
+}
+
+export type MailTransportSecurity = 'tls' | 'starttls'
+
+export interface ImapSmtpConnectionInput {
+  /** Existing owned IMAP connection replaced after a successful re-test. */
+  replacementConnectionId?: string
+  displayName: string
+  accountEmail: string
+  imapHost: string
+  imapPort: number
+  imapSecurity: MailTransportSecurity
+  imapUsername: string
+  imapPassword: string
+  smtpHost: string
+  smtpPort: number
+  smtpSecurity: MailTransportSecurity
+  smtpUsername: string
+  smtpPassword: string
 }

@@ -1,12 +1,13 @@
-import { createError } from 'h3'
+import { createError, setHeader, type H3Event } from 'h3'
 import type { CrmSession } from './crm.ts'
 import { throwDbError } from './crm.ts'
-import {
-  gmailSendMessageId,
-  gmailSendRequestHash,
-  type GmailSendRequestHashInput,
-} from './gmail-send.ts'
+import { gmailSendRequestHash, type GmailSendRequestHashInput } from './gmail-send.ts'
 import type { MailConnectionRow } from './mail-connections.ts'
+import {
+  connectionBoundMailMessageId,
+  mailSendCanRecoverWithoutNewAttempt,
+} from './mail-send-idempotency.ts'
+import { consumeMailSendRateLimit } from './mail-send-rate-limit.ts'
 
 export interface MailSendRequestRow {
   id: string
@@ -29,11 +30,70 @@ export const mailSendRequestHash = (input: GmailSendRequestHashInput): string =>
   gmailSendRequestHash(input)
 )
 
-export const mailSendMessageId = (idempotencyKey: string): string => (
-  gmailSendMessageId(idempotencyKey)
-)
+export function mailSendMessageId(connectionId: string, idempotencyKey: string): string {
+  return connectionBoundMailMessageId(connectionId, idempotencyKey)
+}
 
-export async function claimMailSendRequest(
+/**
+ * Existing non-failed requests bypass the limiter so a replay can reconcile a
+ * durable provider outcome. Every new row and every retry after a definitive
+ * failure first consumes the shared atomic rate-limit buckets.
+ */
+export async function claimRateLimitedMailSendRequest(
+  event: H3Event,
+  backendData: any,
+  session: CrmSession,
+  connection: MailConnectionRow,
+  idempotencyKey: string,
+  requestHash: string,
+): Promise<{ row: MailSendRequestRow; claimed: boolean }> {
+  const existing = await findMailSendRequest(
+    backendData,
+    session,
+    connection.id,
+    idempotencyKey,
+  )
+  if (existing) {
+    assertMailSendRequestHash(existing, requestHash)
+    if (mailSendCanRecoverWithoutNewAttempt(existing.status)) {
+      return { row: existing, claimed: false }
+    }
+  }
+
+  const rateLimit = await consumeMailSendRateLimit(event, session.userId)
+  if (!rateLimit.allowed) {
+    // A same-key request may have won the race while this request was waiting
+    // for the atomic limiter. Let that idempotent replay recover instead of
+    // turning it into an unrelated 429.
+    const raced = await findMailSendRequest(
+      backendData,
+      session,
+      connection.id,
+      idempotencyKey,
+    )
+    if (raced) {
+      assertMailSendRequestHash(raced, requestHash)
+      if (mailSendCanRecoverWithoutNewAttempt(raced.status)) {
+        return { row: raced, claimed: false }
+      }
+    }
+    setHeader(event, 'Retry-After', rateLimit.retryAfterSeconds)
+    throw createError({
+      statusCode: 429,
+      statusMessage: 'Limit wysyłania z CRM został osiągnięty. Spróbuj ponownie później.',
+    })
+  }
+
+  return claimMailSendRequest(
+    backendData,
+    session,
+    connection,
+    idempotencyKey,
+    requestHash,
+  )
+}
+
+async function claimMailSendRequest(
   backendData: any,
   session: CrmSession,
   connection: MailConnectionRow,
@@ -46,7 +106,7 @@ export async function claimMailSendRequest(
     connection_id: connection.id,
     idempotency_key: idempotencyKey,
     request_hash: requestHash,
-    message_id_header: mailSendMessageId(idempotencyKey),
+    message_id_header: mailSendMessageId(connection.id, idempotencyKey),
     status: 'pending',
     attempts: 1,
   }
@@ -68,12 +128,7 @@ export async function claimMailSendRequest(
     connection.id,
     idempotencyKey,
   )
-  if (existing.request_hash !== requestHash) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Ten identyfikator wysyłki został użyty dla innej wiadomości.',
-    })
-  }
+  assertMailSendRequestHash(existing, requestHash)
   if (existing.status !== 'failed') {
     return { row: existing, claimed: false }
   }
@@ -107,43 +162,6 @@ export async function claimMailSendRequest(
   }
 }
 
-export async function enforceMailSendRateLimit(
-  backendData: any,
-  session: CrmSession,
-): Promise<void> {
-  const now = Date.now()
-  const [minute, hour] = await Promise.all([
-    backendData
-      .from('mail_send_requests')
-      .select('attempts')
-      .eq('organization_id', session.organizationId)
-      .eq('owner_user_id', session.userId)
-      .gte('updated_at', new Date(now - 60_000).toISOString()),
-    backendData
-      .from('mail_send_requests')
-      .select('attempts')
-      .eq('organization_id', session.organizationId)
-      .eq('owner_user_id', session.userId)
-      .gte('updated_at', new Date(now - 60 * 60_000).toISOString()),
-  ])
-  throwDbError(minute.error)
-  throwDbError(hour.error)
-  const minuteAttempts = (minute.data ?? []).reduce(
-    (total: number, row: { attempts?: number }) => total + Math.max(1, Number(row.attempts) || 0),
-    0,
-  )
-  const hourAttempts = (hour.data ?? []).reduce(
-    (total: number, row: { attempts?: number }) => total + Math.max(1, Number(row.attempts) || 0),
-    0,
-  )
-  if (minuteAttempts > 10 || hourAttempts > 100) {
-    throw createError({
-      statusCode: 429,
-      statusMessage: 'Limit wysyłania z CRM został osiągnięty. Spróbuj ponownie później.',
-    })
-  }
-}
-
 export async function markMailSendRequestSent(
   backendData: any,
   row: MailSendRequestRow,
@@ -152,6 +170,19 @@ export async function markMailSendRequestSent(
 ): Promise<void> {
   await updateMailSendRequest(backendData, row, {
     status: 'sent',
+    provider_message_id: providerMessageId,
+    provider_thread_id: providerThreadId,
+    error_code: null,
+  })
+}
+
+export async function markMailSendRequestProviderAccepted(
+  backendData: any,
+  row: MailSendRequestRow,
+  providerMessageId: string,
+  providerThreadId: string,
+): Promise<void> {
+  await updateMailSendRequest(backendData, row, {
     provider_message_id: providerMessageId,
     provider_thread_id: providerThreadId,
     error_code: null,
@@ -186,6 +217,35 @@ async function loadMailSendRequest(
     .single()
   throwDbError(result.error)
   return result.data as MailSendRequestRow
+}
+
+async function findMailSendRequest(
+  backendData: any,
+  session: CrmSession,
+  connectionId: string,
+  idempotencyKey: string,
+): Promise<MailSendRequestRow | null> {
+  const result = await backendData
+    .from('mail_send_requests')
+    .select('*')
+    .eq('organization_id', session.organizationId)
+    .eq('owner_user_id', session.userId)
+    .eq('connection_id', connectionId)
+    .eq('idempotency_key', idempotencyKey)
+    .maybeSingle()
+  throwDbError(result.error)
+  return result.data ? result.data as MailSendRequestRow : null
+}
+
+function assertMailSendRequestHash(
+  row: MailSendRequestRow,
+  requestHash: string,
+): void {
+  if (row.request_hash === requestHash) return
+  throw createError({
+    statusCode: 409,
+    statusMessage: 'Ten identyfikator wysyłki został użyty dla innej wiadomości.',
+  })
 }
 
 async function updateMailSendRequest(

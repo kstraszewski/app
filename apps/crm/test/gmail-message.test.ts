@@ -186,6 +186,40 @@ test('surfaces Gmail authentication failures and Reply-To domain mismatches', ()
   })
 })
 
+test('ignores forged Authentication-Results that are not stamped by Gmail', () => {
+  const forged = message('message-forged-auth', {
+    payload: {
+      mimeType: 'text/plain',
+      headers: [{
+        name: 'Authentication-Results',
+        value: 'attacker.example; spf=pass; dkim=pass; dmarc=pass',
+      }, {
+        name: 'Authentication-Results',
+        value: 'evil.mx.google.com; spf=pass; dkim=pass; dmarc=pass',
+      }],
+    },
+  })
+
+  assert.deepEqual(gmailMessageSecurity(forged), {
+    authentication: 'unknown',
+    replyToMismatch: false,
+  })
+
+  const forgedPassBeforeTrustedFailure = message('message-trusted-auth-failure', {
+    payload: {
+      mimeType: 'text/plain',
+      headers: [{
+        name: 'Authentication-Results',
+        value: 'attacker.example; spf=pass; dkim=pass; dmarc=pass',
+      }, {
+        name: 'Authentication-Results',
+        value: 'mx.google.com; spf=fail; dkim=fail; dmarc=fail',
+      }],
+    },
+  })
+  assert.equal(gmailMessageSecurity(forgedPassBeforeTrustedFailure).authentication, 'fail')
+})
+
 test('removes bidirectional override controls from displayed mail metadata', () => {
   const parsed = gmailMessageDetail(message('message-controls', {
     payload: {

@@ -4241,15 +4241,27 @@ export type Database = {
         Row: {
           account_email: string
           account_id: string
+          auth_type: string
           created_at: string
+          display_name: string | null
           encrypted_access_token: string | null
+          encrypted_credentials: string | null
           encrypted_refresh_token: string | null
           id: string
+          imap_host: string | null
+          imap_port: number | null
+          imap_security: string | null
+          imap_username: string | null
           last_error: string | null
+          last_verified_at: string | null
           organization_id: string
           owner_user_id: string
           provider: string
           scopes: string[]
+          smtp_host: string | null
+          smtp_port: number | null
+          smtp_security: string | null
+          smtp_username: string | null
           status: string
           token_expires_at: string | null
           updated_at: string
@@ -4257,15 +4269,27 @@ export type Database = {
         Insert: {
           account_email: string
           account_id: string
+          auth_type?: string
           created_at?: string
+          display_name?: string | null
           encrypted_access_token?: string | null
+          encrypted_credentials?: string | null
           encrypted_refresh_token?: string | null
           id?: string
+          imap_host?: string | null
+          imap_port?: number | null
+          imap_security?: string | null
+          imap_username?: string | null
           last_error?: string | null
+          last_verified_at?: string | null
           organization_id: string
           owner_user_id: string
           provider?: string
           scopes?: string[]
+          smtp_host?: string | null
+          smtp_port?: number | null
+          smtp_security?: string | null
+          smtp_username?: string | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string
@@ -4273,15 +4297,27 @@ export type Database = {
         Update: {
           account_email?: string
           account_id?: string
+          auth_type?: string
           created_at?: string
+          display_name?: string | null
           encrypted_access_token?: string | null
+          encrypted_credentials?: string | null
           encrypted_refresh_token?: string | null
           id?: string
+          imap_host?: string | null
+          imap_port?: number | null
+          imap_security?: string | null
+          imap_username?: string | null
           last_error?: string | null
+          last_verified_at?: string | null
           organization_id?: string
           owner_user_id?: string
           provider?: string
           scopes?: string[]
+          smtp_host?: string | null
+          smtp_port?: number | null
+          smtp_security?: string | null
+          smtp_username?: string | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string

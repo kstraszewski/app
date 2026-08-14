@@ -324,10 +324,19 @@ export default defineNuxtConfig({
     },
     mailOAuth: {
       encryptionKey: process.env.NUXT_MAIL_OAUTH_ENCRYPTION_KEY || '',
+      // Decrypt-only bridge for credentials written with the historical key.
+      // Never use this value for new ciphertext or connection references.
+      legacyEncryptionKey: process.env.NUXT_MAIL_OAUTH_LEGACY_ENCRYPTION_KEY || '',
       google: {
         clientId: process.env.NUXT_MAIL_OAUTH_GOOGLE_CLIENT_ID || '',
         clientSecret: process.env.NUXT_MAIL_OAUTH_GOOGLE_CLIENT_SECRET || '',
         redirectUri: process.env.NUXT_MAIL_OAUTH_GOOGLE_REDIRECT_URI || '',
+      },
+      microsoft: {
+        clientId: process.env.NUXT_MAIL_OAUTH_MICROSOFT_CLIENT_ID || '',
+        clientSecret: process.env.NUXT_MAIL_OAUTH_MICROSOFT_CLIENT_SECRET || '',
+        redirectUri: process.env.NUXT_MAIL_OAUTH_MICROSOFT_REDIRECT_URI || '',
+        tenant: process.env.NUXT_MAIL_OAUTH_MICROSOFT_TENANT || 'common',
       },
     },
     public: {

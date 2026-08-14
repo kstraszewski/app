@@ -4,8 +4,8 @@ import {
   loadCaseBankApplication,
   loadCaseContractSelection,
   mortgageApplicationStatus,
+  requireCaseBankApplicationManager,
 } from '~~/server/utils/case-bank-applications'
-import { mortgageSubmissionStatusPatch } from '~~/server/utils/case-bank-application-status'
 import { assertUuid, requireCrmCase } from '~~/server/utils/case-documents'
 import {
   asRecord,
@@ -32,20 +32,31 @@ export default defineEventHandler(async (event) => {
 
   const body = asRecord(await readBody(event))
   assertSupportedFields(body, ['status_code', 'notes'])
-  const statusCode = mortgageApplicationStatus(body.status_code)
 
   const current = await loadCaseBankApplication(session, caseId, applicationId)
   if (!current) {
     throw createError({ statusCode: 404, statusMessage: 'Bank application not found' })
   }
+  await requireCaseBankApplicationManager(session, caseId, current)
   if (await loadCaseContractSelection(session, caseId)) {
     throw createError({
       statusCode: 409,
       statusMessage: 'A signed credit process cannot be changed',
     })
   }
-  const patch = mortgageSubmissionStatusPatch(current, statusCode)
-  if ('notes' in body) patch.notes = notesValue(body.notes)
+  if ('status_code' in body) {
+    const requestedStatus = mortgageApplicationStatus(body.status_code)
+    if (requestedStatus !== current.status_code) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Status wniosku może zmienić wyłącznie właściwa komenda procesu hipotecznego.',
+      })
+    }
+  }
+  if (!('notes' in body)) {
+    throw createError({ statusCode: 400, statusMessage: 'notes is required' })
+  }
+  const patch = { notes: notesValue(body.notes) }
 
   const { data: updated, error } = await session.dataApi
     .from('crm_item_submissions')
@@ -69,13 +80,12 @@ export default defineEventHandler(async (event) => {
     case_id: caseId,
     case_item_id: String(current.case_item_id),
     submission_id: applicationId,
-    activity_type: 'mortgage_application_status_changed',
-    title: 'Zmieniono status wniosku bankowego',
+    activity_type: 'mortgage_application_notes_changed',
+    title: 'Zmieniono notatkę wniosku bankowego',
     body: typeof patch.notes === 'string' ? patch.notes : undefined,
     payload: {
       application_id: applicationId,
-      previous_status_code: current.status_code,
-      status_code: statusCode,
+      status_code: current.status_code,
     },
   })
 

@@ -88,6 +88,100 @@ export type MortgageApplicationStatus =
   | 'odrzucone'
   | 'wycofane'
 
+export type MortgageProcessStage =
+  | 'pre_application'
+  | 'submitted'
+  | 'awaiting_completeness'
+  | 'under_review'
+  | 'additional_information_requested'
+  | 'decision_received'
+  | 'decision_delivered'
+  | 'agreement_review'
+  | 'ready_for_contract'
+  | 'completed'
+  | 'closed'
+
+export type MortgageProcessStepKey = 'esis' | 'application' | 'completeness' | 'decision' | 'agreement'
+export type MortgageProcessStepStatus = 'missing' | 'pending' | 'complete' | 'expired' | 'not_applicable'
+
+/**
+ * Read model supplied by the mortgage process API. `steps` lets the API expose
+ * compliance-safe artifact state without making the case UI interpret files.
+ */
+export interface MortgageApplicationProcess {
+  stage: MortgageProcessStage
+  revision?: number
+  application_submitted_at?: string | null
+  application_acknowledged_at?: string | null
+  completeness_confirmed_at?: string | null
+  decision_due_at?: string | null
+  deadline_policy_version?: string | null
+  additional_information_requested_at?: string | null
+  decision_received_at?: string | null
+  decision_delivered_at?: string | null
+  decision_outcome?: 'positive' | 'negative' | 'conditional' | null
+  early_decision_consent_granted_count?: number
+  early_decision_consent_required_count?: number
+  early_decision_consent_complete?: boolean
+  closed_at?: string | null
+  recipients?: Array<{
+    client_id: string
+    display_name: string
+  }>
+  steps?: Partial<Record<MortgageProcessStepKey, {
+    status: MortgageProcessStepStatus
+    completed_at?: string | null
+    due_at?: string | null
+    valid_until?: string | null
+    detail?: string | null
+    action_kind?: MortgageNextActionKind | null
+    artifact_id?: string | null
+    delivered_recipient_count?: number
+    required_recipient_count?: number
+  }>>
+}
+
+export type MortgageNextActionResponsibility = 'expert' | 'client' | 'bank'
+export type MortgageNextActionSeverity = 'critical' | 'warning' | 'normal' | 'waiting'
+export type MortgageNextActionKind =
+  | 'add-client'
+  | 'add-offer'
+  | 'add-application'
+  | 'upload-esis'
+  | 'deliver-esis'
+  | 'submit-application'
+  | 'confirm-completeness'
+  | 'record-early-consent'
+  | 'resume-review'
+  | 'upload-decision'
+  | 'deliver-decision'
+  | 'deliver-agreement'
+  | 'review-offer'
+  | 'upload-agreement'
+  | 'review-agreement'
+  | 'complete-application'
+  | 'close-application'
+  | 'open-documents'
+  | 'wait-bank'
+
+export interface MortgageNextAction {
+  id?: string
+  key?: string
+  kind: MortgageNextActionKind
+  title: string
+  description?: string | null
+  responsibility: MortgageNextActionResponsibility
+  severity: MortgageNextActionSeverity
+  due_at?: string | null
+  due_on?: string | null
+  overdue?: boolean
+  blocking?: boolean
+  application_id?: string | null
+  bank_name?: string | null
+  target_view?: 'overview' | 'credit' | 'documents' | string | null
+  target_anchor?: string | null
+}
+
 export interface CaseBankApplication {
   id: string
   submission_id: string
@@ -127,6 +221,8 @@ export interface CaseBankApplication {
   created_by_user_id: string | null
   created_at: string
   updated_at: string
+  mortgage_process?: MortgageApplicationProcess | null
+  next_action?: MortgageNextAction | null
 }
 
 export type DocumentRequirement = SharedDocumentRequirement

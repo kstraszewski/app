@@ -137,6 +137,43 @@ export async function loadCaseBankApplication(
   }
 }
 
+export async function requireCaseBankApplicationManager(
+  session: CrmSession,
+  caseId: string,
+  application: Record<string, unknown>,
+): Promise<void> {
+  if (session.role === 'admin') return
+  const caseItemId = String(application.case_item_id ?? '')
+  const [caseResult, itemResult] = await Promise.all([
+    session.dataApi
+      .from('crm_cases')
+      .select('owner_user_id')
+      .eq('organization_id', session.organizationId)
+      .eq('id', caseId)
+      .maybeSingle(),
+    session.dataApi
+      .from('crm_case_items')
+      .select('owner_user_id')
+      .eq('organization_id', session.organizationId)
+      .eq('case_id', caseId)
+      .eq('id', caseItemId)
+      .maybeSingle(),
+  ])
+  throwDbError(caseResult.error)
+  throwDbError(itemResult.error)
+  if (!caseResult.data || !itemResult.data) {
+    throw createError({ statusCode: 404, statusMessage: 'Bank application not found' })
+  }
+  const canManage = String(caseResult.data.owner_user_id ?? '') === session.userId
+    || String(itemResult.data.owner_user_id ?? '') === session.userId
+  if (!canManage) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Only the case owner or process owner can change this bank application',
+    })
+  }
+}
+
 export async function createDraftCaseBankApplication(
   event: H3Event,
   session: CrmSession,

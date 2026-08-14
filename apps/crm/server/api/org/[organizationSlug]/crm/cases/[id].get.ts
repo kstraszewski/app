@@ -3,6 +3,7 @@ import { caseDocumentPublicSelect } from '~~/server/utils/case-documents'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import { attachSignedPropertyImages, propertyPublicSelect } from '~~/server/utils/case-properties'
 import { getRequiredParam, requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { loadMortgageApplicationReadModels } from '~~/server/utils/mortgage-application-read-model'
 
 type Row = Record<string, any>
 
@@ -262,6 +263,23 @@ export default defineEventHandler(async (event) => {
   const clientById = new Map(((clientsResult.data ?? []) as Row[]).map(client => [String(client.id), client]))
   const bankById = new Map(((banksResult.data ?? []) as Row[]).map(bank => [String(bank.id), bank]))
   const submissionById = new Map(((submissionsResult.data ?? []) as Row[]).map(submission => [String(submission.id), submission]))
+  const offerById = new Map(offers.map(offer => [String(offer.id), offer]))
+  const mortgageReadModels = await loadMortgageApplicationReadModels(
+    session,
+    id,
+    bankApplications.map(application => ({
+      id: String(application.submission_id),
+      bankName: String(offerById.get(String(application.offer_id))?.bank_name ?? 'Bank'),
+    })),
+    clientIds,
+    Object.fromEntries(((clientsResult.data ?? []) as Row[]).map(client => [
+      String(client.id),
+      String(client.display_name || 'Wnioskodawca'),
+    ])),
+    contractSelectionResult.data?.application_id
+      ? String(contractSelectionResult.data.application_id)
+      : null,
+  )
   const profileById = new Map(((profilesResult.data ?? []) as Row[]).flatMap((membership) => {
     const user = singleRelation<Row>(membership.user)
     return user ? [[String(membership.user_id), user] as const] : []
@@ -330,6 +348,10 @@ export default defineEventHandler(async (event) => {
               notes: submission.notes ?? null,
               metadata: submission.metadata ?? {},
               updated_at: String(submission.updated_at),
+              ...(mortgageReadModels.get(String(application.submission_id)) ?? {
+                mortgage_process: null,
+                next_action: null,
+              }),
             }]
           : []
       }),

@@ -23,6 +23,10 @@ const migrationNames = [
   '0044_allow_xlsx_mortgage_document_templates.sql',
   '0045_client_portal_account_management.sql',
   '0046_verified_portal_booking.sql',
+  '0047_organization_intermediary_settings.sql',
+  '0048_client_legal_document_deliveries.sql',
+  '0049_mortgage_application_process.sql',
+  '0050_document_storage_cleanup_outbox.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -117,6 +121,19 @@ async function applyMigrations(databaseUrl, migrations) {
     for (const migration of migrations) {
       await client.query('BEGIN')
       try {
+        const ownerRole = await client.query(
+          "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
+        )
+        if (ownerRole.rows[0]?.can_set_owner_role !== true) {
+          throw new Error('Production migration connection cannot assume openexpert_owner')
+        }
+
+        await client.query('SET LOCAL ROLE openexpert_owner')
+        const activeRole = await client.query('SELECT current_user AS migration_role')
+        if (activeRole.rows[0]?.migration_role !== 'openexpert_owner') {
+          throw new Error('Production migration did not assume openexpert_owner')
+        }
+
         await client.query("SET LOCAL lock_timeout = '15s'")
         await client.query("SET LOCAL statement_timeout = '180s'")
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [MIGRATION_LOCK])

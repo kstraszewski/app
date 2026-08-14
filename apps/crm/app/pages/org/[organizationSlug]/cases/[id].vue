@@ -6,6 +6,7 @@ import type {
   CaseFiltersResponse,
   CaseProperty,
   DocumentRequirement,
+  MortgageNextActionKind,
   SavedCaseOffer,
 } from '~/types/cases'
 import type { MultiformCrmContext } from '~/types/multiform'
@@ -18,6 +19,10 @@ import {
   calculatePropertyOfferComparison,
   getFinancingComparisonBaseline,
 } from '~/utils/mortgage-property-comparison'
+import {
+  mortgageActionLabel,
+  resolveCaseMortgageNextAction,
+} from '~/utils/mortgage-case-process'
 import {
   applicableDocumentRequirements,
   documentRequirementIsRequired,
@@ -209,6 +214,9 @@ const delegationSubmitError = ref('')
 const delegationSubmitted = ref(false)
 const updatingDelegatedTaskId = ref('')
 const delegationIdempotencyKey = ref('')
+const mortgageActionOpen = ref(false)
+const mortgageActionKind = ref<MortgageNextActionKind | null>(null)
+const mortgageActionApplicationId = ref<string | null>(null)
 const renameForm = reactive<RenameForm>({ title: '' })
 const clientsForm = reactive<ClientsForm>({ client_ids: [] })
 
@@ -241,6 +249,25 @@ const focusedApplication = computed(() => (
 const activeOffer = computed(() => (
   data.value.data.offers.find(offer => offer.id === focusedApplication.value?.offer_id)
   ?? null
+))
+
+const mortgageNextAction = computed(() => resolveCaseMortgageNextAction(data.value.data))
+const hasMortgageProcess = computed(() => (
+  data.value.data.bank_applications.length > 0
+  || data.value.data.offers.length > 0
+  || data.value.data.items.some(item => item.product_type?.code === 'credit_mortgage')
+))
+
+const mortgageActionApplication = computed(() => (
+  data.value.data.bank_applications.find(application => (
+    application.id === mortgageActionApplicationId.value
+  )) ?? null
+))
+
+const mortgageActionOffer = computed(() => (
+  data.value.data.offers.find(offer => (
+    offer.id === mortgageActionApplication.value?.offer_id
+  )) ?? null
 ))
 
 const contractApplication = computed(() => (
@@ -304,6 +331,29 @@ function queryUuid(value: unknown) {
 const focusedTaskId = computed(() => queryUuid(route.query.task))
 const focusedDocumentId = computed(() => queryUuid(route.query.document))
 const focusedApplicationId = computed(() => queryUuid(route.query.application))
+const mortgageActionKinds = new Set<MortgageNextActionKind>([
+  'upload-esis',
+  'deliver-esis',
+  'submit-application',
+  'confirm-completeness',
+  'record-early-consent',
+  'resume-review',
+  'upload-decision',
+  'deliver-decision',
+  'upload-agreement',
+  'deliver-agreement',
+  'review-offer',
+  'review-agreement',
+  'complete-application',
+  'close-application',
+  'open-documents',
+])
+const deepLinkedMortgageAction = computed<MortgageNextActionKind | null>(() => {
+  const value = Array.isArray(route.query.action) ? route.query.action[0] : route.query.action
+  return typeof value === 'string' && mortgageActionKinds.has(value as MortgageNextActionKind)
+    ? value as MortgageNextActionKind
+    : null
+})
 
 watch(
   [currentView, focusedTaskId, focusedDocumentId, pending, delegatedTasksPending],
@@ -323,6 +373,20 @@ watch(
       document.getElementById(`case-${view === 'documents' ? 'document' : 'task'}-${recordId}`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
+  },
+  { immediate: true, flush: 'post' },
+)
+
+watch(
+  [focusedApplicationId, deepLinkedMortgageAction, pending],
+  async ([applicationId, action, casePending]) => {
+    if (!import.meta.client || casePending || !applicationId || !action) return
+    if (!data.value.data.bank_applications.some(application => application.id === applicationId)) return
+    await nextTick()
+    await openMortgageAction({ applicationId, kind: action })
+    const query = { ...route.query }
+    delete query.action
+    await router.replace({ query })
   },
   { immediate: true, flush: 'post' },
 )
@@ -813,24 +877,38 @@ function openInsurance(type: 'insurance_life' | 'insurance_property') {
   insuranceOpen.value = true
 }
 
-async function openNextStep(): Promise<void> {
-  if (!data.value.data.clients.length) {
+async function openMortgageAction(payload: { applicationId: string | null, kind: MortgageNextActionKind }): Promise<void> {
+  if (payload.kind === 'add-client') {
     openClients()
     return
   }
-  if (!data.value.data.offers.length) {
+  if (payload.kind === 'add-offer') {
     await router.push({ path: orgPath('/calculator/mortgages'), query: { caseId: caseId.value } })
     return
   }
-  if (!data.value.data.bank_applications.length) {
+  if (payload.kind === 'add-application') {
     await goToView('credit', '#case-bank-applications')
     return
   }
-  if (requiredDocumentProgress.value.verified < requiredDocumentProgress.value.total) {
+  if (payload.kind === 'review-offer' || payload.kind === 'review-agreement' || payload.kind === 'wait-bank') {
+    await goToView('credit', '#case-bank-applications')
+    return
+  }
+  if (!payload.applicationId) {
     await goToView('documents', '#case-documents')
     return
   }
-  await goToView('documents', '#case-applications')
+
+  mortgageActionApplicationId.value = payload.applicationId
+  mortgageActionKind.value = payload.kind
+  mortgageActionOpen.value = true
+}
+
+async function openNextStep(): Promise<void> {
+  await openMortgageAction({
+    applicationId: mortgageNextAction.value.application_id ?? null,
+    kind: mortgageNextAction.value.kind,
+  })
 }
 
 const commandActions = {
@@ -1088,7 +1166,7 @@ watch(
         Deleguj zadanie
       </UButton>
       <UButton
-        v-if="currentView !== 'messages'"
+        v-if="currentView !== 'messages' && hasMortgageProcess"
         class="case-next-action"
         color="neutral"
         variant="solid"
@@ -1096,7 +1174,7 @@ watch(
         trailing-icon="i-lucide-arrow-right"
         @click="openNextStep"
       >
-        Otwórz następny krok
+        {{ mortgageActionLabel(mortgageNextAction.kind) }}
       </UButton>
       <UDropdownMenu
         v-if="currentView !== 'messages'"
@@ -1165,6 +1243,12 @@ watch(
     </div>
 
     <div v-else-if="currentView === 'overview'" class="case-overview-stack">
+      <CaseMortgageProcessOverview
+        v-if="hasMortgageProcess"
+        :case-data="data.data"
+        @open-action="openMortgageAction"
+      />
+
       <CaseProcessesOverview
         :case-data="data.data"
         :current-user-id="data.current_user_id"
@@ -1198,6 +1282,7 @@ watch(
       <div id="case-bank-applications">
         <CaseBankApplications
           :case-data="data.data"
+          :focused-application-id="focusedApplicationId"
           @refresh="refresh()"
           @open-documents="goToView('documents', '#case-documents')"
         />
@@ -1270,6 +1355,7 @@ watch(
               </div>
               <UBadge
                 v-if="applicationForOffer(offer)?.id === data.data.contract_application_id"
+                class="offer-heading__badge"
                 color="success"
                 variant="solid"
                 size="xs"
@@ -1278,17 +1364,19 @@ watch(
               </UBadge>
               <UBadge
                 v-else-if="applicationForOffer(offer)"
+                class="offer-heading__badge"
                 color="primary"
                 variant="subtle"
                 size="xs"
               >
                 Wniosek {{ applicationForOffer(offer)?.slot }}/3
               </UBadge>
-              <UBadge v-else color="neutral" variant="subtle" size="xs">
+              <UBadge v-else class="offer-heading__badge" color="neutral" variant="subtle" size="xs">
                 Shortlista
               </UBadge>
               <UBadge
                 v-if="offer.calculation_status === 'partial'"
+                class="offer-heading__badge"
                 color="warning"
                 variant="subtle"
                 size="xs"
@@ -1617,6 +1705,17 @@ watch(
       :type="selectedInsuranceType"
       :existing-item="activeInsuranceItem"
       @saved="refresh()"
+    />
+
+    <CaseMortgageActionSlideover
+      v-if="mortgageActionOpen"
+      v-model:open="mortgageActionOpen"
+      :case-id="data.data.id"
+      :application="mortgageActionApplication"
+      :offer="mortgageActionOffer"
+      :clients="data.data.clients"
+      :action-kind="mortgageActionKind"
+      @refresh="refresh()"
     />
 
     <CaseTaskDelegationModal
@@ -2111,7 +2210,7 @@ watch(
   min-width: 0;
 }
 
-.offer-heading > .badge {
+.offer-heading__badge {
   flex: 0 0 auto;
 }
 

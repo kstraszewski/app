@@ -9,6 +9,7 @@ import { isMortgageOfferApplicationReady } from '~/utils/mortgage-offer-readines
 
 const props = defineProps<{
   caseData: CaseDetail
+  focusedApplicationId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -21,23 +22,11 @@ const toast = useToast()
 const candidateOfferId = ref('')
 const adding = ref(false)
 const focusingId = ref('')
-const changingStatusId = ref('')
 const removingId = ref('')
 const signingId = ref('')
 const draftToRemove = ref<CaseBankApplication | null>(null)
 const contractToSign = ref<CaseBankApplication | null>(null)
 
-const statusItems = [
-  { label: 'Przygotowanie', value: 'draft' },
-  { label: 'Wysłany do banku', value: 'wyslane' },
-  { label: 'Analiza banku', value: 'w_analizie' },
-  { label: 'Braki do uzupełnienia', value: 'braki' },
-  { label: 'Decyzja pozytywna', value: 'zaakceptowane' },
-  { label: 'Decyzja negatywna', value: 'odrzucone' },
-  { label: 'Wycofany', value: 'wycofane' },
-] satisfies Array<{ label: string, value: MortgageApplicationStatus }>
-
-const statusValues = new Set<MortgageApplicationStatus>(statusItems.map(item => item.value))
 const applicationBankIds = computed(() => new Set(props.caseData.bank_applications.map(application => application.bank_id)))
 const availableOffers = computed(() => props.caseData.offers.filter(offer => (
   Boolean(offer.bank_id)
@@ -120,13 +109,19 @@ function confirmContractSigning(application: CaseBankApplication) {
   contractToSign.value = application
 }
 
+function canSelectFinalContract(application: CaseBankApplication) {
+  return !props.caseData.contract_application_id
+    && application.status_code === 'zaakceptowane'
+    && application.mortgage_process?.stage === 'ready_for_contract'
+}
+
 async function addApplication() {
   if (!canCreateApplication.value || adding.value || props.caseData.bank_applications.length >= 3) return
   const offer = props.caseData.offers.find(item => item.id === candidateOfferId.value)
   if (!offer) return
   adding.value = true
   try {
-    await $fetch(crmApiPath(`/cases/${props.caseData.id}/applications`), {
+    await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/applications`), {
       method: 'POST',
       body: {
         offer_id: offer.id,
@@ -157,7 +152,7 @@ async function focusApplication(application: CaseBankApplication) {
   focusingId.value = application.id
   try {
     if (props.caseData.selected_offer_id !== application.offer_id) {
-      await $fetch(crmApiPath(`/cases/${props.caseData.id}/offers/selection`), {
+      await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/offers/selection`), {
         method: 'PUT',
         body: { offer_id: application.offer_id },
       })
@@ -177,32 +172,12 @@ async function focusApplication(application: CaseBankApplication) {
   }
 }
 
-async function updateStatus(application: CaseBankApplication, value: unknown) {
-  const status = String(value) as MortgageApplicationStatus
-  if (!statusValues.has(status) || status === application.status_code || changingStatusId.value) return
-  changingStatusId.value = application.id
-  try {
-    await $fetch(crmApiPath(`/cases/${props.caseData.id}/applications/${application.id}`), {
-      method: 'PATCH',
-      body: { status_code: status },
-    })
-    emit('refresh')
-    toast.add({ title: 'Zmieniono status wniosku', description: applicationStatus(status).label, color: 'success' })
-  }
-  catch (error) {
-    toast.add({ title: 'Nie udało się zmienić statusu', description: apiErrorMessage(error), color: 'error' })
-  }
-  finally {
-    changingStatusId.value = ''
-  }
-}
-
 async function removeDraft() {
   const application = draftToRemove.value
   if (!application || removingId.value) return
   removingId.value = application.id
   try {
-    await $fetch(crmApiPath(`/cases/${props.caseData.id}/applications/${application.id}`), { method: 'DELETE' })
+    await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/applications/${application.id}`), { method: 'DELETE' })
     draftToRemove.value = null
     emit('refresh')
     toast.add({ title: 'Usunięto roboczy wniosek', color: 'success' })
@@ -221,7 +196,7 @@ async function signContract() {
   const offer = offerFor(application)
   signingId.value = application.id
   try {
-    await $fetch(crmApiPath(`/cases/${props.caseData.id}/applications/final`), {
+    await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/applications/final`), {
       method: 'PUT',
       body: { application_id: application.id },
     })
@@ -274,6 +249,7 @@ async function signContract() {
         class="bank-application"
         :class="{
           'bank-application--focused': application.offer_id === caseData.selected_offer_id,
+          'bank-application--deep-linked': application.id === focusedApplicationId,
           'bank-application--contract': application.id === caseData.contract_application_id,
         }"
         :data-application-id="application.id"
@@ -322,18 +298,6 @@ async function signContract() {
 
         <p class="bank-application__property"><UIcon name="i-lucide-house" />{{ propertyLabel(application) }}</p>
 
-        <UFormField v-if="!caseData.contract_application_id" label="Status procesu" size="xs">
-          <USelect
-            :model-value="application.status_code"
-            :items="statusItems"
-            value-key="value"
-            class="w-full"
-            :loading="changingStatusId === application.id"
-            :disabled="Boolean(changingStatusId)"
-            @update:model-value="updateStatus(application, $event)"
-          />
-        </UFormField>
-
         <div class="bank-application__actions">
           <UButton
             color="neutral"
@@ -347,14 +311,14 @@ async function signContract() {
             Dokumenty
           </UButton>
           <UButton
-            v-if="!caseData.contract_application_id && application.status_code === 'zaakceptowane'"
+            v-if="canSelectFinalContract(application)"
             color="success"
             variant="soft"
             size="sm"
             icon="i-lucide-file-signature"
             @click="confirmContractSigning(application)"
           >
-            Podpisz umowę
+            Wybierz umowę finalną
           </UButton>
           <UButton
             v-if="!caseData.contract_application_id && application.status_code === 'draft'"
@@ -473,6 +437,7 @@ async function signContract() {
 .bank-applications__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .bank-application { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-bg); }
 .bank-application--focused { border-color: color-mix(in srgb, var(--ui-primary) 58%, var(--ui-border)); box-shadow: inset 3px 0 var(--ui-primary); }
+.bank-application--deep-linked { border-color: color-mix(in srgb, var(--ui-warning) 70%, var(--ui-border)); box-shadow: inset 3px 0 var(--ui-warning), 0 0 0 2px color-mix(in srgb, var(--ui-warning) 16%, transparent); }
 .bank-application--contract { border-color: color-mix(in srgb, var(--ui-success) 68%, var(--ui-border)); background: color-mix(in srgb, var(--ui-success) 5%, var(--ui-bg)); box-shadow: inset 3px 0 var(--ui-success); }
 .bank-applications__topline { justify-content: space-between; gap: 8px; }
 .bank-applications__topline > span:first-child { color: var(--ui-text-muted); font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; }

@@ -3,6 +3,7 @@ import { createError } from 'h3'
 import {
   loadCaseBankApplication,
   loadCaseContractSelection,
+  requireCaseBankApplicationManager,
 } from '~~/server/utils/case-bank-applications'
 import { assertUuid, requireCrmCase } from '~~/server/utils/case-documents'
 import {
@@ -11,6 +12,7 @@ import {
   requireCrmSession,
   throwDbError,
 } from '~~/server/utils/crm'
+import { loadMortgageApplicationComplianceSnapshot } from '~~/server/utils/mortgage-application-process'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
@@ -23,6 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!application) {
     throw createError({ statusCode: 404, statusMessage: 'Bank application not found' })
   }
+  await requireCaseBankApplicationManager(session, caseId, application)
 
   const contract = await loadCaseContractSelection(session, caseId)
   if (contract?.application_id === applicationId) {
@@ -34,6 +37,13 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Only a draft bank application can be deleted; withdraw a submitted application instead',
     })
   }
+  const compliance = await loadMortgageApplicationComplianceSnapshot(session, caseId, applicationId)
+  if (compliance.revision > 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Wniosek ma już audytowalną historię. Zamknij ścieżkę zamiast ją usuwać.',
+    })
+  }
 
   const { data: focused, error: focusError } = await session.dataApi
     .from('crm_case_offer_selections')
@@ -43,6 +53,24 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   throwDbError(focusError)
   const wasFocused = String(focused?.offer_id ?? '') === String(application.offer_id)
+
+  // crm_documents cascades from the submission. Delete mortgage documents
+  // first through the authenticated manager client so the database can both
+  // enforce its manager guard and transactionally enqueue each private object
+  // for durable Storage cleanup. The server-only parent delete below must not
+  // become an authorization bypass for those document rows.
+  const mortgageDocumentCleanup = await session.dataApi
+    .from('crm_documents')
+    .delete()
+    .eq('organization_id', session.organizationId)
+    .eq('case_id', caseId)
+    .eq('submission_id', applicationId)
+    .in('document_type', [
+      'mortgage_esis',
+      'mortgage_credit_decision',
+      'mortgage_draft_credit_agreement',
+    ])
+  throwDbError(mortgageDocumentCleanup.error)
 
   // Mortgage-application history cannot be deleted through the browser's
   // Data API. The database permits this server-only path for draft rows after

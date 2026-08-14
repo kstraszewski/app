@@ -138,7 +138,7 @@ const businessStage = computed(() => {
 })
 
 const attentionItems = computed(() => {
-  const items: Array<{
+  const entries: Array<{
     key: string
     title: string
     detail: string
@@ -147,53 +147,45 @@ const attentionItems = computed(() => {
   }> = []
 
   if (unverifiedDocumentCount.value > 0) {
-    items.push({
+    entries.push({
       key: 'documents',
       title: `Zweryfikuj ${unverifiedDocumentCount.value} ${unverifiedDocumentCount.value === 1 ? 'dokument' : 'dokumenty'}`,
-      detail: nearestTask.value?.due_at ? `Termin: ${shortDate.format(new Date(nearestTask.value.due_at))}` : 'Dokumenty są załączone, ale jeszcze niezweryfikowane',
+      detail: nearestTask.value?.due_at ? `Termin: ${shortDate.format(new Date(nearestTask.value.due_at))}` : 'Dokumenty czekają na weryfikację',
       icon: 'i-lucide-file-check-2',
       action: props.actions.goDocuments,
     })
   }
 
   if (!finalApplication.value && !bankApplications.value.length) {
-    items.push({
+    entries.push({
       key: 'applications',
       title: offers.value.length ? 'Dodaj banki do wniosków' : 'Zbuduj shortlistę banków',
-      detail: offers.value.length
-        ? 'Możesz złożyć do trzech wniosków równolegle'
-        : 'Zapisz oferty, które chcesz porównać',
+      detail: offers.value.length ? 'Możesz prowadzić do trzech ścieżek równolegle' : 'Wybierz oferty do porównania',
       icon: 'i-lucide-files',
       action: props.actions.addOffer,
     })
   }
 
-  items.push({
+  entries.push({
     key: 'multiform',
     title: props.multiformBlockers.length ? 'Dokończ mapowanie PDF' : 'Sprawdź gotowość Multiwniosku',
-    detail: props.multiformPending
-      ? 'Sprawdzamy szablony formularzy'
-      : props.multiformBlockers[0] ?? 'Wniosek kredytowy',
+    detail: props.multiformPending ? 'Sprawdzamy szablony formularzy' : props.multiformBlockers[0] ?? 'Wniosek kredytowy',
     icon: 'i-lucide-file-input',
     action: props.actions.goMultiform,
   })
 
   if (!activeProperty.value) {
     const hasCandidates = properties.value.length > 0
-    items.push({
+    entries.push({
       key: 'property',
       title: hasCandidates ? 'Opcjonalnie wybierz nieruchomość' : 'Opcjonalnie dodaj nieruchomość',
-      detail: hasCandidates
-        ? `${properties.value.length} ${properties.value.length === 1 ? 'nieruchomość czeka' : 'nieruchomości czekają'} na wybór`
-        : propertyScenarioValue.value
-          ? `${currency.format(propertyScenarioValue.value)} ze scenariusza oferty · nie blokuje wniosku`
-          : 'Nie blokuje przygotowania checklisty ani formularzy',
+      detail: 'Nie blokuje przygotowania dokumentów',
       icon: 'i-lucide-house',
       action: hasCandidates ? scrollToPropertyCandidates : props.actions.addProperty,
     })
   }
 
-  return items.slice(0, 3)
+  return entries.slice(0, 3)
 })
 
 function money(value: number | null | undefined) {
@@ -842,7 +834,7 @@ function activityIcon(type: string) {
       </div>
 
       <aside class="command-sidebar" aria-label="Skrót sprawy">
-        <section class="command-side-panel">
+        <section v-if="!bankApplications.length" class="command-side-panel">
           <header><h2>Co teraz</h2></header>
           <div class="attention-list">
             <button v-for="(item, index) in attentionItems" :key="item.key" type="button" @click="item.action()">

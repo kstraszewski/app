@@ -8,6 +8,7 @@ import {
 } from 'h3'
 import { asRecord } from '~~/server/utils/crm'
 import { drainClientLegalDocumentDeliveries } from '~~/server/utils/client-legal-document-deliveries'
+import { drainCrmDocumentStorageCleanups } from '~~/server/utils/crm-document-storage-cleanup'
 import { drainNotificationDeliveryJobs } from '~~/server/utils/notifications'
 
 interface NotificationRuntimeConfig {
@@ -51,7 +52,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const runId = randomUUID()
-  const [notificationResult, legalDocumentResult] = await Promise.all([
+  const [notificationResult, legalDocumentResult, documentStorageResult] = await Promise.all([
     drainNotificationDeliveryJobs(
       event,
       `crm-notifications:${runId}`,
@@ -62,16 +63,29 @@ export default defineEventHandler(async (event) => {
       `crm-client-legal-documents:${runId}`,
       Math.min(limit, 10),
     ),
+    drainCrmDocumentStorageCleanups(
+      event,
+      `crm-document-storage:${runId}`,
+      Math.min(limit, 25),
+    ),
   ])
   return {
     data: {
-      claimed: notificationResult.claimed + legalDocumentResult.claimed,
-      completed: notificationResult.completed + legalDocumentResult.completed,
+      claimed: notificationResult.claimed
+        + legalDocumentResult.claimed
+        + documentStorageResult.claimed,
+      completed: notificationResult.completed
+        + legalDocumentResult.completed
+        + documentStorageResult.completed
+        + documentStorageResult.retained,
       delivered: notificationResult.delivered + legalDocumentResult.delivered,
-      failed: notificationResult.failed + legalDocumentResult.failed,
+      failed: notificationResult.failed
+        + legalDocumentResult.failed
+        + documentStorageResult.failed,
       blocked: legalDocumentResult.blocked,
       notifications: notificationResult,
       legalDocuments: legalDocumentResult,
+      documentStorage: documentStorageResult,
     },
   }
 })

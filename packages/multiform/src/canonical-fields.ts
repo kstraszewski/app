@@ -2006,7 +2006,7 @@ const DOMAIN_FIELDS = [
     type: 'boolean',
     group: 'application',
     question: 'Czy zgadzasz się na przekazanie decyzji kredytowej przed 21. dniem?',
-    semanticDescription: 'Zgoda na przekazanie decyzji kredytowej przed upływem 21 dni od złożenia wniosku.',
+    semanticDescription: 'Zgoda na przekazanie decyzji kredytowej przed upływem 21 dni od otrzymania przez bank kompletnego wniosku, czyli kompletu danych i dokumentów wymaganych do oceny zdolności kredytowej.',
     semanticRole: 'application.consent.earlyDecision',
     aliases: ['decyzja przed 21 dniem'],
     exclude: [],

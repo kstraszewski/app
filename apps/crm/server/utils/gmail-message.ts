@@ -273,15 +273,12 @@ function threadParticipants(
   accountEmail: string,
 ): MailAddress[] {
   const normalizedAccountEmail = accountEmail.trim().toLowerCase()
-  const senders = uniqueAddresses(messages.flatMap(message => (
-    parseMailAddresses(messageHeader(message, 'from'))
-  ))).filter(address => address.email !== normalizedAccountEmail)
-
-  if (senders.length) return senders
-
-  return uniqueAddresses(messages.flatMap(message => (
-    parseMailAddresses(messageHeader(message, 'to'))
-  ))).filter(address => address.email !== normalizedAccountEmail)
+  return uniqueAddresses(messages.flatMap(message => [
+    ...parseMailAddresses(messageHeader(message, 'from')),
+    ...parseMailAddresses(messageHeader(message, 'to')),
+    ...parseMailAddresses(messageHeader(message, 'cc')),
+    ...parseMailAddresses(messageHeader(message, 'bcc')),
+  ])).filter(address => address.email !== normalizedAccountEmail)
 }
 
 function uniqueAddresses(addresses: MailAddress[]): MailAddress[] {

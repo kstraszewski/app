@@ -37,6 +37,10 @@ export interface GmailSendRequestHashInput {
   body: string
   threadId: string
   attachments: GmailSendAttachment[]
+  context?: {
+    type: 'client' | 'case'
+    id: string
+  }
 }
 
 export function gmailSendRequestHash(input: GmailSendRequestHashInput): string {
@@ -53,6 +57,7 @@ export function gmailSendRequestHash(input: GmailSendRequestHashInput): string {
     subject: input.subject,
     body: input.body,
     threadId: input.threadId,
+    ...(input.context ? { context: input.context } : {}),
     attachments,
   }), 'utf8').digest('hex')
 }

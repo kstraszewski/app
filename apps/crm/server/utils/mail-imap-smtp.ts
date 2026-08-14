@@ -493,6 +493,17 @@ export function createImapSmtpAdapter(
       return loadMessagePage({ ...input, query })
     },
 
+    async searchMessagesByParticipants(input: {
+      mailbox: string
+      participantEmails: string[]
+      offset?: number
+      pageSize?: number
+      flaggedOnly?: boolean
+    }): Promise<ImapMessagePage> {
+      const participantEmails = normalizeParticipantEmails(input.participantEmails)
+      return loadMessagePage({ ...input, participantEmails })
+    },
+
     getMessageDetail,
 
     async getThreadDetail(reference: string): Promise<MailThreadDetail> {
@@ -717,6 +728,7 @@ export function createImapSmtpAdapter(
   async function loadMessagePage(input: {
     mailbox: string
     query?: string
+    participantEmails?: string[]
     offset?: number
     pageSize?: number
     flaggedOnly?: boolean
@@ -735,11 +747,18 @@ export function createImapSmtpAdapter(
         let range: string | number[] | null = null
         let resultSizeEstimate = 0
         let nextOffset: number | null = null
-        if (input.query || input.flaggedOnly) {
+        if (input.query || input.participantEmails?.length || input.flaggedOnly) {
           const uidNext = Math.max(1, Number(client.mailbox && client.mailbox.uidNext) || 1)
           const firstSearchUid = Math.max(1, uidNext - MAX_SEARCH_UID_WINDOW)
+          const participantCriteria = input.participantEmails?.flatMap(email => [
+            { from: email },
+            { to: email },
+            { cc: email },
+            { bcc: email },
+          ])
           const found = await client.search({
             ...(input.query ? { text: input.query } : {}),
+            ...(participantCriteria?.length ? { or: participantCriteria } : {}),
             ...(input.flaggedOnly ? { flagged: true } : {}),
             uid: `${firstSearchUid}:*`,
           }, { uid: true })
@@ -864,14 +883,21 @@ export async function fetchImapSmtpThreadPage(
   input: {
     folder: MailFolderId
     query?: string
+    participantEmails?: string[]
     pageToken?: string
     maxResults?: number
   },
 ): Promise<MailThreadListPayload> {
   const adapter = runtimeAdapter(config)
   const folder = normalizeProviderFolder(input.folder)
+  const participantEmails = normalizeParticipantEmails(input.participantEmails ?? [])
   const queryValue = String(input.query ?? '').trim()
-  const query = queryValue ? normalizeSearchQuery(queryValue) : ''
+  if (queryValue && participantEmails.length) {
+    throw new TypeError('Nie można łączyć typów wyszukiwania IMAP.')
+  }
+  const query = participantEmails.length
+    ? participantSearchBinding(participantEmails)
+    : queryValue ? normalizeSearchQuery(queryValue) : ''
   const requestedPageSize = boundedInteger(
     input.maxResults,
     DEFAULT_PAGE_SIZE,
@@ -914,20 +940,28 @@ export async function fetchImapSmtpThreadPage(
     pageSize = cursor.pageSize
   }
 
-  const page = query
-    ? await adapter.searchMessages({
+  const page = participantEmails.length
+    ? await adapter.searchMessagesByParticipants({
         mailbox: selected.path,
-        query,
+        participantEmails,
         offset,
         pageSize,
         flaggedOnly,
       })
-    : await adapter.listMessages({
-        mailbox: selected.path,
-        offset,
-        pageSize,
-        flaggedOnly,
-      })
+    : query
+      ? await adapter.searchMessages({
+          mailbox: selected.path,
+          query,
+          offset,
+          pageSize,
+          flaggedOnly,
+        })
+      : await adapter.listMessages({
+          mailbox: selected.path,
+          offset,
+          pageSize,
+          flaggedOnly,
+        })
   return {
     data: page.data,
     folders,
@@ -1300,6 +1334,19 @@ function normalizeSearchQuery(value: string): string {
   return query
 }
 
+function normalizeParticipantEmails(values: string[]): string[] {
+  if (!Array.isArray(values) || values.length > 12) {
+    throw new ImapSmtpConfigurationError('Lista uczestników wyszukiwania jest nieprawidłowa.')
+  }
+  return [...new Set(values.map(value => normalizeEmail(value, 'Uczestnik').toLowerCase()))]
+}
+
+function participantSearchBinding(emails: string[]): string {
+  return `context-participants:${createHash('sha256')
+    .update(emails.join('\0'), 'utf8')
+    .digest('hex')}`
+}
+
 function normalizeMessageReference(input: ImapMessageReference): ImapMessageReference {
   const mailbox = normalizeMailbox(input.mailbox)
   const uidValidity = String(input.uidValidity ?? '')
@@ -1599,12 +1646,12 @@ function parsedAddresses(value: any): MailAddress[] {
 
 function summaryParticipants(envelope: any, accountEmail: string): MailAddress[] {
   const account = accountEmail.toLowerCase()
-  const from = parsedAddresses(envelope.from)
-    .filter(address => address.email?.toLowerCase() !== account)
-  return from.length
-    ? uniqueAddresses(from)
-    : uniqueAddresses(parsedAddresses(envelope.to)
-        .filter(address => address.email?.toLowerCase() !== account))
+  return uniqueAddresses([
+    ...parsedAddresses(envelope.from),
+    ...parsedAddresses(envelope.to),
+    ...parsedAddresses(envelope.cc),
+    ...parsedAddresses(envelope.bcc),
+  ].filter(address => address.email?.toLowerCase() !== account))
 }
 
 function uniqueAddresses(values: MailAddress[]): MailAddress[] {

@@ -24,6 +24,39 @@ const MAX_COOKIE_HEADER_BYTES = 32 * 1024
 const MAX_COOKIE_PARTS_TO_SCAN = 128
 const MAX_FLOW_COOKIE_NAMES_TO_RETURN = 16
 
+export function safeMailOAuthReturnTo(
+  value: string | undefined,
+  organizationSlug: string,
+): string {
+  const organizationPrefix = `/org/${encodeURIComponent(organizationSlug)}`
+  const defaultReturnTo = `${organizationPrefix}/mail`
+  if (!value || !isBoundedLocalReturnTo(value)) return defaultReturnTo
+  try {
+    const base = new URL('https://openexpert.invalid')
+    const parsed = new URL(value, base)
+    if (parsed.origin !== base.origin) return defaultReturnTo
+    if (parsed.pathname === defaultReturnTo) {
+      return `${parsed.pathname}${parsed.search}`
+    }
+    const escapedPrefix = organizationPrefix.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const contextualPath = new RegExp(
+      `^${escapedPrefix}/(?:clients|cases)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
+      'iu',
+    )
+    if (
+      contextualPath.test(parsed.pathname)
+      && parsed.searchParams.getAll('view').length === 1
+      && parsed.searchParams.get('view') === 'mail'
+    ) {
+      return `${parsed.pathname}?view=mail`
+    }
+    return defaultReturnTo
+  }
+  catch {
+    return defaultReturnTo
+  }
+}
+
 export function mailOAuthCookieName(state: string): string {
   if (!OAUTH_STATE_PATTERN.test(state)) {
     throw new TypeError('Mail OAuth state is invalid')

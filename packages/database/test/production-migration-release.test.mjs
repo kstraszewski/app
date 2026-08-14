@@ -17,6 +17,7 @@ const releaseTail = [
   '0050_document_storage_cleanup_outbox.sql',
   '0051_mortgage_application_strict_lifecycle.sql',
   '0052_multi_provider_mail_connections.sql',
+  '0053_mail_context_thread_links.sql',
 ]
 
 test('production migration dry-run includes the ordered release tail', () => {

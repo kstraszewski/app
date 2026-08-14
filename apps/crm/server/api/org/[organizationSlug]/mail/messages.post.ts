@@ -1,6 +1,8 @@
+import { scheduleOpenExpertBackgroundTask } from '@openexpert/auth/server'
 import {
   createError,
   getHeader,
+  type H3Event,
 } from 'h3'
 import type { MailSendPayload } from '../../../../../shared/types/mail.ts'
 import type { ImapSmtpSendResult } from '~~/server/utils/mail-imap-smtp'
@@ -45,6 +47,12 @@ import {
   sendGmailMessage,
 } from '~~/server/utils/mail-providers'
 import { connectionReferenceSecret } from '~~/server/utils/mail-thread-page'
+import {
+  resolveMailContextScope,
+  upsertMailContextThreadLink,
+  type ResolvedMailContext,
+} from '~~/server/utils/mail-context'
+import { parseMailContextScope } from '~~/server/utils/mail-context-core'
 
 // Vercel Functions reject request bodies above 4.5 MB before the handler runs.
 // Keep the complete multipart envelope at 4 MiB and reserve enough headroom for
@@ -108,7 +116,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (!parts) {
     throw createError({ statusCode: 400, statusMessage: 'Wymagany jest formularz wiadomości.' })
   }
-  if (parts.length > MAX_ATTACHMENTS + 9) {
+  if (parts.length > MAX_ATTACHMENTS + 11) {
     throw createError({ statusCode: 400, statusMessage: 'Formularz zawiera zbyt wiele pól.' })
   }
 
@@ -124,6 +132,21 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (connection.status === 'revoked') {
     throw reconnectError(connection)
   }
+
+  const contextType = multipartText(parts, 'contextType')
+  const contextId = multipartText(parts, 'contextId')
+  if (Boolean(contextType) !== Boolean(contextId)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Kontekst wiadomości jest niekompletny.',
+    })
+  }
+  const mailContext = contextType && contextId
+    ? await resolveMailContextScope(
+        session,
+        parseMailContextScope({ type: contextType, id: contextId }),
+      )
+    : null
 
   const idempotencyKey = multipartText(parts, 'idempotencyKey').toLowerCase()
   if (
@@ -232,6 +255,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       body,
       threadId,
       attachments,
+      context: mailContext?.scope,
     })
     const claim = await claimRateLimitedMailSendRequest(
       event,
@@ -242,13 +266,22 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       requestHash,
     )
     if (!claim.claimed) {
+      const existing = await resolveExistingSendRequest(
+        backendData,
+        claim.row,
+        runtime,
+        connection,
+      )
+      scheduleSentContextLink(
+        event,
+        backendData,
+        session,
+        connection,
+        mailContext,
+        existing.threadId,
+      )
       return {
-        data: await resolveExistingSendRequest(
-          backendData,
-          claim.row,
-          runtime,
-          connection,
-        ),
+        data: existing,
       }
     }
     claimedRequest = claim.row
@@ -303,6 +336,14 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         // Delivery is durable; a cosmetic connection status must not turn it into a retry.
       }
     }
+    scheduleSentContextLink(
+      event,
+      backendData,
+      session,
+      connection,
+      mailContext,
+      sent.threadId,
+    )
     return { data: sent }
   }
   catch (error) {
@@ -349,6 +390,32 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     throw error
   }
 })
+
+function scheduleSentContextLink(
+  event: H3Event,
+  backendData: any,
+  session: Awaited<ReturnType<typeof requireCrmSession>>,
+  connection: MailConnectionRow,
+  context: ResolvedMailContext | null,
+  threadReference: string,
+): void {
+  if (!context) return
+  try {
+    const task = upsertMailContextThreadLink(backendData, session, {
+      connectionId: connection.id,
+      provider: connection.provider,
+      referenceSecret: connectionReferenceSecret(event, connection),
+      scope: context.scope,
+      threadReference,
+      linkSource: 'sent_from_context',
+    }).catch(() => undefined)
+    scheduleOpenExpertBackgroundTask(task, event.waitUntil.bind(event))
+  }
+  catch {
+    // Delivery is already durable. Context-link scheduling must never turn a
+    // successful send (or idempotent replay) into a delivery error.
+  }
+}
 
 async function providerRuntime(
   event: Parameters<typeof imapSmtpRuntimeForConnection>[0],

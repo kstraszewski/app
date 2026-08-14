@@ -16,6 +16,7 @@ import {
   mailOAuthFlowSecretContext,
   mailOAuthStateFromCookieName,
   MAX_ACTIVE_MAIL_OAUTH_FLOWS,
+  safeMailOAuthReturnTo,
   validatedMailOAuthFlow,
 } from '../server/utils/mail-oauth-flow.ts'
 import {
@@ -173,6 +174,32 @@ test('uses independent bounded state-keyed OAuth cookies for parallel tabs', () 
   }).join('; ')
   assert.equal(mailOAuthCookieNames(header).length, 16)
   assert.deepEqual(mailOAuthCookieNames(`${cookieA}=one; ${cookieB}=two`), [cookieA, cookieB])
+})
+
+test('keeps OAuth inside the current organization mail context', () => {
+  const clientId = '7dce3174-3c4a-4468-b599-6160ba65a699'
+  const caseId = '58f147b8-62c1-4c0b-81a8-e0d2bafed903'
+
+  assert.equal(
+    safeMailOAuthReturnTo(`/org/openexpert-local/clients/${clientId}?view=mail&ignored=1`, 'openexpert-local'),
+    `/org/openexpert-local/clients/${clientId}?view=mail`,
+  )
+  assert.equal(
+    safeMailOAuthReturnTo(`/org/openexpert-local/cases/${caseId}?view=mail`, 'openexpert-local'),
+    `/org/openexpert-local/cases/${caseId}?view=mail`,
+  )
+  assert.equal(
+    safeMailOAuthReturnTo('/org/openexpert-local/mail?folder=sent', 'openexpert-local'),
+    '/org/openexpert-local/mail?folder=sent',
+  )
+  assert.equal(
+    safeMailOAuthReturnTo(`/org/other/cases/${caseId}?view=mail`, 'openexpert-local'),
+    '/org/openexpert-local/mail',
+  )
+  assert.equal(
+    safeMailOAuthReturnTo('https://evil.example/steal', 'openexpert-local'),
+    '/org/openexpert-local/mail',
+  )
 })
 
 test('validates OAuth state, owner and bounded flow fields independently per provider', () => {

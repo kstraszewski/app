@@ -17,6 +17,7 @@ import {
   mailOAuthPkce,
   mailOAuthState,
 } from '~~/server/utils/mail-providers'
+import { safeMailOAuthReturnTo } from '~~/server/utils/mail-oauth-flow'
 import { setPrivateMailResponseHeaders } from '~~/server/utils/mail-http'
 
 type OAuthMailProvider = Extract<MailProviderId, 'google' | 'microsoft'>
@@ -30,10 +31,9 @@ export default defineEventHandler(async (event) => {
 
   const session = await requireCrmSession(event)
   const query = getQuery(event)
-  const defaultReturnTo = `/org/${encodeURIComponent(session.organizationSlug)}/mail`
-  const returnTo = safeReturnTo(
+  const returnTo = safeMailOAuthReturnTo(
     textValue(query.returnTo),
-    defaultReturnTo,
+    session.organizationSlug,
   )
   const replacementConnectionId = textValue(query.connectionId)
   const connection = replacementConnectionId
@@ -83,22 +83,4 @@ async function microsoftAuthorizationUrl(
     codeChallenge,
     loginHint,
   )
-}
-
-function safeReturnTo(value: string | undefined, defaultReturnTo: string): string {
-  if (!value) return defaultReturnTo
-  try {
-    const base = new URL('https://openexpert.invalid')
-    const parsed = new URL(value, base)
-    if (
-      parsed.origin !== base.origin
-      || parsed.pathname !== defaultReturnTo
-    ) {
-      return defaultReturnTo
-    }
-    return `${parsed.pathname}${parsed.search}`
-  }
-  catch {
-    return defaultReturnTo
-  }
 }

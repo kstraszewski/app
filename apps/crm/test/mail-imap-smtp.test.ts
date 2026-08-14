@@ -619,6 +619,56 @@ test('returns provider-neutral folders and a connection-bound opaque STARRED cur
   )
 })
 
+test('uses IMAP address fields with OR for contextual participant search', async () => {
+  const searches: unknown[] = []
+  const runtime: ImapSmtpAdapterRuntime = {
+    resolveEndpoint: async kind => resolved(kind),
+    createImapClient: () => {
+      const client: any = {
+        mailbox: false,
+        connect: async () => {},
+        logout: async () => {},
+        close: () => {},
+        list: async () => [{
+          path: 'INBOX',
+          name: 'Odebrane',
+          specialUse: '\\Inbox',
+          status: { messages: 0, unseen: 0 },
+        }],
+        getMailboxLock: async () => {
+          client.mailbox = { exists: 0, uidValidity: 1n, uidNext: 1 }
+          return { release: () => {} }
+        },
+        search: async (query: unknown) => {
+          searches.push(query)
+          return []
+        },
+        fetch: async function* () {},
+      }
+      return client as ImapClientLike
+    },
+  }
+
+  await fetchImapSmtpThreadPage(runtimeConfig(runtime), {
+    folder: 'INBOX',
+    participantEmails: ['client@example.com', 'partner@example.com'],
+  })
+
+  assert.deepEqual(searches, [{
+    or: [
+      { from: 'client@example.com' },
+      { to: 'client@example.com' },
+      { cc: 'client@example.com' },
+      { bcc: 'client@example.com' },
+      { from: 'partner@example.com' },
+      { to: 'partner@example.com' },
+      { cc: 'partner@example.com' },
+      { bcc: 'partner@example.com' },
+    ],
+    uid: '1:*',
+  }])
+})
+
 test('recognizes conservative Polish and English folder names only when SPECIAL-USE is absent', async () => {
   const runtime: ImapSmtpAdapterRuntime = {
     resolveEndpoint: async kind => resolved(kind),

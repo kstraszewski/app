@@ -18,6 +18,7 @@ import {
   safeImapSmtpError,
 } from './mail-imap-errors.ts'
 import { fetchGmailThreadPage } from './mail-providers.ts'
+import { mailContextSearchQuery } from './mail-context-core.ts'
 
 export async function loadMailThreadPage(
   event: H3Event,
@@ -25,6 +26,7 @@ export async function loadMailThreadPage(
     connectionId: string
     folder: MailFolderId
     search?: string
+    participantEmails?: string[]
     pageToken?: string
   },
 ): Promise<MailThreadListPayload> {
@@ -59,6 +61,7 @@ async function fetchProviderPage(
   input: {
     folder: MailFolderId
     search?: string
+    participantEmails?: string[]
     pageToken?: string
   },
 ): Promise<MailThreadListPayload> {
@@ -69,6 +72,7 @@ async function fetchProviderPage(
       {
         folder: input.folder,
         query: input.search,
+        participantEmails: input.participantEmails,
         pageToken: input.pageToken,
         maxResults: 20,
       },
@@ -79,7 +83,9 @@ async function fetchProviderPage(
   if (connection.provider === 'google') {
     return fetchGmailThreadPage(accessToken, connection.account_email, {
       folder: input.folder,
-      query: input.search,
+      query: input.participantEmails?.length
+        ? mailContextSearchQuery('google', input.participantEmails)
+        : input.search,
       pageToken: input.pageToken,
       maxResults: 20,
     })
@@ -91,7 +97,9 @@ async function fetchProviderPage(
     connection.account_email,
     {
       folder: input.folder,
-      query: input.search,
+      query: input.participantEmails?.length
+        ? mailContextSearchQuery('microsoft', input.participantEmails)
+        : input.search,
       cursor: input.pageToken,
       maxResults: 20,
       referenceSecret: connectionReferenceSecret(event, connection),

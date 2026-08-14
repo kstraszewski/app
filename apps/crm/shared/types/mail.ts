@@ -116,6 +116,54 @@ export interface MailThreadListPayload {
   partialFailureCount: number
 }
 
+export type MailContextScopeType = 'client' | 'case'
+
+export interface MailContextScope {
+  type: MailContextScopeType
+  id: string
+}
+
+export type MailContextMatchReason =
+  | 'manual_link'
+  | 'sent_from_context'
+  | 'participant_email'
+  | null
+
+export interface MailContextDescriptor extends MailContextScope {
+  label: string
+  /** Server-resolved CRM addresses suitable for a contextual composer. */
+  composeTo: string[]
+  emailCount: number
+  emailsTruncated: boolean
+}
+
+export type MailContextFolderId = Extract<MailFolderId, 'INBOX' | 'SENT'>
+
+export type MailContextPageTokens = Partial<Record<MailContextFolderId, string | null>>
+
+export interface MailContextThreadSummary extends MailThreadSummary {
+  connectionId: string
+  folders: MailContextFolderId[]
+  linked: boolean
+  suggested: boolean
+  matchReason: MailContextMatchReason
+  matchedEmails: string[]
+}
+
+export interface MailContextThreadListPayload {
+  context: MailContextDescriptor
+  data: MailContextThreadSummary[]
+  nextPageTokens: Record<MailContextFolderId, string | null>
+  resultSizeEstimate: number
+  partialFailureCount: number
+}
+
+export interface MailContextLinkPayload {
+  data: {
+    linked: boolean
+  }
+}
+
 export interface MailThreadDetailPayload {
   data: MailThreadDetail
 }

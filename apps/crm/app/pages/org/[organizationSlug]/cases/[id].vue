@@ -312,7 +312,7 @@ const delegationCurrentUserId = computed(() => (
   || null
 ))
 
-const validViews = ['overview', 'messages', 'credit', 'documents', 'delegations', 'history'] as const
+const validViews = ['overview', 'messages', 'mail', 'credit', 'documents', 'delegations', 'history'] as const
 type CaseView = typeof validViews[number]
 const currentView = computed<CaseView>(() => {
   const value = String(route.query.view ?? 'overview')
@@ -393,7 +393,8 @@ watch(
 
 const caseTabs = computed(() => [
   { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
-  { label: 'Wiadomości', icon: 'i-lucide-messages-square', to: viewLocation('messages') },
+  { label: 'Czat z klientem', icon: 'i-lucide-messages-square', to: viewLocation('messages') },
+  { label: 'Poczta e-mail', icon: 'i-lucide-mail', to: viewLocation('mail') },
   { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
   { label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length, to: viewLocation('documents') },
   { label: 'Delegacje', icon: 'i-lucide-send', count: delegatedTasks.value.length, to: viewLocation('delegations') },
@@ -1138,7 +1139,7 @@ watch(
 <template>
   <CrmShell
     :title="data.data.title || 'Sprawa'"
-    :workspace="currentView === 'messages'"
+    :workspace="currentView === 'messages' || currentView === 'mail'"
     eyebrow="Karta sprawy"
     description="Klienci, nieruchomości, oferty, dokumenty i historia procesu w jednym miejscu."
     :back-to="orgPath('/cases')"
@@ -1156,7 +1157,7 @@ watch(
     </template>
     <template #actions>
       <UButton
-        v-if="currentView !== 'messages'"
+        v-if="currentView !== 'messages' && currentView !== 'mail'"
         color="neutral"
         variant="outline"
         size="lg"
@@ -1166,7 +1167,7 @@ watch(
         Deleguj zadanie
       </UButton>
       <UButton
-        v-if="currentView !== 'messages' && hasMortgageProcess"
+        v-if="currentView !== 'messages' && currentView !== 'mail' && hasMortgageProcess"
         class="case-next-action"
         color="neutral"
         variant="solid"
@@ -1177,7 +1178,7 @@ watch(
         {{ mortgageActionLabel(mortgageNextAction.kind) }}
       </UButton>
       <UDropdownMenu
-        v-if="currentView !== 'messages'"
+        v-if="currentView !== 'messages' && currentView !== 'mail'"
         :items="headerMenuItems"
         :content="{ align: 'end' }"
       >
@@ -1275,6 +1276,17 @@ watch(
         :case-id="data.data.id"
         :case-title="data.data.title || 'Sprawa'"
         surface="pane"
+      />
+    </div>
+
+    <div
+      v-else-if="currentView === 'mail'"
+      class="case-mail-workspace"
+    >
+      <MailWorkspace
+        scope-type="case"
+        :scope-id="data.data.id"
+        embedded
       />
     </div>
 
@@ -1864,7 +1876,8 @@ watch(
   margin-bottom: 16px;
 }
 
-.case-messages-workspace {
+.case-messages-workspace,
+.case-mail-workspace {
   display: grid;
   min-width: 0;
   min-height: 0;

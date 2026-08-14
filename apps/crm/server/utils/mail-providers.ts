@@ -283,7 +283,7 @@ export async function fetchGmailThreadPage(
     .filter(Boolean)
   const threadResults = await mapWithConcurrencySettled(threadIds, 3, async (threadId) => {
     const metadataQuery = new URLSearchParams({ format: 'metadata' })
-    for (const header of ['From', 'To', 'Subject', 'Date']) {
+    for (const header of ['From', 'To', 'Cc', 'Bcc', 'Subject', 'Date']) {
       metadataQuery.append('metadataHeaders', header)
     }
     return providerJson<GmailThreadResource>(

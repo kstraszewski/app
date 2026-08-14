@@ -37,9 +37,11 @@ const props = withDefaults(defineProps<{
   connectionsPath: string
   initialProvider?: MailProviderId | null
   reconnectConnection?: MailConnectionInfo | null
+  returnTo?: string
 }>(), {
   initialProvider: null,
   reconnectConnection: null,
+  returnTo: '',
 })
 
 const emit = defineEmits<{
@@ -307,6 +309,15 @@ function providerConnectPath(provider: MailProviderOption): string | null {
   try {
     const url = new URL(provider.connectPath, window.location.origin)
     if (url.origin !== window.location.origin) return null
+    const returnTo = props.returnTo.trim()
+    if (
+      returnTo.startsWith('/')
+      && !returnTo.startsWith('//')
+      && returnTo.length <= 1_024
+      && !/[\\\u0000-\u001F\u007F]/u.test(returnTo)
+    ) {
+      url.searchParams.set('returnTo', returnTo)
+    }
     if (
       props.reconnectConnection
       && props.reconnectConnection.provider === provider.id

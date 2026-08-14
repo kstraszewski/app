@@ -27,6 +27,8 @@ const props = withDefaults(defineProps<{
   initialCc?: string
   initialSubject?: string
   threadId?: string
+  contextType?: 'client' | 'case'
+  contextId?: string
 }>(), {
   initialTo: '',
   initialCc: '',
@@ -219,6 +221,10 @@ async function sendMessage(): Promise<void> {
     body.append('subject', form.subject.trim())
     body.append('body', form.body)
     if (props.threadId) body.append('threadId', props.threadId)
+    if (props.contextType && props.contextId) {
+      body.append('contextType', props.contextType)
+      body.append('contextId', props.contextId)
+    }
     for (const attachment of attachments.value) {
       body.append('attachment', attachment, attachment.name)
     }
@@ -270,6 +276,9 @@ async function composerFingerprint(): Promise<string> {
       ),
     })),
   )
+  const context = props.contextType && props.contextId
+    ? { type: props.contextType, id: props.contextId }
+    : null
   return JSON.stringify({
     to: normalizeRecipients(form.to),
     cc: normalizeRecipients(form.cc),
@@ -278,6 +287,7 @@ async function composerFingerprint(): Promise<string> {
     body: form.body,
     connectionId: props.connectionId,
     threadId: props.threadId,
+    context,
     attachments: attachmentFingerprints,
   })
 }

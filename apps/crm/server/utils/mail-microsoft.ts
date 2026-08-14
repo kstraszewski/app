@@ -46,6 +46,7 @@ const GRAPH_LIST_FIELDS = [
   'from',
   'toRecipients',
   'ccRecipients',
+  'bccRecipients',
   'receivedDateTime',
   'sentDateTime',
   'createdDateTime',
@@ -1683,14 +1684,11 @@ function microsoftThreadParticipants(
   accountEmail: string,
 ): MailAddress[] {
   const normalizedAccount = normalizeEmail(accountEmail)
-  const senders = uniqueAddresses(messages
-    .map(message => microsoftAddress(message.from))
-    .filter((address): address is MailAddress => Boolean(address)))
-    .filter(address => address.email !== normalizedAccount)
-  if (senders.length) return senders
   return uniqueAddresses(messages.flatMap(message => [
+    ...(microsoftAddress(message.from) ? [microsoftAddress(message.from)!] : []),
     ...microsoftAddresses(message.toRecipients),
     ...microsoftAddresses(message.ccRecipients),
+    ...microsoftAddresses(message.bccRecipients),
   ])).filter(address => address.email !== normalizedAccount)
 }
 

@@ -22,6 +22,7 @@ import {
   sealMicrosoftMailCursor,
   sendMicrosoftMailMessage,
 } from '../server/utils/mail-microsoft.ts'
+import { mailContextSearchQuery } from '../server/utils/mail-context-core.ts'
 
 const CONFIG = {
   clientId: 'personal-sandbox-client-id',
@@ -355,6 +356,31 @@ test('uses Graph message search syntax and prevents combining it with the flagge
       && error.code === 'SEARCH_WITH_FLAG_UNSUPPORTED'
     ),
   )
+})
+
+test('preserves contextual participants KQL inside the Graph search envelope', async (t) => {
+  const contextualQuery = mailContextSearchQuery('microsoft', [
+    'client@example.com',
+    'partner@example.com',
+  ])
+  const calls = mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    if (url.pathname.endsWith('/messages')) {
+      assert.equal(
+        url.searchParams.get('$search'),
+        '"participants:client@example.com OR participants:partner@example.com"',
+      )
+      return jsonResponse({ value: [] })
+    }
+    return jsonResponse({ totalItemCount: 0, unreadItemCount: 0 })
+  })
+
+  await fetchMicrosoftMailThreadPage('token', 'expert@example.com', {
+    folder: 'SENT',
+    query: contextualQuery,
+    referenceSecret: REFERENCE_SECRET,
+  })
+  assert.equal(calls.length, 4)
 })
 
 test('returns inert plain text, bounded headers, security, attachment metadata, and Outlook webLink', async (t) => {

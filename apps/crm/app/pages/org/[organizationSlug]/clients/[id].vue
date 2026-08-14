@@ -94,7 +94,7 @@ const {
 
 useHead(() => ({ title: `${data.value.data.display_name || 'Klient'} — OpenExpert CRM` }))
 
-const validViews = ['overview', 'cases', 'consents', 'privacy', 'appointments', 'history'] as const
+const validViews = ['overview', 'cases', 'mail', 'consents', 'privacy', 'appointments', 'history'] as const
 type ClientView = typeof validViews[number]
 
 const currentView = computed<ClientView>(() => {
@@ -120,6 +120,11 @@ const clientTabs = computed(() => [
     icon: 'i-lucide-briefcase-business',
     count: data.value.summary.cases_count,
     to: viewLocation('cases'),
+  },
+  {
+    label: 'Poczta e-mail',
+    icon: 'i-lucide-mail',
+    to: viewLocation('mail'),
   },
   {
     label: 'Zgody',
@@ -924,6 +929,7 @@ const headerMenuItems = computed(() => [
 <template>
   <CrmShell
     :title="data.data.display_name || 'Klient'"
+    :workspace="currentView === 'mail'"
     eyebrow="Klient · karta CRM"
     description="Relacja, sprawy, zgody, wizyty i pełna historia obsługi w jednym miejscu."
     :back-to="orgPath('/clients')"
@@ -954,16 +960,12 @@ const headerMenuItems = computed(() => [
 
     <template #actions>
       <template v-if="data.data.id">
-        <UButton
+        <MailContextualComposeButton
           v-if="data.data.primary_email"
-          :to="`mailto:${data.data.primary_email}`"
-          color="neutral"
-          variant="outline"
-          size="lg"
-          icon="i-lucide-mail"
-        >
-          Napisz
-        </UButton>
+          :recipient="data.data.primary_email"
+          context-type="client"
+          :context-id="data.data.id"
+        />
         <UButton
           color="neutral"
           variant="solid"
@@ -1274,6 +1276,18 @@ const headerMenuItems = computed(() => [
             <UButton icon="i-lucide-folder-plus" @click="openCreateCase">Utwórz sprawę</UButton>
           </template>
         </OeEmptyState>
+      </section>
+
+      <section
+        v-else-if="currentView === 'mail'"
+        class="client-mail-workspace"
+        aria-label="Poczta e-mail klienta"
+      >
+        <MailWorkspace
+          scope-type="client"
+          :scope-id="data.data.id"
+          embedded
+        />
       </section>
 
       <section v-else-if="currentView === 'consents'" class="client-workspace" aria-labelledby="client-consents-title">
@@ -2128,6 +2142,15 @@ const headerMenuItems = computed(() => [
 .client-overview {
   display: grid;
   gap: 18px;
+}
+
+.client-mail-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .client-metric,

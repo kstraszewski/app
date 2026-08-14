@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import {
   buildGmailSendPayload,
@@ -163,7 +164,22 @@ test('creates deterministic content hashes and Message-ID values for idempotency
     }],
   }
   const first = gmailSendRequestHash(input)
+  const legacyHash = createHash('sha256').update(JSON.stringify({
+    to: ['anna@example.com'],
+    cc: [],
+    bcc: [],
+    subject: 'Dokumenty',
+    body: 'Treść',
+    threadId: '',
+    attachments: [{
+      filename: 'raport.pdf',
+      mimeType: 'application/pdf',
+      size: Buffer.byteLength('plik'),
+      sha256: createHash('sha256').update('plik').digest('hex'),
+    }],
+  }), 'utf8').digest('hex')
   assert.match(first, /^[0-9a-f]{64}$/u)
+  assert.equal(first, legacyHash)
   assert.equal(first, gmailSendRequestHash({
     ...input,
     to: ['anna@example.com'],
@@ -171,6 +187,10 @@ test('creates deterministic content hashes and Message-ID values for idempotency
   assert.notEqual(first, gmailSendRequestHash({
     ...input,
     body: 'Zmieniona treść',
+  }))
+  assert.notEqual(first, gmailSendRequestHash({
+    ...input,
+    context: { type: 'client', id: '7dce3174-3c4a-4468-b599-6160ba65a699' },
   }))
   assert.equal(
     gmailSendMessageId('58f147b8-62c1-4c0b-81a8-e0d2bafed903'),

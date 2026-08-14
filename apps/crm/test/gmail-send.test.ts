@@ -7,6 +7,7 @@ import {
   parseGmailRecipientList,
   type GmailSendMessageInput,
 } from '../server/utils/gmail-send.ts'
+import { gmailBlockedAttachmentExtension } from '../shared/utils/mail-security.ts'
 
 function decodeRaw(raw: string): string {
   return Buffer.from(raw, 'base64url').toString('utf8')
@@ -175,4 +176,10 @@ test('creates deterministic content hashes and Message-ID values for idempotency
     gmailSendMessageId('58f147b8-62c1-4c0b-81a8-e0d2bafed903'),
     '<58f147b8-62c1-4c0b-81a8-e0d2bafed903@mail.openexpert.app>',
   )
+})
+
+test('recognizes executable and script attachments blocked by Gmail', () => {
+  assert.equal(gmailBlockedAttachmentExtension('decyzja.pdf.exe'), 'exe')
+  assert.equal(gmailBlockedAttachmentExtension('skrypt.JS'), 'js')
+  assert.equal(gmailBlockedAttachmentExtension('raport.pdf'), null)
 })

@@ -4,6 +4,7 @@ import type {
   MailConnectionPayload,
   MailFolderId,
   MailFolderSummary,
+  MailMessageSecurity,
   MailSendPayload,
   MailThreadDetailPayload,
   MailThreadListPayload,
@@ -12,7 +13,10 @@ import type {
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Poczta — OpenExpert CRM' })
+useHead({
+  title: 'Poczta — OpenExpert CRM',
+  meta: [{ name: 'referrer', content: 'no-referrer' }],
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +56,7 @@ const emptyThreadPayload = (): MailThreadListPayload => ({
   })),
   nextPageToken: null,
   resultSizeEstimate: 0,
+  partialFailureCount: 0,
 })
 
 function queryText(value: unknown): string {
@@ -68,13 +73,14 @@ const selectedThreadId = computed(() => {
   const value = queryText(route.query.thread)
   return /^[A-Za-z0-9_-]{1,256}$/u.test(value) ? value : ''
 })
-const searchQuery = computed(() => queryText(route.query.q).trim())
+const searchQuery = ref(queryText(route.query.q).trim())
 const searchInput = ref(searchQuery.value)
 const pageToken = ref('')
 const previousPageTokens = ref<string[]>([])
 const disconnectConfirmationOpen = ref(false)
 const disconnecting = ref(false)
 const refreshing = ref(false)
+const lastRefreshedAt = ref<number | null>(null)
 const composerOpen = ref(false)
 const composerKey = ref(0)
 const composerDraft = reactive({
@@ -84,7 +90,7 @@ const composerDraft = reactive({
   threadId: '',
 })
 
-watch(searchQuery, value => {
+watch(searchQuery, (value) => {
   searchInput.value = value
 })
 
@@ -125,10 +131,19 @@ const {
   `mail-threads:${organizationSlug.value}`,
   async () => {
     if (!connectionId.value) return emptyThreadPayload()
+    if (searchQuery.value) {
+      return requestFetch<MailThreadListPayload>(orgApiPath('/mail/threads/search'), {
+        method: 'POST',
+        body: {
+          folder: activeFolder.value,
+          q: searchQuery.value,
+          pageToken: pageToken.value || undefined,
+        },
+      })
+    }
     return requestFetch<MailThreadListPayload>(orgApiPath('/mail/threads'), {
       query: {
         folder: activeFolder.value,
-        q: searchQuery.value || undefined,
         pageToken: pageToken.value || undefined,
       },
     })
@@ -185,7 +200,6 @@ const folderTabs = computed(() => folderConfiguration.map((folder) => {
       path: route.path,
       query: {
         folder: folder.query,
-        ...(searchQuery.value ? { q: searchQuery.value } : {}),
       },
     },
   }
@@ -211,8 +225,42 @@ const resultAnnouncement = computed(() => {
   if (searchQuery.value) return `${count} wyników na tej stronie dla wyszukiwania „${searchQuery.value}”`
   return `${count} wątków na tej stronie folderu ${activeFolderLabel.value}`
 })
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  return new Intl.DateTimeFormat('pl-PL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(lastRefreshedAt.value)
+})
+
+watch(threadsStatus, (status) => {
+  if (status === 'success') lastRefreshedAt.value = Date.now()
+}, { immediate: true })
+
+const AUTO_REFRESH_INTERVAL_MS = 5 * 60_000
+const FOCUS_REFRESH_STALE_MS = 60_000
+let autoRefreshTimer: number | undefined
+
+function refreshWhenVisible(): void {
+  if (
+    document.visibilityState !== 'visible'
+    || refreshing.value
+    || composerOpen.value
+    || !connectionId.value
+  ) return
+  if (
+    lastRefreshedAt.value
+    && Date.now() - lastRefreshedAt.value < FOCUS_REFRESH_STALE_MS
+  ) return
+  void refreshMailbox(false)
+}
 
 onMounted(() => {
+  window.addEventListener('focus', refreshWhenVisible)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+  autoRefreshTimer = window.setInterval(refreshWhenVisible, AUTO_REFRESH_INTERVAL_MS)
+
   const status = queryText(route.query.mailStatus)
   if (status === 'connected') {
     toast.add({
@@ -250,11 +298,18 @@ onMounted(() => {
       icon: 'i-lucide-circle-x',
     })
   }
-  if (status) {
+  if (status || route.query.q !== undefined) {
     const query = { ...route.query }
     delete query.mailStatus
+    delete query.q
     void router.replace({ query })
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', refreshWhenVisible)
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+  if (autoRefreshTimer !== undefined) window.clearInterval(autoRefreshTimer)
 })
 
 function positiveCount(value: number | null | undefined): number | undefined {
@@ -263,11 +318,13 @@ function positiveCount(value: number | null | undefined): number | undefined {
 
 function submitSearch() {
   const q = searchInput.value.trim()
-  void router.push({
+  searchQuery.value = q
+  pageToken.value = ''
+  previousPageTokens.value = []
+  void router.replace({
     path: route.path,
     query: {
       folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query,
-      ...(q ? { q } : {}),
     },
   })
 }
@@ -282,7 +339,6 @@ function selectThread(thread: MailThreadSummary) {
     path: route.path,
     query: {
       folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query,
-      ...(searchQuery.value ? { q: searchQuery.value } : {}),
       thread: thread.id,
     },
   })
@@ -371,24 +427,29 @@ async function handleMessageSent(result: MailSendPayload['data']): Promise<void>
   }
 }
 
-async function refreshMailbox() {
+async function refreshMailbox(showToast = true) {
   if (refreshing.value) return
   refreshing.value = true
   try {
     await refreshConnection()
     await refreshThreads()
     if (selectedThreadId.value) await refreshSelectedThread()
-    toast.add({
-      title: 'Poczta odświeżona',
-      color: 'success',
-      icon: 'i-lucide-refresh-cw',
-    })
+    lastRefreshedAt.value = Date.now()
+    if (showToast) {
+      toast.add({
+        title: 'Poczta odświeżona',
+        color: 'success',
+        icon: 'i-lucide-refresh-cw',
+      })
+    }
   } catch (error) {
-    toast.add({
-      title: 'Nie udało się odświeżyć poczty',
-      description: apiErrorMessage(error),
-      color: 'error',
-    })
+    if (showToast) {
+      toast.add({
+        title: 'Nie udało się odświeżyć poczty',
+        description: apiErrorMessage(error),
+        color: 'error',
+      })
+    }
   } finally {
     refreshing.value = false
   }
@@ -496,6 +557,17 @@ function addressListLabel(
 function senderInitial(value: string): string {
   return value.trim().charAt(0).toLocaleUpperCase('pl') || '?'
 }
+
+function securityWarningDescription(security: MailMessageSecurity): string {
+  const warnings: string[] = []
+  if (security.authentication === 'fail') {
+    warnings.push('Gmail nie potwierdził SPF, DKIM lub DMARC tej wiadomości')
+  }
+  if (security.replyToMismatch) {
+    warnings.push('adres odpowiedzi ma inną domenę niż widoczny nadawca')
+  }
+  return `${warnings.join('; ')}. Zweryfikuj nadawcę przed odpowiedzią lub otwarciem plików.`
+}
 </script>
 
 <template>
@@ -546,7 +618,7 @@ function senderInitial(value: string): string {
         :loading="refreshing"
         aria-label="Odśwież pocztę"
         title="Odśwież pocztę"
-        @click="refreshMailbox"
+        @click="refreshMailbox()"
       />
       <UButton
         v-if="canSend && connectionPayload.provider.connectPath"
@@ -620,6 +692,8 @@ function senderInitial(value: string): string {
           <span><UIcon name="i-lucide-eye" /> Odczyt wiadomości</span>
           <span><UIcon name="i-lucide-send" /> Wysyłanie poczty</span>
           <span><UIcon name="i-lucide-lock-keyhole" /> Szyfrowane tokeny</span>
+          <span><UIcon name="i-lucide-image-off" /> Bez zdalnych obrazów śledzących</span>
+          <span><UIcon name="i-lucide-user-lock" /> Dostęp tylko dla właściciela skrzynki</span>
           <span><UIcon name="i-lucide-unplug" /> Możesz odłączyć konto</span>
         </div>
       </div>
@@ -716,6 +790,9 @@ function senderInitial(value: string): string {
               icon="i-lucide-search"
               placeholder="Szukaj w poczcie"
               aria-label="Szukaj w poczcie Gmail"
+              :maxlength="500"
+              autocomplete="off"
+              :spellcheck="false"
             >
               <template v-if="searchInput" #trailing>
                 <UButton
@@ -739,6 +816,7 @@ function senderInitial(value: string): string {
               <p>{{ activeFolderLabel }}</p>
               <span v-if="searchQuery">Wyniki dla „{{ searchQuery }}”</span>
               <span v-else>Strona {{ currentPageNumber }}</span>
+              <span v-if="lastRefreshedLabel">Odświeżono o {{ lastRefreshedLabel }}</span>
             </div>
             <span aria-live="polite" class="mail-result-count">
               {{ threadPayload.data.length }}
@@ -747,6 +825,16 @@ function senderInitial(value: string): string {
           <ClientOnly>
             <p class="sr-only" aria-live="polite">{{ resultAnnouncement }}</p>
           </ClientOnly>
+
+          <UAlert
+            v-if="threadPayload.partialFailureCount"
+            class="mail-list-warning"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-cloud-alert"
+            title="Niektórych wiadomości nie udało się pobrać"
+            :description="`Pominięto ${threadPayload.partialFailureCount} wątków. Odśwież skrzynkę, aby spróbować ponownie.`"
+          />
 
           <div
             v-if="threadsStatus === 'idle' || threadsStatus === 'pending'"
@@ -974,6 +1062,15 @@ function senderInitial(value: string): string {
                       <UBadge v-if="message.unread" color="primary" variant="subtle" size="xs">
                         Nieprzeczytana
                       </UBadge>
+                      <UBadge
+                        v-if="message.security.authentication === 'pass'"
+                        color="success"
+                        variant="subtle"
+                        size="xs"
+                        title="Wynik SPF, DKIM lub DMARC przekazany przez Gmaila jest poprawny. Nie oznacza to, że treść wiadomości jest bezpieczna."
+                      >
+                        Domena uwierzytelniona
+                      </UBadge>
                     </div>
                     <span v-if="message.from?.email">{{ message.from.email }}</span>
                     <span title="Odbiorcy">
@@ -987,6 +1084,16 @@ function senderInitial(value: string): string {
                     {{ formatMessageDate(message.sentAt) }}
                   </time>
                 </header>
+
+                <UAlert
+                  v-if="message.security.authentication === 'fail' || message.security.replyToMismatch"
+                  class="mail-message__security-warning"
+                  color="warning"
+                  variant="subtle"
+                  icon="i-lucide-shield-alert"
+                  title="Zweryfikuj nadawcę"
+                  :description="securityWarningDescription(message.security)"
+                />
 
                 <div class="mail-message__body">
                   {{ message.bodyText || 'Ta wiadomość nie zawiera tekstu możliwego do wyświetlenia.' }}
@@ -1209,6 +1316,14 @@ function senderInitial(value: string): string {
 .mail-list-summary span {
   color: var(--ui-text-muted);
   font-size: 11px;
+}
+
+.mail-list-summary div > span + span::before {
+  content: ' · ';
+}
+
+.mail-list-warning {
+  margin: 12px;
 }
 
 .mail-result-count {
@@ -1565,7 +1680,12 @@ function senderInitial(value: string): string {
   font-size: 14px;
   line-height: 1.65;
   overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
   white-space: pre-wrap;
+}
+
+.mail-message__security-warning {
+  margin: 16px 20px 0;
 }
 
 .mail-message__truncated {

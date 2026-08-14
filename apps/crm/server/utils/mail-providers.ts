@@ -283,7 +283,7 @@ export async function fetchGmailThreadPage(
   const threadIds = (listing.threads ?? [])
     .map(thread => String(thread.id ?? ''))
     .filter(Boolean)
-  const threads = await mapWithConcurrency(threadIds, 5, async (threadId) => {
+  const threadResults = await mapWithConcurrencySettled(threadIds, 3, async (threadId) => {
     const metadataQuery = new URLSearchParams({ format: 'metadata' })
     for (const header of ['From', 'To', 'Subject', 'Date']) {
       metadataQuery.append('metadataHeaders', header)
@@ -294,14 +294,21 @@ export async function fetchGmailThreadPage(
       'Gmail thread metadata',
     )
   })
+  if (threadIds.length && !threadResults.values.length) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Gmail chwilowo nie zwrócił wiadomości. Spróbuj ponownie.',
+    })
+  }
 
   return {
-    data: threads
+    data: threadResults.values
       .map(thread => gmailThreadSummary(thread, accountEmail))
       .filter(thread => thread.id),
     folders: mailFolderSummaries(labelsResponse.labels ?? []),
     nextPageToken: listing.nextPageToken || null,
     resultSizeEstimate: Math.max(0, Number(listing.resultSizeEstimate) || 0),
+    partialFailureCount: threadResults.failureCount,
   }
 }
 
@@ -601,24 +608,32 @@ function boundedMessageReferences(values: string[]): string[] {
   return selected
 }
 
-async function mapWithConcurrency<T, R>(
+async function mapWithConcurrencySettled<T, R>(
   values: T[],
   concurrency: number,
   task: (value: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(values.length)
+): Promise<{ values: R[]; failureCount: number }> {
+  const results = new Array<R | null>(values.length).fill(null)
+  let failureCount = 0
   let nextIndex = 0
   const workers = Array.from(
     { length: Math.min(concurrency, values.length) },
     async () => {
       let index: number
       while ((index = nextIndex++) < values.length) {
-        results[index] = await task(values[index]!)
+        try {
+          results[index] = await task(values[index]!)
+        } catch {
+          failureCount += 1
+        }
       }
     },
   )
   await Promise.all(workers)
-  return results
+  return {
+    values: results.filter((value): value is R => value !== null),
+    failureCount,
+  }
 }
 
 async function providerJson<T>(
@@ -626,12 +641,45 @@ async function providerJson<T>(
   init: RequestInit,
   operation: string,
 ): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    signal: init.signal ?? AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
+  const method = String(init.method ?? 'GET').toUpperCase()
+  const maxAttempts = method === 'GET' || method === 'HEAD' ? 3 : 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...init,
+        signal: init.signal ?? AbortSignal.timeout(15_000),
+      })
+    } catch {
+      if (attempt + 1 < maxAttempts) {
+        await wait(providerRetryDelay(attempt))
+        continue
+      }
+      throw createError({
+        statusCode: 502,
+        statusMessage: `${operation} could not reach Gmail`,
+      })
+    }
+
+    if (response.ok) {
+      try {
+        return await response.json() as T
+      } catch {
+        throw createError({
+          statusCode: 502,
+          statusMessage: `${operation} returned an invalid response`,
+        })
+      }
+    }
+
     await response.text().catch(() => '')
+    const retryable = response.status === 429 || response.status >= 500
+    if (retryable && attempt + 1 < maxAttempts) {
+      await wait(providerRetryDelay(attempt, response.headers.get('retry-after')))
+      continue
+    }
+
     const statusCode = response.status === 401 || response.status === 403
       ? response.status
       : response.status === 429 ? 503 : 502
@@ -640,5 +688,24 @@ async function providerJson<T>(
       statusMessage: `${operation} failed with HTTP ${response.status}`,
     })
   }
-  return await response.json() as T
+
+  throw createError({ statusCode: 502, statusMessage: `${operation} failed` })
+}
+
+function providerRetryDelay(attempt: number, retryAfter: string | null = null): number {
+  if (retryAfter) {
+    const seconds = Number(retryAfter)
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(10_000, Math.max(1_000, seconds * 1_000))
+    }
+    const date = Date.parse(retryAfter)
+    if (!Number.isNaN(date)) {
+      return Math.min(10_000, Math.max(1_000, date - Date.now()))
+    }
+  }
+  return Math.min(4_000, 1_000 * (2 ** attempt) + Math.floor(Math.random() * 250))
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
 }

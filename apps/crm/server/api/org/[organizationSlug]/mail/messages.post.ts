@@ -1,11 +1,9 @@
 import {
   createError,
   getHeader,
-  getRequestURL,
-  setResponseHeader,
-  type H3Event,
 } from 'h3'
 import type { MailSendPayload } from '../../../../../shared/types/mail.ts'
+import { gmailBlockedAttachmentExtension } from '../../../../../shared/utils/mail-security.ts'
 import { requireCrmSession } from '~~/server/utils/crm'
 import {
   activeMailAccessToken,
@@ -21,6 +19,10 @@ import {
   readBoundedMultipartFormData,
   type MailMultipartPart,
 } from '~~/server/utils/mail-multipart'
+import {
+  requireSameOriginMailRequest,
+  setPrivateMailResponseHeaders,
+} from '~~/server/utils/mail-http'
 import {
   claimMailSendRequest,
   enforceMailSendRateLimit,
@@ -45,7 +47,7 @@ const MAX_BODY_CHARACTERS = 200_000
 const MAX_SUBJECT_CHARACTERS = 500
 
 export default defineEventHandler(async (event): Promise<MailSendPayload> => {
-  setResponseHeader(event, 'cache-control', 'private, no-store')
+  setPrivateMailResponseHeaders(event)
   requireSameOriginMultipartRequest(event)
   const session = await requireCrmSession(event)
   const { backendData, connection } = await requireUserMailConnection(event, session)
@@ -142,8 +144,16 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       })
     }
     attachmentsBytes += part.data.length
+    const filename = safeAttachmentFilename(part.filename, index)
+    const blockedExtension = gmailBlockedAttachmentExtension(filename)
+    if (blockedExtension) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `Gmail blokuje załączniki .${blockedExtension}. Wybierz bezpieczny format pliku.`,
+      })
+    }
     return {
-      filename: safeAttachmentFilename(part.filename, index),
+      filename,
       mimeType: safeAttachmentMimeType(part.type),
       data: part.data,
     }
@@ -345,7 +355,7 @@ async function resolveExistingSendRequest(
   })
 }
 
-function requireSameOriginMultipartRequest(event: H3Event): void {
+function requireSameOriginMultipartRequest(event: Parameters<typeof requireSameOriginMailRequest>[0]): void {
   const contentType = getHeader(event, 'content-type') || ''
   if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
     throw createError({
@@ -353,33 +363,7 @@ function requireSameOriginMultipartRequest(event: H3Event): void {
       statusMessage: 'Wiadomość musi zostać przesłana jako formularz multipart.',
     })
   }
-  const origin = getHeader(event, 'origin')
-  if (!origin) {
-    throw createError({ statusCode: 403, statusMessage: 'Brak nagłówka Origin.' })
-  }
-  const requestUrl = getRequestURL(event)
-  const allowedOrigins = new Set([requestUrl.origin])
-  const forwardedHost = getHeader(event, 'x-forwarded-host')?.split(',')[0]?.trim()
-  const forwardedProto = getHeader(event, 'x-forwarded-proto')?.split(',')[0]?.trim()
-  if (forwardedHost && /^https?$/u.test(forwardedProto || '')) {
-    allowedOrigins.add(`${forwardedProto}://${forwardedHost}`)
-  }
-  let normalizedOrigin = ''
-  try {
-    normalizedOrigin = new URL(origin).origin
-  } catch {
-    // Invalid origins are rejected below.
-  }
-  const fetchSite = getHeader(event, 'sec-fetch-site')
-  if (
-    !allowedOrigins.has(normalizedOrigin)
-    || (fetchSite && fetchSite !== 'same-origin')
-  ) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Żądanie wysyłki pochodzi z niedozwolonej strony.',
-    })
-  }
+  requireSameOriginMailRequest(event)
 }
 
 function multipartValue(

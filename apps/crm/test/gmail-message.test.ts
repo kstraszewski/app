@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   gmailMessageDetail,
+  gmailMessageSecurity,
   gmailThreadDetail,
   gmailThreadSummary,
   parseMailAddresses,
@@ -149,6 +150,77 @@ test('turns HTML fallback into inert readable text', () => {
   assert.match(parsed.bodyText, /Kliknij tutaj/u)
   assert.match(parsed.bodyText, /• Punkt pierwszy/u)
   assert.doesNotMatch(parsed.bodyText, /script|window\.location|<h1|href=/u)
+})
+
+test('surfaces Gmail authentication failures and Reply-To domain mismatches', () => {
+  const suspicious = message('message-security', {
+    payload: {
+      mimeType: 'text/plain',
+      headers: [
+        { name: 'From', value: 'Bank <decyzje@bank.example>' },
+        { name: 'Reply-To', value: 'Odpowiedź <kontakt@lookalike.example>' },
+        {
+          name: 'Authentication-Results',
+          value: 'mx.google.com; spf=fail; dkim=fail; dmarc=fail',
+        },
+      ],
+      body: { data: base64url('Zweryfikuj tę wiadomość.') },
+    },
+  })
+
+  assert.deepEqual(gmailMessageSecurity(suspicious), {
+    authentication: 'fail',
+    replyToMismatch: true,
+  })
+  assert.deepEqual(gmailMessageSecurity(message('message-auth-pass', {
+    payload: {
+      mimeType: 'text/plain',
+      headers: [{
+        name: 'Authentication-Results',
+        value: 'mx.google.com; dkim=pass; dmarc=pass',
+      }],
+    },
+  })), {
+    authentication: 'pass',
+    replyToMismatch: false,
+  })
+})
+
+test('removes bidirectional override controls from displayed mail metadata', () => {
+  const parsed = gmailMessageDetail(message('message-controls', {
+    payload: {
+      mimeType: 'multipart/mixed',
+      headers: [
+        { name: 'From', value: 'Bank\u202Eexe.pdf <bank@example.com>' },
+        { name: 'Subject', value: 'Decyzja\u202Eexe.pdf' },
+      ],
+      parts: [{
+        filename: 'decyzja\u202Eexe.pdf',
+        mimeType: 'application/pdf',
+        body: { attachmentId: 'attachment-controls', size: 100 },
+      }],
+    },
+  }))
+
+  assert.equal(parsed.subject, 'Decyzjaexe.pdf')
+  assert.equal(parsed.from?.label, 'Bankexe.pdf')
+  assert.equal(parsed.attachments[0]?.filename, 'decyzjaexe.pdf')
+})
+
+test('decodes RFC 2047 encoded subjects and sender names', () => {
+  const parsed = gmailMessageDetail(message('message-encoded-headers', {
+    payload: {
+      mimeType: 'text/plain',
+      headers: [
+        { name: 'From', value: '=?UTF-8?Q?Pawe=C5=82_Nowak?= <pawel@example.com>' },
+        { name: 'Subject', value: '=?UTF-8?B?RGVjeXpqYSBrcmVkeXRvd2Eg4oCUIFBLSw==?=' },
+      ],
+      body: { data: base64url('Treść') },
+    },
+  }))
+
+  assert.equal(parsed.from?.label, 'Paweł Nowak')
+  assert.equal(parsed.subject, 'Decyzja kredytowa — PKK')
 })
 
 test('caps long threads and keeps the most recent messages in chronological order', () => {

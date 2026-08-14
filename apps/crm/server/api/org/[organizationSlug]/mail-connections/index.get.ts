@@ -1,4 +1,3 @@
-import { setResponseHeader } from 'h3'
 import type { MailConnectionPayload } from '../../../../../shared/types/mail.ts'
 import { requireCrmSession } from '~~/server/utils/crm'
 import { loadUserMailConnection } from '~~/server/utils/mail-connections'
@@ -6,9 +5,10 @@ import {
   mailProviderAvailability,
   mailTokenIncludesSendAccess,
 } from '~~/server/utils/mail-providers'
+import { setPrivateMailResponseHeaders } from '~~/server/utils/mail-http'
 
 export default defineEventHandler(async (event): Promise<MailConnectionPayload> => {
-  setResponseHeader(event, 'cache-control', 'private, no-store')
+  setPrivateMailResponseHeaders(event)
   const session = await requireCrmSession(event)
   const { connection } = await loadUserMailConnection(event, session)
   const configured = mailProviderAvailability(event)

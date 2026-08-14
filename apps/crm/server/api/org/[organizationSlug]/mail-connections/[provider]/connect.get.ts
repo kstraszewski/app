@@ -15,8 +15,10 @@ import {
   mailOAuthPkce,
   mailOAuthState,
 } from '~~/server/utils/mail-providers'
+import { setPrivateMailResponseHeaders } from '~~/server/utils/mail-http'
 
 export default defineEventHandler(async (event) => {
+  setPrivateMailResponseHeaders(event)
   const provider = getRequiredParam(event, 'provider')
   if (provider !== 'google') {
     throw createError({ statusCode: 404, statusMessage: 'Mail provider not found' })

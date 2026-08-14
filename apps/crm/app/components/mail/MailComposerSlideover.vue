@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FormError, FormErrorEvent, FormSubmitEvent } from '@nuxt/ui'
 import type { MailSendPayload } from '#shared/types/mail'
+import { gmailBlockedAttachmentExtension } from '#shared/utils/mail-security'
 import { apiErrorMessage } from '~/utils/api-error'
 
 interface ComposerForm {
@@ -32,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 const discardConfirmationOpen = ref(false)
+const sendConfirmationOpen = ref(false)
 const sentSuccessfully = ref(false)
 const openModel = computed({
   get: () => props.open,
@@ -60,6 +62,7 @@ const attachments = ref<File[]>([])
 const showCopies = ref(Boolean(props.initialCc))
 const sending = ref(false)
 const sendError = ref('')
+const deliveryAmbiguous = ref(false)
 const idempotencyKey = ref('')
 const lastAttemptFingerprint = ref('')
 const isReply = computed(() => Boolean(props.threadId))
@@ -76,6 +79,13 @@ const attachmentError = computed(() => {
   if (attachmentBytes.value > 16 * 1024 * 1024) {
     return 'Łączny rozmiar załączników nie może przekraczać 16 MB.'
   }
+  const blockedFile = attachments.value.find(file => (
+    gmailBlockedAttachmentExtension(file.name)
+  ))
+  if (blockedFile) {
+    const extension = gmailBlockedAttachmentExtension(blockedFile.name)
+    return `Gmail blokuje załączniki .${extension}. Wybierz bezpieczny format pliku.`
+  }
   return ''
 })
 const hasChanges = computed(() => (
@@ -85,6 +95,23 @@ const hasChanges = computed(() => (
   || form.subject !== props.initialSubject
   || Boolean(form.body)
   || attachments.value.length > 0
+))
+const uniqueRecipientCount = computed(() => new Set(
+  [form.to, form.cc, form.bcc]
+    .flatMap(value => value.split(/[;,\n]+/u))
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean),
+).size)
+const requiresSendConfirmation = computed(() => (
+  attachments.value.length > 0
+  || uniqueRecipientCount.value > 1
+  || Boolean(form.bcc.trim())
+))
+const sendErrorTitle = computed(() => deliveryAmbiguous.value
+  ? 'Nie udało się potwierdzić wysyłki'
+  : 'Nie udało się wysłać wiadomości')
+const gmailSentUrl = computed(() => (
+  `https://mail.google.com/mail/u/${encodeURIComponent(props.accountEmail)}/#sent`
 ))
 
 function validateComposer(state: Partial<ComposerForm>): FormError[] {
@@ -149,10 +176,21 @@ function recipientFieldErrors(
   return recipients
 }
 
-async function sendMessage(_event: FormSubmitEvent<ComposerForm>): Promise<void> {
+async function requestSend(_event: FormSubmitEvent<ComposerForm>): Promise<void> {
   if (sending.value || attachmentError.value) return
+  if (requiresSendConfirmation.value) {
+    sendConfirmationOpen.value = true
+    return
+  }
+  await sendMessage()
+}
+
+async function sendMessage(): Promise<void> {
+  if (sending.value || attachmentError.value) return
+  sendConfirmationOpen.value = false
   sending.value = true
   sendError.value = ''
+  deliveryAmbiguous.value = false
   try {
     const fingerprint = await composerFingerprint()
     if (!idempotencyKey.value || fingerprint !== lastAttemptFingerprint.value) {
@@ -179,9 +217,21 @@ async function sendMessage(_event: FormSubmitEvent<ComposerForm>): Promise<void>
     openModel.value = false
   } catch (error) {
     sendError.value = apiErrorMessage(error)
+    deliveryAmbiguous.value = isDeliveryAmbiguous(error)
   } finally {
     sending.value = false
   }
+}
+
+function isDeliveryAmbiguous(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const payload = error as {
+    data?: { deliveryAmbiguous?: boolean; data?: { deliveryAmbiguous?: boolean } }
+  }
+  return Boolean(
+    payload.data?.deliveryAmbiguous
+    || payload.data?.data?.deliveryAmbiguous,
+  )
 }
 
 async function composerFingerprint(): Promise<string> {
@@ -234,8 +284,18 @@ function closeComposer(): void {
 
 function discardMessage(): void {
   discardConfirmationOpen.value = false
+  sendConfirmationOpen.value = false
   emit('update:open', false)
 }
+
+function preventAccidentalUnload(event: BeforeUnloadEvent): void {
+  if (!props.open || sentSuccessfully.value || !hasChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => window.addEventListener('beforeunload', preventAccidentalUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', preventAccidentalUnload))
 
 async function focusFirstError(event: FormErrorEvent): Promise<void> {
   await nextTick()
@@ -282,9 +342,23 @@ function formatBytes(value: number): string {
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
-          title="Nie udało się potwierdzić wysyłki"
+          :title="sendErrorTitle"
           :description="sendError"
-        />
+        >
+          <template v-if="deliveryAmbiguous" #actions>
+            <UButton
+              :href="gmailSentUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              color="error"
+              variant="soft"
+              size="sm"
+              icon="i-lucide-external-link"
+            >
+              Sprawdź folder Wysłane
+            </UButton>
+          </template>
+        </UAlert>
 
         <UForm
           id="mail-composer-form"
@@ -293,7 +367,7 @@ function formatBytes(value: number): string {
           :validate-on="['blur', 'change']"
           :loading-auto="false"
           class="mail-composer__form"
-          @submit="sendMessage"
+          @submit="requestSend"
           @error="focusFirstError"
         >
           <UFormField
@@ -338,7 +412,11 @@ function formatBytes(value: number): string {
                 :disabled="sending"
               />
             </UFormField>
-            <UFormField name="bcc" label="UDW">
+            <UFormField
+              name="bcc"
+              label="UDW"
+              description="Adresy UDW nie będą widoczne dla pozostałych odbiorców."
+            >
               <UInput
                 v-model="form.bcc"
                 class="w-full"
@@ -378,6 +456,8 @@ function formatBytes(value: number): string {
               :maxlength="200000"
               :disabled="sending"
               placeholder="Napisz wiadomość…"
+              lang="pl"
+              :spellcheck="true"
             />
           </UFormField>
 
@@ -385,7 +465,7 @@ function formatBytes(value: number): string {
             name="attachments"
             label="Załączniki"
             hint="Opcjonalnie"
-            description="Do 10 plików, maks. 10 MB każdy i 16 MB łącznie."
+            description="Do 10 plików, maks. 10 MB każdy i 16 MB łącznie. Gmail blokuje pliki wykonywalne i skrypty."
           >
             <UFileUpload
               v-model="attachments"
@@ -447,6 +527,44 @@ function formatBytes(value: number): string {
       </div>
     </template>
   </USlideover>
+
+  <UModal
+    v-model:open="sendConfirmationOpen"
+    title="Sprawdź odbiorców i załączniki"
+    description="Po wysłaniu nie można cofnąć wiadomości w CRM."
+    :dismissible="!sending"
+    :ui="{ footer: 'justify-end' }"
+  >
+    <template #body>
+      <div class="mail-composer__send-summary">
+        <p>
+          <strong>{{ uniqueRecipientCount }}</strong>
+          {{ uniqueRecipientCount === 1 ? 'odbiorca' : 'odbiorców' }}
+        </p>
+        <p>
+          <strong>{{ attachments.length }}</strong>
+          {{ attachments.length === 1 ? 'załącznik' : 'załączników' }}
+          <template v-if="attachments.length"> · {{ formatBytes(attachmentBytes) }}</template>
+        </p>
+        <UAlert
+          v-if="form.bcc.trim()"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-eye-off"
+          title="Wiadomość zawiera odbiorców UDW"
+          description="Sprawdź, czy ukryta kopia jest zamierzona."
+        />
+      </div>
+    </template>
+    <template #footer="{ close }">
+      <UButton color="neutral" variant="outline" :disabled="sending" @click="close">
+        Wróć do edycji
+      </UButton>
+      <UButton icon="i-lucide-send" :loading="sending" @click="sendMessage">
+        Potwierdź i wyślij
+      </UButton>
+    </template>
+  </UModal>
 
   <UModal
     v-model:open="discardConfirmationOpen"
@@ -547,6 +665,21 @@ function formatBytes(value: number): string {
 .mail-composer__footer > div {
   display: flex;
   gap: 8px;
+}
+
+.mail-composer__send-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.mail-composer__send-summary > p {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+.mail-composer__send-summary strong {
+  color: var(--ui-text-highlighted);
 }
 
 @media (max-width: 640px) {

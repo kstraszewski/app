@@ -57,6 +57,13 @@ export interface MailAttachment {
   size: number
 }
 
+export type MailAuthenticationStatus = 'pass' | 'fail' | 'unknown'
+
+export interface MailMessageSecurity {
+  authentication: MailAuthenticationStatus
+  replyToMismatch: boolean
+}
+
 export interface MailMessageDetail {
   id: string
   from: MailAddress | null
@@ -69,6 +76,7 @@ export interface MailMessageDetail {
   bodyText: string
   bodyTruncated: boolean
   attachments: MailAttachment[]
+  security: MailMessageSecurity
 }
 
 export interface MailThreadDetail {
@@ -84,6 +92,7 @@ export interface MailThreadListPayload {
   folders: MailFolderSummary[]
   nextPageToken: string | null
   resultSizeEstimate: number
+  partialFailureCount: number
 }
 
 export interface MailThreadDetailPayload {

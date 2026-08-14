@@ -10,8 +10,14 @@ import {
   decryptMailSecret,
   revokeMailOAuthToken,
 } from '~~/server/utils/mail-providers'
+import {
+  requireSameOriginMailRequest,
+  setPrivateMailResponseHeaders,
+} from '~~/server/utils/mail-http'
 
 export default defineEventHandler(async (event) => {
+  setPrivateMailResponseHeaders(event)
+  requireSameOriginMailRequest(event)
   const session = await requireCrmSession(event)
   const connectionId = getRequiredParam(event, 'connectionId')
   const { backendData, connection } = await loadUserMailConnection(event, session)

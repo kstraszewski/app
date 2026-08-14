@@ -2,10 +2,12 @@ import { TextDecoder } from 'node:util'
 import type {
   MailAddress,
   MailAttachment,
+  MailMessageSecurity,
   MailMessageDetail,
   MailThreadDetail,
   MailThreadSummary,
 } from '../../shared/types/mail.ts'
+import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
 
 export interface GmailHeader {
   name?: string
@@ -60,7 +62,7 @@ export function gmailThreadSummary(
     messageCount: messages.length,
     participants,
     participantsLabel: participantLabel(participants),
-    subject: messageHeader(latest, 'subject') || messageHeader(messages[0], 'subject') || '(bez tematu)',
+    subject: displayHeader(latest, 'subject') || displayHeader(messages[0], 'subject') || '(bez tematu)',
     snippet: normalizeSnippet(latest?.snippet || thread.snippet || ''),
     latestAt: messageDate(latest),
     unread: labels.has('UNREAD'),
@@ -97,7 +99,7 @@ export function gmailThreadDetail(
   })
 
   const subject = messages.at(-1)?.subject
-    || messageHeader(allMessages.at(-1), 'subject')
+    || displayHeader(allMessages.at(-1), 'subject')
     || '(bez tematu)'
 
   return {
@@ -129,19 +131,68 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
     replyTo: parseMailAddresses(messageHeader(message, 'reply-to')),
     to: parseMailAddresses(messageHeader(message, 'to')),
     cc: parseMailAddresses(messageHeader(message, 'cc')),
-    subject: messageHeader(message, 'subject') || '(bez tematu)',
+    subject: displayHeader(message, 'subject') || '(bez tematu)',
     sentAt: messageDate(message),
     unread: (message.labelIds ?? []).includes('UNREAD'),
     bodyText,
     bodyTruncated,
     attachments: collectAttachments(message.payload),
+    security: gmailMessageSecurity(message),
+  }
+}
+
+export function gmailMessageSecurity(message: GmailMessageResource): MailMessageSecurity {
+  const results = headerValues(message.payload?.headers, 'authentication-results')
+    .join(' ')
+    .toLowerCase()
+  const statusByMechanism = new Map<string, string>()
+  for (const match of results.matchAll(/\b(spf|dkim|dmarc)=([a-z_-]+)/gu)) {
+    const mechanism = match[1]
+    const status = match[2]
+    if (mechanism && status && !statusByMechanism.has(mechanism)) {
+      statusByMechanism.set(mechanism, status)
+    }
+  }
+
+  const dmarc = statusByMechanism.get('dmarc')
+  const spf = statusByMechanism.get('spf')
+  const dkim = statusByMechanism.get('dkim')
+  const authentication = dmarc === 'pass'
+    ? 'pass'
+    : dmarc === 'fail'
+      ? 'fail'
+      : spf === 'pass' || dkim === 'pass'
+        ? 'pass'
+        : [spf, dkim].some(value => (
+            value === 'fail'
+            || value === 'softfail'
+            || value === 'permerror'
+          ))
+          ? 'fail'
+          : 'unknown'
+
+  const fromDomain = addressDomain(
+    parseMailAddresses(messageHeader(message, 'from'))[0]?.email,
+  )
+  const replyToDomains = parseMailAddresses(messageHeader(message, 'reply-to'))
+    .map(address => addressDomain(address.email))
+    .filter(Boolean)
+
+  return {
+    authentication,
+    replyToMismatch: Boolean(
+      fromDomain
+      && replyToDomains.length
+      && replyToDomains.some(domain => domain !== fromDomain),
+    ),
   }
 }
 
 export function parseMailAddresses(value: string): MailAddress[] {
-  if (!value.trim()) return []
+  const safeValue = stripUnsafeMailDisplayControls(value)
+  if (!safeValue.trim()) return []
 
-  return splitAddressHeader(value)
+  return splitAddressHeader(safeValue)
     .slice(0, 50)
     .map((entry): MailAddress | null => {
       const angleMatch = entry.match(/^(.*?)<([^<>]+)>$/u)
@@ -168,6 +219,23 @@ export function messageHeader(
 function headerValue(headers: GmailHeader[] | undefined, name: string): string {
   const header = headers?.find(item => item.name?.toLowerCase() === name.toLowerCase())
   return String(header?.value ?? '').trim()
+}
+
+function headerValues(headers: GmailHeader[] | undefined, name: string): string[] {
+  return (headers ?? [])
+    .filter(item => item.name?.toLowerCase() === name.toLowerCase())
+    .map(item => String(item.value ?? '').trim())
+    .filter(Boolean)
+}
+
+function displayHeader(
+  message: GmailMessageResource | undefined,
+  name: string,
+): string {
+  return stripUnsafeMailDisplayControls(decodeMimeWords(messageHeader(message, name)))
+    .replace(/\r?\n[ \t]*/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
 }
 
 function sortMessages(messages: GmailMessageResource[]): GmailMessageResource[] {
@@ -285,7 +353,7 @@ function collectAttachments(part: GmailMessagePart | undefined): MailAttachment[
     if (filename) {
       result.push({
         id: candidate.body?.attachmentId || null,
-        filename,
+        filename: stripUnsafeMailDisplayControls(filename).trim() || 'załącznik',
         mimeType: candidate.mimeType || 'application/octet-stream',
         size: Math.max(0, Number(candidate.body?.size) || 0),
       })
@@ -303,13 +371,13 @@ function partHasAttachment(part: GmailMessagePart | undefined): boolean {
 }
 
 function normalizeSnippet(value: string): string {
-  return decodeHtmlEntities(value)
+  return stripUnsafeMailDisplayControls(decodeHtmlEntities(value))
     .replace(/\s+/gu, ' ')
     .trim()
 }
 
 function normalizeBody(value: string): string {
-  return decodeHtmlEntities(value)
+  return stripUnsafeMailDisplayControls(decodeHtmlEntities(value))
     .replace(/\r\n?/gu, '\n')
     .replace(/[ \t]+\n/gu, '\n')
     .replace(/\n{4,}/gu, '\n\n\n')
@@ -337,7 +405,33 @@ function htmlToText(value: string): string {
 }
 
 function decodeHeaderLabel(value: string): string {
-  return decodeHtmlEntities(value).replace(/\s+/gu, ' ').trim()
+  return stripUnsafeMailDisplayControls(decodeHtmlEntities(decodeMimeWords(value)))
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+function decodeMimeWords(value: string): string {
+  const joined = value.replace(/(\?=)[ \t]+(?==\?)/gu, '$1')
+  return joined.replace(
+    /=\?([^?\s]+)\?([bq])\?([^?]*)\?=/giu,
+    (encodedWord, charset: string, encoding: string, payload: string) => {
+      try {
+        const bytes = encoding.toLowerCase() === 'b'
+          ? Buffer.from(payload, 'base64')
+          : Buffer.from(
+              payload
+                .replace(/_/gu, ' ')
+                .replace(/=([\dA-F]{2})/giu, (_match, hex: string) => (
+                  String.fromCharCode(Number.parseInt(hex, 16))
+                )),
+              'latin1',
+            )
+        return new TextDecoder(charset, { fatal: false }).decode(bytes)
+      } catch {
+        return encodedWord
+      }
+    },
+  )
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -377,4 +471,9 @@ function validUnicodeCodePoint(value: number): boolean {
 function externalUrlForAccount(baseUrl: string, accountEmail: string): string {
   if (baseUrl) return baseUrl
   return `https://mail.google.com/mail/u/${encodeURIComponent(accountEmail)}/#all`
+}
+
+function addressDomain(email: string | null | undefined): string {
+  const at = email?.lastIndexOf('@') ?? -1
+  return at >= 0 ? email!.slice(at + 1).toLowerCase() : ''
 }

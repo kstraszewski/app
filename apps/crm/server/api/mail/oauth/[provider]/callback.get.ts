@@ -22,9 +22,12 @@ import {
   fetchMailProviderIdentity,
   mailTokenIncludesReadAccess,
   mailTokenIncludesSendAccess,
+  revokeMailOAuthToken,
 } from '~~/server/utils/mail-providers'
+import { setPrivateMailResponseHeaders } from '~~/server/utils/mail-http'
 
 export default defineEventHandler(async (event) => {
+  setPrivateMailResponseHeaders(event)
   const provider = getRequiredParam(event, 'provider')
   if (provider !== 'google') {
     throw createError({ statusCode: 404, statusMessage: 'Mail provider not found' })
@@ -62,6 +65,7 @@ export default defineEventHandler(async (event) => {
       !mailTokenIncludesReadAccess(token.scopes)
       || !mailTokenIncludesSendAccess(token.scopes)
     ) {
+      await revokeRejectedMailToken(token)
       throw createError({
         statusCode: 403,
         statusMessage: 'Gmail read and send access was not granted',
@@ -72,6 +76,7 @@ export default defineEventHandler(async (event) => {
       flow.expectedAccountId
       && identity.accountId !== flow.expectedAccountId
     ) {
+      await revokeRejectedMailToken(token)
       throw createError({
         statusCode: 409,
         statusMessage: 'Reconnect the same Gmail account to extend its permissions',
@@ -93,6 +98,7 @@ export default defineEventHandler(async (event) => {
         ? existing.encrypted_refresh_token ?? null
         : null
     if (!encryptedRefreshToken) {
+      await revokeRejectedMailToken(token)
       throw createError({
         statusCode: 409,
         statusMessage: 'Google returned no refresh token; reconnect Gmail with consent',
@@ -137,6 +143,18 @@ export default defineEventHandler(async (event) => {
     return redirectWithStatus(event, flow.returnTo, 'error')
   }
 })
+
+async function revokeRejectedMailToken(token: {
+  accessToken: string
+  refreshToken: string | null
+}): Promise<void> {
+  try {
+    await revokeMailOAuthToken(token.refreshToken || token.accessToken)
+  } catch {
+    // The token is intentionally not persisted. Revocation is best-effort
+    // because a Google outage must not turn a safe rejection into a 500 page.
+  }
+}
 
 function redirectWithStatus(
   event: H3Event,

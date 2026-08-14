@@ -108,10 +108,82 @@ async function migrationFiles() {
   }))
 }
 
+async function ensureProductionMigrationRole(client) {
+  await client.query('BEGIN')
+  try {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [MIGRATION_LOCK])
+    const roleConfiguration = await client.query(`
+      SELECT
+        current_user AS connection_role,
+        connection_role.rolcreaterole,
+        pg_get_userbyid(database.datdba) AS database_owner,
+        EXISTS (
+          SELECT 1 FROM pg_roles WHERE rolname = 'openexpert_owner'
+        ) AS dedicated_owner_exists
+      FROM pg_roles AS connection_role
+      CROSS JOIN pg_database AS database
+      WHERE connection_role.rolname = current_user
+        AND database.datname = current_database()
+    `)
+    const role = roleConfiguration.rows[0]
+    if (!role) throw new Error('Production migration connection role is unavailable')
+
+    if (role.dedicated_owner_exists !== true) {
+      if (role.connection_role !== role.database_owner || role.rolcreaterole !== true) {
+        throw new Error(
+          'Only the role-creating database owner may bootstrap openexpert_owner',
+        )
+      }
+      await client.query(`
+        CREATE ROLE openexpert_owner
+        NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+      `)
+      const grantStatement = await client.query(
+        "SELECT format('GRANT openexpert_owner TO %I', current_user) AS sql",
+      )
+      await client.query(grantStatement.rows[0].sql)
+      console.log('+ role openexpert_owner')
+    }
+
+    const migrationTableOwner = await client.query(`
+      SELECT pg_get_userbyid(relation.relowner) AS owner
+      FROM pg_class AS relation
+      JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'app_migrations'
+        AND relation.relname = 'schema_migrations'
+    `)
+    if (migrationTableOwner.rows[0]?.owner !== 'openexpert_owner') {
+      if (role.connection_role !== role.database_owner) {
+        throw new Error(
+          'Only the database owner may transfer existing objects to openexpert_owner',
+        )
+      }
+      const reassignStatement = await client.query(
+        "SELECT format('REASSIGN OWNED BY %I TO openexpert_owner', current_user) AS sql",
+      )
+      await client.query(reassignStatement.rows[0].sql)
+      console.log('~ ownership openexpert_owner')
+    }
+
+    const ownerRole = await client.query(
+      "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
+    )
+    if (ownerRole.rows[0]?.can_set_owner_role !== true) {
+      throw new Error('Production migration connection cannot assume openexpert_owner')
+    }
+    await client.query('COMMIT')
+  }
+  catch (caught) {
+    await client.query('ROLLBACK')
+    throw caught
+  }
+}
+
 async function applyMigrations(databaseUrl, migrations) {
   const client = new Client({ connectionString: databaseUrl })
   await client.connect()
   try {
+    await ensureProductionMigrationRole(client)
     const migrationTable = await client.query(
       "SELECT to_regclass('app_migrations.schema_migrations') AS relation",
     )
@@ -122,13 +194,6 @@ async function applyMigrations(databaseUrl, migrations) {
     for (const migration of migrations) {
       await client.query('BEGIN')
       try {
-        const ownerRole = await client.query(
-          "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
-        )
-        if (ownerRole.rows[0]?.can_set_owner_role !== true) {
-          throw new Error('Production migration connection cannot assume openexpert_owner')
-        }
-
         await client.query('SET LOCAL ROLE openexpert_owner')
         const activeRole = await client.query('SELECT current_user AS migration_role')
         if (activeRole.rows[0]?.migration_role !== 'openexpert_owner') {

@@ -9,6 +9,8 @@
   "scripts": {
     "build": "turbo run build",
     "db:migrate": "turbo run db:migrate --filter=@openexpert/database",
+    "db:provision-account": "turbo run db:provision-account --filter=@openexpert/database",
+    "db:provision-production-account": "pnpm --filter @openexpert/database db:provision-production-account",
     "db:reset": "turbo run db:reset --filter=@openexpert/database",
     "db:seed-demo": "turbo run db:seed-demo --filter=@openexpert/database",
     "db:seed-production-showcase": "pnpm --filter @openexpert/database db:seed-production-showcase",

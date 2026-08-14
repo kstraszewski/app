@@ -23,6 +23,8 @@ interface PlatformAuthRuntimeConfig {
   databaseSchema: string
   ipAddressHeaders: string
   sessionFreshAge: number
+  disableSignUp: boolean
+  magicLinkDisableSignUp: boolean
   secret: string
   cookiePrefix: string
   cookieDomain: string
@@ -185,8 +187,8 @@ function createPlatformAuthRuntime(
       sessionFreshAge: auth.sessionFreshAge,
       cookiePrefix: options.cookiePrefix || auth.cookiePrefix,
       cookieDomain: options.cookieDomain || undefined,
-      disableSignUp: options.portalOnly ? true : undefined,
-      magicLinkDisableSignUp: options.portalOnly ? false : undefined,
+      disableSignUp: options.portalOnly ? true : auth.disableSignUp,
+      magicLinkDisableSignUp: options.portalOnly ? false : auth.magicLinkDisableSignUp,
       trustedOrigins: [...new Set([
         auth.baseUrl,
         options.baseUrl,

@@ -4,7 +4,7 @@ import {
   type BetterAuthOptions,
   type BetterAuthPlugin,
 } from 'better-auth'
-import { freshSessionMiddleware } from 'better-auth/api'
+import { createAuthMiddleware, freshSessionMiddleware } from 'better-auth/api'
 import { jwt, magicLink, phoneNumber, twoFactor } from 'better-auth/plugins'
 import { Pool, type PoolConfig } from 'pg'
 
@@ -65,7 +65,9 @@ const sensitiveAuthMethodPlugin = {
             && body?.updatePhoneNumber === true
           )
       },
-      handler: freshSessionMiddleware,
+      handler: createAuthMiddleware(async (context) => {
+        await freshSessionMiddleware(context)
+      }),
     }],
   },
 } satisfies BetterAuthPlugin

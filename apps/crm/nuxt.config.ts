@@ -188,6 +188,8 @@ export default defineNuxtConfig({
       databaseSchema: process.env.BETTER_AUTH_DATABASE_SCHEMA || 'identity',
       ipAddressHeaders: authIpAddressHeaders,
       sessionFreshAge: Number(process.env.BETTER_AUTH_SESSION_FRESH_AGE || 600),
+      disableSignUp: process.env.BETTER_AUTH_DISABLE_SIGN_UP !== 'false',
+      magicLinkDisableSignUp: process.env.BETTER_AUTH_MAGIC_LINK_DISABLE_SIGN_UP !== 'false',
       secret: process.env.BETTER_AUTH_SECRET
         || process.env.NUXT_AUTH_SECRET
         || (process.env.NODE_ENV === 'production'
@@ -321,11 +323,11 @@ export default defineNuxtConfig({
       },
     },
     mailOAuth: {
-      encryptionKey: '',
+      encryptionKey: process.env.NUXT_MAIL_OAUTH_ENCRYPTION_KEY || '',
       google: {
-        clientId: '',
-        clientSecret: '',
-        redirectUri: '',
+        clientId: process.env.NUXT_MAIL_OAUTH_GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.NUXT_MAIL_OAUTH_GOOGLE_CLIENT_SECRET || '',
+        redirectUri: process.env.NUXT_MAIL_OAUTH_GOOGLE_REDIRECT_URI || '',
       },
     },
     public: {

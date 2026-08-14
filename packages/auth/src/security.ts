@@ -44,7 +44,9 @@ export const openExpertPasswordPolicyPlugin = {
         // `setPassword` links a new credential to an existing account. Better
         // Auth marks it server-only but otherwise accepts any valid session.
         matcher: isSetPassword,
-        handler: freshSessionMiddleware,
+        handler: createAuthMiddleware(async (context) => {
+          await freshSessionMiddleware(context)
+        }),
       },
       {
         matcher: context => getOpenExpertNewPasswordField(context) != null,

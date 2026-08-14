@@ -26,6 +26,9 @@
     "db:migrate": {
       "cache": false
     },
+    "db:provision-account": {
+      "cache": false
+    },
     "db:seed-demo": {
       "cache": false
     },

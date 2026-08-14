@@ -1864,6 +1864,7 @@ Commands:
   setup [--livekit]               Start, migrate, seed demo workspace, and verify
   start [--livekit]               Start and apply pending migrations
   seed-demo                       Idempotently seed Better Auth and demo CRM data
+  provision-account               Create or repair the configured local admin account
   migrate                         Apply checksum-tracked SQL migrations
   verify                          Run SQL RLS and Ed25519 PostgREST smoke tests
   status                          Show Docker Compose service status
@@ -1888,6 +1889,18 @@ async function main() {
     case 'seed-demo':
       await startStack({ profiles, seed: true, smoke: false })
       break
+    case 'provision-account': {
+      const context = composeContext({ generateEnv: false })
+      const result = await ensureLocalDemoAccount(context)
+      console.log('')
+      console.log('OpenExpert local administrator is ready:')
+      console.log('  CRM:      http://127.0.0.1:3004/login')
+      console.log(`  Email:    ${result.account.email}`)
+      console.log(`  Password: ${result.account.password}`)
+      console.log(`  Org:      ${result.organization.name} (${result.organization.slug})`)
+      console.log('')
+      break
+    }
     case 'migrate': {
       const context = composeContext()
       compose(context, ['up', '--detach', 'postgres'])

@@ -33,7 +33,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { errorMessage } = useAuthFlow()
-const { orgPath } = useOrganizationContext()
+const { orgApiPath, orgPath } = useOrganizationContext()
 const accounts = ref<AuthAccount[]>([])
 const passkeys = ref<UserPasskey[]>([])
 const loading = ref(true)
@@ -41,6 +41,7 @@ const loadError = ref('')
 const passkeysLoading = ref(false)
 const passkeyLoadError = ref('')
 const linkingProvider = ref<AuthProvider | null>(null)
+const connectGmailAfterGoogleLink = ref(true)
 const unlinkingProvider = ref<AuthProvider | null>(null)
 const pendingUnlinkProvider = ref<AuthProvider | null>(null)
 const phoneModalOpen = ref(false)
@@ -594,15 +595,26 @@ async function loadAccounts() {
 
     const linked = String(route.query.linked || '')
     if ((linked === 'google' || linked === 'apple') && providerLinked(linked)) {
+      const shouldConnectGmail = linked === 'google' && route.query.connectGmail === '1'
+      const query = { ...route.query }
+      delete query.linked
+      delete query.linkError
+      delete query.connectGmail
+      await router.replace({ query })
+
+      if (shouldConnectGmail) {
+        const returnTo = orgPath('/mail')
+        window.location.assign(
+          `${orgApiPath('/mail-connections/google/connect')}?returnTo=${encodeURIComponent(returnTo)}`,
+        )
+        return
+      }
+
       toast.add({
         title: `Konto ${providerLabel(linked)} połączone`,
         color: 'success',
         icon: 'i-lucide-link-2',
       })
-      const query = { ...route.query }
-      delete query.linked
-      delete query.linkError
-      await router.replace({ query })
     }
     else if (route.query.linkError) {
       toast.add({
@@ -628,14 +640,20 @@ async function linkProvider(provider: AuthProvider) {
   try {
     const callbackUrl = new URL(route.path, window.location.origin)
     callbackUrl.searchParams.set('linked', provider)
+    if (provider === 'google' && connectGmailAfterGoogleLink.value) {
+      callbackUrl.searchParams.set('connectGmail', '1')
+    }
     const errorCallbackUrl = new URL(route.path, window.location.origin)
     errorCallbackUrl.searchParams.set('linkError', `Połączenie z ${providerLabel(provider)} zostało anulowane.`)
     const result = await authClient.linkSocial({
       provider,
       callbackURL: callbackUrl.toString(),
       errorCallbackURL: errorCallbackUrl.toString(),
+      disableRedirect: true,
     })
     if (result.error) throw result.error
+    if (!result.data?.url) throw new Error('Google nie zwrócił adresu autoryzacji.')
+    window.location.assign(result.data.url)
   }
   catch (error) {
     toast.add({
@@ -644,6 +662,8 @@ async function linkProvider(provider: AuthProvider) {
       color: 'error',
       icon: 'i-lucide-link-2-off',
     })
+  }
+  finally {
     linkingProvider.value = null
   }
 }
@@ -785,17 +805,37 @@ watch(twoFactorModalOpen, (open) => {
           <p v-if="providerLinked(provider)">Możesz używać konta {{ providerLabel(provider) }} do logowania w OpenExpert.</p>
           <p v-else-if="providerConfigured(provider)">Połącz konto z tym samym adresem e-mail, aby dodać szybsze logowanie.</p>
           <p v-else>Provider nie został jeszcze skonfigurowany w tym środowisku.</p>
+          <div
+            v-if="provider === 'google' && !providerLinked(provider) && providerConfigured(provider)"
+            class="google-gmail-option"
+          >
+            <UCheckbox
+              v-model="connectGmailAfterGoogleLink"
+              label="Połącz również Gmail"
+            />
+            <small>Po dodaniu logowania Google poprosimy osobno o dostęp do skrzynki.</small>
+          </div>
         </div>
-        <UButton
-          v-if="providerLinked(provider)"
-          color="error"
-          variant="ghost"
-          icon="i-lucide-unlink"
-          :disabled="accounts.length <= 1"
-          @click="askToUnlink(provider)"
-        >
-          Odłącz
-        </UButton>
+        <div v-if="providerLinked(provider)" class="login-method-card__actions">
+          <UButton
+            v-if="provider === 'google'"
+            :to="orgPath('/mail')"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-mail"
+          >
+            Gmail
+          </UButton>
+          <UButton
+            color="error"
+            variant="ghost"
+            icon="i-lucide-unlink"
+            :disabled="accounts.length <= 1"
+            @click="askToUnlink(provider)"
+          >
+            Odłącz
+          </UButton>
+        </div>
         <UButton
           v-else
           color="neutral"
@@ -1464,6 +1504,23 @@ watch(twoFactorModalOpen, (open) => {
   color: var(--ui-text-muted);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.google-gmail-option {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-muted);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-muted);
+}
+
+.google-gmail-option small {
+  padding-left: 24px;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .login-method-card__fixed {

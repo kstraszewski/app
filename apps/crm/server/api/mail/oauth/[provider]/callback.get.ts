@@ -34,13 +34,14 @@ export default defineEventHandler(async (event) => {
   deleteCookie(event, MAIL_OAUTH_COOKIE, { path: '/api/mail/oauth' })
   const query = getQuery(event)
   const state = textValue(query.state)
-  if (
-    flow.provider !== provider
-    || !state
-    || state !== flow.state
-    || flow.expiresAt < Date.now()
-  ) {
-    throw createError({ statusCode: 400, statusMessage: 'Mail OAuth state is invalid or expired' })
+  if (flow.provider !== provider) {
+    throw createError({ statusCode: 400, statusMessage: 'Mail OAuth provider does not match the request' })
+  }
+  if (!state || state !== flow.state) {
+    throw createError({ statusCode: 400, statusMessage: 'Mail OAuth state does not match the request' })
+  }
+  if (flow.expiresAt < Date.now()) {
+    throw createError({ statusCode: 400, statusMessage: 'Mail OAuth request expired' })
   }
 
   const session = await requireCrmSession(event, flow.organizationSlug)

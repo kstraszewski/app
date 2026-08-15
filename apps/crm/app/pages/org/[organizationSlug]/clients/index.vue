@@ -1137,7 +1137,7 @@ const columns: TableColumn<ClientListItem>[] = [
                   color="neutral"
                   variant="soft"
                   icon="i-lucide-building-2"
-                  :disabled="companyLookupPending"
+                  :disabled="companyLookupPending || saving"
                   :trailing-icon="createCompanyLookupOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
                 >
                   Dodaj firmę z CEIDG (opcjonalnie)
@@ -1147,6 +1147,7 @@ const columns: TableColumn<ClientListItem>[] = [
                     <CaseMultiformCompanyLookup
                       v-model="companyNip"
                       :lookup-url="crmApiPath('/companies/ceidg')"
+                      :disabled="saving"
                       field-name="company_nip"
                       title="Pobierz dane klienta-firmy z CEIDG"
                       description="Dla jednoosobowej działalności wpisz NIP. Po potwierdzeniu zapiszemy identyfikatory i uzupełnimy pustą nazwę klienta."

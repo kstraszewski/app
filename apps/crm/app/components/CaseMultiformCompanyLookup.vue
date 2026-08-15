@@ -8,6 +8,7 @@ import type { MultiformFieldValue } from '~/types/multiform'
 const props = withDefaults(defineProps<{
   applyLabel?: string
   description?: string
+  disabled?: boolean
   fieldName?: string
   lookupUrl: string
   modelValue?: MultiformFieldValue
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   applyLabel: 'Uzupełnij puste pola',
   description: 'Wpisz NIP, sprawdź wynik i uzupełnij dostępne puste pola.',
+  disabled: false,
   fieldName: 'businessNip',
   modelValue: '',
   required: false,
@@ -39,7 +41,9 @@ const resultSource = ref<CeidgCompanyLookupResponse['source'] | null>(null)
 const titleId = useId()
 
 const normalizedNip = computed(() => String(props.modelValue ?? '').replaceAll(/\D/gu, ''))
-const canLookup = computed(() => normalizedNip.value.length === 10 && !pending.value)
+const canLookup = computed(() => (
+  normalizedNip.value.length === 10 && !pending.value && !props.disabled
+))
 const fieldError = computed(() => {
   if (!props.invalid) return undefined
   if (!String(props.modelValue ?? '').trim() && props.required) return 'To pole jest wymagane.'
@@ -138,6 +142,7 @@ onBeforeUnmount(() => emit('update:pending', false))
         <UInput
           :model-value="String(modelValue ?? '')"
           inputmode="numeric"
+          :disabled="disabled"
           maxlength="13"
           placeholder="0000000000"
           icon="i-lucide-hash"
@@ -206,7 +211,7 @@ onBeforeUnmount(() => emit('update:pending', false))
           color="primary"
           variant="soft"
           icon="i-lucide-wand-sparkles"
-          :disabled="!resultSource"
+          :disabled="disabled || !resultSource"
           @click="resultSource && emit('apply', result, resultSource)"
         >
           {{ applyLabel }}

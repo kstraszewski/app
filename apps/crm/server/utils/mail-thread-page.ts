@@ -84,7 +84,7 @@ async function fetchProviderPage(
     return fetchGmailThreadPage(accessToken, connection.account_email, {
       folder: input.folder,
       query: input.participantEmails?.length
-        ? mailContextSearchQuery('google', input.participantEmails)
+        ? mailContextSearchQuery('google', input.participantEmails, input.search)
         : input.search,
       pageToken: input.pageToken,
       maxResults: 20,
@@ -98,7 +98,7 @@ async function fetchProviderPage(
     {
       folder: input.folder,
       query: input.participantEmails?.length
-        ? mailContextSearchQuery('microsoft', input.participantEmails)
+        ? mailContextSearchQuery('microsoft', input.participantEmails, input.search)
         : input.search,
       cursor: input.pageToken,
       maxResults: 20,

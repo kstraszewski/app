@@ -155,3 +155,19 @@ test('preserves the persisted CEIDG snapshot instead of accepting forged registr
   assert.equal('tax_id' in result, false)
   assert.equal('krs' in result, false)
 })
+
+test('allows ordinary company metadata to change when it is not a CEIDG snapshot', () => {
+  assert.deepEqual(preserveCeidgClientCompanyMetadata({
+    nip: '5260250274',
+    registry_name: 'Nowa nazwa KRS',
+    registry_source: 'KRS',
+  }, {
+    nip: '1111111111',
+    registry_name: 'Stara nazwa KRS',
+    registry_source: 'KRS',
+  }), {
+    nip: '5260250274',
+    registry_name: 'Nowa nazwa KRS',
+    registry_source: 'KRS',
+  })
+})

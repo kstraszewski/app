@@ -326,6 +326,7 @@ const {
               id: props.scopeId,
             },
             connectionId: connectionId.value,
+            q: searchQuery.value || undefined,
             pageTokens: Object.keys(contextPageTokens.value).length
               ? contextPageTokens.value
               : undefined,
@@ -413,18 +414,6 @@ const contextualComposeTo = computed(() => (
     ?.map(email => email.trim())
     .find(Boolean)
   ?? ''
-))
-const contextHeading = computed(() => (
-  contextDescriptor.value?.label
-  || (contextScopeType.value === 'case'
-    ? 'Korespondencja sprawy'
-    : contextScopeType.value === 'client' ? 'Korespondencja klienta' : 'Poczta')
-))
-const contextFilterLabel = computed(() => (
-  `${contextScopeType.value === 'case' ? 'Sprawa' : 'Klient'}: ${contextHeading.value}`
-))
-const contextFilterIcon = computed(() => (
-  contextScopeType.value === 'case' ? 'i-lucide-briefcase-business' : 'i-lucide-user-round'
 ))
 const contextConnectionEmptyState = computed(() => (
   contextScopeType.value === 'case'
@@ -528,6 +517,9 @@ const hasNextPage = computed(() => (
 const resultAnnouncement = computed(() => {
   if (threadsStatus.value === 'pending') return 'Ładowanie wiadomości'
   const count = threadPayload.value.data.length
+  if (searchQuery.value) {
+    return `${count} wyników na tej stronie dla wyszukiwania „${searchQuery.value}”`
+  }
   if (contextScopeType.value) {
     return `${count} wątków powiązanych z ${contextScopeType.value === 'case' ? 'tą sprawą' : 'tym klientem'}`
   }
@@ -709,7 +701,6 @@ function cancelScheduledSearch(): void {
 
 function scheduleSearch(value: string): void {
   cancelScheduledSearch()
-  if (!isMailboxScope.value) return
   if (!activeConnection.value?.capabilities.canSearch) return
   if (value.trim() === searchQuery.value) return
 
@@ -721,11 +712,16 @@ function scheduleSearch(value: string): void {
 
 function submitSearch(): void {
   cancelScheduledSearch()
-  if (!isMailboxScope.value) return
   if (!activeConnection.value?.capabilities.canSearch) return
   searchQuery.value = searchInput.value.trim()
   pageToken.value = ''
   previousPageTokens.value = []
+  contextPageTokens.value = {}
+  previousContextPageTokens.value = []
+  if (!isMailboxScope.value) {
+    contextSelectedThreadId.value = ''
+    return
+  }
   const query: Record<string, string> = {
     account: connectionId.value,
     folder: folderConfiguration.find(folder => folder.id === activeFolder.value)?.query || 'inbox',
@@ -1315,7 +1311,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
         >
           <div class="mail-list-pane">
             <form
-              v-if="isMailboxScope"
               class="mail-toolbar"
               role="search"
               @submit.prevent="submitSearch"
@@ -1324,9 +1319,9 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                 v-model="searchInput"
                 class="mail-search"
                 icon="i-lucide-search"
-                placeholder="Szukaj w tej skrzynce"
-                aria-label="Szukaj w aktywnej skrzynce"
-                :maxlength="500"
+                :placeholder="contextScopeType ? 'Szukaj w poczcie klienta' : 'Szukaj w tej skrzynce'"
+                :aria-label="contextScopeType ? 'Szukaj w poczcie tego klienta' : 'Szukaj w aktywnej skrzynce'"
+                :maxlength="contextScopeType ? 200 : 500"
                 autocomplete="off"
                 :spellcheck="false"
                 :disabled="!activeConnection.capabilities.canSearch"
@@ -1352,31 +1347,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                 aria-label="Szukaj"
                 :disabled="!activeConnection.capabilities.canSearch"
               />
-            </form>
-
-            <div
-              v-else
-              class="mail-toolbar mail-toolbar--context"
-              role="group"
-              aria-label="Wymuszony filtr poczty kontekstowej"
-            >
-              <UInput
-                :model-value="contextFilterLabel"
-                class="mail-search"
-                :icon="contextFilterIcon"
-                readonly
-                :aria-label="`Filtr wymuszony, tylko do odczytu: ${contextFilterLabel}`"
-              >
-                <template #trailing>
-                  <span
-                    class="mail-context-filter-lock"
-                    title="Filtr wynika z otwartego kontekstu i nie można go usunąć"
-                  >
-                    <UIcon name="i-lucide-lock-keyhole" aria-hidden="true" />
-                  </span>
-                </template>
-              </UInput>
               <UDropdownMenu
+                v-if="contextScopeType"
                 :items="contextWorkspaceMenuItems"
                 :content="{ align: 'end' }"
               >
@@ -1390,7 +1362,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                   title="Opcje poczty kontekstowej"
                 />
               </UDropdownMenu>
-            </div>
+            </form>
 
             <p
               v-if="contextDescriptor?.emailsTruncated"
@@ -1406,7 +1378,10 @@ function securityWarningDescription(security: MailMessageSecurity): string {
             <div class="mail-list-summary">
               <div>
                 <p>{{ activeFolderLabel }}</p>
-                <span v-if="contextScopeType">{{ activeConnection.accountEmail }} · filtr kontekstowy</span>
+                <span v-if="contextScopeType">
+                  {{ activeConnection.accountEmail }} · filtr klienta w tle
+                  <template v-if="searchQuery"> · wyniki dla „{{ searchQuery }}”</template>
+                </span>
                 <span v-else-if="searchQuery">Wyniki dla „{{ searchQuery }}”</span>
                 <span v-else>Strona {{ currentPageNumber }}</span>
                 <span v-if="lastRefreshedLabel">Odświeżono o {{ lastRefreshedLabel }}</span>
@@ -1464,13 +1439,15 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
             <OeEmptyState
               v-else-if="!threadPayload.data.length"
-              :kind="searchQuery && isMailboxScope ? 'filtered' : 'empty'"
-              :icon="searchQuery && isMailboxScope ? 'i-lucide-search-x' : 'i-lucide-mail-open'"
+              :kind="searchQuery ? 'filtered' : 'empty'"
+              :icon="searchQuery ? 'i-lucide-search-x' : 'i-lucide-mail-open'"
               :title="contextScopeType
-                ? 'Brak powiązanej korespondencji'
+                ? searchQuery ? 'Brak wyników dla tego klienta' : 'Brak powiązanej korespondencji'
                 : searchQuery ? 'Brak wyników' : 'Ten folder jest pusty'"
               :description="contextScopeType
-                ? 'Nie znaleźliśmy wiadomości dopasowanych do adresów e-mail w tym kontekście.'
+                ? searchQuery
+                  ? 'Spróbuj krótszej frazy. Filtr klienta nadal pozostaje aktywny.'
+                  : 'Nie znaleźliśmy wiadomości dopasowanych do adresów e-mail w tym kontekście.'
                 : searchQuery
                   ? 'Spróbuj krótszej frazy lub sprawdź inny folder.'
                   : 'Nowe wiadomości pojawią się tutaj po odświeżeniu skrzynki.'"
@@ -2202,17 +2179,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-search {
   width: 100%;
-}
-
-.mail-context-filter-lock {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ui-text-muted);
-}
-
-.mail-context-filter-lock :deep(svg) {
-  width: 14px;
-  height: 14px;
 }
 
 .mail-list-summary {

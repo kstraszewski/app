@@ -619,7 +619,7 @@ test('returns provider-neutral folders and a connection-bound opaque STARRED cur
   )
 })
 
-test('uses IMAP address fields with OR for contextual participant search', async () => {
+test('combines IMAP participant and text filters for contextual search', async () => {
   const searches: unknown[] = []
   const runtime: ImapSmtpAdapterRuntime = {
     resolveEndpoint: async kind => resolved(kind),
@@ -652,9 +652,11 @@ test('uses IMAP address fields with OR for contextual participant search', async
   await fetchImapSmtpThreadPage(runtimeConfig(runtime), {
     folder: 'INBOX',
     participantEmails: ['client@example.com', 'partner@example.com'],
+    query: 'umowa',
   })
 
   assert.deepEqual(searches, [{
+    text: 'umowa',
     or: [
       { from: 'client@example.com' },
       { to: 'client@example.com' },

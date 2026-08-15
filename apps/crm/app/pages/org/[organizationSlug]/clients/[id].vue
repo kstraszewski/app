@@ -670,6 +670,7 @@ const editCompanySelection = ref<{
 const editCompanyRemovalPending = ref(false)
 const editCompanyLookupOpen = ref(false)
 const editCompanyLookupPending = ref(false)
+const editExpectedUpdatedAt = ref('')
 
 watch(editCompanyNip, (value) => {
   if (
@@ -866,6 +867,7 @@ function openEdit() {
   editCompanySelection.value = null
   editCompanyRemovalPending.value = false
   editCompanyLookupPending.value = false
+  editExpectedUpdatedAt.value = data.value.data.updated_at
   editCompanyLookupOpen.value = Boolean(clientCompany.value)
   editOpen.value = true
 }
@@ -897,7 +899,7 @@ function undoEditCompanyRemoval() {
 
 async function saveClient() {
   const displayName = editForm.display_name.trim()
-  if (!displayName || editCompanyLookupPending.value) return
+  if (!displayName || !editExpectedUpdatedAt.value || editCompanyLookupPending.value) return
   savingClient.value = true
   try {
     await $fetch(crmApiPath(`/clients/${clientId.value}`), {
@@ -908,6 +910,7 @@ async function saveClient() {
         primary_phone: editForm.primary_phone.trim() || null,
         tags: editForm.tags.split(',').map(tag => tag.trim()).filter(Boolean),
         notes: editForm.notes.trim() || null,
+        expected_updated_at: editExpectedUpdatedAt.value,
         ceidg_nip: editCompanySelection.value?.company.nip
           ?? (editCompanyRemovalPending.value ? null : undefined),
       },
@@ -2208,7 +2211,7 @@ const headerMenuItems = computed(() => [
               color="neutral"
               variant="soft"
               icon="i-lucide-building-2"
-              :disabled="editCompanyLookupPending"
+              :disabled="editCompanyLookupPending || savingClient"
               :trailing-icon="editCompanyLookupOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
             >
               {{ clientCompany ? 'Zaktualizuj dane firmy w CEIDG' : 'Dodaj firmę z CEIDG (opcjonalnie)' }}
@@ -2218,6 +2221,7 @@ const headerMenuItems = computed(() => [
                 <CaseMultiformCompanyLookup
                   v-model="editCompanyNip"
                   :lookup-url="crmApiPath('/companies/ceidg')"
+                  :disabled="savingClient"
                   field-name="edit_company_nip"
                   title="Pobierz lub odśwież dane firmy z CEIDG"
                   description="Wyszukiwanie obejmuje jednoosobowe działalności gospodarcze. Dane kontaktowe z rejestru pozostaną oddzielone od kontaktu używanego do zgód i wiadomości."
@@ -2233,6 +2237,7 @@ const headerMenuItems = computed(() => [
                     variant="soft"
                     size="sm"
                     icon="i-lucide-unlink"
+                    :disabled="savingClient"
                     @click="removeEditCompanyData"
                   >
                     Odłącz dane CEIDG
@@ -2258,7 +2263,14 @@ const headerMenuItems = computed(() => [
             description="NIP, REGON i snapshot rejestrowy znikną z karty po zapisaniu zmian."
           >
             <template #actions>
-              <UButton type="button" color="neutral" variant="soft" size="xs" @click="undoEditCompanyRemoval">
+              <UButton
+                type="button"
+                color="neutral"
+                variant="soft"
+                size="xs"
+                :disabled="savingClient"
+                @click="undoEditCompanyRemoval"
+              >
                 Cofnij odłączenie
               </UButton>
             </template>

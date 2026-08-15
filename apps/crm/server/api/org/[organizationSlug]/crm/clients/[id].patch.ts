@@ -11,6 +11,7 @@ import {
 import { normalizeNip } from '~~/server/utils/ceidg-company'
 import { lookupConfiguredCeidgCompany } from '~~/server/utils/ceidg-company-runtime'
 import { assertCeidgLookupRateLimit } from '~~/server/utils/ceidg-rate-limit'
+import { serverTrustedUserDataClient } from '~~/server/utils/platform-data'
 import {
   mergeCeidgCompanyIntoClientMetadata,
   preserveCeidgClientCompanyMetadata,
@@ -23,6 +24,13 @@ export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const id = getRequiredParam(event, 'id')
   const body = asRecord(await readBody(event))
+  const expectedUpdatedAt = textValue(body.expected_updated_at)
+  if (!expectedUpdatedAt || Number.isNaN(Date.parse(expectedUpdatedAt))) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'expected_updated_at must be a valid timestamp',
+    })
+  }
 
   const { data: currentClient, error: currentClientError } = await session.dataApi
     .from('crm_clients')
@@ -40,6 +48,12 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Zanonimizowanego klienta nie można ponownie edytować.',
     })
   }
+  if (currentClient.updated_at !== expectedUpdatedAt) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Dane klienta zmieniły się od otwarcia formularza. Odśwież kartę i spróbuj ponownie.',
+    })
+  }
   if ('status_code' in body && textValue(body.status_code) === 'anonymized') {
     throw createError({
       statusCode: 422,
@@ -48,7 +62,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const patch: Record<string, unknown> = {}
-  const expectedUpdatedAt = currentClient.updated_at
   for (const field of ['display_name', 'status_code', 'lead_source', 'primary_email', 'primary_phone', 'notes'] as const) {
     if (field in body) patch[field] = textValue(body[field]) ?? null
   }
@@ -90,6 +103,13 @@ export default defineEventHandler(async (event) => {
   if ('ceidg_nip' in body) {
     const baseMetadata = patch.metadata ?? currentClient.metadata
     if (body.ceidg_nip === null) {
+      const currentRegistrySource = textValue(asRecord(currentClient.metadata).registry_source)
+      if (currentRegistrySource?.toLocaleUpperCase('pl-PL') !== 'CEIDG') {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Klient nie ma dołączonych danych CEIDG.',
+        })
+      }
       patch.metadata = stripCeidgClientCompanyMetadata(baseMetadata)
     }
     else {
@@ -129,7 +149,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data, error } = await session.dataApi
+  const clientWriter = 'ceidg_nip' in body
+    ? serverTrustedUserDataClient(event, session.userId)
+    : session.dataApi
+  const { data, error } = await clientWriter
     .from('crm_clients')
     .update(patch)
     .eq('organization_id', session.organizationId)
@@ -143,6 +166,12 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 403,
       statusMessage: 'Only an organization administrator can change the client owner.',
+    })
+  }
+  if (error?.message?.includes('ceidg_snapshot_actor_membership_required')) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Członkostwo w organizacji wygasło podczas zapisu klienta.',
     })
   }
   if (

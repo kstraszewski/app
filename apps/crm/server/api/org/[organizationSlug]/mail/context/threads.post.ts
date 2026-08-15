@@ -28,6 +28,7 @@ import {
 import {
   mailContextConnectionId,
   mailContextPageTokens,
+  mailContextSearch,
   readMailContextJsonObject,
 } from '~~/server/utils/mail-context-http'
 import { imapSmtpRuntimeForConnection } from '~~/server/utils/mail-imap-runtime'
@@ -52,10 +53,12 @@ export default defineEventHandler(async (event): Promise<MailContextThreadListPa
   const body = await readMailContextJsonObject(event, [
     'scope',
     'connectionId',
+    'q',
     'pageTokens',
   ])
   const scope = parseMailContextScope(body.scope)
   const connectionId = mailContextConnectionId(body.connectionId)
+  const search = mailContextSearch(body.q)
   const pageTokens = mailContextPageTokens(body.pageTokens)
   const requestedFolders = body.pageTokens === undefined
     ? CONTEXT_FOLDERS
@@ -85,6 +88,7 @@ export default defineEventHandler(async (event): Promise<MailContextThreadListPa
         connectionId: connection.id,
         folder,
         participantEmails: searchPlan.emails,
+        search: search || undefined,
         pageToken: pageTokens[folder],
       })))
     : []

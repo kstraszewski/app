@@ -41,6 +41,17 @@ test('provider search plans stay within the 500 character constraint', () => {
   assert.equal(mailContextSearchQuery('microsoft', microsoft.emails), microsoft.query)
 })
 
+test('contextual search combines the customer and typed search filters', () => {
+  assert.equal(
+    mailContextSearchQuery('google', ['client@example.com'], 'umowa kredytowa'),
+    '{client@example.com} umowa kredytowa',
+  )
+  assert.equal(
+    mailContextSearchQuery('microsoft', ['client@example.com'], 'umowa kredytowa'),
+    '(participants:client@example.com) AND (umowa kredytowa)',
+  )
+})
+
 test('participant matching is normalized and exact', () => {
   const thread: MailThreadSummary = {
     id: 'thread_1',

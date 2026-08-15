@@ -107,9 +107,9 @@ export function preserveCeidgClientCompanyMetadata(
   if (persistedIsCeidg) {
     delete candidate.tax_id
     delete candidate.krs
-  }
-  for (const key of ceidgMetadataKeys) {
-    if (key in persisted) candidate[key] = persisted[key]
+    for (const key of ceidgMetadataKeys) {
+      if (key in persisted) candidate[key] = persisted[key]
+    }
   }
   return candidate
 }

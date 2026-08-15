@@ -104,6 +104,15 @@ test('service tokens cannot be confused with end-user tokens', () => {
   const payload = decodePart<Record<string, unknown>>(signer.signBackend().split('.')[1]!)
   assert.equal(payload.role, 'openexpert_service')
   assert.equal(payload.sub, undefined)
+  const trustedActorPayload = decodePart<Record<string, unknown>>(
+    signer.signBackend({ actor_user_id: '5a9db4ce-5960-4d3f-a646-a40b49eafc5a' }).split('.')[1]!,
+  )
+  assert.equal(trustedActorPayload.role, 'openexpert_service')
+  assert.equal(
+    trustedActorPayload.actor_user_id,
+    '5a9db4ce-5960-4d3f-a646-a40b49eafc5a',
+  )
+  assert.equal(trustedActorPayload.sub, undefined)
   assert.throws(
     () => signer.sign({ role: 'authenticated' }),
     /require sub/u,

@@ -49,8 +49,19 @@ export function normalizeMailContextEmails(
 export function mailContextSearchQuery(
   provider: Exclude<MailProviderId, 'imap'>,
   emails: string[],
+  search = '',
 ): string {
-  return mailContextSearchPlan(provider, emails).query
+  const normalizedSearch = String(search ?? '').trim()
+  if (!normalizedSearch) return mailContextSearchPlan(provider, emails).query
+
+  // Leave enough space for both filters so provider-side search keeps the
+  // customer constraint instead of falling back to a broad mailbox search.
+  const separatorLength = provider === 'google' ? 1 : 11 // `(...) AND (...)`
+  const plan = mailContextSearchPlan(provider, emails, 500 - normalizedSearch.length - separatorLength)
+  if (!plan.query) return normalizedSearch
+  return provider === 'google'
+    ? `${plan.query} ${normalizedSearch}`
+    : `(${plan.query}) AND (${normalizedSearch})`
 }
 
 export function mailContextSearchPlan(

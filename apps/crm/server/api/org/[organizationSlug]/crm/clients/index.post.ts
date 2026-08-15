@@ -11,6 +11,7 @@ import { issueClientPortalInvitation } from '~~/server/utils/client-portal-invit
 import { normalizeNip } from '~~/server/utils/ceidg-company'
 import { lookupConfiguredCeidgCompany } from '~~/server/utils/ceidg-company-runtime'
 import { assertCeidgLookupRateLimit } from '~~/server/utils/ceidg-rate-limit'
+import { serverTrustedUserDataClient } from '~~/server/utils/platform-data'
 import {
   mergeCeidgCompanyIntoClientMetadata,
   sanitizeCeidgClientCompanyMetadataInput,
@@ -249,7 +250,10 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
+  const clientWriter = 'ceidg_nip' in body
+    ? serverTrustedUserDataClient(event, session.userId)
+    : session.dataApi
+  const { data, error } = await clientWriter.rpc('create_crm_client_with_consents', {
     p_organization_id: session.organizationId,
     p_owner_user_id: ownerUserId,
     p_display_name: displayName,
@@ -283,6 +287,15 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 403,
       statusMessage: 'Only an organization administrator can assign a client to another user.',
+    })
+  }
+  if (
+    error?.message?.includes('organization_membership_required')
+    || error?.message?.includes('ceidg_snapshot_actor_membership_required')
+  ) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Członkostwo w organizacji wygasło podczas zapisu klienta.',
     })
   }
   if (

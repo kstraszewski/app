@@ -500,6 +500,7 @@ export function createImapSmtpAdapter(
     async searchMessagesByParticipants(input: {
       mailbox: string
       participantEmails: string[]
+      query?: string
       offset?: number
       pageSize?: number
       flaggedOnly?: boolean
@@ -899,12 +900,10 @@ export async function fetchImapSmtpThreadPage(
   const folder = normalizeProviderFolder(input.folder)
   const participantEmails = normalizeParticipantEmails(input.participantEmails ?? [])
   const queryValue = String(input.query ?? '').trim()
-  if (queryValue && participantEmails.length) {
-    throw new TypeError('Nie można łączyć typów wyszukiwania IMAP.')
-  }
+  const searchQuery = queryValue ? normalizeSearchQuery(queryValue) : ''
   const query = participantEmails.length
-    ? participantSearchBinding(participantEmails)
-    : queryValue ? normalizeSearchQuery(queryValue) : ''
+    ? participantSearchBinding(participantEmails, searchQuery)
+    : searchQuery
   const requestedPageSize = boundedInteger(
     input.maxResults,
     DEFAULT_PAGE_SIZE,
@@ -951,6 +950,7 @@ export async function fetchImapSmtpThreadPage(
     ? await adapter.searchMessagesByParticipants({
         mailbox: selected.path,
         participantEmails,
+        query: searchQuery || undefined,
         offset,
         pageSize,
         flaggedOnly,
@@ -1348,9 +1348,9 @@ function normalizeParticipantEmails(values: string[]): string[] {
   return [...new Set(values.map(value => normalizeEmail(value, 'Uczestnik').toLowerCase()))]
 }
 
-function participantSearchBinding(emails: string[]): string {
+function participantSearchBinding(emails: string[], search = ''): string {
   return `context-participants:${createHash('sha256')
-    .update(emails.join('\0'), 'utf8')
+    .update(`${emails.join('\0')}\0${search}`, 'utf8')
     .digest('hex')}`
 }
 

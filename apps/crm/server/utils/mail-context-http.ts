@@ -78,3 +78,15 @@ export function mailContextPageTokens(
   }
   return result
 }
+
+export function mailContextSearch(value: unknown): string {
+  if (value === undefined) return ''
+  if (typeof value !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowe wyszukiwanie poczty.' })
+  }
+  const search = value.trim()
+  if (search.length > 200 || /[\u0000-\u001F\u007F]/u.test(search)) {
+    throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowe wyszukiwanie poczty.' })
+  }
+  return search
+}

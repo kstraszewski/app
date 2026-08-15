@@ -81,3 +81,19 @@ export function serverBackendDataClient(event: H3Event): OpenExpertDataClient {
   const token = serverDataTokenSigner(event).signBackend()
   return clientWithStorage(event, () => token)
 }
+
+/**
+ * Creates a server-only service client that retains the authenticated actor in
+ * a signed dedicated claim. Use it for trusted writes guarded from direct user
+ * Data API tokens; authorization must still be completed before constructing it.
+ */
+export function serverTrustedUserDataClient(
+  event: H3Event,
+  userId: string,
+): OpenExpertDataClient {
+  const token = serverDataTokenSigner(event).signBackend({
+    actor_user_id: userId,
+    source: 'crm-trusted-user-write',
+  })
+  return clientWithStorage(event, () => token)
+}

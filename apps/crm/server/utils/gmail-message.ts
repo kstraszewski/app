@@ -8,6 +8,7 @@ import type {
   MailThreadSummary,
 } from '../../shared/types/mail.ts'
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
+import { sanitizeMailHtml } from './mail-html.ts'
 
 export interface GmailHeader {
   name?: string
@@ -46,6 +47,7 @@ export interface GmailThreadResource {
 
 const MESSAGE_BODY_CHARACTER_LIMIT = 160_000
 const THREAD_BODY_CHARACTER_LIMIT = 500_000
+const THREAD_HTML_CHARACTER_LIMIT = 1_000_000
 const MAX_THREAD_MESSAGES = 20
 const GMAIL_AUTHENTICATION_RESULTS_AUTHSERV_ID = 'mx.google.com'
 
@@ -99,6 +101,22 @@ export function gmailThreadDetail(
     }
   })
 
+  let remainingHtmlCharacters = THREAD_HTML_CHARACTER_LIMIT
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const parsed = messages[index]!
+    if (!parsed.bodyHtml) continue
+    if (parsed.bodyHtml.length <= remainingHtmlCharacters) {
+      remainingHtmlCharacters -= parsed.bodyHtml.length
+      continue
+    }
+    messages[index] = {
+      ...parsed,
+      bodyHtml: null,
+      bodyHtmlTruncated: true,
+    }
+    remainingHtmlCharacters = 0
+  }
+
   const subject = messages.at(-1)?.subject
     || displayHeader(allMessages.at(-1), 'subject')
     || '(bez tematu)'
@@ -118,7 +136,11 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
   collectTextParts(message.payload, textParts, htmlParts)
 
   const plainBody = normalizeBody(textParts.filter(Boolean).join('\n\n'))
-  const htmlBody = plainBody ? '' : htmlToText(htmlParts.filter(Boolean).join('\n'))
+  const selectedHtmlBody = selectBestHtmlPart(htmlParts)
+  const sanitizedHtml = selectedHtmlBody
+    ? sanitizeMailHtml(selectedHtmlBody)
+    : { html: null, hasRemoteImages: false, truncated: false }
+  const htmlBody = plainBody ? '' : htmlToText(sanitizedHtml.html || selectedHtmlBody)
   const fallbackBody = normalizeSnippet(message.snippet || '')
   const fullBody = plainBody || htmlBody || fallbackBody
   const bodyTruncated = fullBody.length > MESSAGE_BODY_CHARACTER_LIMIT
@@ -136,6 +158,9 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
     sentAt: messageDate(message),
     unread: (message.labelIds ?? []).includes('UNREAD'),
     bodyText,
+    bodyHtml: sanitizedHtml.html,
+    bodyHtmlTruncated: sanitizedHtml.truncated,
+    hasRemoteImages: sanitizedHtml.hasRemoteImages,
     bodyTruncated,
     attachments: collectAttachments(message.payload),
     security: gmailMessageSecurity(message),
@@ -336,6 +361,15 @@ function collectTextParts(
   for (const child of part.parts ?? []) collectTextParts(child, textParts, htmlParts)
 }
 
+function selectBestHtmlPart(parts: string[]): string {
+  let selected = ''
+  for (const part of parts) {
+    const candidate = part.trim()
+    if (candidate.length > selected.length) selected = candidate
+  }
+  return selected
+}
+
 function decodePartBody(part: GmailMessagePart): string {
   const value = part.body?.data
   if (!value) return ''
@@ -455,6 +489,8 @@ function decodeHtmlEntities(value: string): string {
     nbsp: ' ',
     ndash: '–',
     quot: '"',
+    zwnj: '',
+    zwj: '',
   }
   return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/giu, (entity, key: string) => {
     if (key.startsWith('#x')) {

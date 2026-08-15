@@ -794,6 +794,7 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
       parserBytes = source.byteLength
       return {
         text: `Bezpieczny tekst\n${'x'.repeat(IMAP_MAX_BODY_CHARACTERS + 100)}`,
+        html: '<div style="display:none">Preheader&nbsp;&zwnj;</div><h1>Bezpieczny HTML</h1><img src="https://cdn.example.com/oferta.png" alt="Oferta"><script>alert(1)</script>',
         from: { name: 'Bank', address: 'decyzje@bank.example' },
         headers: [{
           key: 'authentication-results',
@@ -818,6 +819,11 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
   assert.equal(detail.messages.length, 1)
   assert.equal(detail.messages[0]?.bodyText.length, IMAP_MAX_BODY_CHARACTERS)
   assert.equal(detail.messages[0]?.bodyTruncated, true)
+  assert.match(detail.messages[0]?.bodyHtml || '', /<h1>Bezpieczny HTML<\/h1>/u)
+  assert.doesNotMatch(detail.messages[0]?.bodyHtml || '', /script|alert|\ssrc="https:/iu)
+  assert.match(detail.messages[0]?.bodyHtml || '', /data-mail-remote-src="https:\/\/cdn\.example\.com\/oferta\.png"/u)
+  assert.equal(detail.messages[0]?.hasRemoteImages, true)
+  assert.equal(detail.messages[0]?.bodyHtmlTruncated, true)
   assert.equal(detail.messages[0]?.security.authentication, 'pass')
   assert.equal(detail.messages[0]?.attachments[0]?.filename, 'decyzja.pdf')
   assert.equal(released, 1)

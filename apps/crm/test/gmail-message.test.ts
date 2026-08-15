@@ -126,6 +126,50 @@ test('prefers plain text and returns attachment metadata', () => {
   }])
 })
 
+test('keeps the plain alternative and returns the fullest sanitized HTML body', () => {
+  const parsed = gmailMessageDetail(message('message-rich-html', {
+    payload: {
+      mimeType: 'multipart/alternative',
+      headers: [
+        { name: 'From', value: 'offers@example.com' },
+        { name: 'Subject', value: 'Oferta' },
+      ],
+      parts: [{
+        mimeType: 'text/plain',
+        body: { data: base64url('Czytelna wersja tekstowa.') },
+      }, {
+        mimeType: 'text/html',
+        body: { data: base64url('<p>Skrócona wersja HTML</p>') },
+      }, {
+        mimeType: 'text/html',
+        body: {
+          data: base64url(`
+            <div style="display: none; max-height: 0; overflow: hidden">
+              Ukryty preheader&nbsp;&zwnj;&zwnj;
+            </div>
+            <main>
+              <h1>Pełna wersja HTML</h1>
+              <p>Treść promocyjna z bezpiecznym formatowaniem.</p>
+              <img src="https://cdn.example.com/offer.png" alt="Oferta">
+            </main>
+            <script>window.location = 'https://attacker.example'</script>
+          `),
+        },
+      }],
+    },
+  }))
+
+  assert.equal(parsed.bodyText, 'Czytelna wersja tekstowa.')
+  assert.ok(parsed.bodyHtml)
+  assert.match(parsed.bodyHtml, /Pełna wersja HTML/u)
+  assert.doesNotMatch(parsed.bodyHtml, /Skrócona wersja HTML/u)
+  assert.doesNotMatch(parsed.bodyHtml, /<script|window\.location|attacker\.example/iu)
+  assert.match(parsed.bodyHtml, /display\s*:\s*none/iu)
+  assert.doesNotMatch(parsed.bodyHtml, /&amp;zwnj;/iu)
+  assert.equal(parsed.hasRemoteImages, true)
+  assert.equal(parsed.bodyHtmlTruncated, false)
+})
+
 test('turns HTML fallback into inert readable text', () => {
   const parsed = gmailMessageDetail(message('message-3', {
     payload: {

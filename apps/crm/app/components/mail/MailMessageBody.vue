@@ -1,15 +1,165 @@
 <script setup lang="ts">
 import { mailBodyParagraphs } from '~/utils/mail-body-display'
+import {
+  buildMailHtmlSrcdoc,
+  MAIL_HTML_IFRAME_SANDBOX,
+} from '~/utils/mail-html-display'
 
 const props = defineProps<{
   bodyText: string
+  bodyHtml?: string | null
+  hasRemoteImages?: boolean
 }>()
 
 const paragraphs = computed(() => mailBodyParagraphs(props.bodyText))
+const hasHtml = computed(() => Boolean(props.bodyHtml?.trim()))
+const remoteImagesPresent = computed(() => (
+  props.hasRemoteImages === true
+  || props.bodyHtml?.includes('data-mail-remote-src') === true
+))
+const displayMode = ref<'html' | 'text'>(hasHtml.value ? 'html' : 'text')
+const remoteImagesLoaded = ref(false)
+const iframeElement = ref<HTMLIFrameElement | null>(null)
+const iframeHeight = ref(160)
+const MAX_IFRAME_HEIGHT = 12_000
+let iframeResizeObserver: ResizeObserver | null = null
+
+const htmlSrcdoc = computed(() => buildMailHtmlSrcdoc(props.bodyHtml || '', {
+  loadRemoteImages: remoteImagesLoaded.value,
+}))
+
+watch(() => props.bodyHtml, (bodyHtml) => {
+  displayMode.value = bodyHtml?.trim() ? 'html' : 'text'
+  remoteImagesLoaded.value = false
+  disconnectIframeResizeObserver()
+  iframeHeight.value = 160
+})
+
+watch(displayMode, (mode) => {
+  if (mode !== 'html') disconnectIframeResizeObserver()
+})
+
+onBeforeUnmount(() => disconnectIframeResizeObserver())
+
+function loadRemoteImages() {
+  remoteImagesLoaded.value = true
+  disconnectIframeResizeObserver()
+}
+
+function observeIframeSize() {
+  disconnectIframeResizeObserver()
+  const iframe = iframeElement.value
+  const document = iframe?.contentDocument
+  if (!iframe || !document) return
+
+  const updateHeight = () => {
+    const bodyHeight = document.body?.scrollHeight || 0
+    const documentHeight = document.documentElement?.scrollHeight || 0
+    iframeHeight.value = Math.min(
+      MAX_IFRAME_HEIGHT,
+      Math.max(1, bodyHeight, documentHeight),
+    )
+  }
+
+  updateHeight()
+  if (!('ResizeObserver' in window)) return
+
+  iframeResizeObserver = new ResizeObserver(updateHeight)
+  if (document.documentElement) iframeResizeObserver.observe(document.documentElement)
+  if (document.body) iframeResizeObserver.observe(document.body)
+}
+
+function disconnectIframeResizeObserver() {
+  iframeResizeObserver?.disconnect()
+  iframeResizeObserver = null
+}
 </script>
 
 <template>
-  <div class="mail-body-content">
+  <div v-if="hasHtml" class="mail-body-display">
+    <div class="mail-body-display__toolbar" role="group" aria-label="Sposób wyświetlania wiadomości">
+      <button
+        type="button"
+        class="mail-body-display__mode"
+        :class="{ 'mail-body-display__mode--active': displayMode === 'html' }"
+        :aria-pressed="displayMode === 'html'"
+        @click="displayMode = 'html'"
+      >
+        Wersja HTML
+      </button>
+      <button
+        type="button"
+        class="mail-body-display__mode"
+        :class="{ 'mail-body-display__mode--active': displayMode === 'text' }"
+        :aria-pressed="displayMode === 'text'"
+        @click="displayMode = 'text'"
+      >
+        Wersja tekstowa
+      </button>
+    </div>
+
+    <template v-if="displayMode === 'html'">
+      <div
+        v-if="remoteImagesPresent && !remoteImagesLoaded"
+        class="mail-body-display__privacy-notice"
+        role="note"
+      >
+        <UIcon name="i-lucide-shield-alert" aria-hidden="true" />
+        <span>
+          Zdalne obrazy są zablokowane. Ich pobranie może poinformować nadawcę,
+          że wiadomość została otwarta.
+        </span>
+        <button
+          type="button"
+          class="mail-body-display__load-images"
+          @click="loadRemoteImages"
+        >
+          Wczytaj zdalne obrazy
+        </button>
+      </div>
+
+      <iframe
+        ref="iframeElement"
+        class="mail-body-display__frame"
+        :srcdoc="htmlSrcdoc"
+        :sandbox="MAIL_HTML_IFRAME_SANDBOX"
+        referrerpolicy="no-referrer"
+        title="Treść wiadomości HTML"
+        scrolling="auto"
+        :style="{ height: `${iframeHeight}px` }"
+        @load="observeIframeSize"
+      />
+    </template>
+
+    <div v-else class="mail-body-content">
+      <template v-if="paragraphs.length">
+        <p
+          v-for="(paragraph, paragraphIndex) in paragraphs"
+          :key="paragraphIndex"
+          class="mail-body-content__paragraph"
+          :class="`mail-body-content__paragraph--${paragraph.kind}`"
+        >
+          <template v-for="(segment, segmentIndex) in paragraph.segments" :key="segmentIndex">
+            <span v-if="segment.type === 'text'">{{ segment.value }}</span>
+            <span
+              v-else
+              class="mail-body-content__url"
+              :title="`Nieaktywny odnośnik do ${segment.domain}. Otwórz wiadomość u dostawcy, aby przejść dalej.`"
+              :aria-label="`Nieaktywny odnośnik do ${segment.domain}`"
+            >
+              <UIcon name="i-lucide-link-2" aria-hidden="true" />
+              <bdi>{{ segment.label }}</bdi>
+            </span>
+          </template>
+        </p>
+      </template>
+      <p v-else class="mail-body-content__empty">
+        Ta wiadomość nie zawiera tekstu możliwego do wyświetlenia.
+      </p>
+    </div>
+  </div>
+
+  <div v-else class="mail-body-content">
     <template v-if="paragraphs.length">
       <p
         v-for="(paragraph, paragraphIndex) in paragraphs"
@@ -38,16 +188,120 @@ const paragraphs = computed(() => mailBodyParagraphs(props.bodyText))
 </template>
 
 <style scoped>
+.mail-body-display {
+  width: 100%;
+  min-width: 0;
+}
+
+.mail-body-display__toolbar {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 3px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-bg-muted);
+}
+
+.mail-body-display__mode,
+.mail-body-display__load-images {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mail-body-display__mode {
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: var(--ui-text-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mail-body-display__mode:hover,
+.mail-body-display__mode:focus-visible {
+  color: var(--ui-text);
+}
+
+.mail-body-display__mode--active {
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.mail-body-display__privacy-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mail-body-display__privacy-notice :deep(svg) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--ui-warning);
+}
+
+.mail-body-display__privacy-notice span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mail-body-display__load-images {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--ui-border-accented);
+  border-radius: 7px;
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mail-body-display__load-images:hover,
+.mail-body-display__load-images:focus-visible {
+  border-color: var(--ui-border-inverted);
+}
+
+.mail-body-display__mode:focus-visible,
+.mail-body-display__load-images:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+.mail-body-display__frame {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+
 .mail-body-content {
   width: 100%;
+  max-width: none;
+  min-width: 0;
   color: var(--ui-text);
   font-size: 15px;
   line-height: 1.72;
 }
 
 .mail-body-content__paragraph {
+  width: 100%;
+  max-width: none;
   margin: 0;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   unicode-bidi: plaintext;
   white-space: pre-wrap;
 }
@@ -103,6 +357,15 @@ const paragraphs = computed(() => mailBodyParagraphs(props.bodyText))
 }
 
 @media (max-width: 680px) {
+  .mail-body-display__privacy-notice {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mail-body-display__load-images {
+    margin-left: 26px;
+  }
+
   .mail-body-content {
     font-size: 14px;
     line-height: 1.68;

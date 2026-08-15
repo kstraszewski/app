@@ -3,6 +3,10 @@ import type { FormError, FormErrorEvent, FormSubmitEvent } from '@nuxt/ui'
 import type { MailProviderId, MailSendPayload } from '#shared/types/mail'
 import { gmailBlockedAttachmentExtension } from '#shared/utils/mail-security'
 import { apiErrorMessage } from '~/utils/api-error'
+import {
+  isValidMailRecipient,
+  splitMailRecipients,
+} from '~/utils/mail-recipients'
 
 interface ComposerForm {
   to: string
@@ -71,7 +75,8 @@ const form = reactive<ComposerForm>({
   body: '',
 })
 const attachments = ref<File[]>([])
-const showCopies = ref(Boolean(props.initialCc))
+const showCc = ref(Boolean(props.initialCc))
+const showBcc = ref(false)
 const sending = ref(false)
 const sendError = ref('')
 const deliveryAmbiguous = ref(false)
@@ -110,10 +115,16 @@ const hasChanges = computed(() => (
 ))
 const uniqueRecipientCount = computed(() => new Set(
   [form.to, form.cc, form.bcc]
-    .flatMap(value => value.split(/[;,\n]+/u))
+    .flatMap(value => splitMailRecipients(value))
     .map(value => value.trim().toLowerCase())
     .filter(Boolean),
 ).size)
+const recipientCountLabel = computed(() => {
+  const count = uniqueRecipientCount.value
+  if (count === 1) return '1 adres'
+  if (count > 1 && count < 5) return `${count} adresy`
+  return `${count} adresów`
+})
 const requiresSendConfirmation = computed(() => (
   attachments.value.length > 0
   || uniqueRecipientCount.value > 1
@@ -168,24 +179,18 @@ function recipientFieldErrors(
   value: string,
   required: boolean,
 ): string[] {
-  const recipients = value
-    .split(/[;,\n]+/u)
-    .map(recipient => recipient.trim())
-    .filter(Boolean)
+  const recipients = splitMailRecipients(value)
   if (required && !recipients.length) {
     errors.push({ name, message: 'Podaj co najmniej jednego odbiorcę.' })
     return recipients
   }
   if (
     recipients.length > 50
-    || recipients.some(recipient => (
-      recipient.length > 254
-      || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/u.test(recipient)
-    ))
+    || recipients.some(recipient => !isValidMailRecipient(recipient))
   ) {
     errors.push({
       name,
-      message: 'Podaj poprawne adresy e-mail oddzielone przecinkami.',
+      message: 'Popraw zaznaczony adres e-mail.',
     })
   }
   return recipients
@@ -257,8 +262,7 @@ function isDeliveryAmbiguous(error: unknown): boolean {
 async function composerFingerprint(): Promise<string> {
   const seenRecipients = new Set<string>()
   const normalizeRecipients = (value: string): string[] => (
-    value
-      .split(/[;,\n]+/u)
+    splitMailRecipients(value)
       .map(recipient => recipient.trim().toLowerCase())
       .filter((recipient) => {
         if (!recipient || seenRecipients.has(recipient)) return false
@@ -404,62 +408,107 @@ function formatBytes(value: number): string {
           @submit="requestSend"
           @error="focusFirstError"
         >
-          <UFormField
-            name="to"
-            label="Do"
-            description="Wiele adresów oddziel przecinkami."
-            required
-          >
-            <UInput
-              v-model="form.to"
-              class="w-full"
-              type="text"
-              inputmode="email"
-              autocomplete="email"
-              placeholder="anna@firma.pl, jan@firma.pl"
-              :disabled="sending"
-            />
-          </UFormField>
+          <section class="mail-composer__recipients" aria-labelledby="mail-composer-recipients-title">
+            <header class="mail-composer__recipients-header">
+              <span>
+                <strong id="mail-composer-recipients-title">Odbiorcy</strong>
+                <small v-if="uniqueRecipientCount">{{ recipientCountLabel }}</small>
+              </span>
+              <span class="mail-composer__recipient-actions">
+                <UButton
+                  v-if="!showCc"
+                  type="button"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  aria-controls="mail-composer-cc"
+                  :aria-expanded="showCc"
+                  @click="showCc = true"
+                >
+                  DW
+                </UButton>
+                <UButton
+                  v-if="!showBcc"
+                  type="button"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  aria-controls="mail-composer-bcc"
+                  :aria-expanded="showBcc"
+                  @click="showBcc = true"
+                >
+                  UDW
+                </UButton>
+              </span>
+            </header>
 
-          <div class="mail-composer__copy-toggle">
-            <UButton
-              v-if="!showCopies"
-              type="button"
-              color="neutral"
-              variant="link"
-              size="sm"
-              aria-controls="mail-composer-copies"
-              :aria-expanded="showCopies"
-              @click="showCopies = true"
+            <UFormField
+              name="to"
+              label="Do"
+              orientation="horizontal"
+              required
+              :ui="{
+                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2.5',
+                labelWrapper: 'justify-start',
+                label: 'text-xs font-semibold text-muted',
+                container: 'min-w-0',
+                error: 'mt-1.5',
+              }"
             >
-              Dodaj DW lub UDW
-            </UButton>
-          </div>
-
-          <div v-if="showCopies" id="mail-composer-copies" class="mail-composer__copies">
-            <UFormField name="cc" label="DW">
-              <UInput
-                v-model="form.cc"
-                class="w-full"
-                inputmode="email"
-                placeholder="kopia@firma.pl"
+              <MailRecipientInput
+                v-model="form.to"
                 :disabled="sending"
+                placeholder="Wpisz nazwę klienta lub adres e-mail"
               />
             </UFormField>
+
             <UFormField
+              v-if="showCc"
+              id="mail-composer-cc"
+              name="cc"
+              label="DW"
+              orientation="horizontal"
+              :ui="{
+                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2.5',
+                labelWrapper: 'justify-start',
+                label: 'text-xs font-semibold text-muted',
+                container: 'min-w-0',
+                error: 'mt-1.5',
+              }"
+            >
+              <MailRecipientInput
+                v-model="form.cc"
+                :disabled="sending"
+                placeholder="Dodaj odbiorców kopii"
+              />
+            </UFormField>
+
+            <UFormField
+              v-if="showBcc"
+              id="mail-composer-bcc"
               name="bcc"
               label="UDW"
-              description="Adresy UDW nie będą widoczne dla pozostałych odbiorców."
+              help="Ukryci przed pozostałymi odbiorcami."
+              orientation="horizontal"
+              :ui="{
+                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2.5',
+                labelWrapper: 'justify-start',
+                label: 'text-xs font-semibold text-muted',
+                container: 'min-w-0',
+                error: 'mt-1.5',
+                help: 'mt-1.5 text-[10px] text-muted',
+              }"
             >
-              <UInput
+              <MailRecipientInput
                 v-model="form.bcc"
-                class="w-full"
-                inputmode="email"
-                placeholder="ukryta-kopia@firma.pl"
                 :disabled="sending"
+                placeholder="Dodaj ukrytych odbiorców"
               />
             </UFormField>
-          </div>
+          </section>
 
           <UFormField
             name="subject"
@@ -667,16 +716,55 @@ function formatBytes(value: number): string {
   gap: 17px;
 }
 
-.mail-composer__copy-toggle {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: -14px;
+.mail-composer__recipients {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-control);
+  background: var(--ui-bg-muted);
 }
 
-.mail-composer__copies {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.mail-composer__recipients-header {
+  display: flex;
+  min-height: 39px;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.mail-composer__recipients-header > span:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mail-composer__recipients-header strong {
+  color: var(--ui-text-highlighted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mail-composer__recipients-header small {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.mail-composer__recipient-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal']) {
+  display: grid;
+  padding: 9px 11px;
+  background: var(--ui-bg);
+}
+
+.mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal'] + [data-slot='root'][data-orientation='horizontal']) {
+  border-top: 1px solid var(--ui-border);
 }
 
 .mail-composer__attachment-total {
@@ -723,8 +811,9 @@ function formatBytes(value: number): string {
 }
 
 @media (max-width: 640px) {
-  .mail-composer__copies {
-    grid-template-columns: minmax(0, 1fr);
+  .mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal']) {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 8px;
   }
 
   .mail-composer__footer {

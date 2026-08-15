@@ -15,6 +15,7 @@ import type {
   MailThreadSummary,
 } from '../../shared/types/mail.ts'
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
+import { sanitizeMailHtml } from './mail-html.ts'
 
 export const MICROSOFT_MAIL_SCOPES = [
   'offline_access',
@@ -36,6 +37,7 @@ const MAX_THREAD_MESSAGES = 20
 const MAX_CONVERSATION_MESSAGES = 200
 const MAX_MESSAGE_BODY_CHARACTERS = 160_000
 const MAX_THREAD_BODY_CHARACTERS = 500_000
+const MAX_THREAD_HTML_CHARACTERS = 1_000_000
 const MAX_CURSOR_URL_LENGTH = 16_384
 const MAX_THREAD_REFERENCE_LENGTH = 6_000
 
@@ -650,6 +652,21 @@ export async function fetchMicrosoftMailThread(
     }
     remainingCharacters = 0
   }
+  let remainingHtmlCharacters = MAX_THREAD_HTML_CHARACTERS
+  for (let index = details.length - 1; index >= 0; index -= 1) {
+    const detail = details[index]!
+    if (!detail.bodyHtml) continue
+    if (detail.bodyHtml.length <= remainingHtmlCharacters) {
+      remainingHtmlCharacters -= detail.bodyHtml.length
+      continue
+    }
+    details[index] = {
+      ...detail,
+      bodyHtml: null,
+      bodyHtmlTruncated: true,
+    }
+    remainingHtmlCharacters = 0
+  }
   const latest = sorted.at(-1)!
   return {
     id: encodeMicrosoftThreadReference({
@@ -1151,10 +1168,14 @@ function microsoftMessageDetail(
   attachments: MailAttachment[],
 ): MicrosoftMailMessageDetail {
   const providerBody = String(message.body?.content || message.bodyPreview || '')
+  const providerBodyIsHtml = String(message.body?.contentType || '').toLowerCase() === 'html'
+  const sanitizedHtml = providerBodyIsHtml
+    ? sanitizeMailHtml(providerBody)
+    : { html: null, hasRemoteImages: false, truncated: false }
   const rawBodyLimit = MAX_MESSAGE_BODY_CHARACTERS * 4
   const rawBody = providerBody.slice(0, rawBodyLimit)
-  const normalizedBody = String(message.body?.contentType || '').toLowerCase() === 'html'
-    ? htmlToText(rawBody)
+  const normalizedBody = providerBodyIsHtml
+    ? htmlToText(sanitizedHtml.html || rawBody)
     : normalizeBody(rawBody)
   const bodyTruncated = providerBody.length > rawBodyLimit
     || normalizedBody.length > MAX_MESSAGE_BODY_CHARACTERS
@@ -1170,6 +1191,9 @@ function microsoftMessageDetail(
     bodyText: bodyTruncated
       ? normalizedBody.slice(0, MAX_MESSAGE_BODY_CHARACTERS).trimEnd()
       : normalizedBody,
+    bodyHtml: sanitizedHtml.html,
+    bodyHtmlTruncated: sanitizedHtml.truncated,
+    hasRemoteImages: sanitizedHtml.hasRemoteImages,
     bodyTruncated,
     attachments,
     security: microsoftMessageSecurity(message),
@@ -1198,7 +1222,7 @@ async function fetchMicrosoftConversationWindow(
       `${GRAPH_ORIGIN}/v1.0/me/messages/${encodeURIComponent(reference.anchorMessageId)}?${query}`,
       {
         headers: graphHeaders(accessToken, {
-          Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"',
+          Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
         }),
       },
       'Microsoft message',
@@ -1223,7 +1247,7 @@ async function fetchMicrosoftConversationWindow(
     `${GRAPH_ORIGIN}/v1.0/me/messages?${query}`,
     {
       headers: graphHeaders(accessToken, {
-        Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"',
+        Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
       }),
     },
     'Microsoft conversation detail',
@@ -1260,7 +1284,7 @@ async function fetchMicrosoftConversationMessages(
       `${GRAPH_ORIGIN}/v1.0/me/messages/${encodeURIComponent(reference.anchorMessageId)}?${query}`,
       {
         headers: graphHeaders(accessToken, {
-          Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"',
+          Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
         }),
       },
       'Microsoft message',
@@ -1282,7 +1306,7 @@ async function fetchMicrosoftConversationMessages(
       url,
       {
         headers: graphHeaders(accessToken, {
-          Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"',
+          Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
         }),
       },
       'Microsoft conversation',
@@ -2071,6 +2095,8 @@ function decodeHtmlEntities(value: string): string {
     nbsp: ' ',
     ndash: '–',
     quot: '"',
+    zwnj: '',
+    zwj: '',
   }
   return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/giu, (entity, key: string) => {
     if (key.startsWith('#x')) {

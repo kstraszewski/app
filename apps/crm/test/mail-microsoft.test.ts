@@ -427,7 +427,7 @@ test('returns inert plain text, bounded headers, security, attachment metadata, 
         hasAttachments: true,
         body: {
           contentType: 'HTML',
-          content: '<script>steal()</script><h1>Decyzja &amp; warunki</h1><p>Kredyt przyznany.</p>',
+          content: '<script>steal()</script><h1>Decyzja &amp; warunki</h1><p>Kredyt przyznany.</p><img src="https://cdn.bank.example/decyzja.png" alt="Decyzja">',
         },
         replyTo: [{ emailAddress: { address: 'kontakt@lookalike.example' } }],
         internetMessageId: '<decision@bank.example>',
@@ -454,6 +454,10 @@ test('returns inert plain text, bounded headers, security, attachment metadata, 
   assert.match(latest.bodyText, /Decyzja & warunki/u)
   assert.match(latest.bodyText, /Kredyt przyznany/u)
   assert.doesNotMatch(latest.bodyText, /script|steal|<h1/u)
+  assert.match(latest.bodyHtml || '', /<h1>Decyzja &amp; warunki<\/h1>/u)
+  assert.doesNotMatch(latest.bodyHtml || '', /script|steal|\ssrc="https:/iu)
+  assert.match(latest.bodyHtml || '', /data-mail-remote-src="https:\/\/cdn\.bank\.example\/decyzja\.png"/u)
+  assert.equal(latest.hasRemoteImages, true)
   assert.deepEqual(latest.attachments, [{
     id: 'attachment-1',
     filename: 'decyzja.pdf',
@@ -466,6 +470,9 @@ test('returns inert plain text, bounded headers, security, attachment metadata, 
   assert.equal(latest.webLink, 'https://outlook.office365.com/owa/?ItemID=message-new')
   assert.equal(detail.externalUrl, latest.webLink)
   assert.ok(calls.every(call => requestHeaders(call).get('prefer')?.includes('IdType="ImmutableId"')))
+  assert.ok(calls
+    .filter(call => new URL(call.url).pathname.endsWith('/messages'))
+    .every(call => requestHeaders(call).get('prefer')?.includes('outlook.body-content-type="html"')))
 })
 
 test('loads exactly the newest 20 conversation bodies and reports the exact omitted count', async (t) => {

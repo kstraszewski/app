@@ -63,8 +63,22 @@ pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
 
 ## Bezpieczny podgląd
 
-- HTML jest zamieniany na zwykły, inertny tekst. Skrypty, style, aktywne linki,
-  iframe, zdalne obrazy i piksele śledzące nie są wykonywane.
+- Wiadomości HTML są czyszczone po stronie serwera ścisłą allowlistą elementów,
+  atrybutów i deklaracji CSS. Zachowywane są typowe tabele, formatowanie i
+  bezpieczne style inline; usuwane są skrypty, handlery zdarzeń, formularze,
+  iframe, obiekty, SVG, aktywne linki oraz style mogące wykonać żądanie sieciowe.
+- Oczyszczony fragment jest renderowany w osobnym `srcdoc` iframe z sandboxem
+  bez skryptów, formularzy, popupów, pobierania i nawigacji. CSP zaczyna od
+  `default-src 'none'`; dokument ma również `no-referrer`. Wersja tekstowa
+  pozostaje dostępna jako jawny przełącznik i fallback.
+- Adresy zdalnych obrazów są na serwerze przenoszone do inertnego atrybutu.
+  Obrazy oraz piksele śledzące pozostają zablokowane, dopóki użytkownik świadomie
+  nie wybierze „Wczytaj zdalne obrazy”. Interfejs ostrzega, że bezpośrednie
+  pobranie może ujawnić nadawcy otwarcie wiadomości. Linki w treści pozostają
+  nieaktywne; do pełnej interakcji służy „Otwórz u dostawcy”.
+- Rozmiar wejściowego i zwracanego HTML oraz łączny budżet HTML wątku są
+  ograniczone. Po przekroczeniu budżetu starsza wiadomość wraca do bezpiecznej
+  wersji tekstowej zamiast zwracać częściowo ucięty znacznik.
 - Znaki sterujące i znaczniki zmiany kierunku tekstu są usuwane z nagłówków oraz
   nazw plików.
 - Klient pokazuje wynik SPF/DKIM/DMARC tylko, gdy pochodzi z zaufanego źródła

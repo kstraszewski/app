@@ -95,6 +95,10 @@ export interface MailMessageDetail {
   sentAt: string | null
   unread: boolean
   bodyText: string
+  /** Server-sanitized HTML suitable only for the sandboxed mail preview. */
+  bodyHtml?: string | null
+  bodyHtmlTruncated?: boolean
+  hasRemoteImages?: boolean
   bodyTruncated: boolean
   attachments: MailAttachment[]
   security: MailMessageSecurity

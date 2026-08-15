@@ -17,6 +17,7 @@ import type {
   MailThreadSummary,
 } from '../../shared/types/mail.ts'
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
+import { sanitizeMailHtml } from './mail-html.ts'
 import {
   normalizeMailEndpoint,
   normalizeMailHostname,
@@ -137,6 +138,9 @@ export interface ImapMessageDetail {
   sentAt: string | null
   unread: boolean
   bodyText: string
+  bodyHtml: string | null
+  bodyHtmlTruncated: boolean
+  hasRemoteImages: boolean
   bodyTruncated: boolean
   attachments: MailAttachment[]
   security: MailMessageSecurity
@@ -521,6 +525,9 @@ export function createImapSmtpAdapter(
           sentAt: detail.sentAt,
           unread: detail.unread,
           bodyText: detail.bodyText,
+          bodyHtml: detail.bodyHtml,
+          bodyHtmlTruncated: detail.bodyHtmlTruncated,
+          hasRemoteImages: detail.hasRemoteImages,
           bodyTruncated: detail.bodyTruncated,
           attachments: detail.attachments,
           security: detail.security,
@@ -1571,9 +1578,13 @@ function messageDetail(
   const flags = normalizedFlags(fetched.flags)
   const headers = Array.isArray(parsed.headers) ? parsed.headers : []
   const messageId = normalizeMessageId(parsed.messageId ?? envelope.messageId ?? decoded.messageId)
+  const providerHtml = String(parsed.html ?? '')
+  const sanitizedHtml = providerHtml.trim()
+    ? sanitizeMailHtml(providerHtml)
+    : { html: null, hasRemoteImages: false, truncated: false }
   const body = parsed.text
     ? safeBody(parsed.text)
-    : safeBody(htmlToPlainText(String(parsed.html ?? '')))
+    : safeBody(htmlToPlainText(sanitizedHtml.html || providerHtml))
   const references = boundedReferences([
     ...normalizeReferenceValues(parsed.references),
     ...normalizeReferenceValues(headerValues(headers, 'references')),
@@ -1591,6 +1602,9 @@ function messageDetail(
     sentAt: normalizeDate(parsed.date ?? fetched.internalDate ?? envelope.date),
     unread: !flags.has('\\seen'),
     bodyText: body.slice(0, IMAP_MAX_BODY_CHARACTERS).trimEnd(),
+    bodyHtml: sanitizedHtml.html,
+    bodyHtmlTruncated: sourceWasCapped || sanitizedHtml.truncated,
+    hasRemoteImages: sanitizedHtml.hasRemoteImages,
     bodyTruncated: sourceWasCapped || body.length > IMAP_MAX_BODY_CHARACTERS,
     attachments: bodyStructureAttachments(fetched.bodyStructure),
     security: messageSecurity(
@@ -2079,6 +2093,7 @@ function safeText(value: unknown, maximum: number): string {
 
 function safeBody(value: unknown): string {
   return stripUnsafeMailDisplayControls(String(value ?? ''))
+    .replace(/&(?:zwnj|zwj);/giu, '')
     .replace(/\r\n?|\u2028|\u2029/gu, '\n')
     .replace(/[ \t]+\n/gu, '\n')
     .replace(/\n{4,}/gu, '\n\n\n')

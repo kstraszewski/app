@@ -1,18 +1,16 @@
-import { createError, getQuery, getRouterParam, setHeader } from 'h3'
+import { getQuery, setHeader } from 'h3'
 import type { CeidgCompanyLookupResponse } from '#shared/types/ceidg-company'
 import { parseCompanyLookupQuery } from '~~/server/utils/ceidg-company'
 import { lookupConfiguredCeidgCompany } from '~~/server/utils/ceidg-company-runtime'
 import { assertCeidgLookupRateLimit } from '~~/server/utils/ceidg-rate-limit'
-import { requireClientMultiformAccess } from '~~/server/utils/client-multiform'
+import { requireCrmSession } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event): Promise<CeidgCompanyLookupResponse> => {
-  const caseId = getRouterParam(event, 'caseId')
-  if (!caseId) throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono formularza.' })
-  const access = await requireClientMultiformAccess(event, caseId)
+  const session = await requireCrmSession(event)
   setHeader(event, 'Cache-Control', 'private, no-store')
   setHeader(event, 'X-Content-Type-Options', 'nosniff')
   const nip = parseCompanyLookupQuery(getQuery(event) as Record<string, unknown>)
-  await assertCeidgLookupRateLimit(event, access.identity.userId)
+  await assertCeidgLookupRateLimit(event, session.userId)
   const response = await lookupConfiguredCeidgCompany(event, nip)
 
   return response

@@ -55,6 +55,62 @@ final result: passed
 
 ---
 
+# Landing — bankowe wiadomości w OpenExpert Mail
+
+## Comparison target
+
+- Source visual truth: `/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-b596c04f-9ac1-4871-8a12-9a05e6fe1830.png`, `2078 × 1194` px.
+- Focused implementation: `.design-qa/mail-desktop-1536-preview.png`, `986 × 598` px.
+- Same-input comparison: `.design-qa/mail-reference-implementation-comparison.png`, `2026 × 598` px; source on the left, implementation on the right.
+- Full desktop evidence: `.design-qa/mail-desktop-1536-viewport.png`, `1536 × 1024` px.
+- Mobile evidence: `.design-qa/mail-mobile-390-viewport.png`, `390 × 844` px.
+- Route and state: `http://127.0.0.1:3003/#openexpert-mail`, public landing, PKO Bank Polski decision selected.
+
+## Intentional content change
+
+The source composition and dark mail-client styling are preserved. The previous generic client correspondence was intentionally replaced with a bank-driven workflow: PKO Bank Polski has issued a decision for Anna Kowalska, OpenExpert has linked it to case `OE-142`, and the attached PDF can be added to the case and sent to the client. The two additional inbox examples cover a Santander informational form and an mBank missing-document request.
+
+## Visual review
+
+- Typography, navigation, list/detail proportions, borders, surfaces, mint status treatment, selected-row marker, sender block and safe-mail indicator remain aligned with the supplied reference.
+- The new primary action uses the existing mint product palette and remains subordinate to the message subject while being materially easier to find than the previous reply control.
+- At `1536 × 1024`, all three bank examples remain readable in the left rail and the selected PKO message, attachment and action fit without clipping.
+- At `390 × 844`, the existing responsive rule hides the inbox rail, but the complete selected scenario remains visible: automatic client/case match, bank sender, decision content, attachment and a full-width action.
+- At `320 × 720`, the page measured `scrollWidth === clientWidth === 320`; the preview was `286 px` wide and the action retained a `44 px` height with normal text wrapping.
+- No substitute image, fake logo, handcrafted SVG or new visual language was introduced. The existing Iconify/Lucide icon family and landing tokens remain in use.
+
+## Interaction and accessibility verification
+
+- Desktop navigation `Mail` and mobile navigation `OpenExpert Mail` both land on the section with its existing sticky-header offset.
+- The mobile menu opens, exposes the Mail anchor and closes after navigation.
+- The long action label remains fully readable at all checked widths and has a minimum `44 px` height on mobile.
+- Browser console verification returned no warnings or errors.
+
+## QA history
+
+### Pass 1
+
+- P2 — A literal one-click “send” claim would imply an irreversible action without review.
+- Resolution — the visual action adds the decision to the case and communicates the intended client delivery flow, while the static landing mock does not pretend to execute a real send.
+- P2 — Bank examples placed only in the desktop inbox would disappear below `767 px`.
+- Resolution — the selected PKO decision and its client/case context are duplicated coherently in the detail panel, so the core story survives the existing mobile rail collapse.
+
+### Pass 2
+
+- No actionable P0, P1 or P2 visual differences remain in the combined desktop comparison or responsive captures.
+
+## Automated checks
+
+- Node `24.19.0` — verified.
+- `pnpm --filter @openexpert/landing typecheck` — passed.
+- `pnpm --filter @openexpert/landing test` — `108` passed, `0` failed.
+- `pnpm --filter @openexpert/landing build` — passed.
+- `git diff --check` for the edited source and QA report — passed.
+
+final result: passed
+
+---
+
 # Personalizacja — RWD regression fix
 
 ## Comparison target

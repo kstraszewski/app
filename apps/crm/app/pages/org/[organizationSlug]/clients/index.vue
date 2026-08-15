@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { FormError, FormSubmitEvent, TableColumn } from '@nuxt/ui'
 import type {
+  CeidgCompanyData,
+  CeidgCompanyLookupResponse,
+} from '#shared/types/ceidg-company'
+import type {
   ClientConsentDefinition,
   ClientConsentDefinitionPayload,
   ClientConsentVersion,
@@ -84,7 +88,9 @@ const sortValue = ref(
 const page = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = ref(25)
 const createOpen = ref(false)
+const createCompanyLookupOpen = ref(false)
 const saving = ref(false)
+const companyLookupPending = ref(false)
 
 const form = reactive<ClientCreateFormState>({
   display_name: '',
@@ -95,6 +101,29 @@ const form = reactive<ClientCreateFormState>({
   primary_phone: '',
   tags: '',
   notes: '',
+})
+const companyNip = ref('')
+const selectedCompany = ref<{
+  company: CeidgCompanyData
+  source: CeidgCompanyLookupResponse['source']
+} | null>(null)
+const autofilledCompanyName = ref('')
+
+function clearSelectedCompanyData() {
+  if (form.display_name.trim() === autofilledCompanyName.value) {
+    form.display_name = ''
+  }
+  autofilledCompanyName.value = ''
+  selectedCompany.value = null
+}
+
+watch(companyNip, (value) => {
+  if (
+    selectedCompany.value
+    && value.replaceAll(/\D/gu, '') !== selectedCompany.value.company.nip
+  ) {
+    clearSelectedCompanyData()
+  }
 })
 
 let searchDebounce: ReturnType<typeof setTimeout> | undefined
@@ -427,6 +456,7 @@ const saveDisabled = computed(() => (
   membersPending.value
   || Boolean(membersError.value)
   || !form.owner_user_id
+  || companyLookupPending.value
 ))
 
 function validateClientForm(state: Partial<ClientCreateFormState>): FormError[] {
@@ -466,6 +496,32 @@ function resetCreateForm() {
   form.primary_phone = ''
   form.tags = ''
   form.notes = ''
+  companyNip.value = ''
+  selectedCompany.value = null
+  autofilledCompanyName.value = ''
+  companyLookupPending.value = false
+  createCompanyLookupOpen.value = false
+}
+
+function applyCompanyData(
+  company: CeidgCompanyData,
+  source: CeidgCompanyLookupResponse['source'],
+) {
+  selectedCompany.value = { company, source }
+  const currentName = form.display_name.trim()
+  if (!currentName || currentName === autofilledCompanyName.value) {
+    form.display_name = company.name
+    autofilledCompanyName.value = company.name
+  }
+  else {
+    autofilledCompanyName.value = ''
+  }
+  toast.add({
+    title: 'Dane firmy dołączone do klienta',
+    description: 'NIP, REGON i dane rejestrowe zostaną zapisane wraz z kartą klienta.',
+    color: 'success',
+    icon: 'i-lucide-building-2',
+  })
 }
 
 function handleCreateClosed() {
@@ -545,6 +601,7 @@ async function createClient(_event: FormSubmitEvent<ClientCreateFormState>) {
     primary_phone: compactText(form.primary_phone),
     tags: tags.length ? tags : undefined,
     notes: compactText(form.notes),
+    ceidg_nip: selectedCompany.value?.company.nip,
     owner_user_id: form.owner_user_id,
     primary_person: {
       role: 'primary',
@@ -1069,6 +1126,50 @@ const columns: TableColumn<ClientListItem>[] = [
             </div>
 
             <div class="form-grid">
+              <UCollapsible
+                v-model:open="createCompanyLookupOpen"
+                :unmount-on-hide="false"
+                class="full company-lookup-disclosure"
+              >
+                <UButton
+                  type="button"
+                  class="w-full justify-between"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-building-2"
+                  :disabled="companyLookupPending"
+                  :trailing-icon="createCompanyLookupOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                >
+                  Dodaj firmę z CEIDG (opcjonalnie)
+                </UButton>
+                <template #content>
+                  <div class="company-lookup-disclosure__content">
+                    <CaseMultiformCompanyLookup
+                      v-model="companyNip"
+                      :lookup-url="crmApiPath('/companies/ceidg')"
+                      field-name="company_nip"
+                      title="Pobierz dane klienta-firmy z CEIDG"
+                      description="Dla jednoosobowej działalności wpisz NIP. Po potwierdzeniu zapiszemy identyfikatory i uzupełnimy pustą nazwę klienta."
+                      apply-label="Użyj danych firmy"
+                      result-hint="NIP i REGON zostaną zapisane w karcie klienta"
+                      @update:pending="companyLookupPending = $event"
+                      @apply="applyCompanyData"
+                    />
+
+                  </div>
+                </template>
+              </UCollapsible>
+
+              <UAlert
+                v-if="selectedCompany"
+                class="full"
+                color="success"
+                variant="subtle"
+                icon="i-lucide-badge-check"
+                title="Dane CEIDG gotowe do zapisu"
+                :description="`${selectedCompany.company.name} · NIP ${selectedCompany.company.nip}${selectedCompany.company.regon ? ` · REGON ${selectedCompany.company.regon}` : ''}`"
+              />
+
               <UFormField
                 class="full"
                 name="display_name"
@@ -1538,11 +1639,14 @@ const columns: TableColumn<ClientListItem>[] = [
 
 .create-form {
   display: grid;
+  min-width: 0;
   gap: 24px;
 }
 
 .form-section {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 18px;
 }
 
@@ -1577,12 +1681,24 @@ const columns: TableColumn<ClientListItem>[] = [
 
 .form-grid {
   display: grid;
+  min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
 .form-grid .full {
   grid-column: 1 / -1;
+}
+
+.company-lookup-disclosure {
+  min-width: 0;
+}
+
+.company-lookup-disclosure__content {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .consent-loading,

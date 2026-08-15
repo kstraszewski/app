@@ -239,6 +239,7 @@ const showReconnectNotice = computed(() => (
 ))
 const connectionsPath = computed(() => orgApiPath('/mail-connections'))
 const sendEndpoint = computed(() => orgApiPath('/mail/messages'))
+const remoteImageProxyPath = computed(() => orgApiPath('/mail/remote-image'))
 
 watch(
   [() => connectionPayload.value.connections, connectionStatus],
@@ -1754,6 +1755,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                       :body-text="message.bodyText"
                       :body-html="message.bodyHtml"
                       :has-remote-images="message.hasRemoteImages"
+                      :remote-image-proxy-path="remoteImageProxyPath"
                     />
                   </div>
 

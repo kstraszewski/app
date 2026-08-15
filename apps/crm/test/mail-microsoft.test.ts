@@ -475,6 +475,59 @@ test('returns inert plain text, bounded headers, security, attachment metadata, 
     .every(call => requestHeaders(call).get('prefer')?.includes('outlook.body-content-type="html"')))
 })
 
+test('keeps the newest Microsoft HTML messages within the total thread HTML budget', async (t) => {
+  const conversationId = 'conversation-html-budget'
+  const threadId = encodeMicrosoftThreadReference({
+    conversationId,
+    anchorMessageId: 'message-html-newest',
+  }, REFERENCE_SECRET)
+  const largeHtml = (label: string) => (
+    `<div><strong>${label}</strong>${'A'.repeat(389_800)}</div>`
+  )
+  const graphMessages = [
+    { id: 'message-html-newest', label: 'Najnowsza', hour: 10 },
+    { id: 'message-html-middle', label: 'Środkowa', hour: 9 },
+    { id: 'message-html-oldest', label: 'Najstarsza', hour: 8 },
+  ].map(({ id, label, hour }) => {
+    const date = new Date(Date.UTC(2026, 7, 14, hour)).toISOString()
+    return message(id, conversationId, {
+      receivedDateTime: date,
+      createdDateTime: date,
+      body: { contentType: 'HTML', content: largeHtml(label) },
+    })
+  })
+  const calls = mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    assert.equal(url.pathname, '/v1.0/me/messages')
+    assert.match(url.searchParams.get('$filter') || '', /conversation-html-budget/u)
+    return jsonResponse({ value: graphMessages, '@odata.count': 3 })
+  })
+
+  const detail = await fetchMicrosoftMailThread(
+    'token',
+    'expert@example.com',
+    threadId,
+    { referenceSecret: REFERENCE_SECRET },
+  )
+
+  assert.equal(calls.length, 1)
+  assert.deepEqual(detail.messages.map(item => item.id), [
+    'message-html-oldest',
+    'message-html-middle',
+    'message-html-newest',
+  ])
+  assert.equal(detail.messages[0]?.bodyHtml, null)
+  assert.equal(detail.messages[0]?.bodyHtmlTruncated, true)
+  assert.match(detail.messages[1]?.bodyHtml || '', /Środkowa/u)
+  assert.equal(detail.messages[1]?.bodyHtmlTruncated, false)
+  assert.match(detail.messages[2]?.bodyHtml || '', /Najnowsza/u)
+  assert.equal(detail.messages[2]?.bodyHtmlTruncated, false)
+  assert.ok(
+    detail.messages.reduce((sum, item) => sum + (item.bodyHtml?.length || 0), 0)
+      <= 1_000_000,
+  )
+})
+
 test('loads exactly the newest 20 conversation bodies and reports the exact omitted count', async (t) => {
   const threadId = encodeMicrosoftThreadReference({
     conversationId: 'conversation-long',

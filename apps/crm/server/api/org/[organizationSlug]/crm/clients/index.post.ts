@@ -8,6 +8,13 @@ import {
 } from '~~/server/utils/crm'
 import { nudgeClientLegalDocumentDeliveries } from '~~/server/utils/client-legal-document-deliveries'
 import { issueClientPortalInvitation } from '~~/server/utils/client-portal-invitations'
+import { normalizeNip } from '~~/server/utils/ceidg-company'
+import { lookupConfiguredCeidgCompany } from '~~/server/utils/ceidg-company-runtime'
+import { assertCeidgLookupRateLimit } from '~~/server/utils/ceidg-rate-limit'
+import {
+  mergeCeidgCompanyIntoClientMetadata,
+  sanitizeCeidgClientCompanyMetadataInput,
+} from '#shared/utils/ceidg-client-company'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -225,6 +232,23 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let clientMetadata = sanitizeCeidgClientCompanyMetadataInput(
+    metadataValue(body.metadata, 'metadata'),
+  )
+  if ('ceidg_nip' in body) {
+    if (body.ceidg_nip === null || body.ceidg_nip === undefined || body.ceidg_nip === '') {
+      throw createError({ statusCode: 400, statusMessage: 'ceidg_nip must contain a valid NIP' })
+    }
+    const ceidgNip = normalizeNip(body.ceidg_nip)
+    await assertCeidgLookupRateLimit(event, session.userId)
+    const ceidg = await lookupConfiguredCeidgCompany(event, ceidgNip)
+    clientMetadata = mergeCeidgCompanyIntoClientMetadata(
+      clientMetadata,
+      ceidg.company,
+      ceidg.source,
+    )
+  }
+
   const { data, error } = await session.dataApi.rpc('create_crm_client_with_consents', {
     p_organization_id: session.organizationId,
     p_owner_user_id: ownerUserId,
@@ -235,7 +259,7 @@ export default defineEventHandler(async (event) => {
     p_primary_phone: primaryPhone,
     p_tags: clientTags(body.tags),
     p_notes: optionalText(body.notes, 'notes', 20_000),
-    p_metadata: metadataValue(body.metadata, 'metadata'),
+    p_metadata: clientMetadata,
     p_primary_person: primaryPerson,
     p_consent_decisions: consentDecisions,
   })

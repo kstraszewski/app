@@ -1,4 +1,7 @@
+import { isIP } from 'node:net'
+import { domainToASCII } from 'node:url'
 import sanitizeHtml from 'sanitize-html'
+import { isPublicMailAddress } from './mail-host-security.ts'
 
 export type SanitizedMailHtml = {
   html: string | null
@@ -6,9 +9,12 @@ export type SanitizedMailHtml = {
   truncated: boolean
 }
 
-const MAX_INPUT_LENGTH = 1_000_000
-const MAX_OUTPUT_LENGTH = 1_000_000
-const MAX_REMOTE_IMAGE_URL_LENGTH = 8_192
+const MAX_INPUT_LENGTH = 400_000
+const MAX_OUTPUT_LENGTH = 400_000
+const MAX_TAG_COUNT = 8_000
+const MAX_REMOTE_IMAGE_COUNT = 100
+const OUTPUT_REBALANCE_HEADROOM = 10_000
+const MAX_REMOTE_IMAGE_URL_LENGTH = 4_096
 const MAX_STYLE_ATTRIBUTE_LENGTH = 16_384
 
 const ALLOWED_TAGS = [
@@ -201,6 +207,28 @@ function safeSourcePrefix(value: string, length: number): string {
   return prefix
 }
 
+function limitMailHtmlTags(value: string): {
+  source: string
+  truncated: boolean
+} {
+  let tagCount = 0
+
+  // This deliberately counts conservatively before invoking the HTML parser.
+  // A false positive only shortens hostile/malformed input; a second counter in
+  // the sanitizer transform enforces the same limit on tags the parser accepts.
+  for (const match of value.matchAll(/<[a-z][a-z0-9:-]*(?=[\t\n\f\r />])/giu)) {
+    tagCount += 1
+    if (tagCount > MAX_TAG_COUNT) {
+      return {
+        source: safeSourcePrefix(value, match.index),
+        truncated: true,
+      }
+    }
+  }
+
+  return { source: value, truncated: false }
+}
+
 function safeRemoteImageSource(value: string): string | null {
   const source = value.trim()
   if (
@@ -216,11 +244,24 @@ function safeRemoteImageSource(value: string): string | null {
 
   try {
     const parsed = new URL(protocolRelative ? `https:${source}` : source)
+    const hostname = parsed.hostname.replace(/^\[|\]$/gu, '').toLowerCase()
+    const asciiHostname = domainToASCII(hostname).toLowerCase()
+    const addressFamily = isIP(hostname)
     if (
       !['http:', 'https:'].includes(parsed.protocol)
-      || !parsed.hostname
+      || !asciiHostname
       || parsed.username
       || parsed.password
+      || (parsed.port && !(
+        (parsed.protocol === 'http:' && parsed.port === '80')
+        || (parsed.protocol === 'https:' && parsed.port === '443')
+      ))
+      || (addressFamily !== 0 && !isPublicMailAddress(hostname))
+      || (addressFamily === 0 && (
+        !asciiHostname.includes('.')
+        || asciiHostname.endsWith('.')
+        || /(?:^|\.)(?:home\.arpa|internal|lan|local|localhost)$/u.test(asciiHostname)
+      ))
     ) {
       return null
     }
@@ -233,11 +274,18 @@ function safeRemoteImageSource(value: string): string | null {
   return source
 }
 
-function sanitizePass(value: string): {
+function sanitizePass(
+  value: string,
+  options: { trustRemoteImageMarkers?: boolean } = {},
+): {
   html: string
   hasRemoteImages: boolean
+  tagLimitExceeded: boolean
 } {
   let hasRemoteImages = false
+  let remoteImageCount = 0
+  let tagCount = 0
+  let tagLimitExceeded = false
 
   const html = sanitizeHtml(value, {
     allowedTags: ALLOWED_TAGS,
@@ -340,6 +388,12 @@ function sanitizePass(value: string): {
     ],
     transformTags: {
       '*': (tagName, attributes) => {
+        tagCount += 1
+        if (tagCount > MAX_TAG_COUNT) {
+          tagLimitExceeded = true
+          return { tagName: 'mail-overflow', attribs: {} }
+        }
+
         const attribs = { ...attributes }
 
         for (const attributeName of Object.keys(attribs)) {
@@ -364,17 +418,26 @@ function sanitizePass(value: string): {
         if (tagName === 'img') {
           // Never trust a marker supplied by the sender. Only this transform can
           // mint data-mail-remote-src after validating the original src.
+          const trustedRemoteSource = options.trustRemoteImageMarkers
+            ? safeRemoteImageSource(attribs['data-mail-remote-src'] || '')
+            : null
           delete attribs['data-mail-remote-src']
           delete attribs.srcset
 
           const source = attribs.src?.trim() || ''
           const remoteSource = safeRemoteImageSource(source)
-          if (remoteSource) {
+          if (remoteSource && remoteImageCount < MAX_REMOTE_IMAGE_COUNT) {
+            remoteImageCount += 1
             hasRemoteImages = true
             attribs['data-mail-remote-src'] = remoteSource
             delete attribs.src
           } else if (SAFE_DATA_IMAGE.test(source)) {
             attribs.src = source
+          } else if (trustedRemoteSource && remoteImageCount < MAX_REMOTE_IMAGE_COUNT) {
+            remoteImageCount += 1
+            hasRemoteImages = true
+            attribs['data-mail-remote-src'] = trustedRemoteSource
+            delete attribs.src
           } else {
             delete attribs.src
           }
@@ -385,36 +448,35 @@ function sanitizePass(value: string): {
     },
   })
 
-  return { html, hasRemoteImages }
+  return { html, hasRemoteImages, tagLimitExceeded }
 }
 
 export function sanitizeMailHtml(value: string): SanitizedMailHtml {
   let truncated = value.length > MAX_INPUT_LENGTH
-  const source = truncated ? safeSourcePrefix(value, MAX_INPUT_LENGTH) : value
-  let sanitized = sanitizePass(source)
+  const rawSource = truncated ? safeSourcePrefix(value, MAX_INPUT_LENGTH) : value
+  const tagLimited = limitMailHtmlTags(rawSource)
+  truncated ||= tagLimited.truncated
+
+  let sanitized = sanitizePass(tagLimited.source)
+  truncated ||= sanitized.tagLimitExceeded
 
   if (sanitized.html.length > MAX_OUTPUT_LENGTH) {
     truncated = true
 
-    // Re-sanitize prefixes instead of cutting the serialized output. Every
-    // candidate is therefore a complete, balanced HTML fragment.
-    let low = 0
-    let high = Math.max(0, source.length - 1)
-    let best = sanitizePass('')
-
-    while (low <= high) {
-      const middle = low + Math.floor((high - low) / 2)
-      const candidate = sanitizePass(safeSourcePrefix(source, middle))
-
-      if (candidate.html.length <= MAX_OUTPUT_LENGTH) {
-        best = candidate
-        low = middle + 1
-      } else {
-        high = middle - 1
-      }
-    }
-
-    sanitized = best
+    // The first result is already trusted HTML, so one deterministic second
+    // pass can repair a prefix without binary-searching and reparsing untrusted
+    // input many times. Headroom covers repaired entities and implied closing
+    // tags. The empty fallback is balanced if a future serializer exceeds it.
+    const balanced = sanitizePass(
+      safeSourcePrefix(
+        sanitized.html,
+        MAX_OUTPUT_LENGTH - OUTPUT_REBALANCE_HEADROOM,
+      ),
+      { trustRemoteImageMarkers: true },
+    )
+    sanitized = balanced.html.length <= MAX_OUTPUT_LENGTH
+      ? balanced
+      : { html: '', hasRemoteImages: false, tagLimitExceeded: false }
   }
 
   return {

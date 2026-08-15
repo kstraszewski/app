@@ -143,7 +143,7 @@ export function normalizeNip(value: unknown): string {
   return nip
 }
 
-export function parsePublicCompanyQuery(query: Record<string, unknown>): string {
+export function parseCompanyLookupQuery(query: Record<string, unknown>): string {
   const keys = Object.keys(query)
   if (keys.length !== 1 || keys[0] !== 'nip') {
     throw createError({
@@ -211,4 +211,41 @@ export async function fetchCeidgCompany(
   const record = payload as Record<string, unknown>
   if (Array.isArray(record.firma) && record.firma.length === 0) return null
   return record
+}
+
+export async function lookupCeidgCompany(
+  options: CeidgCompanyLookupOptions,
+): Promise<CeidgCompanyData> {
+  let payload: Record<string, unknown> | null
+  try {
+    payload = await fetchCeidgCompany(options)
+  }
+  catch (error) {
+    if (error instanceof CeidgApiError) {
+      throw createError({ statusCode: error.status, statusMessage: error.message })
+    }
+    throw error
+  }
+
+  if (!payload) {
+    throw createError({ statusCode: 404, statusMessage: 'Nie znaleziono firmy w CEIDG.' })
+  }
+  const upstreamCompany = Array.isArray(payload.firma)
+    ? recordValue(payload.firma[0])
+    : recordValue(payload.firma)
+  const upstreamOwner = recordValue(upstreamCompany?.wlasciciel)
+  const upstreamNip = textValue(upstreamOwner?.nip, upstreamCompany?.nip).replaceAll(/\D/gu, '')
+  const company = mapCeidgCompany(payload, options.nip)
+  if (
+    !company
+    || !company.ceidgId
+    || !company.name
+    || upstreamNip !== options.nip
+  ) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'CEIDG API returned an invalid company record',
+    })
+  }
+  return { ...company, nip: options.nip }
 }

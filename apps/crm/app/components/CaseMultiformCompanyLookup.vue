@@ -6,24 +6,37 @@ import type {
 import type { MultiformFieldValue } from '~/types/multiform'
 
 const props = withDefaults(defineProps<{
+  applyLabel?: string
+  description?: string
+  fieldName?: string
   lookupUrl: string
   modelValue?: MultiformFieldValue
   required?: boolean
   invalid?: boolean
+  resultHint?: string
+  title?: string
 }>(), {
+  applyLabel: 'Uzupełnij puste pola',
+  description: 'Wpisz NIP, sprawdź wynik i uzupełnij dostępne puste pola.',
+  fieldName: 'businessNip',
   modelValue: '',
   required: false,
   invalid: false,
+  resultHint: 'dane nie zastąpią ręcznie wpisanych wartości',
+  title: 'Pobierz dane firmy z CEIDG',
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  apply: [company: CeidgCompanyData]
+  'update:pending': [value: boolean]
+  apply: [company: CeidgCompanyData, source: CeidgCompanyLookupResponse['source']]
 }>()
 
 const pending = ref(false)
 const errorMessage = ref('')
 const result = ref<CeidgCompanyData | null>(null)
+const resultSource = ref<CeidgCompanyLookupResponse['source'] | null>(null)
+const titleId = useId()
 
 const normalizedNip = computed(() => String(props.modelValue ?? '').replaceAll(/\D/gu, ''))
 const canLookup = computed(() => normalizedNip.value.length === 10 && !pending.value)
@@ -41,7 +54,10 @@ const statusColor = computed(() => {
 
 watch(() => props.modelValue, () => {
   errorMessage.value = ''
-  if (result.value && normalizedNip.value !== result.value.nip) result.value = null
+  if (result.value && normalizedNip.value !== result.value.nip) {
+    result.value = null
+    resultSource.value = null
+  }
 })
 
 function readableLookupError(error: unknown) {
@@ -55,45 +71,65 @@ function readableLookupError(error: unknown) {
     ?? candidate.data?.message
     ?? candidate.statusMessage
     ?? candidate.message
-  return typeof message === 'string' && message.trim()
-    ? message
-    : 'Nie udało się pobrać danych z CEIDG.'
+  if (typeof message !== 'string' || !message.trim()) {
+    return 'Nie udało się pobrać danych z CEIDG.'
+  }
+  const knownMessages: Record<string, string> = {
+    'nip checksum is invalid': 'NIP ma nieprawidłową sumę kontrolną.',
+    'nip must contain 10 digits': 'NIP powinien zawierać dokładnie 10 cyfr.',
+    'CEIDG API token is not configured': 'Integracja CEIDG nie została skonfigurowana.',
+    'CEIDG API credentials were rejected': 'Dostęp do CEIDG wymaga ponownej konfiguracji.',
+    'CEIDG API rate limit was exceeded': 'Limit zapytań do CEIDG został wyczerpany. Spróbuj później.',
+    'CEIDG API is unavailable': 'CEIDG jest chwilowo niedostępne. Spróbuj ponownie.',
+    'CEIDG API request failed': 'CEIDG nie obsłużyło zapytania. Spróbuj ponownie.',
+    'CEIDG API returned an invalid company record': 'CEIDG zwróciło niepełne dane firmy. Spróbuj ponownie później.',
+  }
+  return knownMessages[message.trim()] ?? message.trim()
 }
 
 async function lookupCompany() {
   if (!canLookup.value) return
+  const requestedNip = normalizedNip.value
   pending.value = true
+  emit('update:pending', true)
   errorMessage.value = ''
   result.value = null
-  emit('update:modelValue', normalizedNip.value)
+  resultSource.value = null
+  emit('update:modelValue', requestedNip)
   try {
     const response = await $fetch<CeidgCompanyLookupResponse>(props.lookupUrl, {
-      query: { nip: normalizedNip.value },
+      query: { nip: requestedNip },
     })
+    if (normalizedNip.value !== requestedNip) return
     result.value = response.company
+    resultSource.value = response.source
   }
   catch (error) {
+    if (normalizedNip.value !== requestedNip) return
     errorMessage.value = readableLookupError(error)
   }
   finally {
     pending.value = false
+    emit('update:pending', false)
   }
 }
+
+onBeforeUnmount(() => emit('update:pending', false))
 </script>
 
 <template>
-  <section class="case-company-lookup" aria-labelledby="case-company-lookup-title">
+  <section class="case-company-lookup" :aria-labelledby="titleId">
     <div class="case-company-lookup__heading">
       <span class="case-company-lookup__icon"><UIcon name="i-lucide-building-2" /></span>
       <div>
-        <strong id="case-company-lookup-title">Pobierz dane firmy z CEIDG</strong>
-        <small>Wpisz NIP, sprawdź wynik i uzupełnij dostępne puste pola.</small>
+        <strong :id="titleId">{{ title }}</strong>
+        <small>{{ description }}</small>
       </div>
     </div>
 
     <div class="case-company-lookup__controls">
       <UFormField
-        name="businessNip"
+        :name="fieldName"
         label="NIP firmy"
         :required="required"
         :error="fieldError"
@@ -111,6 +147,7 @@ async function lookupCompany() {
         />
       </UFormField>
       <UButton
+        type="button"
         color="neutral"
         variant="solid"
         icon="i-lucide-search"
@@ -162,15 +199,17 @@ async function lookupCompany() {
       <div class="case-company-lookup__result-actions">
         <span>
           {{ result.pkd.length }} {{ result.pkd.length === 1 ? 'kod PKD' : 'kodów PKD' }}
-          · dane nie zastąpią ręcznie wpisanych wartości
+          · {{ resultHint }}
         </span>
         <UButton
+          type="button"
           color="primary"
           variant="soft"
           icon="i-lucide-wand-sparkles"
-          @click="emit('apply', result)"
+          :disabled="!resultSource"
+          @click="resultSource && emit('apply', result, resultSource)"
         >
-          Uzupełnij puste pola
+          {{ applyLabel }}
         </UButton>
       </div>
     </div>
@@ -181,6 +220,10 @@ async function lookupCompany() {
 .case-company-lookup {
   grid-column: 1 / -1;
   display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   gap: 1rem;
   padding: 1rem;
   border: 1px solid color-mix(in srgb, var(--ui-primary) 24%, var(--ui-border));
@@ -195,6 +238,7 @@ async function lookupCompany() {
   display: flex;
   align-items: center;
   gap: .75rem;
+  min-width: 0;
 }
 
 .case-company-lookup__heading > div,
@@ -228,6 +272,7 @@ async function lookupCompany() {
 
 .case-company-lookup__nip {
   width: min(100%, 22rem);
+  min-width: 0;
 }
 
 .case-company-lookup__error {
@@ -241,6 +286,7 @@ async function lookupCompany() {
 
 .case-company-lookup__result {
   display: grid;
+  min-width: 0;
   gap: .85rem;
   padding: .9rem;
   border: 1px solid var(--ui-border);
@@ -266,6 +312,7 @@ async function lookupCompany() {
 
 .case-company-lookup dl > div {
   display: grid;
+  min-width: 0;
   gap: .12rem;
 }
 
@@ -279,6 +326,7 @@ async function lookupCompany() {
 
 .case-company-lookup dd {
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: .82rem;
 }
 

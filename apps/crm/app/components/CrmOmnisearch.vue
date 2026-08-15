@@ -125,7 +125,7 @@ const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [
   items: remoteItems('forum'),
 }, {
   id: 'crm-bank-files',
-  label: 'Pliki z banków',
+  label: 'Dokumenty bankowe',
   ignoreFilter: true,
   highlightedIcon: 'i-lucide-corner-down-left',
   items: remoteItems('bankFiles'),

@@ -4,9 +4,10 @@ import test from 'node:test'
 import {
   CeidgApiError,
   fetchCeidgCompany,
+  lookupCeidgCompany,
   mapCeidgCompany,
   normalizeNip,
-  parsePublicCompanyQuery,
+  parseCompanyLookupQuery,
 } from '../server/utils/ceidg-company.ts'
 
 test('normalizes a valid Polish NIP and verifies its checksum', () => {
@@ -67,15 +68,67 @@ test('maps the CEIDG company record to the internal form contract', () => {
 })
 
 test('accepts exactly one nip query parameter', () => {
-  assert.equal(parsePublicCompanyQuery({ nip: '5260250274' }), '5260250274')
+  assert.equal(parseCompanyLookupQuery({ nip: '5260250274' }), '5260250274')
   assert.throws(
-    () => parsePublicCompanyQuery({ nip: '5260250274', refresh: '1' }),
+    () => parseCompanyLookupQuery({ nip: '5260250274', refresh: '1' }),
     /Exactly one query parameter/u,
   )
   assert.throws(
-    () => parsePublicCompanyQuery({ nip: ['5260250274', '5260250274'] }),
+    () => parseCompanyLookupQuery({ nip: ['5260250274', '5260250274'] }),
     /provided once/u,
   )
+})
+
+test('returns the mapped private lookup contract and a sanitized not-found error', async () => {
+  const result = await lookupCeidgCompany({
+    apiBaseUrl: 'https://dane.biznes.gov.pl',
+    fetcher: async () => Response.json({
+      firma: [{
+        id: 'company-id',
+        nazwa: 'Przykładowa firma',
+        wlasciciel: { nip: '5260250274' },
+      }],
+    }),
+    nip: '5260250274',
+    token: 'secret-token',
+  })
+  assert.equal(result.ceidgId, 'company-id')
+  assert.equal(result.nip, '5260250274')
+
+  await assert.rejects(
+    lookupCeidgCompany({
+      apiBaseUrl: 'https://dane.biznes.gov.pl',
+      fetcher: async () => new Response(null, { status: 204 }),
+      nip: '5260250274',
+      token: 'secret-token',
+    }),
+    (error: unknown) => {
+      const candidate = error as { statusCode?: number, statusMessage?: string }
+      return candidate.statusCode === 404
+        && candidate.statusMessage === 'Nie znaleziono firmy w CEIDG.'
+    },
+  )
+})
+
+test('rejects malformed or mismatched CEIDG company records', async () => {
+  const lookup = (firma: Record<string, unknown>) => lookupCeidgCompany({
+    apiBaseUrl: 'https://dane.biznes.gov.pl',
+    fetcher: async () => Response.json({ firma: [firma] }),
+    nip: '5260250274',
+    token: 'secret-token',
+  })
+
+  for (const firma of [
+    {},
+    { id: 'company-id', nazwa: 'Firma bez NIP' },
+    { id: 'company-id', nazwa: 'Inna firma', wlasciciel: { nip: '1111111111' } },
+  ]) {
+    await assert.rejects(lookup(firma), (error: unknown) => {
+      const candidate = error as { statusCode?: number, statusMessage?: string }
+      return candidate.statusCode === 502
+        && candidate.statusMessage === 'CEIDG API returned an invalid company record'
+    })
+  }
 })
 
 test('forwards the complete CEIDG v3 response without reducing fields', async () => {

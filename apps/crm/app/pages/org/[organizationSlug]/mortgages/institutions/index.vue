@@ -10,7 +10,7 @@ definePageMeta({
   path: 'settings/institutions',
   alias: ['mortgages/institutions'],
 })
-useHead({ title: 'Instytucje — ustawienia administracyjne — OpenExpert' })
+useHead({ title: 'Instytucje — Administracja systemu — OpenExpert' })
 
 type BankOverride = {
   id: string
@@ -166,8 +166,8 @@ function clearFilters() {
 <template>
   <CrmShell
     title="Instytucje"
-    eyebrow="Ustawienia administracyjne"
-    description="Katalog instytucji finansowych i produktów dostępnych w organizacji."
+    eyebrow="Administracja systemu"
+    description="Globalny katalog instytucji finansowych z ustawieniami dostępności dla aktywnej organizacji."
   >
     <template #actions>
       <UButton

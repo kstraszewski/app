@@ -581,6 +581,7 @@ export interface CreateClientConsentDecision {
  * decisions later through the verified SMS capture flow.
  */
 export interface CreateClientRequest {
+  ceidg_nip?: string
   display_name?: string
   status_code?: string
   lead_source?: string

@@ -14,7 +14,7 @@ definePageMeta({
   path: 'settings/products',
   alias: ['mortgages/offers'],
 })
-useHead({ title: 'Produkty kredytowe — ustawienia administracyjne — OpenExpert' })
+useHead({ title: 'Produkty kredytowe — Administracja systemu — OpenExpert' })
 
 const route = useRoute()
 const toast = useToast()
@@ -207,8 +207,8 @@ function validityLabel(offer: MortgageOfferSummary) {
 <template>
   <CrmShell
     title="Produkty kredytowe"
-    eyebrow="Ustawienia administracyjne"
-    description="Katalog produktów, ich wersji, statusów publikacji i ustawień kalkulatora."
+    eyebrow="Administracja systemu"
+    description="Globalny katalog produktów, ich wersji, statusów publikacji i ustawień kalkulatora."
   >
     <template #actions>
       <UButton v-if="isSuperAdmin" icon="i-lucide-plus" @click="openCreate()">

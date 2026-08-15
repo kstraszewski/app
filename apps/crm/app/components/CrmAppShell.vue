@@ -3,9 +3,11 @@ import type { CrmMeetingListResponse } from '~/types/crm-meeting'
 import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
 import {
   CRM_CALCULATOR_PATHS,
-  createMortgageAdminNavigationItems,
+  createOrganizationAdministrationNavigationItems,
+  createSystemAdministrationNavigationItems,
   isCrmNavigationPathActive,
 } from '~/utils/crm-navigation'
+import { organizationSettingsTabDefinitions } from '~/composables/useOrganizationSettingsTabs'
 
 const props = withDefaults(defineProps<{
   assistantPage?: boolean
@@ -354,48 +356,19 @@ const navGroups = computed<NavigationGroup[]>(() => {
     })
   }
 
-  if (isOrganizationAdmin.value || isSuperAdmin.value) {
-    const adminItems: NavigationItem[] = []
-
-    if (isOrganizationAdmin.value) {
-      adminItems.push(
-        { label: 'Użytkownicy', to: `${organizationBase.value}/users`, icon: 'i-lucide-user-round-cog' },
-        { label: 'Zgody', to: `${organizationBase.value}/consents`, icon: 'i-lucide-shield-check' },
-      )
-    }
-
-    if (isSuperAdmin.value) {
-      adminItems.push(...createMortgageAdminNavigationItems(organizationSlug.value))
-    }
-
-    if (isOrganizationAdmin.value) {
-      adminItems.push(
-        {
-          label: 'Zdolność',
-          to: `${organizationBase.value}/settings/capacity`,
-          icon: 'i-lucide-calculator',
-        },
-        {
-          label: 'Pośrednik',
-          to: `${organizationBase.value}/settings/intermediary`,
-          icon: 'i-lucide-landmark',
-        },
-        {
-          label: 'Design',
-          to: `${organizationBase.value}/settings/design`,
-          icon: 'i-lucide-component',
-          activePaths: [
-            `${organizationBase.value}/settings/design`,
-            `${organizationBase.value}/settings/design/materials`,
-          ],
-        },
-      )
-    }
-
+  if (isOrganizationAdmin.value) {
     groups.push({
-      key: 'admin',
+      key: 'organization-admin',
       label: 'Administracja organizacji',
-      items: adminItems,
+      items: createOrganizationAdministrationNavigationItems(organizationSlug.value),
+    })
+  }
+
+  if (isSuperAdmin.value) {
+    groups.push({
+      key: 'system-admin',
+      label: 'Administracja systemu',
+      items: createSystemAdministrationNavigationItems(organizationSlug.value),
     })
   }
 
@@ -405,49 +378,51 @@ const navGroups = computed<NavigationGroup[]>(() => {
 const omnisearchPages = computed(() => {
   const pageGroups = (isOrganizationAdmin.value || isSuperAdmin.value)
     ? [...navGroups.value].sort((left, right) => {
-        const priority = { admin: 0, 'team-admin': 1, experiments: 2, overview: 3, expert: 4, calculators: 5 }
-        return (priority[left.key as keyof typeof priority] ?? 5)
-          - (priority[right.key as keyof typeof priority] ?? 5)
+        const priority = {
+          'organization-admin': 0,
+          'system-admin': 1,
+          'team-admin': 2,
+          experiments: 3,
+          overview: 4,
+          expert: 5,
+          calculators: 6,
+        }
+        return (priority[left.key as keyof typeof priority] ?? 6)
+          - (priority[right.key as keyof typeof priority] ?? 6)
       })
     : navGroups.value
 
-  const pages = pageGroups.flatMap(group => group.items.map((item) => {
-    const label = item.to === `${organizationBase.value}/settings/capacity`
-      ? 'Ustawienia zdolności'
-      : item.label
-
-    return {
-      id: `page:${group.key}:${item.to}`,
-      label,
-      description: group.label,
-      suffix: 'Strona',
-      icon: item.icon,
-      to: item.to,
-      keywords: `${group.label} ${item.label} ${label}`,
-    }
-  }))
+  const pages = pageGroups.flatMap(group => group.items.map(item => ({
+    id: `page:${group.key}:${item.to}`,
+    label: item.label,
+    description: group.label,
+    suffix: 'Strona',
+    icon: item.icon,
+    to: item.to,
+    keywords: `${group.label} ${item.label}`,
+  })))
 
   if (isOrganizationAdmin.value) {
+    pages.push(...organizationSettingsTabDefinitions
+      .filter(tab => tab.key !== 'overview')
+      .map(tab => ({
+        id: `page:organization-settings:${tab.key}`,
+        label: tab.label,
+        description: 'Ustawienia organizacji',
+        suffix: 'Zakładka',
+        icon: tab.icon,
+        to: `${organizationBase.value}${tab.path}`,
+        keywords: `Administracja organizacji Ustawienia ${tab.label}`,
+      })))
+
     pages.push({
-      id: 'page:admin:consents-history',
+      id: 'page:organization-admin:consents-history',
       label: 'Historia zmian zgód',
       description: 'Administracja organizacji',
       suffix: 'Zakładka',
       icon: 'i-lucide-history',
       to: `${organizationBase.value}/consents?view=history`,
       keywords: 'zgody historia zmian rejestr',
-    })
-  }
-
-  if (isSuperAdmin.value) {
-    pages.push({
-      id: 'page:admin:products',
-      label: 'Produkty',
-      description: 'Administracja organizacji',
-      suffix: 'Strona',
-      icon: 'i-lucide-package-search',
-      to: `${organizationBase.value}/settings/products`,
-      keywords: 'produkty oferty banki instytucje',
     })
   }
 

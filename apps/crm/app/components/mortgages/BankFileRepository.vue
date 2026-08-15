@@ -18,6 +18,7 @@ const props = withDefaults(defineProps<{
   title?: string | null
   description?: string | null
   showHeading?: boolean
+  showUploadAction?: boolean
   autoSelectFirst?: boolean
   initialFileId?: string | null
   initialPage?: number | null
@@ -30,6 +31,7 @@ const props = withDefaults(defineProps<{
   title: null,
   description: null,
   showHeading: true,
+  showUploadAction: true,
   autoSelectFirst: true,
   initialFileId: null,
   initialPage: null,
@@ -39,6 +41,7 @@ const emit = defineEmits<{
   uploaded: []
   selected: [file: MortgageBankFileSummary | null]
 }>()
+const uploadModalOpen = defineModel<boolean>('uploadOpen', { default: false })
 
 const toast = useToast()
 const searchField = ref<HTMLElement | null>(null)
@@ -52,7 +55,6 @@ const selectedStatus = ref<'all' | MortgageBankFileStatus>('current')
 const selectedFileId = ref<string | null>(props.initialFileId)
 const previewPage = ref(positivePage(props.initialPage) ?? 1)
 const requestedPreviewPage = ref<number | null>(positivePage(props.initialPage))
-const uploadExpanded = ref(false)
 const uploadFiles = ref<File[]>([])
 const uploading = ref(false)
 const creatingTemplateForId = ref<string | null>(null)
@@ -431,6 +433,11 @@ function movePreview(direction: -1 | 1) {
   previewPage.value = Math.max(1, Math.min(maxPage, nextPage))
 }
 
+function openUpload() {
+  if (!data.value.permissions.canUpload) return
+  uploadModalOpen.value = true
+}
+
 async function submitUpload() {
   if (!uploadFiles.value.length || uploading.value) return
   if (!effectiveBankId.value) {
@@ -455,7 +462,7 @@ async function submitUpload() {
       body,
     })
     uploadFiles.value = []
-    uploadExpanded.value = false
+    uploadModalOpen.value = false
     await refresh()
     toast.add({
       title: 'Pliki zostały dodane',
@@ -491,70 +498,77 @@ async function submitUpload() {
         <p>{{ headingDescription }}</p>
       </div>
       <UButton
-        v-if="data.permissions.canUpload"
+        v-if="showUploadAction && data.permissions.canUpload"
         icon="i-lucide-plus"
         size="lg"
-        :aria-expanded="uploadExpanded"
-        @click="uploadExpanded = !uploadExpanded"
+        @click="openUpload"
       >
-        Dodaj pliki
+        Dodaj plik
       </UButton>
     </header>
 
-    <section v-if="uploadExpanded" class="bank-files__upload" aria-labelledby="bank-file-upload-title">
-      <div class="bank-files__upload-heading">
-        <div>
-          <span>Nowe materiały</span>
-          <h3 id="bank-file-upload-title">Dodaj pliki do repozytorium</h3>
-          <p>PDF, DOCX, XLSX, JPG lub PNG. Po przesłaniu pliki zostaną opisane i zindeksowane.</p>
+    <UModal
+      v-model:open="uploadModalOpen"
+      title="Dodaj pliki do repozytorium"
+      description="PDF, DOCX, XLSX, JPG lub PNG. Po przesłaniu pliki zostaną opisane i zindeksowane."
+      :dismissible="!uploading"
+      :close="{ disabled: uploading }"
+      :ui="{ content: 'sm:max-w-2xl', footer: 'justify-between' }"
+    >
+      <template #body>
+        <div class="bank-files__upload-form">
+          <UFormField
+            v-if="!lockInstitution"
+            label="Instytucja źródłowa"
+            description="Pliki zostaną przypisane do wybranego banku."
+            required
+          >
+            <USelect
+              v-model="selectedInstitution"
+              class="w-full"
+              :items="institutionItems"
+              aria-label="Instytucja źródłowa przesyłanych plików"
+            />
+          </UFormField>
+          <UFileUpload
+            v-model="uploadFiles"
+            multiple
+            reset
+            layout="list"
+            position="outside"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg"
+            icon="i-lucide-cloud-upload"
+            label="Wybierz lub przeciągnij pliki"
+            description="Maksymalny rozmiar pojedynczego pliku zależy od ustawień organizacji."
+            :disabled="uploading"
+            :ui="{ base: 'min-h-32', files: 'mt-3' }"
+          />
         </div>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          square
-          icon="i-lucide-x"
-          aria-label="Zamknij dodawanie plików"
-          @click="uploadExpanded = false"
-        />
-      </div>
-      <UFormField
-        v-if="!lockInstitution"
-        label="Instytucja źródłowa"
-        description="Pliki zostaną przypisane do wybranego banku."
-        required
-      >
-        <USelect
-          v-model="selectedInstitution"
-          class="w-full max-w-md"
-          :items="institutionItems"
-          aria-label="Instytucja źródłowa przesyłanych plików"
-        />
-      </UFormField>
-      <UFileUpload
-        v-model="uploadFiles"
-        multiple
-        reset
-        layout="list"
-        position="outside"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg"
-        icon="i-lucide-cloud-upload"
-        label="Wybierz lub przeciągnij pliki"
-        description="Maksymalny rozmiar pojedynczego pliku zależy od ustawień organizacji."
-        :disabled="uploading"
-        :ui="{ base: 'min-h-28', files: 'mt-3' }"
-      />
-      <div class="bank-files__upload-actions">
-        <span>{{ uploadFiles.length ? `${uploadFiles.length} wybranych plików` : 'Nie wybrano plików' }}</span>
-        <UButton
-          icon="i-lucide-upload"
-          :disabled="!uploadFiles.length || !effectiveBankId"
-          :loading="uploading"
-          @click="submitUpload"
-        >
-          Prześlij
-        </UButton>
-      </div>
-    </section>
+      </template>
+      <template #footer>
+        <span class="bank-files__upload-count">
+          {{ uploadFiles.length ? `${uploadFiles.length} wybranych plików` : 'Nie wybrano plików' }}
+        </span>
+        <div class="bank-files__upload-buttons">
+          <UButton
+            color="neutral"
+            variant="outline"
+            :disabled="uploading"
+            @click="uploadModalOpen = false"
+          >
+            Anuluj
+          </UButton>
+          <UButton
+            icon="i-lucide-upload"
+            :disabled="!uploadFiles.length || !effectiveBankId"
+            :loading="uploading"
+            @click="submitUpload"
+          >
+            Prześlij
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <div class="bank-files__toolbar">
       <div class="bank-files__search-row">
@@ -705,9 +719,9 @@ async function submitUpload() {
             <UButton
               v-else-if="data.permissions.canUpload"
               icon="i-lucide-plus"
-              @click="uploadExpanded = true"
+              @click="openUpload"
             >
-              Dodaj pliki
+              Dodaj plik
             </UButton>
           </div>
 
@@ -1001,7 +1015,6 @@ async function submitUpload() {
 }
 
 .bank-files--preview > .bank-files__heading,
-.bank-files--preview > .bank-files__upload,
 .bank-files--preview > .bank-files__toolbar,
 .bank-files--preview > .bank-files__state {
   grid-column: 1;
@@ -1009,7 +1022,6 @@ async function submitUpload() {
 }
 
 .bank-files--full-bleed.bank-files--preview > .bank-files__heading,
-.bank-files--full-bleed.bank-files--preview > .bank-files__upload,
 .bank-files--full-bleed.bank-files--preview > .bank-files__toolbar,
 .bank-files--full-bleed.bank-files--preview > .bank-files__state {
   margin-left: 24px;
@@ -1020,8 +1032,6 @@ async function submitUpload() {
 }
 
 .bank-files__heading,
-.bank-files__upload-heading,
-.bank-files__upload-actions,
 .bank-files__search-row,
 .bank-files__filters,
 .bank-files__preview > header,
@@ -1039,8 +1049,6 @@ async function submitUpload() {
 
 .bank-files__heading h2,
 .bank-files__heading p,
-.bank-files__upload-heading h3,
-.bank-files__upload-heading p,
 .bank-files__preview h3,
 .bank-files__empty h3,
 .bank-files__empty p {
@@ -1060,8 +1068,7 @@ async function submitUpload() {
 }
 
 .bank-files__eyebrow,
-.bank-files__category-label,
-.bank-files__upload-heading span {
+.bank-files__category-label {
   display: block;
   margin-bottom: 7px;
   color: var(--ui-text-muted);
@@ -1072,30 +1079,18 @@ async function submitUpload() {
   text-transform: uppercase;
 }
 
-.bank-files__upload {
+.bank-files__upload-form {
   display: grid;
   gap: 16px;
-  margin-bottom: 18px;
-  padding: 18px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-surface);
-  background: var(--ui-bg-muted);
 }
 
-.bank-files__upload-heading,
-.bank-files__upload-actions {
-  justify-content: space-between;
+.bank-files__upload-buttons {
+  display: flex;
+  align-items: center;
   gap: 16px;
 }
 
-.bank-files__upload-heading h3 {
-  color: var(--ui-text-highlighted);
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.bank-files__upload-heading p,
-.bank-files__upload-actions span {
+.bank-files__upload-count {
   color: var(--ui-text-muted);
   font-size: 12px;
 }
@@ -1623,7 +1618,6 @@ async function submitUpload() {
   }
 
   .bank-files--preview > .bank-files__heading,
-  .bank-files--preview > .bank-files__upload,
   .bank-files--preview > .bank-files__toolbar,
   .bank-files--preview > .bank-files__state {
     margin-right: 0;
@@ -1664,7 +1658,6 @@ async function submitUpload() {
   }
 
   .bank-files--full-bleed.bank-files--preview > .bank-files__heading,
-  .bank-files--full-bleed.bank-files--preview > .bank-files__upload,
   .bank-files--full-bleed.bank-files--preview > .bank-files__toolbar,
   .bank-files--full-bleed.bank-files--preview > .bank-files__state {
     margin-right: 16px;

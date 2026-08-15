@@ -33,3 +33,12 @@ apps/*/.env.*
 # Local MCP configuration (each contributor supplies private integrations)
 .mcp.json
 .env*
+
+# Generated local QA, build, and document artifacts
+.playwright-mcp/
+apps/crm/.nuxt-mail-release-*/
+apps/crm/output/
+apps/landing/.design-qa/
+openexpert-mail-desktop.png
+output/
+tmp/

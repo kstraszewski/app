@@ -3,21 +3,46 @@ export const CRM_CALCULATOR_PATHS = {
   mortgages: '/calculator/mortgages',
 } as const
 
-const CRM_MORTGAGE_ADMIN_NAVIGATION_DEFINITIONS = [
+const CRM_SYSTEM_ADMINISTRATION_NAVIGATION_DEFINITIONS = [
   {
     label: 'Instytucje',
     path: '/settings/institutions',
     icon: 'i-lucide-landmark',
   },
   {
-    label: 'Produkty',
+    label: 'Produkty kredytowe',
     path: '/settings/products',
     icon: 'i-lucide-package-search',
   },
   {
-    label: 'Pliki z banków',
+    label: 'Dokumenty bankowe',
     path: '/settings/institution-files',
     icon: 'i-lucide-folder-search-2',
+  },
+] as const
+
+const CRM_ORGANIZATION_ADMINISTRATION_NAVIGATION_DEFINITIONS = [
+  {
+    label: 'Użytkownicy',
+    path: '/users',
+    icon: 'i-lucide-user-round-cog',
+  },
+  {
+    label: 'Zgody',
+    path: '/consents',
+    icon: 'i-lucide-shield-check',
+  },
+  {
+    label: 'Ustawienia',
+    path: '/settings/organization',
+    icon: 'i-lucide-settings-2',
+    activePaths: [
+      '/settings/organization',
+      '/settings/capacity',
+      '/settings/intermediary',
+      '/settings/design',
+      '/mortgages/capacity/admin',
+    ],
   },
 ] as const
 
@@ -27,10 +52,24 @@ export interface CrmNavigationTarget {
   exact?: boolean
 }
 
-export function createMortgageAdminNavigationItems(organizationSlug: string) {
+export function createOrganizationAdministrationNavigationItems(organizationSlug: string) {
   const organizationBase = `/org/${encodeURIComponent(organizationSlug)}`
 
-  return CRM_MORTGAGE_ADMIN_NAVIGATION_DEFINITIONS.map(item => ({
+  return CRM_ORGANIZATION_ADMINISTRATION_NAVIGATION_DEFINITIONS.map(item => ({
+    label: item.label,
+    to: `${organizationBase}${item.path}`,
+    icon: item.icon,
+    exact: false,
+    ...('activePaths' in item
+      ? { activePaths: item.activePaths.map(path => `${organizationBase}${path}`) }
+      : {}),
+  }))
+}
+
+export function createSystemAdministrationNavigationItems(organizationSlug: string) {
+  const organizationBase = `/org/${encodeURIComponent(organizationSlug)}`
+
+  return CRM_SYSTEM_ADMINISTRATION_NAVIGATION_DEFINITIONS.map(item => ({
     label: item.label,
     to: `${organizationBase}${item.path}`,
     icon: item.icon,

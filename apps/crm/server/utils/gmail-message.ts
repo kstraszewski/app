@@ -353,7 +353,13 @@ function collectTextParts(
   if (!part) return
   const filename = String(part.filename ?? '').trim()
   const mimeType = String(part.mimeType ?? '').toLowerCase()
-  if (!filename && part.body?.data) {
+  const disposition = headerValue(part.headers, 'content-disposition')
+    .split(';', 1)[0]
+    ?.trim()
+    .toLowerCase()
+  if (filename || disposition === 'attachment' || mimeType === 'message/rfc822') return
+
+  if (part.body?.data) {
     const decoded = decodePartBody(part)
     if (mimeType === 'text/plain') textParts.push(decoded)
     else if (mimeType === 'text/html') htmlParts.push(decoded)

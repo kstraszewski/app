@@ -104,6 +104,10 @@ const defaults = {
   OPENEXPERT_RUNTIME_PASSWORD: 'openexpert-runtime-local',
   NUXT_DATA_API_JWT_AUDIENCE: 'openexpert-data',
   NUXT_DATA_API_JWT_ISSUER: 'openexpert-local',
+  NUXT_CEIDG_API_BASE_URL: 'https://dane.biznes.gov.pl',
+  NUXT_CEIDG_API_TOKEN: '',
+  NUXT_CEIDG_GLOBAL_HOURLY_LIMIT: '1000',
+  NUXT_CEIDG_GLOBAL_MINUTE_LIMIT: '120',
   NUXT_LIVEKIT_API_KEY: 'devkey',
   NUXT_LIVEKIT_API_SECRET: 'secret',
   NUXT_MINIO_ACCESS_KEY_ID: 'openexpert',
@@ -219,6 +223,10 @@ function syncApplicationEnvFiles(values) {
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/crm/.env'), {
     ...dataApi,
     NUXT_BOOKING_RATE_LIMIT_SECRET: values.NUXT_BOOKING_RATE_LIMIT_SECRET,
+    NUXT_CEIDG_API_BASE_URL: values.NUXT_CEIDG_API_BASE_URL,
+    NUXT_CEIDG_API_TOKEN: values.NUXT_CEIDG_API_TOKEN,
+    NUXT_CEIDG_GLOBAL_HOURLY_LIMIT: values.NUXT_CEIDG_GLOBAL_HOURLY_LIMIT,
+    NUXT_CEIDG_GLOBAL_MINUTE_LIMIT: values.NUXT_CEIDG_GLOBAL_MINUTE_LIMIT,
     NUXT_CLIENT_PORTAL_BASE_URL: 'http://127.0.0.1:3006',
     NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL: 'http://127.0.0.1:3006',
   })

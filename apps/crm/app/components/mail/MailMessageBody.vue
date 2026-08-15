@@ -7,8 +7,9 @@ import {
 
 const props = defineProps<{
   bodyText: string
-  bodyHtml?: string | null
-  hasRemoteImages?: boolean
+  bodyHtml: string | null
+  hasRemoteImages: boolean
+  remoteImageProxyPath: string
 }>()
 
 const paragraphs = computed(() => mailBodyParagraphs(props.bodyText))
@@ -23,9 +24,11 @@ const iframeElement = ref<HTMLIFrameElement | null>(null)
 const iframeHeight = ref(160)
 const MAX_IFRAME_HEIGHT = 12_000
 let iframeResizeObserver: ResizeObserver | null = null
+let iframeResizeFrame: number | null = null
 
 const htmlSrcdoc = computed(() => buildMailHtmlSrcdoc(props.bodyHtml || '', {
   loadRemoteImages: remoteImagesLoaded.value,
+  remoteImageProxyPath: props.remoteImageProxyPath,
 }))
 
 watch(() => props.bodyHtml, (bodyHtml) => {
@@ -53,25 +56,39 @@ function observeIframeSize() {
   if (!iframe || !document) return
 
   const updateHeight = () => {
-    const bodyHeight = document.body?.scrollHeight || 0
-    const documentHeight = document.documentElement?.scrollHeight || 0
-    iframeHeight.value = Math.min(
+    iframeResizeFrame = null
+    const bodyHeight = Math.ceil(Math.max(
+      document.body?.scrollHeight || 0,
+      document.body?.offsetHeight || 0,
+    ))
+    const nextHeight = Math.min(
       MAX_IFRAME_HEIGHT,
-      Math.max(1, bodyHeight, documentHeight),
+      Math.max(1, bodyHeight),
     )
+    if (Math.abs(nextHeight - iframeHeight.value) > 1) {
+      iframeHeight.value = nextHeight
+    }
+  }
+
+  const scheduleHeightUpdate = () => {
+    if (iframeResizeFrame !== null) return
+    iframeResizeFrame = window.requestAnimationFrame(updateHeight)
   }
 
   updateHeight()
   if (!('ResizeObserver' in window)) return
 
-  iframeResizeObserver = new ResizeObserver(updateHeight)
-  if (document.documentElement) iframeResizeObserver.observe(document.documentElement)
+  iframeResizeObserver = new ResizeObserver(scheduleHeightUpdate)
   if (document.body) iframeResizeObserver.observe(document.body)
 }
 
 function disconnectIframeResizeObserver() {
   iframeResizeObserver?.disconnect()
   iframeResizeObserver = null
+  if (iframeResizeFrame !== null) {
+    window.cancelAnimationFrame(iframeResizeFrame)
+    iframeResizeFrame = null
+  }
 }
 </script>
 

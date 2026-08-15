@@ -14,7 +14,7 @@ import {
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
-useHead({ title: 'Design — Ustawienia — OpenExpert CRM' })
+useHead({ title: 'Marka i wygląd — Ustawienia organizacji — OpenExpert CRM' })
 
 type BrandResponse = {
   data: {
@@ -29,6 +29,7 @@ type BrandResponse = {
 }
 
 const { orgApiPath, orgPath } = useOrganizationContext()
+const organizationSettingsTabs = useOrganizationSettingsTabs()
 const toast = useToast()
 const organizationDesign = useOrganizationDesignState()
 const activeSection = ref('brand')
@@ -306,7 +307,12 @@ async function removePortrait() {
 </script>
 
 <template>
-  <CrmShell class="design-system-shell" title="Design system">
+  <CrmShell
+    class="design-system-shell"
+    title="Marka i wygląd"
+    eyebrow="Ustawienia organizacji"
+    :tabs="organizationSettingsTabs"
+  >
     <template #meta>
       <p class="design-header__description">Jedno miejsce dla marki aplikacji, profilu eksperta i materiałów.</p>
     </template>

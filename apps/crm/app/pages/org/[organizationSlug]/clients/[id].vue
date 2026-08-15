@@ -2,11 +2,18 @@
 import type { FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 import type {
+  CeidgCompanyData,
+  CeidgCompanyLookupResponse,
+} from '#shared/types/ceidg-company'
+import type {
   ClientAnonymizationRequestChannel,
   ClientConsentCaptureRequest,
   ClientConsentState,
   ClientDetailResponse,
 } from '~/types/clients'
+import {
+  ceidgClientCompanySummary,
+} from '#shared/utils/ceidg-client-company'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
 
@@ -163,6 +170,7 @@ const statusMeta = computed(() => {
     active: { label: 'Aktywny', color: 'success' },
     inactive: { label: 'Nieaktywny', color: 'neutral' },
     blocked: { label: 'Zablokowany', color: 'error' },
+    anonymized: { label: 'Zanonimizowany', color: 'neutral' },
   }
   const rawStatus = data.value.data.status_code
   return statuses[rawStatus] ?? {
@@ -212,6 +220,26 @@ const clientInitials = computed(() => {
   const words = data.value.data.display_name.trim().split(/\s+/).filter(Boolean)
   return words.slice(0, 2).map(word => word[0]?.toUpperCase()).join('') || 'K'
 })
+const isAnonymized = computed(() => data.value.data.status_code === 'anonymized')
+const clientCompany = computed(() => ceidgClientCompanySummary(data.value.data.metadata))
+const clientCompanyWebsiteUrl = computed(() => {
+  const value = clientCompany.value?.website
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : ''
+  }
+  catch {
+    return ''
+  }
+})
+
+function companyStatusColor(status: string): 'success' | 'warning' | 'neutral' {
+  const normalized = status.toLocaleUpperCase('pl-PL')
+  if (normalized.includes('AKTYWN')) return 'success'
+  if (normalized.includes('ZAWIESZ')) return 'warning'
+  return 'neutral'
+}
 
 const currentAnonymizationRequest = computed(() => data.value.current_anonymization_request)
 const activeAnonymizationRequest = computed(() => (
@@ -634,6 +662,23 @@ const editForm = reactive({
   tags: '',
   notes: '',
 })
+const editCompanyNip = ref('')
+const editCompanySelection = ref<{
+  company: CeidgCompanyData
+  source: CeidgCompanyLookupResponse['source']
+} | null>(null)
+const editCompanyRemovalPending = ref(false)
+const editCompanyLookupOpen = ref(false)
+const editCompanyLookupPending = ref(false)
+
+watch(editCompanyNip, (value) => {
+  if (
+    editCompanySelection.value
+    && value.replaceAll(/\D/gu, '') !== editCompanySelection.value.company.nip
+  ) {
+    editCompanySelection.value = null
+  }
+})
 
 async function requestConsentBySms(consent: ClientConsentState) {
   const subjectPersonId = consent.subject_person_id || consent.subject_person?.id
@@ -811,17 +856,48 @@ async function createAnonymizationRequest(
 }
 
 function openEdit() {
+  if (isAnonymized.value) return
   editForm.display_name = data.value.data.display_name
   editForm.primary_email = data.value.data.primary_email ?? ''
   editForm.primary_phone = data.value.data.primary_phone ?? ''
   editForm.tags = data.value.data.tags.join(', ')
   editForm.notes = data.value.data.notes ?? ''
+  editCompanyNip.value = clientCompany.value?.nip ?? ''
+  editCompanySelection.value = null
+  editCompanyRemovalPending.value = false
+  editCompanyLookupPending.value = false
+  editCompanyLookupOpen.value = Boolean(clientCompany.value)
   editOpen.value = true
+}
+
+function applyEditCompanyData(
+  company: CeidgCompanyData,
+  source: CeidgCompanyLookupResponse['source'],
+) {
+  editCompanySelection.value = { company, source }
+  editCompanyRemovalPending.value = false
+  toast.add({
+    title: 'Dane CEIDG gotowe do zapisu',
+    description: 'Zapisz zmiany, aby zaktualizować identyfikatory i dane rejestrowe firmy.',
+    color: 'success',
+    icon: 'i-lucide-building-2',
+  })
+}
+
+function removeEditCompanyData() {
+  editCompanySelection.value = null
+  editCompanyRemovalPending.value = true
+  editCompanyNip.value = ''
+}
+
+function undoEditCompanyRemoval() {
+  editCompanyNip.value = clientCompany.value?.nip ?? ''
+  editCompanyRemovalPending.value = false
 }
 
 async function saveClient() {
   const displayName = editForm.display_name.trim()
-  if (!displayName) return
+  if (!displayName || editCompanyLookupPending.value) return
   savingClient.value = true
   try {
     await $fetch(crmApiPath(`/clients/${clientId.value}`), {
@@ -832,6 +908,8 @@ async function saveClient() {
         primary_phone: editForm.primary_phone.trim() || null,
         tags: editForm.tags.split(',').map(tag => tag.trim()).filter(Boolean),
         notes: editForm.notes.trim() || null,
+        ceidg_nip: editCompanySelection.value?.company.nip
+          ?? (editCompanyRemovalPending.value ? null : undefined),
       },
     })
     await refresh()
@@ -898,11 +976,13 @@ async function executeAnonymization() {
 
 const headerMenuItems = computed(() => [
   [
-    {
-      label: 'Edytuj dane klienta',
-      icon: 'i-lucide-pencil',
-      onSelect: openEdit,
-    },
+    ...(!isAnonymized.value
+      ? [{
+          label: 'Edytuj dane klienta',
+          icon: 'i-lucide-pencil',
+          onSelect: openEdit,
+        }]
+      : []),
     {
       label: 'Odśwież dane',
       icon: 'i-lucide-refresh-cw',
@@ -1033,7 +1113,14 @@ const headerMenuItems = computed(() => [
                   <p>Dane podstawowe</p>
                   <h2 id="client-data-title">Kontakt i opiekun</h2>
                 </div>
-                <UButton color="neutral" variant="ghost" size="sm" icon="i-lucide-pencil" @click="openEdit">
+                <UButton
+                  v-if="!isAnonymized"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-pencil"
+                  @click="openEdit"
+                >
                   Edytuj
                 </UButton>
               </header>
@@ -1153,6 +1240,78 @@ const headerMenuItems = computed(() => [
                 <span><UIcon name="i-lucide-notebook-text" /></span>
                 <p>{{ data.data.notes }}</p>
               </div>
+            </section>
+
+            <section
+              v-if="clientCompany"
+              class="client-panel"
+              aria-labelledby="client-company-title"
+            >
+              <header class="client-panel__header">
+                <div>
+                  <p>Dane rejestrowe</p>
+                  <h2 id="client-company-title">Firma w CEIDG</h2>
+                </div>
+                <UBadge
+                  :color="companyStatusColor(clientCompany.status)"
+                  variant="subtle"
+                >
+                  {{ clientCompany.status || 'Brak statusu' }}
+                </UBadge>
+              </header>
+
+              <dl class="client-context-list">
+                <div>
+                  <dt>Nazwa w CEIDG</dt>
+                  <dd>{{ clientCompany.name || data.data.display_name }}</dd>
+                </div>
+                <div>
+                  <dt>NIP</dt>
+                  <dd>{{ clientCompany.nip }}</dd>
+                </div>
+                <div>
+                  <dt>REGON</dt>
+                  <dd>{{ clientCompany.regon || 'Nie podano' }}</dd>
+                </div>
+                <div>
+                  <dt>Identyfikator CEIDG</dt>
+                  <dd>{{ clientCompany.registryNumber || 'Nie podano' }}</dd>
+                </div>
+                <div>
+                  <dt>Forma prawna</dt>
+                  <dd>{{ clientCompany.legalForm || 'Nie podano' }}</dd>
+                </div>
+                <div>
+                  <dt>Adres działalności</dt>
+                  <dd>{{ clientCompany.address || 'Nie opublikowano' }}</dd>
+                </div>
+                <div>
+                  <dt>Główne PKD</dt>
+                  <dd>
+                    {{ [clientCompany.mainPkdCode, clientCompany.mainPkdName].filter(Boolean).join(' — ') || 'Nie opublikowano' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Dane kontaktowe firmy</dt>
+                  <dd class="client-company-contact">
+                    <a v-if="clientCompany.email" :href="`mailto:${clientCompany.email}`">{{ clientCompany.email }}</a>
+                    <a v-if="clientCompany.phone" :href="`tel:${clientCompany.phone}`">{{ clientCompany.phone }}</a>
+                    <a
+                      v-if="clientCompanyWebsiteUrl"
+                      :href="clientCompanyWebsiteUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ clientCompany.website }}
+                    </a>
+                    <span v-if="!clientCompany.email && !clientCompany.phone && !clientCompanyWebsiteUrl">Nie opublikowano</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Pobrano z CEIDG</dt>
+                  <dd>{{ formatDateTime(clientCompany.retrievedAt) }}</dd>
+                </div>
+              </dl>
             </section>
 
             <section
@@ -2033,11 +2192,77 @@ const headerMenuItems = computed(() => [
       v-model:open="editOpen"
       title="Edytuj dane klienta"
       description="Zmień dane używane w sprawach, wizytach i bieżącej komunikacji."
-      :dismissible="!savingClient"
+      :dismissible="!savingClient && !editCompanyLookupPending"
       :ui="{ footer: 'justify-end' }"
     >
       <template #body>
         <form id="client-edit-form" class="client-modal-form" @submit.prevent="saveClient">
+          <UCollapsible
+            v-model:open="editCompanyLookupOpen"
+            :unmount-on-hide="false"
+            class="company-lookup-disclosure"
+          >
+            <UButton
+              type="button"
+              class="w-full justify-between"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-building-2"
+              :disabled="editCompanyLookupPending"
+              :trailing-icon="editCompanyLookupOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            >
+              {{ clientCompany ? 'Zaktualizuj dane firmy w CEIDG' : 'Dodaj firmę z CEIDG (opcjonalnie)' }}
+            </UButton>
+            <template #content>
+              <div class="company-lookup-disclosure__content">
+                <CaseMultiformCompanyLookup
+                  v-model="editCompanyNip"
+                  :lookup-url="crmApiPath('/companies/ceidg')"
+                  field-name="edit_company_nip"
+                  title="Pobierz lub odśwież dane firmy z CEIDG"
+                  description="Wyszukiwanie obejmuje jednoosobowe działalności gospodarcze. Dane kontaktowe z rejestru pozostaną oddzielone od kontaktu używanego do zgód i wiadomości."
+                  apply-label="Dołącz do karty"
+                  result-hint="dane rejestrowe zostaną zaktualizowane po zapisie"
+                  @update:pending="editCompanyLookupPending = $event"
+                  @apply="applyEditCompanyData"
+                />
+                <div v-if="clientCompany && !editCompanyRemovalPending" class="client-modal-company-actions">
+                  <UButton
+                    type="button"
+                    color="error"
+                    variant="soft"
+                    size="sm"
+                    icon="i-lucide-unlink"
+                    @click="removeEditCompanyData"
+                  >
+                    Odłącz dane CEIDG
+                  </UButton>
+                </div>
+              </div>
+            </template>
+          </UCollapsible>
+          <UAlert
+            v-if="editCompanySelection"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-badge-check"
+            title="Dane CEIDG zostaną zaktualizowane"
+            :description="`${editCompanySelection.company.name} · NIP ${editCompanySelection.company.nip}`"
+          />
+          <UAlert
+            v-if="editCompanyRemovalPending"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-unlink"
+            title="Dane CEIDG zostaną odłączone"
+            description="NIP, REGON i snapshot rejestrowy znikną z karty po zapisaniu zmian."
+          >
+            <template #actions>
+              <UButton type="button" color="neutral" variant="soft" size="xs" @click="undoEditCompanyRemoval">
+                Cofnij odłączenie
+              </UButton>
+            </template>
+          </UAlert>
           <UFormField label="Nazwa klienta" required>
             <UInput v-model="editForm.display_name" class="w-full" :maxlength="200" />
           </UFormField>
@@ -2058,13 +2283,13 @@ const headerMenuItems = computed(() => [
         </form>
       </template>
       <template #footer="{ close }">
-        <UButton color="neutral" variant="outline" :disabled="savingClient" @click="close">Anuluj</UButton>
+        <UButton color="neutral" variant="outline" :disabled="savingClient || editCompanyLookupPending" @click="close">Anuluj</UButton>
         <UButton
           type="submit"
           form="client-edit-form"
           icon="i-lucide-save"
           :loading="savingClient"
-          :disabled="!editForm.display_name.trim()"
+          :disabled="!editForm.display_name.trim() || editCompanyLookupPending"
         >
           Zapisz zmiany
         </UButton>
@@ -2371,6 +2596,22 @@ const headerMenuItems = computed(() => [
   display: grid;
   justify-items: start;
   gap: 6px;
+}
+
+.client-company-contact {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+}
+
+.client-company-contact a {
+  color: inherit;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.client-company-contact a:hover {
+  text-decoration: underline;
 }
 
 .client-portal-account-status small {
@@ -3407,6 +3648,22 @@ const headerMenuItems = computed(() => [
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.client-modal-company-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.company-lookup-disclosure {
+  min-width: 0;
+}
+
+.company-lookup-disclosure__content {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .client-anonymization-request-basis {

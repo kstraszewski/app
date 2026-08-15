@@ -943,7 +943,7 @@ function setPeriod(target: { period: ActivePeriodV2 }, period: ActivePeriodV2) {
 <template>
   <CrmShell
     :title="detail?.product.name ?? 'Ustawienia produktu'"
-    eyebrow="Ustawienia administracyjne"
+    eyebrow="Administracja systemu"
     description="Konfiguracja produktu, wersji kalkulatora i publikacji."
     :back-to="listPath"
     back-label="Wróć do produktów"

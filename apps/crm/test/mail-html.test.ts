@@ -66,6 +66,12 @@ test('blocks remote images until explicitly enabled and preserves raster data im
     <img src="//images.example/banner.jpg" alt="Protocol relative">
     <img src="data:image/png;base64,iVBORw0KGgo=" alt="Inline">
     <img src="cid:logo@example.com" alt="CID">
+    <img src="http://127.0.0.1/admin" alt="Loopback">
+    <img src="http://[::1]/admin" alt="IPv6 loopback">
+    <img src="http://router.local/status" alt="Local network">
+    <img src="http://localhost./status" alt="Trailing dot local host">
+    <img src="https://intranet/secret" alt="Single-label host">
+    <img src="https://cdn.example:8443/private" alt="Unexpected port">
     <img src="javascript:alert(1)" data-mail-remote-src="https://attacker.example/forged" alt="Forged">
     <img src="data:image/svg+xml,%3Csvg%20onload='alert(1)'%3E" alt="SVG">
   `)
@@ -79,7 +85,10 @@ test('blocks remote images until explicitly enabled and preserves raster data im
   assert.match(html, /data-mail-remote-src="\/\/images\.example\/banner\.jpg"/u)
   assert.match(html, /src="data:image\/png;base64,iVBORw0KGgo="/u)
   assert.doesNotMatch(html, /\ssrc="(?:https?:|\/\/|cid:|javascript:|data:image\/svg)/iu)
-  assert.doesNotMatch(html, /srcset|onerror|attacker\.example/iu)
+  assert.doesNotMatch(
+    html,
+    /srcset|onerror|attacker\.example|127\.0\.0\.1|::1|router\.local|localhost\.|intranet|8443/iu,
+  )
 })
 
 test('keeps link formatting but removes every active destination', () => {
@@ -100,8 +109,10 @@ test('keeps link formatting but removes every active destination', () => {
 test('does not reactivate markup hidden inside xmp or malformed raw-text tags', () => {
   const result = sanitizeMailHtml(`
     <xmp><img src=x onerror=alert(1)></xmp>
+    <textarea><img src=x onerror=alert(2)></textarea/>
+    <svg><textarea><img src=x onerror=alert(3)></textarea></svg>
     <p>Widoczna treść</p>
-    <xmp><svg onload=alert(2)>
+    <xmp><svg onload=alert(4)>
   `)
 
   const html = result.html || ''
@@ -110,22 +121,51 @@ test('does not reactivate markup hidden inside xmp or malformed raw-text tags', 
 })
 
 test('limits amplified output by re-sanitizing a balanced input prefix', () => {
-  const result = sanitizeMailHtml(`<div>${'&'.repeat(300_000)}</div>`)
+  const result = sanitizeMailHtml(
+    `<div><img src="https://cdn.example/pixel.png">${'&'.repeat(300_000)}</div>`,
+  )
   const html = result.html || ''
 
   assert.equal(result.truncated, true)
-  assert.ok(html.length <= 1_000_000)
+  assert.equal(result.hasRemoteImages, true)
+  assert.ok(html.length <= 400_000)
   assert.match(html, /^<div>/u)
+  assert.match(html, /data-mail-remote-src="https:\/\/cdn\.example\/pixel\.png"/u)
   assert.match(html, /<\/div>$/u)
   assert.equal((html.match(/<div>/gu) || []).length, (html.match(/<\/div>/gu) || []).length)
 })
 
-test('limits extreme input and still returns closed HTML', () => {
-  const result = sanitizeMailHtml(`<div><span>${'A'.repeat(1_100_000)}</span></div>`)
+test('stops a tag flood before sanitizing more than the newsletter tag budget', () => {
+  const result = sanitizeMailHtml(
+    `${'<span>x</span>'.repeat(9_000)}<p>Po limicie</p>`,
+  )
   const html = result.html || ''
 
   assert.equal(result.truncated, true)
-  assert.ok(html.length <= 1_000_000)
+  assert.equal((html.match(/<span>/gu) || []).length, 8_000)
+  assert.equal((html.match(/<\/span>/gu) || []).length, 8_000)
+  assert.doesNotMatch(html, /Po limicie/u)
+})
+
+test('caps remote images so one message cannot trigger an unbounded proxy fan-out', () => {
+  const result = sanitizeMailHtml(
+    Array.from({ length: 120 }, (_, index) => (
+      `<img src="https://cdn.example/image-${index}.png" alt="${index}">`
+    )).join(''),
+  )
+  const html = result.html || ''
+
+  assert.equal(result.hasRemoteImages, true)
+  assert.equal((html.match(/data-mail-remote-src=/gu) || []).length, 100)
+  assert.doesNotMatch(html, /image-119\.png/u)
+})
+
+test('limits extreme input and still returns closed HTML', () => {
+  const result = sanitizeMailHtml(`<div><span>${'A'.repeat(450_000)}</span></div>`)
+  const html = result.html || ''
+
+  assert.equal(result.truncated, true)
+  assert.ok(html.length <= 400_000)
   assert.match(html, /^<div><span>/u)
   assert.match(html, /<\/span><\/div>$/u)
 })

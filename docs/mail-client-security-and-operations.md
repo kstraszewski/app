@@ -73,11 +73,16 @@ pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
   pozostaje dostępna jako jawny przełącznik i fallback.
 - Adresy zdalnych obrazów są na serwerze przenoszone do inertnego atrybutu.
   Obrazy oraz piksele śledzące pozostają zablokowane, dopóki użytkownik świadomie
-  nie wybierze „Wczytaj zdalne obrazy”. Interfejs ostrzega, że bezpośrednie
-  pobranie może ujawnić nadawcy otwarcie wiadomości. Linki w treści pozostają
-  nieaktywne; do pełnej interakcji służy „Otwórz u dostawcy”.
+  nie wybierze „Wczytaj zdalne obrazy”. Wtedy przeglądarka korzysta wyłącznie ze
+  stałego proxy OpenExpert: proxy rozwiązuje DNS, przypina publiczny
+  adres IP, sprawdza każde przekierowanie, nie przekazuje cookies ani referera,
+  ogranicza rozmiar i dopuszcza tylko obrazy rastrowe rozpoznane po sygnaturze
+  pliku. Samo pobranie nadal może ujawnić nadawcy otwarcie wiadomości, dlatego
+  interfejs pokazuje ostrzeżenie. Linki w treści pozostają nieaktywne; do pełnej
+  interakcji służy „Otwórz u dostawcy”.
 - Rozmiar wejściowego i zwracanego HTML oraz łączny budżet HTML wątku są
-  ograniczone. Po przekroczeniu budżetu starsza wiadomość wraca do bezpiecznej
+  ograniczone, podobnie jak liczba elementów i zdalnych obrazów pojedynczej
+  wiadomości. Po przekroczeniu budżetu starsza wiadomość wraca do bezpiecznej
   wersji tekstowej zamiast zwracać częściowo ucięty znacznik.
 - Znaki sterujące i znaczniki zmiany kierunku tekstu są usuwane z nagłówków oraz
   nazw plików.

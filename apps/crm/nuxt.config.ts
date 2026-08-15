@@ -170,6 +170,8 @@ export default defineNuxtConfig({
     googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
     ceidg: {
       apiBaseUrl: process.env.NUXT_CEIDG_API_BASE_URL || 'https://dane.biznes.gov.pl',
+      globalHourlyLimit: Number.parseInt(process.env.NUXT_CEIDG_GLOBAL_HOURLY_LIMIT || '1000', 10),
+      globalMinuteLimit: Number.parseInt(process.env.NUXT_CEIDG_GLOBAL_MINUTE_LIMIT || '120', 10),
       token: process.env.NUXT_CEIDG_API_TOKEN || '',
     },
     dataApi: {

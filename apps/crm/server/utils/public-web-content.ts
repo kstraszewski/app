@@ -5,6 +5,7 @@ import { request as httpsRequest } from 'node:https'
 
 const HTML_BYTE_LIMIT = 2 * 1024 * 1024
 export const PROPERTY_IMAGE_BYTE_LIMIT = 8 * 1024 * 1024
+export const MAIL_REMOTE_IMAGE_BYTE_LIMIT = 4 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 12_000
 const MAX_REDIRECTS = 3
 
@@ -70,6 +71,13 @@ interface RequestResult {
   body: Buffer
 }
 
+interface PublicByteRequestOptions {
+  accept: string
+  maxBytes: number
+  userAgent?: string
+  forbiddenHostnames?: ReadonlySet<string>
+}
+
 export interface PropertyPageEvidence {
   sourceUrl: string
   finalUrl: string
@@ -102,10 +110,35 @@ export interface DownloadedPropertyImage {
   extension: 'jpg' | 'png' | 'webp'
 }
 
+export type MailRemoteImageMimeType =
+  | 'image/avif'
+  | 'image/bmp'
+  | 'image/gif'
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/webp'
+  | 'image/x-icon'
+
+export interface DownloadedMailRemoteImage {
+  sourceUrl: string
+  finalUrl: string
+  data: Buffer
+  mimeType: MailRemoteImageMimeType
+}
+
+export interface MailRemoteImageDownloadOptions {
+  /** Origins served by this application. Redirects to the same host are rejected too. */
+  forbiddenOrigins?: Iterable<string>
+}
+
 function hostnameWithoutBrackets(hostname: string) {
   return hostname.startsWith('[') && hostname.endsWith(']')
     ? hostname.slice(1, -1)
     : hostname
+}
+
+function normalizedHostname(hostname: string): string {
+  return hostnameWithoutBrackets(hostname).toLowerCase().replace(/\.+$/u, '')
 }
 
 export function isPublicAddress(address: string, family = isIP(address)): boolean {
@@ -184,6 +217,7 @@ export async function assertPublicWebUrl(input: string): Promise<URL> {
 function readResponseBody(
   response: import('node:http').IncomingMessage,
   limit: number,
+  timeoutMs: number,
 ): Promise<Buffer> {
   const contentLength = Number(response.headers['content-length'] ?? 0)
   if (Number.isFinite(contentLength) && contentLength > limit) {
@@ -194,6 +228,16 @@ function readResponseBody(
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
+    const timeout = setTimeout(() => {
+      response.destroy(new PublicWebContentError('Przekroczono czas pobierania strony.', 504))
+    }, Math.max(1, timeoutMs))
+    timeout.unref?.()
+
+    const settle = <T>(callback: (value: T) => void, value: T) => {
+      clearTimeout(timeout)
+      callback(value)
+    }
+
     response.on('data', (chunk: Buffer | Uint8Array) => {
       const buffer = Buffer.from(chunk)
       size += buffer.length
@@ -203,19 +247,22 @@ function readResponseBody(
       }
       chunks.push(buffer)
     })
-    response.on('end', () => resolve(Buffer.concat(chunks, size)))
-    response.on('error', reject)
+    response.on('end', () => settle(resolve, Buffer.concat(chunks, size)))
+    response.on('error', error => settle(reject, error))
   })
 }
 
 async function requestPublicBytes(
   initialUrl: URL,
-  options: { accept: string, maxBytes: number },
+  options: PublicByteRequestOptions,
 ): Promise<RequestResult> {
   const deadline = Date.now() + REQUEST_TIMEOUT_MS
   let currentUrl = initialUrl
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    if (options.forbiddenHostnames?.has(normalizedHostname(currentUrl.hostname))) {
+      throw new PublicWebContentError('Link wskazuje na wewnętrzny adres aplikacji.')
+    }
     const target = await resolvePublicTarget(currentUrl)
     const remainingMs = deadline - Date.now()
     if (remainingMs <= 0) {
@@ -238,7 +285,8 @@ async function requestPublicBytes(
         headers: {
           Accept: options.accept,
           'Accept-Encoding': 'identity',
-          'User-Agent': 'OpenExpertPropertyImporter/1.0 (+https://openexpert.app)',
+          'User-Agent': options.userAgent
+            || 'OpenExpertPropertyImporter/1.0 (+https://openexpert.app)',
         },
       }, resolve)
       request.setTimeout(remainingMs, () => {
@@ -269,7 +317,11 @@ async function requestPublicBytes(
       throw new PublicWebContentError('Strona używa nieobsługiwanej kompresji odpowiedzi.')
     }
 
-    const body = await readResponseBody(response, options.maxBytes)
+    const body = await readResponseBody(
+      response,
+      options.maxBytes,
+      deadline - Date.now(),
+    )
     return { url: currentUrl, statusCode, headers: response.headers, body }
   }
 
@@ -671,6 +723,115 @@ function imageFormat(data: Buffer) {
     return { mimeType: 'image/webp' as const, extension: 'webp' as const }
   }
   return null
+}
+
+function mailRemoteImageFormat(data: Buffer): { mimeType: MailRemoteImageMimeType } | null {
+  const propertyFormat = imageFormat(data)
+  if (propertyFormat) return { mimeType: propertyFormat.mimeType }
+
+  const asciiPrefix = data.subarray(0, 12).toString('ascii')
+  if (asciiPrefix.startsWith('GIF87a') || asciiPrefix.startsWith('GIF89a')) {
+    return { mimeType: 'image/gif' }
+  }
+  if (data.length >= 2 && data[0] === 0x42 && data[1] === 0x4d) {
+    return { mimeType: 'image/bmp' }
+  }
+  if (
+    data.length >= 4
+    && data[0] === 0x00
+    && data[1] === 0x00
+    && data[2] === 0x01
+    && data[3] === 0x00
+  ) {
+    return { mimeType: 'image/x-icon' }
+  }
+  if (data.length >= 16 && data.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const boxSize = data.readUInt32BE(0)
+    const boundary = Math.min(data.length, boxSize >= 16 ? boxSize : 64, 256)
+    const brands = [data.subarray(8, 12).toString('ascii')]
+    for (let offset = 16; offset + 4 <= boundary; offset += 4) {
+      brands.push(data.subarray(offset, offset + 4).toString('ascii'))
+    }
+    if (brands.some(brand => brand === 'avif' || brand === 'avis')) {
+      return { mimeType: 'image/avif' }
+    }
+  }
+  return null
+}
+
+const MAIL_REMOTE_IMAGE_HEADER_TYPES: Record<MailRemoteImageMimeType, ReadonlySet<string>> = {
+  'image/avif': new Set(['image/avif']),
+  'image/bmp': new Set(['image/bmp', 'image/x-ms-bmp']),
+  'image/gif': new Set(['image/gif']),
+  'image/jpeg': new Set(['image/jpeg', 'image/jpg', 'image/pjpeg']),
+  'image/png': new Set(['image/png', 'image/x-png']),
+  'image/webp': new Set(['image/webp']),
+  'image/x-icon': new Set(['image/x-icon', 'image/vnd.microsoft.icon']),
+}
+
+export function validateMailRemoteImageBytes(
+  data: Buffer,
+  declaredContentType?: string,
+): { mimeType: MailRemoteImageMimeType } {
+  const format = mailRemoteImageFormat(data)
+  if (!format) {
+    throw new PublicWebContentError('Pobrany plik nie jest obsługiwanym obrazem rastrowym.', 415)
+  }
+
+  const headerType = String(declaredContentType || '').split(';')[0]?.trim().toLowerCase()
+  const genericTypes = new Set(['application/octet-stream', 'binary/octet-stream'])
+  if (
+    headerType
+    && !genericTypes.has(headerType)
+    && !MAIL_REMOTE_IMAGE_HEADER_TYPES[format.mimeType].has(headerType)
+  ) {
+    throw new PublicWebContentError('Typ obrazu nie zgadza się z jego zawartością.', 415)
+  }
+  return format
+}
+
+function forbiddenRemoteImageHostnames(origins: Iterable<string> | undefined): ReadonlySet<string> {
+  const hostnames = new Set<string>()
+  for (const value of origins ?? []) {
+    try {
+      const url = new URL(String(value))
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        const hostname = normalizedHostname(url.hostname)
+        if (hostname) hostnames.add(hostname)
+      }
+    }
+    catch {
+      // A malformed optional deployment origin cannot widen the fetch policy.
+    }
+  }
+  return hostnames
+}
+
+export async function downloadMailRemoteImage(
+  sourceUrl: string,
+  options: MailRemoteImageDownloadOptions = {},
+): Promise<DownloadedMailRemoteImage> {
+  const url = parsePublicHttpUrl(sourceUrl)
+  const forbiddenHostnames = forbiddenRemoteImageHostnames(options.forbiddenOrigins)
+  if (forbiddenHostnames.has(normalizedHostname(url.hostname))) {
+    throw new PublicWebContentError('Link wskazuje na wewnętrzny adres aplikacji.')
+  }
+  const response = await requestPublicBytes(url, {
+    accept: 'image/avif,image/gif,image/jpeg,image/png,image/webp,image/bmp,image/x-icon,image/vnd.microsoft.icon',
+    maxBytes: MAIL_REMOTE_IMAGE_BYTE_LIMIT,
+    userAgent: 'OpenExpertMailImageProxy/1.0 (+https://openexpert.app)',
+    forbiddenHostnames,
+  })
+  const format = validateMailRemoteImageBytes(
+    response.body,
+    String(response.headers['content-type'] ?? ''),
+  )
+  return {
+    sourceUrl,
+    finalUrl: response.url.href,
+    data: response.body,
+    ...format,
+  }
 }
 
 export async function downloadPropertyImage(sourceUrl: string): Promise<DownloadedPropertyImage> {

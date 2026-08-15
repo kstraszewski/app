@@ -170,6 +170,55 @@ test('keeps the plain alternative and returns the fullest sanitized HTML body', 
   assert.equal(parsed.bodyHtmlTruncated, false)
 })
 
+test('ignores attached MIME subtrees when selecting the message body', () => {
+  const parsed = gmailMessageDetail(message('message-with-attached-mail', {
+    payload: {
+      mimeType: 'multipart/mixed',
+      headers: [
+        { name: 'From', value: 'offers@example.com' },
+        { name: 'Subject', value: 'Właściwa wiadomość' },
+      ],
+      parts: [{
+        mimeType: 'multipart/alternative',
+        parts: [{
+          mimeType: 'text/plain',
+          body: { data: base64url('Właściwa treść tekstowa.') },
+        }, {
+          mimeType: 'text/html',
+          body: { data: base64url('<main><h1>Właściwa treść HTML</h1></main>') },
+        }],
+      }, {
+        mimeType: 'message/rfc822',
+        parts: [{
+          mimeType: 'text/html',
+          body: {
+            data: base64url(`<article>${'Treść załączonej wiadomości. '.repeat(20)}</article>`),
+          },
+        }],
+      }, {
+        mimeType: 'multipart/alternative',
+        headers: [{
+          name: 'Content-Disposition',
+          value: 'attachment; filename="forwarded.eml"',
+        }],
+        parts: [{
+          mimeType: 'text/plain',
+          body: { data: base64url('Tekst załącznika, nie treść wiadomości.') },
+        }, {
+          mimeType: 'text/html',
+          body: {
+            data: base64url(`<section>${'Dłuższy HTML załącznika. '.repeat(20)}</section>`),
+          },
+        }],
+      }],
+    },
+  }))
+
+  assert.equal(parsed.bodyText, 'Właściwa treść tekstowa.')
+  assert.match(parsed.bodyHtml || '', /Właściwa treść HTML/u)
+  assert.doesNotMatch(parsed.bodyHtml || '', /załączonej wiadomości|HTML załącznika/iu)
+})
+
 test('turns HTML fallback into inert readable text', () => {
   const parsed = gmailMessageDetail(message('message-3', {
     payload: {
@@ -299,6 +348,49 @@ test('decodes RFC 2047 encoded subjects and sender names', () => {
 
   assert.equal(parsed.from?.label, 'Paweł Nowak')
   assert.equal(parsed.subject, 'Decyzja kredytowa — PKK')
+})
+
+test('keeps the newest HTML messages within the total thread HTML budget', () => {
+  const largeHtml = (label: string) => (
+    `<div><strong>${label}</strong>${'A'.repeat(389_800)}</div>`
+  )
+  const messages = [
+    { id: 'message-html-oldest', label: 'Najstarsza', offset: 0 },
+    { id: 'message-html-middle', label: 'Środkowa', offset: 1 },
+    { id: 'message-html-newest', label: 'Najnowsza', offset: 2 },
+  ].map(({ id, label, offset }) => message(id, {
+    internalDate: String(1774515600000 + offset * 1000),
+    payload: {
+      mimeType: 'text/html',
+      headers: [
+        { name: 'From', value: 'Bank <bank@example.com>' },
+        { name: 'Subject', value: 'Budżet HTML wątku' },
+      ],
+      body: { data: base64url(largeHtml(label)) },
+    },
+  }))
+
+  const detail = gmailThreadDetail(
+    { id: 'thread-html-budget', messages },
+    'konrad@example.com',
+    'https://mail.google.com/thread-html-budget',
+  )
+
+  assert.deepEqual(detail.messages.map(item => item.id), [
+    'message-html-oldest',
+    'message-html-middle',
+    'message-html-newest',
+  ])
+  assert.equal(detail.messages[0]?.bodyHtml, null)
+  assert.equal(detail.messages[0]?.bodyHtmlTruncated, true)
+  assert.match(detail.messages[1]?.bodyHtml || '', /Środkowa/u)
+  assert.equal(detail.messages[1]?.bodyHtmlTruncated, false)
+  assert.match(detail.messages[2]?.bodyHtml || '', /Najnowsza/u)
+  assert.equal(detail.messages[2]?.bodyHtmlTruncated, false)
+  assert.ok(
+    detail.messages.reduce((sum, item) => sum + (item.bodyHtml?.length || 0), 0)
+      <= 1_000_000,
+  )
 })
 
 test('caps long threads and keeps the most recent messages in chronological order', () => {

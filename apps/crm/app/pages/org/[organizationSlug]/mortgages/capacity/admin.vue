@@ -11,7 +11,7 @@ definePageMeta({
   path: 'settings/capacity',
   alias: ['mortgages/capacity/admin'],
 })
-useHead({ title: 'Zdolność — ustawienia administracyjne — OpenExpert' })
+useHead({ title: 'Ustawienia zdolności — Ustawienia organizacji — OpenExpert' })
 
 type ConfigPayload = {
   settings: MortgageCapacityPolicy
@@ -32,6 +32,7 @@ function clonePolicy(policy: MortgageCapacityPolicy): MortgageCapacityPolicy {
 
 const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
+const organizationSettingsTabs = useOrganizationSettingsTabs()
 const toast = useToast()
 const saving = ref(false)
 const resetting = ref(false)
@@ -145,10 +146,11 @@ async function resetSettings() {
 <template>
   <CrmShell
     title="Założenia kalkulatora zdolności"
-    eyebrow="Ustawienia administracyjne"
+    eyebrow="Ustawienia organizacji"
     description="Polityka modelu, parametry obliczeń i historia zmian."
     :back-to="`/org/${organizationSlug}/calculator/capacity`"
     back-label="Wróć do kalkulatora"
+    :tabs="organizationSettingsTabs"
   >
 
     <UAlert

@@ -28,6 +28,7 @@ function cloneSettings(value: unknown): OrganizationIntermediarySettings {
 }
 
 const { orgApiPath } = useOrganizationContext()
+const organizationSettingsTabs = useOrganizationSettingsTabs()
 const toast = useToast()
 const saving = ref(false)
 const formError = ref<string | null>(null)
@@ -226,8 +227,9 @@ async function saveSettings() {
 <template>
   <CrmShell
     title="Dane pośrednika"
-    eyebrow="Administracja organizacji"
+    eyebrow="Ustawienia organizacji"
     description="Jedno źródło danych do OFI, informacji RODO i dokumentów kredytowych organizacji."
+    :tabs="organizationSettingsTabs"
   >
     <UAlert
       v-if="error"

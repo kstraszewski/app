@@ -11,9 +11,9 @@ const mailFeatures = [
     description: 'Czytaj, wyszukuj, pisz i odpowiadaj bez przełączania kart i narzędzi.',
   },
   {
-    icon: 'lucide:search',
-    title: 'Korespondencja przy kliencie i sprawie',
-    description: 'OpenExpert znajduje wątki po adresach e-mail i pozwala przypiąć je do właściwego klienta lub sprawy.',
+    icon: 'lucide:link-2',
+    title: 'Bankowy e-mail od razu przy sprawie',
+    description: 'OpenExpert rozpoznaje klienta i sprawę, a decyzję lub formularz informacyjny dodasz bez ręcznego pobierania załączników.',
   },
   {
     icon: 'lucide:shield-check',
@@ -24,23 +24,23 @@ const mailFeatures = [
 
 const previewThreads = [
   {
-    sender: 'Anna Kowalska',
-    subject: 'Dokumenty do umowy kredytowej',
-    preview: 'Dzień dobry, przesyłam brakujące zaświadczenie…',
+    sender: 'PKO Bank Polski',
+    subject: 'Jest decyzja · Anna Kowalska',
+    preview: 'Pozytywna decyzja dla wniosku OE-142 jest w załączniku.',
     time: '10:42',
     unread: true,
   },
   {
-    sender: 'Bank Północny',
-    subject: 'Sprawa OE-142 — decyzja',
-    preview: 'Wniosek został przekazany do finalnej weryfikacji.',
+    sender: 'Santander Bank Polska',
+    subject: 'Formularz informacyjny · Tomasz Nowak',
+    preview: 'Formularz ESIS dla wybranego wariantu jest gotowy.',
     time: '09:18',
     unread: false,
   },
   {
-    sender: 'Tomasz Nowak',
-    subject: 'Termin spotkania',
-    preview: 'Czwartek o 12:30 będzie dla mnie odpowiedni.',
+    sender: 'mBank',
+    subject: 'Brakujące dokumenty · Joanna Wiśniewska',
+    preview: 'Prosimy o uzupełnienie wyciągu z rachunku do 19 sierpnia.',
     time: 'wczoraj',
     unread: false,
   },
@@ -143,15 +143,15 @@ const previewThreads = [
               <div class="mail-detail__context">
                 <span>
                   <Icon name="lucide:circle-check" aria-hidden="true" />
-                  Sugerowane powiązanie
+                  Powiązano automatycznie
                 </span>
                 <strong>Anna Kowalska · Sprawa OE-142</strong>
               </div>
 
               <header class="mail-detail__heading">
                 <div>
-                  <p>Wątek · 3 wiadomości</p>
-                  <h3>Dokumenty do umowy kredytowej</h3>
+                  <p>Wiadomość z banku · 1 załącznik</p>
+                  <h3>Pozytywna decyzja kredytowa</h3>
                 </div>
                 <span class="mail-detail__safe">
                   <Icon name="lucide:shield-check" aria-hidden="true" />
@@ -161,28 +161,28 @@ const previewThreads = [
 
               <div class="mail-message">
                 <header class="mail-message__sender">
-                  <span class="mail-avatar" aria-hidden="true">AK</span>
+                  <span class="mail-avatar" aria-hidden="true">PKO</span>
                   <span>
-                    <strong>Anna Kowalska</strong>
-                    <small>anna.kowalska@example.com</small>
+                    <strong>PKO Bank Polski</strong>
+                    <small>decyzje.hipoteczne@pkobp.pl</small>
                   </span>
                   <time>dziś, 10:42</time>
                 </header>
 
                 <div class="mail-message__body">
                   <p>Dzień dobry,</p>
-                  <p>przesyłam brakujące zaświadczenie. Proszę o informację, czy możemy przejść do podpisania umowy.</p>
-                  <p>Pozdrawiam<br>Anna Kowalska</p>
+                  <p>informujemy, że dla wniosku Anny Kowalskiej, numer OE-142, wydano pozytywną decyzję kredytową. Decyzję oraz warunki uruchomienia kredytu przekazujemy w załączniku.</p>
+                  <p>Z poważaniem<br>PKO Bank Polski</p>
                 </div>
 
                 <footer class="mail-message__footer">
                   <span class="mail-attachment">
                     <Icon name="lucide:file-text" aria-hidden="true" />
-                    zaswiadczenie.pdf · 1,2 MB
+                    decyzja_kredytowa_AK.pdf · 842 KB
                   </span>
-                  <span class="mail-reply">
-                    <Icon name="lucide:message-square" aria-hidden="true" />
-                    Odpowiedz w OpenExpert
+                  <span class="mail-reply mail-reply--primary">
+                    <Icon name="lucide:file-check-2" aria-hidden="true" />
+                    Dodaj decyzję do sprawy i wyślij do klienta
                   </span>
                 </footer>
               </div>
@@ -825,6 +825,19 @@ const previewThreads = [
   padding: 7px 9px;
 }
 
+.mail-reply--primary {
+  max-width: 260px;
+  min-height: 34px;
+  justify-content: center;
+  border-color: #74ad91;
+  background: #dcebe2;
+  color: #10231a;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+}
+
 .mail-attachment :deep(svg),
 .mail-reply :deep(svg) {
   width: 13px;
@@ -1087,6 +1100,12 @@ const previewThreads = [
 
   .mail-reply {
     justify-content: center;
+  }
+
+  .mail-reply--primary {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
   }
 
   .mail-features {

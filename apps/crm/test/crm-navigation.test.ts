@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CRM_CALCULATOR_PATHS,
-  createMortgageAdminNavigationItems,
+  createOrganizationAdministrationNavigationItems,
+  createSystemAdministrationNavigationItems,
   isCrmNavigationPathActive,
   type CrmNavigationTarget,
 } from '../app/utils/crm-navigation.ts'
@@ -47,8 +48,44 @@ test('does not mark a calculator active on capacity administration routes', () =
   assert.deepEqual(activeCalculatorLabels(`${organizationBase}/settings/capacity`), [])
 })
 
-test('builds the sidebar navigation for mortgage administration pages', () => {
-  assert.deepEqual(createMortgageAdminNavigationItems('acme'), [
+test('builds compact organization administration navigation', () => {
+  const items = createOrganizationAdministrationNavigationItems('acme')
+
+  assert.deepEqual(items.map(item => ({ label: item.label, to: item.to })), [
+    { label: 'Użytkownicy', to: `${organizationBase}/users` },
+    { label: 'Zgody', to: `${organizationBase}/consents` },
+    { label: 'Ustawienia', to: `${organizationBase}/settings/organization` },
+  ])
+})
+
+test('keeps organization settings active across every settings tab and the legacy capacity URL', () => {
+  const items = createOrganizationAdministrationNavigationItems('acme')
+  const settingsPaths = [
+    '/settings/organization',
+    '/settings/intermediary',
+    '/settings/capacity',
+    '/settings/design',
+    '/settings/design/materials',
+    '/mortgages/capacity/admin',
+  ]
+
+  for (const path of settingsPaths) {
+    assert.deepEqual(
+      items.filter(item => isCrmNavigationPathActive(`${organizationBase}${path}`, item)).map(item => item.label),
+      ['Ustawienia'],
+    )
+  }
+
+  for (const path of ['/settings/account', '/settings/institutions', '/settings/products']) {
+    assert.deepEqual(
+      items.filter(item => isCrmNavigationPathActive(`${organizationBase}${path}`, item)).map(item => item.label),
+      [],
+    )
+  }
+})
+
+test('builds the sidebar navigation for system administration pages', () => {
+  assert.deepEqual(createSystemAdministrationNavigationItems('acme'), [
     {
       label: 'Instytucje',
       to: `${organizationBase}/settings/institutions`,
@@ -56,13 +93,13 @@ test('builds the sidebar navigation for mortgage administration pages', () => {
       exact: false,
     },
     {
-      label: 'Produkty',
+      label: 'Produkty kredytowe',
       to: `${organizationBase}/settings/products`,
       icon: 'i-lucide-package-search',
       exact: false,
     },
     {
-      label: 'Pliki z banków',
+      label: 'Dokumenty bankowe',
       to: `${organizationBase}/settings/institution-files`,
       icon: 'i-lucide-folder-search-2',
       exact: false,
@@ -70,8 +107,8 @@ test('builds the sidebar navigation for mortgage administration pages', () => {
   ])
 })
 
-test('marks exactly one mortgage administration item active on each page', () => {
-  const items = createMortgageAdminNavigationItems('acme')
+test('marks exactly one system administration item active on base and nested paths', () => {
+  const items = createSystemAdministrationNavigationItems('acme')
 
   for (const activeItem of items) {
     assert.deepEqual(
@@ -80,17 +117,23 @@ test('marks exactly one mortgage administration item active on each page', () =>
     )
   }
 
-  assert.deepEqual(
-    items
-      .filter(item => isCrmNavigationPathActive(`${organizationBase}/settings/products/product-1`, item))
-      .map(item => item.label),
-    ['Produkty'],
-  )
+  const nestedPaths = [
+    [`${organizationBase}/settings/institutions/institution-1`, 'Instytucje'],
+    [`${organizationBase}/settings/products/product-1`, 'Produkty kredytowe'],
+    [`${organizationBase}/settings/institution-files/file-1`, 'Dokumenty bankowe'],
+  ] as const
+
+  for (const [path, expectedLabel] of nestedPaths) {
+    assert.deepEqual(
+      items.filter(item => isCrmNavigationPathActive(path, item)).map(item => item.label),
+      [expectedLabel],
+    )
+  }
 })
 
-test('encodes organization slugs in mortgage administration links', () => {
+test('encodes organization slugs in system administration links', () => {
   assert.equal(
-    createMortgageAdminNavigationItems('oddział warszawa')[0]?.to,
+    createSystemAdministrationNavigationItems('oddział warszawa')[0]?.to,
     '/org/oddzia%C5%82%20warszawa/settings/institutions',
   )
 })

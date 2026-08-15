@@ -6,7 +6,7 @@ definePageMeta({
   crmContentMode: 'wide',
 })
 
-useHead({ title: 'Pliki z banków — OpenExpert' })
+useHead({ title: 'Dokumenty bankowe — Administracja systemu — OpenExpert' })
 
 const route = useRoute()
 const organizationSlug = computed(() => String(route.params.organizationSlug ?? ''))
@@ -19,33 +19,37 @@ const initialPage = computed(() => {
   const page = Number(value)
   return Number.isSafeInteger(page) && page > 0 ? page : null
 })
-const calculatorPath = computed(() => `/org/${organizationSlug.value}/calculator/mortgages`)
+const uploadModalOpen = ref(false)
+
+function openFileUpload() {
+  uploadModalOpen.value = true
+}
 </script>
 
 <template>
   <CrmShell
     compact
     full-bleed
-    title="Pliki z banków"
-    eyebrow="Ustawienia administracyjne"
-    description="Wspólne repozytorium procedur, formularzy i materiałów źródłowych instytucji finansowych."
+    title="Dokumenty bankowe"
+    eyebrow="Administracja systemu"
+    description="Globalne repozytorium procedur, formularzy i materiałów źródłowych instytucji finansowych."
   >
     <template #actions>
       <UButton
-        :to="calculatorPath"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-calculator"
+        icon="i-lucide-file-plus-2"
+        @click="openFileUpload"
       >
-        Porównywarka
+        Dodaj plik
       </UButton>
     </template>
 
     <MortgagesBankFileRepository
+      v-model:upload-open="uploadModalOpen"
       class="bank-files--full-bleed"
       :organization-slug="organizationSlug"
       :initial-file-id="initialFileId"
       :initial-page="initialPage"
+      :show-upload-action="false"
       title="Repozytorium dokumentów"
       description="Wyszukuj w nazwach i treści plików, filtruj po instytucji, produkcie i statusie oraz otwieraj podgląd bez opuszczania strony."
     />

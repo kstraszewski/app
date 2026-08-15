@@ -2,14 +2,16 @@ import { getQuery, setHeader } from 'h3'
 import {
   CeidgApiError,
   fetchCeidgCompany,
-  parsePublicCompanyQuery,
+  parseCompanyLookupQuery,
 } from '~~/server/utils/ceidg-company'
+import { assertCeidgLookupRateLimit } from '~~/server/utils/ceidg-rate-limit'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Access-Control-Allow-Origin', '*')
   setHeader(event, 'X-Content-Type-Options', 'nosniff')
 
-  const nip = parsePublicCompanyQuery(getQuery(event) as Record<string, unknown>)
+  const nip = parseCompanyLookupQuery(getQuery(event) as Record<string, unknown>)
+  await assertCeidgLookupRateLimit(event)
   const config = useRuntimeConfig(event)
   const ceidg = config.ceidg as { apiBaseUrl?: string, token?: string }
 

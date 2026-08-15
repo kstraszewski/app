@@ -620,7 +620,7 @@ watch(bank, loadSettingsForm, { immediate: true })
 <template>
   <CrmShell
     :title="bank?.name ?? 'Instytucja'"
-    eyebrow="Ustawienia administracyjne"
+    eyebrow="Administracja systemu"
     description="Profil instytucji, jej produkty oraz ustawienia obowiązujące w organizacji."
     :back-to="institutionsPath"
     back-label="Wróć do instytucji"

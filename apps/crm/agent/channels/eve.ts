@@ -24,30 +24,49 @@ function invocationAttributes(claims: Record<string, unknown>): Record<string, s
   if (!preset) return {}
 
   const modelProfile = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.modelProfile)
+  const declaredScopeType = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.scopeType)
   const caseId = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.caseId)
   const caseTitle = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.caseTitle)
   const clientId = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientId)
   const clientName = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientName)
+  const clientEmail = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientEmail)
+  const clientPhone = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientPhone)
+  if (preset !== 'mail-reply' || modelProfile !== 'flash-lite') {
+    throw new ForbiddenError({ message: 'Nieprawidłowy preset uruchomienia Agenta AI.' })
+  }
+
+  if (declaredScopeType === 'mailbox') {
+    if (caseId || caseTitle || clientId || clientName || clientEmail || clientPhone) {
+      throw new ForbiddenError({ message: 'Nieprawidłowy zakres uruchomienia Agenta AI.' })
+    }
+    return {
+      agentInvocationPreset: preset,
+      agentInvocationModelProfile: modelProfile,
+      agentInvocationScopeType: 'mailbox',
+    }
+  }
+
+  // Tokens minted before scopeType was introduced remain valid during a rolling deploy.
   if (
-    preset !== 'mail-reply'
-    || modelProfile !== 'flash-lite'
+    (declaredScopeType && declaredScopeType !== 'case')
     || !caseId
     || !caseTitle
     || !clientId
     || !clientName
   ) {
-    throw new ForbiddenError({ message: 'Nieprawidłowy preset uruchomienia Agenta AI.' })
+    throw new ForbiddenError({ message: 'Nieprawidłowy zakres uruchomienia Agenta AI.' })
   }
 
   return {
     agentInvocationPreset: preset,
     agentInvocationModelProfile: modelProfile,
+    agentInvocationScopeType: 'case',
     agentInvocationCaseId: caseId,
     agentInvocationCaseTitle: caseTitle,
     agentInvocationClientId: clientId,
     agentInvocationClientName: clientName,
-    agentInvocationClientEmail: claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientEmail),
-    agentInvocationClientPhone: claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientPhone),
+    agentInvocationClientEmail: clientEmail,
+    agentInvocationClientPhone: clientPhone,
   }
 }
 

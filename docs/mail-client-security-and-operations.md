@@ -69,17 +69,17 @@ pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
   iframe, obiekty, SVG, aktywne linki oraz style mogące wykonać żądanie sieciowe.
 - Oczyszczony fragment jest renderowany w osobnym `srcdoc` iframe z sandboxem
   bez skryptów, formularzy, popupów, pobierania i nawigacji. CSP zaczyna od
-  `default-src 'none'`; dokument ma również `no-referrer`. Wersja tekstowa
-  pozostaje dostępna jako jawny przełącznik i fallback.
+  `default-src 'none'`; dokument ma również `no-referrer`. Gdy dostawca zwraca
+  HTML, aplikacja renderuje go bez dodatkowego przełącznika. Wersja tekstowa
+  pozostaje fallbackiem wyłącznie dla wiadomości bez bezpiecznego HTML.
 - Adresy zdalnych obrazów są na serwerze przenoszone do inertnego atrybutu.
-  Obrazy oraz piksele śledzące pozostają zablokowane, dopóki użytkownik świadomie
-  nie wybierze „Wczytaj zdalne obrazy”. Wtedy przeglądarka korzysta wyłącznie ze
+  Podczas wyświetlania HTML aplikacja automatycznie zamienia je na adresy
   stałego proxy OpenExpert: proxy rozwiązuje DNS, przypina publiczny
   adres IP, sprawdza każde przekierowanie, nie przekazuje cookies ani referera,
   ogranicza rozmiar i dopuszcza tylko obrazy rastrowe rozpoznane po sygnaturze
-  pliku. Samo pobranie nadal może ujawnić nadawcy otwarcie wiadomości, dlatego
-  interfejs pokazuje ostrzeżenie. Linki w treści pozostają nieaktywne; do pełnej
-  interakcji służy „Otwórz u dostawcy”.
+  pliku. Samo pobranie nadal może ujawnić nadawcy otwarcie wiadomości, mimo że
+  proxy ukrywa adres IP użytkownika, cookies i referer. Linki w treści pozostają
+  nieaktywne; do pełnej interakcji służy „Otwórz u dostawcy”.
 - Rozmiar wejściowego i zwracanego HTML oraz łączny budżet HTML wątku są
   ograniczone, podobnie jak liczba elementów i zdalnych obrazów pojedynczej
   wiadomości. Po przekroczeniu budżetu starsza wiadomość wraca do bezpiecznej

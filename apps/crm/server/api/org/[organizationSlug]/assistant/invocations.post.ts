@@ -10,6 +10,7 @@ import {
 import { createError, readBody, setHeader } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { serverDataTokenSigner } from '~~/server/utils/platform-data'
+import { resolveMailboxAgentInvocationScope } from '~~/server/utils/agent-invocation-scope'
 
 type Row = Record<string, any>
 
@@ -36,11 +37,11 @@ function normalizedEmails(values: unknown, accountEmail: unknown): string[] {
   return [...new Set(result)].slice(0, MAX_PARTICIPANT_EMAILS)
 }
 
-async function caseForClient(
+async function availableCaseForClient(
   dataApi: any,
   organizationId: string,
   clientId: string,
-): Promise<Row> {
+): Promise<Row | null> {
   const linksResult = await dataApi
     .from('crm_case_clients')
     .select('case_id, is_primary')
@@ -50,9 +51,7 @@ async function caseForClient(
   throwDbError(linksResult.error)
 
   const caseIds = [...new Set((linksResult.data ?? []).map((row: Row) => String(row.case_id)))]
-  if (!caseIds.length) {
-    unavailableScope('Klient nie ma sprawy, którą można przypiąć do zadania Agenta AI.')
-  }
+  if (!caseIds.length) return null
 
   const casesResult = await dataApi
     .from('crm_cases')
@@ -65,7 +64,18 @@ async function caseForClient(
   const cases = (casesResult.data ?? []) as Row[]
   const active = cases.find(row => !['closed', 'archived', 'cancelled'].includes(String(row.status_code)))
   const selected = active ?? cases[0]
-  if (!selected) unavailableScope('Nie znaleziono dostępnej sprawy klienta.')
+  return selected ?? null
+}
+
+async function caseForClient(
+  dataApi: any,
+  organizationId: string,
+  clientId: string,
+): Promise<Row> {
+  const selected = await availableCaseForClient(dataApi, organizationId, clientId)
+  if (!selected) {
+    unavailableScope('Klient nie ma sprawy, którą można przypiąć do zadania Agenta AI.')
+  }
   return selected
 }
 
@@ -156,25 +166,41 @@ async function resolveInvocationScope(
     crmCase = await caseForClient(dataApi, organizationId, input.scope.id)
   }
   else {
-    if (!participantEmails.length) {
-      unavailableScope('Otwórz wiadomość w poczcie klienta lub konkretnej sprawy.')
-    }
-    const clientsResult = await dataApi
-      .from('crm_clients')
-      .select('id, display_name, primary_email, primary_phone')
-      .eq('organization_id', organizationId)
-      .in('primary_email', participantEmails)
-      .limit(3)
-    throwDbError(clientsResult.error)
-    const clients = (clientsResult.data ?? []) as Row[]
-    if (clients.length !== 1) {
-      unavailableScope('Nie udało się jednoznacznie przypisać wiadomości do jednego klienta. Otwórz ją z poziomu sprawy.')
-    }
-    client = clients[0]!
-    crmCase = await caseForClient(dataApi, organizationId, String(client.id))
+    return resolveMailboxAgentInvocationScope({
+      participantEmails,
+      async findClients(emails) {
+        const clientsResult = await dataApi
+          .from('crm_clients')
+          .select('id, display_name, primary_email, primary_phone')
+          .eq('organization_id', organizationId)
+          .in('primary_email', emails)
+          .limit(3)
+        throwDbError(clientsResult.error)
+        return ((clientsResult.data ?? []) as Row[]).map(row => ({
+          id: String(row.id),
+          displayName: String(row.display_name),
+          email: typeof row.primary_email === 'string' ? row.primary_email : null,
+          phone: typeof row.primary_phone === 'string' ? row.primary_phone : null,
+        }))
+      },
+      async findCase(clientId) {
+        const availableCase = await availableCaseForClient(
+          dataApi,
+          organizationId,
+          clientId,
+        )
+        return availableCase
+          ? {
+              id: String(availableCase.id),
+              title: String(availableCase.title),
+            }
+          : null
+      },
+    })
   }
 
   return {
+    type: 'case',
     caseId: String(crmCase.id),
     caseTitle: String(crmCase.title),
     clientId: String(client.id),
@@ -203,12 +229,13 @@ export default defineEventHandler(async (event): Promise<CrmAgentInvocationCrede
   const claims = {
     [CRM_AGENT_INVOCATION_CLAIMS.preset]: body.preset,
     [CRM_AGENT_INVOCATION_CLAIMS.modelProfile]: modelProfile,
-    [CRM_AGENT_INVOCATION_CLAIMS.caseId]: scope.caseId,
-    [CRM_AGENT_INVOCATION_CLAIMS.caseTitle]: scope.caseTitle,
-    [CRM_AGENT_INVOCATION_CLAIMS.clientId]: scope.clientId,
-    [CRM_AGENT_INVOCATION_CLAIMS.clientName]: scope.clientName,
-    [CRM_AGENT_INVOCATION_CLAIMS.clientEmail]: scope.clientEmail ?? '',
-    [CRM_AGENT_INVOCATION_CLAIMS.clientPhone]: scope.clientPhone ?? '',
+    [CRM_AGENT_INVOCATION_CLAIMS.scopeType]: scope.type,
+    [CRM_AGENT_INVOCATION_CLAIMS.caseId]: scope.type === 'case' ? scope.caseId : '',
+    [CRM_AGENT_INVOCATION_CLAIMS.caseTitle]: scope.type === 'case' ? scope.caseTitle : '',
+    [CRM_AGENT_INVOCATION_CLAIMS.clientId]: scope.type === 'case' ? scope.clientId : '',
+    [CRM_AGENT_INVOCATION_CLAIMS.clientName]: scope.type === 'case' ? scope.clientName : '',
+    [CRM_AGENT_INVOCATION_CLAIMS.clientEmail]: scope.type === 'case' ? scope.clientEmail ?? '' : '',
+    [CRM_AGENT_INVOCATION_CLAIMS.clientPhone]: scope.type === 'case' ? scope.clientPhone ?? '' : '',
   }
 
   return {

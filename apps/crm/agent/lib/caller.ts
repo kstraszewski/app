@@ -1,5 +1,5 @@
 import type { SessionContext } from 'eve/context'
-import type { CrmAgentInvocation } from './invocation'
+import type { CrmAgentCaseInvocation } from './invocation'
 import { readCrmAgentInvocation } from './invocation'
 
 export interface CrmAgentCaller {
@@ -8,7 +8,7 @@ export interface CrmAgentCaller {
   role: string
   userId: string
   canUseExperiments: boolean
-  invocation: CrmAgentInvocation | null
+  invocation: CrmAgentCaseInvocation | null
 }
 
 export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
@@ -28,12 +28,17 @@ export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
     throw new Error('An authenticated CRM organization user is required.')
   }
 
+  const invocation = readCrmAgentInvocation(ctx)
+  if (invocation?.scope.type === 'mailbox') {
+    throw new Error('Ten szkic wiadomości nie ma zweryfikowanego zakresu CRM. Narzędzia CRM są niedostępne.')
+  }
+
   return {
     organizationId,
     organizationSlug,
     role,
     userId: caller.principalId,
     canUseExperiments,
-    invocation: readCrmAgentInvocation(ctx),
+    invocation,
   }
 }

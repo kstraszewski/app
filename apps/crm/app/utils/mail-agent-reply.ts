@@ -51,7 +51,7 @@ export interface MailAgentReplyContext {
 
 export const MAIL_AGENT_REPLY_PROMPT = [
   'Przygotuj gotowy szkic odpowiedzi na otwarty e-mail klienta.',
-  'Skorzystaj z jednorazowego kontekstu wątku, kontekstu sprawy oraz dostępnych narzędzi, jeśli są potrzebne.',
+  'Skorzystaj z jednorazowego kontekstu wątku. Użyj kontekstu sprawy i dostępnych narzędzi tylko wtedy, gdy serwer udostępnił zweryfikowany zakres CRM.',
   'Zwróć wyłącznie treść wiadomości do klienta w zwykłym tekście, bez analizy, komentarza, tematu i formatowania Markdown.',
 ].join(' ')
 

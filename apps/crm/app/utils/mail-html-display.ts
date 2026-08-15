@@ -80,11 +80,12 @@ export function buildMailHtmlSrcdoc(
 <title>Treść wiadomości</title>
 <style>
   :root { color-scheme: light; }
-  html, body { width: 100%; min-width: 0; margin: 0; padding: 0; }
-  body { display: flow-root; }
-  body { overflow-wrap: anywhere; word-break: normal; }
-  img { max-width: 100%; }
-  table { max-width: 100%; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { width: 100%; max-width: 100%; min-width: 0; margin: 0; padding: 0; }
+  body { display: flow-root; overflow-x: auto; overflow-wrap: anywhere; word-break: normal; }
+  img { max-width: 100% !important; height: auto !important; }
+  table { max-width: 100% !important; }
+  pre { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 </style>
 </head>
 <body>${displayHtml}</body>

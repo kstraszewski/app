@@ -12,6 +12,7 @@ export const CRM_AGENT_MODELS = {
 export const CRM_AGENT_INVOCATION_CLAIMS = {
   preset: 'oe_agent_preset',
   modelProfile: 'oe_agent_model_profile',
+  scopeType: 'oe_agent_scope_type',
   caseId: 'oe_agent_case_id',
   caseTitle: 'oe_agent_case_title',
   clientId: 'oe_agent_client_id',
@@ -35,7 +36,8 @@ export interface CrmAgentInvocationCredentialRequest {
   accountEmail?: string
 }
 
-export interface CrmAgentInvocationScope {
+export interface CrmAgentInvocationCaseScope {
+  type: 'case'
   caseId: string
   caseTitle: string
   clientId: string
@@ -43,6 +45,14 @@ export interface CrmAgentInvocationScope {
   clientEmail: string | null
   clientPhone: string | null
 }
+
+export interface CrmAgentInvocationMailboxScope {
+  type: 'mailbox'
+}
+
+export type CrmAgentInvocationScope =
+  | CrmAgentInvocationCaseScope
+  | CrmAgentInvocationMailboxScope
 
 export interface CrmAgentInvocationCredentialResponse {
   accessToken: string

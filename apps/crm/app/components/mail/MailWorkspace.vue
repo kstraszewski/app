@@ -248,6 +248,48 @@ const canSend = computed(() => (
   activeConnection.value?.status === 'active'
   && activeConnection.value.capabilities.canSend
 ))
+const mobileMailboxMenuItems = computed(() => {
+  const connectionItems = connections.value.map(connection => ({
+    label: `${connection.displayName || connection.accountEmail}${
+      connection.id === connectionId.value ? ' · aktualne konto' : ''
+    }`,
+    description: `${connection.providerLabel} · ${connection.accountEmail}`,
+    icon: connection.id === connectionId.value
+      ? 'i-lucide-circle-check'
+      : connection.providerIcon.startsWith('/') ? 'i-lucide-mail' : connection.providerIcon,
+    disabled: composerOpen.value || connection.id === connectionId.value,
+    onSelect: () => switchMailbox(connection.id),
+  }))
+  const actionItems = [
+    {
+      label: 'Odśwież skrzynkę',
+      icon: 'i-lucide-refresh-cw',
+      disabled: refreshing.value || !canRead.value,
+      onSelect: () => refreshMailbox(),
+    },
+    {
+      label: 'Dodaj konto',
+      icon: 'i-lucide-plus',
+      disabled: composerOpen.value,
+      onSelect: () => openConnectionModal(),
+    },
+  ]
+  const connection = activeConnection.value
+  if (!connection) return [actionItems]
+
+  return [
+    ...(connections.value.length > 1 ? [connectionItems] : []),
+    actionItems,
+    [{
+      label: 'Odłącz konto',
+      description: connection.accountEmail,
+      icon: 'i-lucide-unplug',
+      color: 'error' as const,
+      disabled: composerOpen.value,
+      onSelect: () => { disconnectTarget.value = connection },
+    }],
+  ]
+})
 const showReconnectNotice = computed(() => (
   activeConnection.value?.status === 'revoked'
   || activeConnection.value?.status === 'error'
@@ -1129,6 +1171,18 @@ function formatMessageDate(value: string | null): string {
   }).format(date)
 }
 
+function formatCompactMessageDate(value: string | null): string {
+  if (!value) return 'Brak daty'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Brak daty'
+  return new Intl.DateTimeFormat('pl-PL', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date).replace('.', '')
+}
+
 function formatBytes(value: number): string {
   if (!value) return ''
   if (value < 1_024) return `${value} B`
@@ -1165,6 +1219,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     :class="{
       'mail-page-root--embedded': props.embedded,
       'mail-page-root--standalone': !props.embedded,
+      'mail-page-root--connected': Boolean(activeConnection),
       'mail-page-root--agent-action-visible': Boolean(selectedThread && canSend),
       'crm-content-mode--workspace': !props.embedded,
     }"
@@ -1173,7 +1228,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
       :is="workspaceRootComponent"
       v-bind="workspaceRootProps"
     >
-      <template v-if="!props.embedded && activeConnection" #meta>
+      <template v-if="!props.embedded && activeConnection && connections.length > 1" #meta>
         <div class="mail-account-switcher">
           <USelectMenu
             v-model="selectedConnectionId"
@@ -1198,57 +1253,114 @@ function securityWarningDescription(security: MailMessageSecurity): string {
               />
             </template>
           </USelectMenu>
-          <UBadge
-            :color="activeConnection.status === 'active' ? 'success' : 'warning'"
-            variant="subtle"
-            size="sm"
-          >
-            {{ activeConnection.status === 'active' ? 'Połączono' : 'Wymaga uwagi' }}
-          </UBadge>
         </div>
       </template>
 
       <template v-if="!props.embedded" #actions>
-        <UButton
-          v-if="canSend"
-          icon="i-lucide-square-pen"
-          @click="openNewMessage"
-        >
-          Napisz
-        </UButton>
-        <UButton
-          v-else-if="activeConnection"
-          icon="i-lucide-rotate-ccw-key"
-          @click="openReconnect"
-        >
-          Połącz ponownie
-        </UButton>
-        <UButton
-          v-if="activeConnection"
-          color="neutral"
-          variant="outline"
-          square
-          icon="i-lucide-refresh-cw"
-          :loading="refreshing"
-          aria-label="Odśwież aktywną skrzynkę"
-          title="Odśwież aktywną skrzynkę"
-          @click="refreshMailbox()"
-        />
-        <UDropdownMenu
-          v-if="activeConnection"
-          :items="accountManagementItems"
-          :content="{ align: 'end' }"
-        >
+        <div class="mail-header-actions mail-header-actions--desktop">
           <UButton
+            v-if="canSend"
+            icon="i-lucide-square-pen"
+            @click="openNewMessage"
+          >
+            Napisz
+          </UButton>
+          <UButton
+            v-else-if="activeConnection"
+            icon="i-lucide-rotate-ccw-key"
+            @click="openReconnect"
+          >
+            Połącz ponownie
+          </UButton>
+          <UButton
+            v-if="activeConnection"
             color="neutral"
             variant="outline"
             square
-            icon="i-lucide-ellipsis"
-            :disabled="composerOpen"
-            aria-label="Zarządzaj kontami pocztowymi"
-            title="Zarządzaj kontami pocztowymi"
+            icon="i-lucide-refresh-cw"
+            :loading="refreshing"
+            aria-label="Odśwież aktywną skrzynkę"
+            title="Odśwież aktywną skrzynkę"
+            @click="refreshMailbox()"
           />
-        </UDropdownMenu>
+          <UDropdownMenu
+            v-if="activeConnection"
+            :items="accountManagementItems"
+            :content="{ align: 'end' }"
+          >
+            <UButton
+              color="neutral"
+              variant="outline"
+              square
+              icon="i-lucide-ellipsis"
+              :disabled="composerOpen"
+              aria-label="Zarządzaj kontami pocztowymi"
+              title="Zarządzaj kontami pocztowymi"
+            />
+          </UDropdownMenu>
+        </div>
+
+        <div v-if="activeConnection" class="mail-header-actions mail-header-actions--mobile">
+          <div
+            class="mail-header-account"
+            :title="activeConnection.accountEmail"
+          >
+            <img
+              v-if="activeConnection.providerIcon.startsWith('/')"
+              class="mail-header-account__provider-icon"
+              :src="activeConnection.providerIcon"
+              alt=""
+            >
+            <UIcon
+              v-else
+              class="mail-header-account__provider-icon"
+              :name="activeConnection.providerIcon"
+              aria-hidden="true"
+            />
+            <span>{{ activeConnection.accountEmail }}</span>
+          </div>
+          <div class="mail-header-actions__primary">
+            <UButton
+              v-if="canSend"
+              class="mail-header-actions__compose"
+              size="sm"
+              icon="i-lucide-square-pen"
+              @click="openNewMessage"
+            >
+              Napisz
+            </UButton>
+            <UButton
+              v-else
+              class="mail-header-actions__compose"
+              size="sm"
+              icon="i-lucide-rotate-ccw-key"
+              @click="openReconnect"
+            >
+              Połącz ponownie
+            </UButton>
+            <UDropdownMenu
+              :items="mobileMailboxMenuItems"
+              :content="{ align: 'end' }"
+            >
+              <UButton
+                class="mail-header-actions__menu"
+                color="neutral"
+                variant="outline"
+                :square="connections.length === 1"
+                size="sm"
+                :disabled="composerOpen"
+                :aria-label="connections.length > 1
+                  ? `Zmień aktywne konto lub otwórz opcje skrzynki ${activeConnection.accountEmail}`
+                  : `Opcje skrzynki ${activeConnection.accountEmail}`"
+              >
+                <template v-if="connections.length > 1">
+                  <UIcon name="i-lucide-chevrons-up-down" aria-hidden="true" />
+                </template>
+                <UIcon v-else name="i-lucide-ellipsis" aria-hidden="true" />
+              </UButton>
+            </UDropdownMenu>
+          </div>
+        </div>
       </template>
 
       <UAlert
@@ -1413,6 +1525,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
               <UInput
                 v-model="searchInput"
                 class="mail-search"
+                type="search"
+                enterkeyhint="search"
                 icon="i-lucide-search"
                 :placeholder="contextScopeType ? 'Szukaj w poczcie klienta' : 'Szukaj w tej skrzynce'"
                 :aria-label="contextScopeType ? 'Szukaj w poczcie tego klienta' : 'Szukaj w aktywnej skrzynce'"
@@ -1420,9 +1534,12 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                 autocomplete="off"
                 :spellcheck="false"
                 :disabled="!activeConnection.capabilities.canSearch"
+                :ui="{ base: searchInput ? 'pe-14' : undefined }"
               >
                 <template v-if="searchInput" #trailing>
                   <UButton
+                    class="mail-search__clear"
+                    type="button"
                     color="neutral"
                     variant="link"
                     square
@@ -1433,15 +1550,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                   />
                 </template>
               </UInput>
-              <UButton
-                type="submit"
-                color="neutral"
-                variant="solid"
-                square
-                icon="i-lucide-search"
-                aria-label="Szukaj"
-                :disabled="!activeConnection.capabilities.canSearch"
-              />
               <UDropdownMenu
                 v-if="contextScopeType"
                 :items="contextWorkspaceMenuItems"
@@ -1660,7 +1768,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                 icon="i-lucide-arrow-left"
                 @click="closeThread"
               >
-                Wróć do wiadomości
+                Wróć do listy
               </UButton>
               <span
                 v-if="contextScopeType"
@@ -1734,7 +1842,51 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                 </div>
                 <div class="mail-detail__actions">
                   <UButton
+                    v-if="canSend"
+                    class="mail-detail__action mail-detail__action--reply"
+                    icon="i-lucide-reply"
+                    @click="openReply"
+                  >
+                    Odpowiedz
+                  </UButton>
+                  <UButton
+                    v-if="canSend"
+                    class="mail-detail__action mail-detail__action--agent"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-sparkles"
+                    :loading="agentMailReplyPending"
+                    :disabled="agentMailReplyPending"
+                    aria-label="Przygotuj odpowiedź przez Agenta AI"
+                    title="Przygotuj odpowiedź przez Agenta AI"
+                    @click="prepareReplyWithAgent"
+                  >
+                    <span class="mail-detail__action-label mail-detail__action-label--full">
+                      Przygotuj odpowiedź przez Agenta AI
+                    </span>
+                    <span class="mail-detail__action-label mail-detail__action-label--compact">
+                      Odpowiedź AI
+                    </span>
+                  </UButton>
+                  <UButton
+                    v-if="selectedThread.externalUrl"
+                    class="mail-detail__action mail-detail__action--provider"
+                    :href="selectedThread.externalUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-external-link"
+                    aria-label="Otwórz wiadomość u dostawcy"
+                    title="Otwórz wiadomość u dostawcy"
+                  >
+                    <span class="mail-detail__action-label mail-detail__action-label--full">
+                      Otwórz u dostawcy
+                    </span>
+                  </UButton>
+                  <UButton
                     v-if="selectedContextThread"
+                    class="mail-detail__action mail-detail__action--context"
                     :color="selectedContextThread.linked ? 'neutral' : 'primary'"
                     :variant="selectedContextThread.linked ? 'outline' : 'soft'"
                     :icon="selectedContextThread.linked ? 'i-lucide-link-2-off' : 'i-lucide-link-2'"
@@ -1747,31 +1899,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     <template v-else>
                       {{ selectedContextThread.suggested ? 'Potwierdź powiązanie' : `Powiąż z ${contextScopeType === 'case' ? 'tą sprawą' : 'tym klientem'}` }}
                     </template>
-                  </UButton>
-                  <UButton
-                    v-if="canSend"
-                    color="neutral"
-                    variant="soft"
-                    icon="i-lucide-sparkles"
-                    :loading="agentMailReplyPending"
-                    :disabled="agentMailReplyPending"
-                    @click="prepareReplyWithAgent"
-                  >
-                    Przygotuj odpowiedź przez Agenta AI
-                  </UButton>
-                  <UButton v-if="canSend" icon="i-lucide-reply" @click="openReply">
-                    Odpowiedz
-                  </UButton>
-                  <UButton
-                    v-if="selectedThread.externalUrl"
-                    :href="selectedThread.externalUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-external-link"
-                  >
-                    Otwórz u dostawcy
                   </UButton>
                 </div>
               </header>
@@ -1797,8 +1924,24 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                       {{ senderInitial(message.from?.label || '') }}
                     </span>
                     <div class="mail-message__identity">
-                      <div class="mail-message__sender-row">
+                      <div class="mail-message__sender-line">
                         <strong>{{ message.from?.label || 'Nieznany nadawca' }}</strong>
+                        <time
+                          :datetime="message.sentAt || undefined"
+                          :title="formatMessageDate(message.sentAt)"
+                        >
+                          <span class="mail-message__date-label mail-message__date-label--full">
+                            {{ formatMessageDate(message.sentAt) }}
+                          </span>
+                          <span class="mail-message__date-label mail-message__date-label--compact">
+                            {{ formatCompactMessageDate(message.sentAt) }}
+                          </span>
+                        </time>
+                      </div>
+                      <div
+                        v-if="message.unread || message.security.authentication === 'pass'"
+                        class="mail-message__badges"
+                      >
                         <UBadge v-if="message.unread" color="primary" variant="subtle" size="xs">
                           Nieprzeczytana
                         </UBadge>
@@ -1812,15 +1955,14 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                           Domena uwierzytelniona
                         </UBadge>
                       </div>
-                      <span v-if="message.from?.email">{{ message.from.email }}</span>
-                      <span title="Odbiorcy">do: {{ addressListLabel(message.to) }}</span>
-                      <span v-if="message.cc.length" title="Kopia">
-                        DW: {{ addressListLabel(message.cc) }}
-                      </span>
+                      <div class="mail-message__addresses">
+                        <span v-if="message.from?.email">{{ message.from.email }}</span>
+                        <span title="Odbiorcy">do: {{ addressListLabel(message.to) }}</span>
+                        <span v-if="message.cc.length" title="Kopia">
+                          DW: {{ addressListLabel(message.cc) }}
+                        </span>
+                      </div>
                     </div>
-                    <time :datetime="message.sentAt || undefined">
-                      {{ formatMessageDate(message.sentAt) }}
-                    </time>
                   </header>
 
                   <UAlert
@@ -1837,7 +1979,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     <MailMessageBody
                       :body-text="message.bodyText"
                       :body-html="message.bodyHtml"
-                      :has-remote-images="message.hasRemoteImages"
                       :remote-image-proxy-path="remoteImageProxyPath"
                     />
                   </div>
@@ -2103,6 +2244,52 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   height: 17px;
 }
 
+.mail-header-actions {
+  align-items: center;
+  gap: 6px;
+}
+
+.mail-header-actions--desktop {
+  display: flex;
+}
+
+.mail-header-actions--mobile {
+  display: none;
+}
+
+.mail-header-account {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.mail-header-account span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-header-account__provider-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.mail-header-actions__primary {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.mail-header-actions__menu {
+  min-width: 36px;
+}
+
 .mail-onboarding {
   display: grid;
   flex: 1 1 auto;
@@ -2284,18 +2471,22 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--ui-border);
 }
 
 .mail-toolbar--context {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .mail-search {
   width: 100%;
+}
+
+.mail-search :deep(input::-webkit-search-cancel-button) {
+  appearance: none;
 }
 
 .mail-list-summary {
@@ -2305,6 +2496,14 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   gap: 16px;
   padding: 9px 12px;
   border-bottom: 1px solid var(--ui-border);
+}
+
+.mail-list-summary > div:first-child {
+  min-width: 0;
+}
+
+.mail-list-summary > div:first-child > span {
+  overflow-wrap: anywhere;
 }
 
 .mail-list-summary p {
@@ -2531,10 +2730,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 }
 
 .mail-detail__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  gap: 14px;
   padding-bottom: 16px;
 }
 
@@ -2553,30 +2750,27 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 }
 
 .mail-detail__header h2 {
+  max-width: 38ch;
   margin: 0;
   color: var(--ui-text-highlighted);
   font-size: clamp(24px, 2.8vw, 34px);
   font-weight: 420;
   line-height: 1.2;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .mail-detail__actions {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
 }
 
-@container (max-width: 780px) {
-  .mail-detail__header {
-    display: grid;
-  }
-
-  .mail-detail__actions {
-    justify-content: flex-start;
-  }
+.mail-detail__action-label--compact,
+.mail-message__date-label--compact {
+  display: none;
 }
 
 .mail-detail__notice {
@@ -2585,10 +2779,14 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-message-stack {
   display: grid;
+  min-width: 0;
   gap: 10px;
 }
 
 .mail-message {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--ui-border);
   border-radius: var(--oe-radius-surface);
@@ -2597,7 +2795,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-message__header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 12px;
   padding: 14px 16px;
@@ -2619,38 +2818,58 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 .mail-message__identity {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 5px;
   color: var(--ui-text-muted);
   font-size: 11px;
   line-height: 1.45;
 }
 
-.mail-message__identity > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mail-message__sender-row {
+.mail-message__sender-line {
   display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
+  justify-content: space-between;
   gap: 7px;
   color: var(--ui-text-highlighted);
   font-size: 13px;
 }
 
-.mail-message__sender-row strong {
+.mail-message__sender-line strong {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mail-message__header time {
+.mail-message__badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.mail-message__addresses {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.mail-message__addresses > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-message__sender-line time {
+  flex: 0 0 auto;
   color: var(--ui-text-muted);
   font-family: var(--font-mono);
   font-size: 9px;
   line-height: 1.5;
   text-align: right;
+  white-space: nowrap;
 }
 
 .mail-message__body {
@@ -2886,7 +3105,150 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   }
 }
 
+@container (max-width: 680px) {
+  .mail-detail__header {
+    gap: 12px;
+    padding-bottom: 14px;
+  }
+
+  .mail-detail__eyebrow {
+    margin-bottom: 5px;
+  }
+
+  .mail-detail__actions {
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .mail-detail__actions :deep(a),
+  .mail-detail__actions :deep(button) {
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    flex: 0 1 auto;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .mail-detail__action--reply,
+  .mail-detail__action--agent {
+    flex: 1 1 0 !important;
+  }
+
+  .mail-detail__action--provider {
+    width: 44px !important;
+    min-width: 44px !important;
+    flex: 0 0 44px !important;
+    margin-left: auto;
+    padding-inline: 0 !important;
+  }
+
+  .mail-detail__action--provider :deep([data-slot="label"]) {
+    display: none;
+  }
+
+  .mail-detail__action--context {
+    flex: 1 0 100% !important;
+  }
+
+  .mail-detail__action--agent .mail-detail__action-label--full,
+  .mail-message__date-label--full {
+    display: none;
+  }
+
+  .mail-detail__action-label--compact,
+  .mail-message__date-label--compact {
+    display: inline;
+  }
+
+  .mail-message__header {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+}
+
 @media (max-width: 900px) {
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header.crm-page-header--compact) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+    padding: 6px 10px 0;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__copy) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+    white-space: nowrap;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__meta) {
+    display: none;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__actions) {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__tabs) {
+    grid-column: 1;
+    grid-row: 2;
+    gap: 18px;
+    margin-top: 4px;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__tab) {
+    min-height: 44px;
+  }
+
+  .mail-header-actions--desktop {
+    display: none;
+  }
+
+  .mail-header-actions--mobile {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mail-header-actions__compose,
+  .mail-header-actions__menu,
+  .mail-search__clear {
+    min-height: 44px !important;
+  }
+
+  .mail-header-actions__menu,
+  .mail-search__clear {
+    min-width: 44px !important;
+  }
+
+  .mail-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 10px;
+  }
+
+  .mail-toolbar--context {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mail-search :deep(input),
+  .mail-search__clear {
+    min-height: 44px;
+  }
+
+  .mail-search__clear {
+    min-width: 44px;
+  }
+
   .mail-list-pane {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -2944,34 +3306,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     padding: 10px 8px calc(104px + env(safe-area-inset-bottom));
   }
 
-  .mail-detail__header {
-    display: grid;
-  }
-
-  .mail-detail__actions {
-    justify-content: stretch;
-  }
-
-  .mail-detail__actions :deep(a),
-  .mail-detail__actions :deep(button) {
-    width: 100%;
-    min-width: 0;
-    min-height: 44px;
-    flex: 1 1 100%;
-    justify-content: center;
-    white-space: normal;
-  }
-
-  .mail-message__header {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding: 12px 14px;
-  }
-
-  .mail-message__header time {
-    grid-column: 2;
-    text-align: left;
-  }
-
   .mail-message__body {
     padding: 16px 14px 18px;
   }
@@ -2979,6 +3313,16 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   .mail-page-root--standalone .mail-message__body,
   .mail-page-root--embedded .mail-message__body {
     padding: 13px 11px 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__tabs) {
+    gap: 14px;
+  }
+
+  .mail-page-root--standalone.mail-page-root--connected :deep(.crm-page-header__tab > .iconify) {
+    display: none;
   }
 }
 

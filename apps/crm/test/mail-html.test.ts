@@ -60,7 +60,7 @@ test('drops unsafe CSS declarations while retaining safe declarations', () => {
   assert.doesNotMatch(html, /url\s*\(|expression\s*\(|image-set\s*\(|javascript|tracker\.example/iu)
 })
 
-test('blocks remote images until explicitly enabled and preserves raster data images', () => {
+test('stores remote images as inert proxy markers and preserves raster data images', () => {
   const result = sanitizeMailHtml(`
     <img src="https://cdn.example/image.png?one=1&amp;two=&quot;quoted&quot;" onerror="alert(1)" srcset="https://cdn.example/2x.png 2x" alt="Remote">
     <img src="//images.example/banner.jpg" alt="Protocol relative">

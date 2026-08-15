@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   buildMailHtmlSrcdoc,
@@ -25,7 +26,7 @@ describe('sandboxed mail HTML display', () => {
     assert.match(srcdoc, /<meta name="referrer" content="no-referrer">/u)
   })
 
-  it('keeps remote images inert until the user explicitly enables them', () => {
+  it('keeps remote images inert by default and activates them only through the fixed proxy', () => {
     const html = '<img data-mail-remote-src="https://tracker.example/pixel.png" alt="Oferta">'
     const blocked = buildMailHtmlSrcdoc(html)
     const enabled = buildMailHtmlSrcdoc(html, {
@@ -45,6 +46,94 @@ describe('sandboxed mail HTML display', () => {
     assert.doesNotMatch(enabled, /<img src="https?:\/\//u)
     assert.match(MAIL_HTML_REMOTE_IMAGES_CSP, /img-src data: 'self'/u)
     assert.doesNotMatch(MAIL_HTML_REMOTE_IMAGES_CSP, /https?:/u)
+  })
+
+  it('renders HTML messages directly with automatic proxied images and no mode controls', () => {
+    const componentSource = readFileSync(
+      new URL('../app/components/mail/MailMessageBody.vue', import.meta.url),
+      'utf8',
+    )
+
+    assert.match(componentSource, /loadRemoteImages:\s*true/u)
+    assert.match(componentSource, /<iframe\b/u)
+    assert.doesNotMatch(
+      componentSource,
+      /Wersja HTML|Wersja tekstowa|Wczytaj zdalne obrazy|Zdalne obrazy są zablokowane/u,
+    )
+  })
+
+  it('adds a responsive envelope for wide newsletter content', () => {
+    const srcdoc = buildMailHtmlSrcdoc('<table width="1200"><tr><td><img src="data:image/png;base64,AAAA"></td></tr></table>')
+
+    assert.match(srcdoc, /html, body \{ width: 100%; max-width: 100%; min-width: 0;/u)
+    assert.match(srcdoc, /img \{ max-width: 100% !important; height: auto !important; \}/u)
+    assert.match(srcdoc, /table \{ max-width: 100% !important; \}/u)
+    assert.match(srcdoc, /pre \{ max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; \}/u)
+  })
+
+  it('keeps the thread subject and actions in separate layout rows', () => {
+    const workspaceSource = readFileSync(
+      new URL('../app/components/mail/MailWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+
+    assert.match(
+      workspaceSource,
+      /\.mail-detail__header\s*\{\s*display:\s*grid;/u,
+    )
+    assert.match(
+      workspaceSource,
+      /\.mail-detail__actions\s*\{[^}]*justify-content:\s*flex-start;/su,
+    )
+    assert.doesNotMatch(
+      workspaceSource,
+      /\.mail-detail__header\s*\{[^}]*display:\s*flex;/su,
+    )
+  })
+
+  it('keeps mobile thread actions compact and touch friendly', () => {
+    const workspaceSource = readFileSync(
+      new URL('../app/components/mail/MailWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+
+    assert.match(workspaceSource, /@container \(max-width: 680px\)/u)
+    assert.match(
+      workspaceSource,
+      /\.mail-detail__action--reply,\s*\.mail-detail__action--agent\s*\{[^}]*flex:\s*1 1 0 !important;/su,
+    )
+    assert.match(
+      workspaceSource,
+      /\.mail-detail__action--provider\s*\{[^}]*width:\s*44px !important;[^}]*flex:\s*0 0 44px !important;/su,
+    )
+    assert.match(workspaceSource, />\s*Odpowiedź AI\s*</u)
+    assert.match(workspaceSource, /aria-label="Otwórz wiadomość u dostawcy"/u)
+    assert.doesNotMatch(
+      workspaceSource,
+      /\.mail-detail__actions :deep\(a\),\s*\.mail-detail__actions :deep\(button\)\s*\{[^}]*width:\s*100%/su,
+    )
+  })
+
+  it('groups mobile sender metadata without a detached date row', () => {
+    const workspaceSource = readFileSync(
+      new URL('../app/components/mail/MailWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+
+    assert.match(
+      workspaceSource,
+      /class="mail-message__sender-line"[\s\S]*?<time[\s\S]*?mail-message__date-label--compact/u,
+    )
+    assert.match(workspaceSource, /class="mail-message__badges"/u)
+    assert.match(workspaceSource, /class="mail-message__addresses"/u)
+    assert.match(
+      workspaceSource,
+      /\.mail-message__sender-line time\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/su,
+    )
+    assert.doesNotMatch(
+      workspaceSource,
+      /\.mail-message__header time\s*\{[^}]*grid-column:/su,
+    )
   })
 
   it('normalizes protocol-relative sources and keeps unrelated markup unchanged', () => {

@@ -26,8 +26,24 @@
 }
 
 @media (max-width: 900px) {
+  .crm-shell:has(> .crm-content--assistant),
+  .crm-shell:has(> .crm-content > .crm-content-mode--workspace) {
+    height: 100dvh;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .crm-shell > .crm-content--assistant,
   .crm-shell .crm-content:has(> .crm-content-mode--workspace) {
-    height: calc(100dvh - 76px);
+    height: auto;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .crm-shell:has(.mail-page-root--agent-action-visible) .crm-eve-assistant__launcher {
+    display: none;
   }
 }
 

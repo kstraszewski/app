@@ -1359,7 +1359,7 @@ async function signOut() {
   }
 
   .crm-content--assistant {
-    height: calc(100dvh - 76px);
+    height: auto;
     min-height: 0;
     overflow: hidden;
     padding: 18px 16px 0;

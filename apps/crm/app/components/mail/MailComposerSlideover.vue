@@ -618,7 +618,7 @@ function formatBytes(value: number): string {
     title="Sprawdź odbiorców i załączniki"
     description="Po wysłaniu nie można cofnąć wiadomości w CRM."
     :dismissible="!sending"
-    :ui="{ footer: 'justify-end' }"
+    :ui="{ footer: 'flex-col items-stretch sm:flex-row sm:items-center sm:justify-end' }"
   >
     <template #body>
       <div class="mail-composer__send-summary">
@@ -655,7 +655,7 @@ function formatBytes(value: number): string {
     v-model:open="discardConfirmationOpen"
     title="Odrzucić wiadomość?"
     description="Treść formularza i wybrane załączniki zostaną usunięte."
-    :ui="{ footer: 'justify-end' }"
+    :ui="{ footer: 'flex-col items-stretch sm:flex-row sm:items-center sm:justify-end' }"
   >
     <template #footer="{ close }">
       <UButton color="neutral" variant="outline" @click="close">
@@ -761,6 +761,7 @@ function formatBytes(value: number): string {
 
 .mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal']) {
   display: grid;
+  justify-items: stretch !important;
   padding: 9px 11px;
   background: var(--ui-bg);
 }
@@ -826,6 +827,11 @@ function formatBytes(value: number): string {
   .mail-composer__footer > div {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .mail-composer__recipient-actions :deep(button),
+  .mail-composer__footer :deep(button) {
+    min-height: 44px;
   }
 }
 </style>

@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
       :reset-search-term-on-select="true"
       :content="{ sideOffset: 6 }"
       :ui="{
-        base: 'min-h-10 items-center',
+        base: 'min-h-11 items-center',
         content: 'min-w-[min(520px,calc(100vw-32px))]',
         tagsItem: 'max-w-full rounded-full py-0.5 ps-1 pe-1.5',
         tagsItemText: 'min-w-0',
@@ -331,6 +331,12 @@ onBeforeUnmount(() => {
 .mail-recipient-input__option,
 .mail-recipient-input__identity {
   min-width: 0;
+}
+
+.mail-recipient-input {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .mail-recipient-input__tag {

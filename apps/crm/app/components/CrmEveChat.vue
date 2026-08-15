@@ -853,8 +853,8 @@ defineExpose({ focusComposer })
 .assistant-chat--slideover {
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
-  height: min(760px, calc(100vh - 130px));
-  height: min(760px, calc(100dvh - 130px));
+  height: 100%;
+  max-height: 760px;
 }
 
 .assistant-chat__toolbar,
@@ -1103,11 +1103,13 @@ defineExpose({ focusComposer })
 }
 
 .assistant-turn__text p {
+  min-width: 0;
   max-width: 880px;
   margin: 0;
   color: var(--ui-text-toned);
   font-size: 14px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
@@ -1402,10 +1404,6 @@ defineExpose({ focusComposer })
 
 @media (max-width: 640px) {
   .assistant-chat--page { height: 100%; min-height: 0; }
-  .assistant-chat--slideover {
-    height: calc(100vh - 120px);
-    height: calc(100dvh - 120px);
-  }
   .assistant-chat__toolbar { flex-wrap: wrap; }
   .assistant-chat__status { order: 3; width: 100%; }
   .assistant-chat__empty { grid-template-columns: 1fr; }
@@ -1417,6 +1415,8 @@ defineExpose({ focusComposer })
   .assistant-composer__actions { align-items: stretch; flex-direction: column; }
   .assistant-composer__actions > div { justify-content: stretch; }
   .assistant-composer__actions > div :deep(button) { flex: 1; }
+  .assistant-chat__toolbar :deep(button),
+  .assistant-composer__actions :deep(button) { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

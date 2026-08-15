@@ -319,10 +319,12 @@ function optionVariant(style: 'danger' | 'default' | 'primary' | undefined) {
 }
 
 .eve-tool-step__tool-summary p {
+  min-width: 0;
   margin: 3px 0 0;
   color: var(--ui-text-muted);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .eve-tool-step__progress { width: 100%; }

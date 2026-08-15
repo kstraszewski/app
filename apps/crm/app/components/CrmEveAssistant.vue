@@ -44,7 +44,13 @@ const {
   fail: failInvocation,
 } = useAgentInvocation()
 const activeInvocation = shallowRef<AgentInvocationRequest | null>(null)
+let pendingInvocationCompletion: { requestId: string, text: string } | null = null
+let slideoverPresent = false
 let startingInvocation = false
+
+watch(open, (value) => {
+  if (props.mode === 'launcher' && value) slideoverPresent = true
+}, { flush: 'sync' })
 
 const organizationSlug = computed(() => {
   const value = route.params.organizationSlug
@@ -272,8 +278,21 @@ function finishInvocationTurn(snapshot: UseEveAgentSnapshot<EveMessageData>): vo
   }
 
   activeInvocation.value = null
-  completeInvocation(active.id, text)
+  if (!slideoverPresent) {
+    completeInvocation(active.id, text)
+    return
+  }
+
+  pendingInvocationCompletion = { requestId: active.id, text }
   open.value = false
+}
+
+function handleSlideoverAfterLeave(): void {
+  slideoverPresent = false
+  const completion = pendingInvocationCompletion
+  if (!completion) return
+  pendingInvocationCompletion = null
+  completeInvocation(completion.requestId, completion.text)
 }
 
 function failActiveInvocation(message: string): void {
@@ -500,7 +519,11 @@ defineExpose({ newConversation })
         v-model:open="open"
         title="Agent AI Eve"
         description="Główny agent CRM · bezpieczny dostęp do spraw i wiedzy OpenExpert"
-        :ui="{ content: 'sm:max-w-xl' }"
+        :ui="{
+          content: 'sm:max-w-xl',
+          body: 'min-h-0 overflow-hidden',
+        }"
+        @after:leave="handleSlideoverAfterLeave"
       >
         <template #body>
           <CrmEveChat

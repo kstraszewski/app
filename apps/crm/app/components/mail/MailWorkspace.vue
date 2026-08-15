@@ -1165,6 +1165,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     :class="{
       'mail-page-root--embedded': props.embedded,
       'mail-page-root--standalone': !props.embedded,
+      'mail-page-root--agent-action-visible': Boolean(selectedThread && canSend),
       'crm-content-mode--workspace': !props.embedded,
     }"
   >
@@ -1405,6 +1406,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
           <div class="mail-list-pane">
             <form
               class="mail-toolbar"
+              :class="{ 'mail-toolbar--context': contextScopeType }"
               role="search"
               @submit.prevent="submitSearch"
             >
@@ -2019,6 +2021,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-context-limit-note {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   gap: 7px;
   margin: 0;
@@ -2028,6 +2031,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   background: var(--ui-bg-muted);
   font-size: 11px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .mail-context-limit-note :deep(svg) {
@@ -2080,13 +2084,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-account-switcher {
   display: flex;
+  max-width: 100%;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.mail-account-switcher__select {
+.mail-account-switcher :deep(.mail-account-switcher__select) {
   width: min(280px, 72vw);
+  max-width: 100%;
+  min-width: 0;
 }
 
 .mail-account-switcher__provider-icon {
@@ -2280,6 +2288,10 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--ui-border);
+}
+
+.mail-toolbar--context {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .mail-search {
@@ -2495,6 +2507,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 }
 
 .mail-detail-pane {
+  container-type: inline-size;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
@@ -2554,6 +2567,16 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+@container (max-width: 780px) {
+  .mail-detail__header {
+    display: grid;
+  }
+
+  .mail-detail__actions {
+    justify-content: flex-start;
+  }
 }
 
 .mail-detail__notice {
@@ -2863,6 +2886,12 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   }
 }
 
+@media (max-width: 900px) {
+  .mail-list-pane {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 @media (max-width: 760px) {
   .mail-onboarding__providers {
     grid-template-columns: minmax(0, 1fr);
@@ -2912,7 +2941,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
   .mail-page-root--standalone .mail-detail,
   .mail-page-root--embedded .mail-detail {
-    padding: 10px 8px 40px;
+    padding: 10px 8px calc(104px + env(safe-area-inset-bottom));
   }
 
   .mail-detail__header {
@@ -2925,8 +2954,12 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
   .mail-detail__actions :deep(a),
   .mail-detail__actions :deep(button) {
-    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    flex: 1 1 100%;
     justify-content: center;
+    white-space: normal;
   }
 
   .mail-message__header {

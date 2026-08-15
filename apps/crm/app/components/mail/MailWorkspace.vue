@@ -419,6 +419,12 @@ const contextHeading = computed(() => (
     ? 'Korespondencja sprawy'
     : contextScopeType.value === 'client' ? 'Korespondencja klienta' : 'Poczta')
 ))
+const contextFilterLabel = computed(() => (
+  `${contextScopeType.value === 'case' ? 'Sprawa' : 'Klient'}: ${contextHeading.value}`
+))
+const contextFilterIcon = computed(() => (
+  contextScopeType.value === 'case' ? 'i-lucide-briefcase-business' : 'i-lucide-user-round'
+))
 const contextConnectionEmptyState = computed(() => (
   contextScopeType.value === 'case'
     ? {
@@ -443,6 +449,37 @@ const fullMailboxTo = computed(() => ({
     ...(selectedThreadId.value ? { thread: selectedThreadId.value } : {}),
   },
 }))
+const contextWorkspaceMenuItems = computed(() => [
+  connections.value.map(connection => ({
+    label: `${connection.displayName || connection.accountEmail}${
+      connection.id === connectionId.value ? ' · aktualne konto' : ''
+    }`,
+    description: `${connection.providerLabel} · ${connection.accountEmail}`,
+    icon: connection.id === connectionId.value
+      ? 'i-lucide-circle-check'
+      : connection.providerIcon.startsWith('/') ? 'i-lucide-mail' : connection.providerIcon,
+    disabled: composerOpen.value,
+    onSelect: () => switchMailbox(connection.id),
+  })),
+  [
+    {
+      label: canSend.value ? 'Napisz wiadomość' : 'Połącz ponownie',
+      icon: canSend.value ? 'i-lucide-square-pen' : 'i-lucide-rotate-ccw-key',
+      onSelect: () => canSend.value ? openNewMessage() : openReconnect(),
+    },
+    {
+      label: 'Odśwież skrzynkę',
+      icon: 'i-lucide-refresh-cw',
+      disabled: refreshing.value || !canRead.value,
+      onSelect: () => refreshMailbox(),
+    },
+    {
+      label: 'Otwórz w pełnej Poczcie',
+      icon: 'i-lucide-external-link',
+      onSelect: () => navigateTo(fullMailboxTo.value),
+    },
+  ],
+])
 const folderById = computed(() => new Map(
   threadPayload.value.folders.map(folder => [folder.id, folder]),
 ))
@@ -1123,74 +1160,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
         </UDropdownMenu>
       </template>
 
-      <section v-if="props.embedded" class="mail-embedded-header">
-        <div class="mail-embedded-header__title">
-          <p>
-            {{ contextScopeType === 'case'
-              ? 'Poczta sprawy'
-              : contextScopeType === 'client' ? 'Poczta klienta' : 'Poczta' }}
-          </p>
-          <h2>{{ contextHeading }}</h2>
-          <span>Wiadomości z Twojej prywatnej skrzynki, dopasowane do tego kontekstu.</span>
-        </div>
-        <div class="mail-embedded-header__actions">
-          <USelectMenu
-            v-if="connections.length > 1"
-            v-model="selectedConnectionId"
-            :items="accountItems"
-            value-key="value"
-            label-key="label"
-            class="mail-embedded-header__select"
-            :disabled="composerOpen"
-            aria-label="Wybierz prywatną skrzynkę pocztową"
-          />
-          <UBadge
-            v-if="activeConnection"
-            :color="activeConnection.status === 'active' ? 'neutral' : 'warning'"
-            variant="soft"
-            size="sm"
-            class="mail-embedded-header__account"
-          >
-            <UIcon name="i-lucide-lock-keyhole" aria-hidden="true" />
-            <span>Prywatna skrzynka · {{ activeConnection.accountEmail }}</span>
-          </UBadge>
-          <UButton
-            v-if="canSend"
-            icon="i-lucide-square-pen"
-            @click="openNewMessage"
-          >
-            Napisz
-          </UButton>
-          <UButton
-            v-else-if="activeConnection"
-            icon="i-lucide-rotate-ccw-key"
-            @click="openReconnect"
-          >
-            Połącz ponownie
-          </UButton>
-          <UButton
-            v-if="activeConnection"
-            :to="fullMailboxTo"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-external-link"
-          >
-            Otwórz w pełnej Poczcie
-          </UButton>
-        </div>
-      </section>
-
-      <p
-        v-if="props.embedded && contextDescriptor?.emailsTruncated"
-        class="mail-context-limit-note"
-        role="note"
-      >
-        <UIcon name="i-lucide-info" aria-hidden="true" />
-        <span>
-          Część adresów kontaktowych nie mieści się w jednym wyszukiwaniu; przypięte wątki nadal są widoczne.
-        </span>
-      </p>
-
       <UAlert
         v-if="contextScopeType && !hasContextScope"
         class="mail-alert"
@@ -1384,10 +1353,59 @@ function securityWarningDescription(security: MailMessageSecurity): string {
               />
             </form>
 
+            <div
+              v-else
+              class="mail-toolbar mail-toolbar--context"
+              role="group"
+              aria-label="Wymuszony filtr poczty kontekstowej"
+            >
+              <UInput
+                :model-value="contextFilterLabel"
+                class="mail-search"
+                :icon="contextFilterIcon"
+                readonly
+                :aria-label="`Filtr wymuszony, tylko do odczytu: ${contextFilterLabel}`"
+              >
+                <template #trailing>
+                  <span
+                    class="mail-context-filter-lock"
+                    title="Filtr wynika z otwartego kontekstu i nie można go usunąć"
+                  >
+                    <UIcon name="i-lucide-lock-keyhole" aria-hidden="true" />
+                  </span>
+                </template>
+              </UInput>
+              <UDropdownMenu
+                :items="contextWorkspaceMenuItems"
+                :content="{ align: 'end' }"
+              >
+                <UButton
+                  color="neutral"
+                  variant="solid"
+                  square
+                  icon="i-lucide-ellipsis"
+                  :disabled="composerOpen"
+                  aria-label="Opcje poczty kontekstowej"
+                  title="Opcje poczty kontekstowej"
+                />
+              </UDropdownMenu>
+            </div>
+
+            <p
+              v-if="contextDescriptor?.emailsTruncated"
+              class="mail-context-limit-note"
+              role="note"
+            >
+              <UIcon name="i-lucide-info" aria-hidden="true" />
+              <span>
+                Część adresów kontaktowych nie mieści się w jednym wyszukiwaniu; przypięte wątki nadal są widoczne.
+              </span>
+            </p>
+
             <div class="mail-list-summary">
               <div>
                 <p>{{ activeFolderLabel }}</p>
-                <span v-if="contextScopeType">Wiadomości powiązane z kontekstem</span>
+                <span v-if="contextScopeType">{{ activeConnection.accountEmail }} · filtr kontekstowy</span>
                 <span v-else-if="searchQuery">Wyniki dla „{{ searchQuery }}”</span>
                 <span v-else>Strona {{ currentPageNumber }}</span>
                 <span v-if="lastRefreshedLabel">Odświeżono o {{ lastRefreshedLabel }}</span>
@@ -1562,6 +1580,39 @@ function securityWarningDescription(security: MailMessageSecurity): string {
           </div>
 
           <article class="mail-detail-pane" aria-label="Treść wątku">
+            <div v-if="selectedThreadId" class="mail-detail__mobile-back">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-arrow-left"
+                @click="closeThread"
+              >
+                Wróć do wiadomości
+              </UButton>
+              <span
+                v-if="contextScopeType"
+                class="mail-detail__mobile-account"
+                :title="activeConnection.accountEmail"
+              >
+                {{ activeConnection.accountEmail }}
+              </span>
+              <UDropdownMenu
+                v-if="contextScopeType"
+                :items="contextWorkspaceMenuItems"
+                :content="{ align: 'end' }"
+              >
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  square
+                  icon="i-lucide-ellipsis"
+                  :disabled="composerOpen"
+                  :aria-label="`Opcje poczty kontekstowej dla ${activeConnection.accountEmail}`"
+                  title="Opcje poczty kontekstowej"
+                />
+              </UDropdownMenu>
+            </div>
+
             <OeEmptyState
               v-if="!selectedThreadId"
               kind="selection"
@@ -1601,17 +1652,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
             </OeEmptyState>
 
             <div v-else-if="selectedThread" class="mail-detail">
-              <div class="mail-detail__mobile-back">
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-arrow-left"
-                  @click="closeThread"
-                >
-                  Wróć do wiadomości
-                </UButton>
-              </div>
-
               <header class="mail-detail__header">
                 <div>
                   <p class="mail-detail__eyebrow">
@@ -1882,7 +1922,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  gap: 16px;
   grid-template-rows: minmax(0, 1fr);
 }
 
@@ -1892,87 +1931,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 16px;
-}
-
-.mail-embedded-header {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 20px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-surface);
-  background: var(--ui-bg);
-}
-
-.mail-embedded-header__title {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.mail-embedded-header__title p,
-.mail-embedded-header__title h2,
-.mail-embedded-header__title span {
-  margin: 0;
-}
-
-.mail-embedded-header__title p {
-  color: var(--ui-text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.mail-embedded-header__title h2 {
-  color: var(--ui-text-highlighted);
-  font-size: 20px;
-  font-weight: 520;
-  line-height: 1.25;
-}
-
-.mail-embedded-header__title > span {
-  color: var(--ui-text-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.mail-embedded-header__actions {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.mail-embedded-header__select {
-  width: min(250px, 68vw);
-}
-
-.mail-embedded-header__account {
-  display: inline-flex;
-  max-width: min(330px, 72vw);
-  align-items: center;
-  gap: 5px;
-}
-
-.mail-embedded-header__account span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mail-context-limit-note {
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  margin: -4px 2px 0;
+  margin: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ui-border);
   color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -1982,12 +1951,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   width: 15px;
   height: 15px;
   margin-top: 1px;
-}
-
-.mail-page-root--embedded .mail-browser {
-  height: auto;
-  min-height: 0;
-  flex: 1 1 0;
 }
 
 .mail-alert {
@@ -2205,7 +2168,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   background: var(--ui-bg);
 }
 
-.mail-page-root--standalone .mail-browser {
+.mail-page-root--standalone .mail-browser,
+.mail-page-root--embedded .mail-browser {
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   width: 100%;
   max-width: none;
@@ -2236,6 +2200,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
 
 .mail-search {
   width: 100%;
+}
+
+.mail-context-filter-lock {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ui-text-muted);
+}
+
+.mail-context-filter-lock :deep(svg) {
+  width: 14px;
+  height: 14px;
 }
 
 .mail-list-summary {
@@ -2589,87 +2564,106 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   padding: 18px 18px 22px;
 }
 
-.mail-page-root--standalone .mail-alert {
+.mail-page-root--standalone .mail-alert,
+.mail-page-root--embedded .mail-alert {
   margin-bottom: 8px;
 }
 
-.mail-page-root--standalone .mail-toolbar {
+.mail-page-root--standalone .mail-toolbar,
+.mail-page-root--embedded .mail-toolbar {
   gap: 6px;
   padding: 8px 10px;
 }
 
-.mail-page-root--standalone .mail-list-summary {
+.mail-page-root--standalone .mail-list-summary,
+.mail-page-root--embedded .mail-list-summary {
   gap: 10px;
   padding: 7px 10px;
 }
 
-.mail-page-root--standalone .mail-list-warning {
+.mail-page-root--standalone .mail-list-warning,
+.mail-page-root--embedded .mail-list-warning {
   margin: 8px;
 }
 
-.mail-page-root--standalone .mail-thread-skeleton {
+.mail-page-root--standalone .mail-thread-skeleton,
+.mail-page-root--embedded .mail-thread-skeleton {
   gap: 7px;
   padding: 10px 12px;
 }
 
-.mail-page-root--standalone .mail-thread {
+.mail-page-root--standalone .mail-thread,
+.mail-page-root--embedded .mail-thread {
   gap: 5px;
   padding: 10px 12px 11px;
 }
 
-.mail-page-root--standalone .mail-pagination {
+.mail-page-root--standalone .mail-pagination,
+.mail-page-root--embedded .mail-pagination {
   padding: 7px 8px;
 }
 
-.mail-page-root--standalone .mail-detail-loading {
+.mail-page-root--standalone .mail-detail-loading,
+.mail-page-root--embedded .mail-detail-loading {
   gap: 12px;
   padding: 14px;
 }
 
-.mail-page-root--standalone .mail-detail {
+.mail-page-root--standalone .mail-detail,
+.mail-page-root--embedded .mail-detail {
   padding: 12px 14px 40px;
 }
 
-.mail-page-root--standalone .mail-detail__header {
+.mail-page-root--standalone .mail-detail__header,
+.mail-page-root--embedded .mail-detail__header {
   gap: 12px;
   padding-bottom: 12px;
 }
 
-.mail-page-root--standalone .mail-detail__header h2 {
+.mail-page-root--standalone .mail-detail__header h2,
+.mail-page-root--embedded .mail-detail__header h2 {
   font-size: clamp(22px, 2vw, 30px);
 }
 
-.mail-page-root--standalone .mail-detail__notice {
+.mail-page-root--standalone .mail-detail__notice,
+.mail-page-root--embedded .mail-detail__notice {
   margin-bottom: 10px;
 }
 
-.mail-page-root--standalone .mail-message-stack {
+.mail-page-root--standalone .mail-message-stack,
+.mail-page-root--embedded .mail-message-stack {
   gap: 8px;
 }
 
-.mail-page-root--standalone .mail-message__header {
+.mail-page-root--standalone .mail-message__header,
+.mail-page-root--embedded .mail-message__header {
   gap: 10px;
   padding: 11px 13px;
 }
 
-.mail-page-root--standalone .mail-message__avatar {
+.mail-page-root--standalone .mail-message__avatar,
+.mail-page-root--embedded .mail-message__avatar {
   width: 34px;
   height: 34px;
 }
 
-.mail-page-root--standalone .mail-message__body {
+.mail-page-root--standalone .mail-message__body,
+.mail-page-root--embedded .mail-message__body {
   padding: 14px 14px 17px;
 }
 
-.mail-page-root--standalone .mail-message__security-warning {
+.mail-page-root--standalone .mail-message__security-warning,
+.mail-page-root--embedded .mail-message__security-warning {
   margin: 10px 13px 0;
 }
 
-.mail-page-root--standalone .mail-message__truncated {
+.mail-page-root--standalone .mail-message__truncated,
+.mail-page-root--embedded .mail-message__truncated {
   margin: 0 13px 13px;
 }
 
-.mail-page-root--standalone .mail-attachments {
+.mail-page-root--standalone .mail-attachments,
+.mail-page-root--embedded .mail-attachments {
   padding: 11px 13px 13px;
 }
 
@@ -2772,8 +2766,27 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   }
 
   .mail-detail__mobile-back {
-    display: block;
-    margin: -12px 0 16px -10px;
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--ui-border);
+    background: color-mix(in srgb, var(--ui-bg) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .mail-detail__mobile-account {
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -2802,25 +2815,6 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     padding: 8px 10px 0;
   }
 
-  .mail-embedded-header {
-    display: grid;
-    padding: 16px;
-  }
-
-  .mail-embedded-header__actions {
-    justify-content: stretch;
-  }
-
-  .mail-embedded-header__actions :deep(a),
-  .mail-embedded-header__actions :deep(button),
-  .mail-embedded-header__select {
-    width: 100%;
-  }
-
-  .mail-embedded-header__account {
-    max-width: 100%;
-  }
-
   .mail-context-connection-empty :deep(.oe-empty-state__actions),
   .mail-context-connection-empty :deep(.oe-empty-state__actions button) {
     width: 100%;
@@ -2843,7 +2837,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     padding: 12px 10px 72px;
   }
 
-  .mail-page-root--standalone .mail-detail {
+  .mail-page-root--standalone .mail-detail,
+  .mail-page-root--embedded .mail-detail {
     padding: 10px 8px 40px;
   }
 
@@ -2875,7 +2870,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     padding: 16px 14px 18px;
   }
 
-  .mail-page-root--standalone .mail-message__body {
+  .mail-page-root--standalone .mail-message__body,
+  .mail-page-root--embedded .mail-message__body {
     padding: 13px 11px 16px;
   }
 }

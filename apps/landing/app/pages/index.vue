@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { siteOrigin } = useLandingSeo({
   title: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
-  description: 'Platforma dla osób i firm, które chcą uruchomić lub rozwinąć pośrednictwo kredytowe: CRM w Twojej marce, uporządkowany proces, rozliczenia i agenci AI.',
+  description: 'OpenExpert dla pośredników kredytowych: CRM w Twojej marce, OpenExpert Mail z gwarancją 99,99% dostępności, rozliczenia i agenci AI.',
   path: '/',
   socialImageAlt: 'OpenExpert — platforma do budowy własnego pośrednictwa kredytowego',
 })
@@ -32,7 +32,7 @@ useHead({
           },
           email: 'hello@openexpert.app',
           sameAs: ['https://github.com/OpenExpertApp/OpenExpert'],
-          description: 'Platforma dla osób i firm uruchamiających lub rozwijających pośrednictwo kredytowe: CRM, obsługa spraw, rozliczenia i agenci AI.',
+          description: 'Platforma dla osób i firm uruchamiających lub rozwijających pośrednictwo kredytowe: CRM, OpenExpert Mail, obsługa spraw, rozliczenia i agenci AI.',
         },
         {
           '@type': 'WebSite',
@@ -55,7 +55,7 @@ useHead({
           '@id': homePageId,
           url: homeUrl,
           name: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
-          description: 'Platforma do uruchomienia i rozwijania pośrednictwa kredytowego pod własną marką.',
+          description: 'Platforma do uruchomienia i rozwijania pośrednictwa kredytowego pod własną marką, ze zintegrowaną pocztą OpenExpert Mail.',
           isPartOf: { '@id': websiteId },
           about: { '@id': organizationId },
           primaryImageOfPage: { '@id': primaryImageId },
@@ -212,7 +212,7 @@ async function submitWaitlist() {
 
         <nav class="desktop-nav" aria-label="Główna nawigacja">
           <a href="#jak-to-dziala">Jak zacząć</a>
-          <a href="#agenci-ai">Platforma</a>
+          <a href="#openexpert-mail">Mail</a>
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
         </nav>
@@ -234,7 +234,7 @@ async function submitWaitlist() {
         <Transition name="mobile-menu">
           <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
             <a href="#jak-to-dziala" @click="closeMobileMenu">Jak zacząć</a>
-            <a href="#agenci-ai" @click="closeMobileMenu">Platforma</a>
+            <a href="#openexpert-mail" @click="closeMobileMenu">OpenExpert Mail</a>
             <NuxtLink to="/eksperci" @click="closeMobileMenu">Eksperci</NuxtLink>
             <NuxtLink to="/placowki" @click="closeMobileMenu">Placówki</NuxtLink>
             <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Zostań pośrednikiem</a>
@@ -269,6 +269,8 @@ async function submitWaitlist() {
       </div>
 
       <LazyLandingJourneySection hydrate-never />
+
+      <LazyLandingMailSection hydrate-never />
 
       <LazyLandingMultiformSection hydrate-never />
 

@@ -13,6 +13,7 @@ import type {
   MailMessageSecurity,
   MailProviderId,
   MailSendPayload,
+  MailThreadDetail,
   MailThreadDetailPayload,
   MailThreadListPayload,
   MailThreadSummary,
@@ -20,6 +21,11 @@ import type {
 import type { LocationQueryRaw } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import { apiErrorMessage } from '~/utils/api-error'
+import {
+  buildMailAgentReplyContext,
+  MAIL_AGENT_REPLY_PROMPT,
+  mailAgentReplyParticipantEmails,
+} from '~/utils/mail-agent-reply'
 
 type MailWorkspaceScopeType = 'mailbox' | 'client' | 'case'
 type MailContextPageTokens = Partial<Record<MailContextFolderId, string>>
@@ -55,6 +61,11 @@ const { organizationSlug, orgApiPath, orgPath } = useOrganizationContext()
 const requestFetch = useRequestFetch()
 const toast = useToast()
 const crmShellComponent = resolveComponent('CrmShell')
+const {
+  result: agentInvocationResult,
+  submit: submitAgentInvocation,
+  clearResult: clearAgentInvocationResult,
+} = useAgentInvocation()
 
 const isMailboxScope = computed(() => props.scopeType === 'mailbox')
 const contextScopeType = computed<MailContextScopeType | null>(() => (
@@ -155,12 +166,16 @@ const contextLinking = ref(false)
 const composerOpen = ref(false)
 const composerKey = ref(0)
 const composerConnectionId = ref('')
+const agentMailReplyRequestId = ref('')
+const agentMailReplyTarget = shallowRef<MailThreadDetail | null>(null)
 const composerDraft = reactive({
   to: '',
   cc: '',
   subject: '',
+  body: '',
   threadId: '',
 })
+const agentMailReplyPending = computed(() => Boolean(agentMailReplyRequestId.value))
 
 const {
   data: connectionPayload,
@@ -791,25 +806,29 @@ function openNewMessage(): void {
   composerDraft.to = contextScopeType.value ? contextualComposeTo.value : ''
   composerDraft.cc = ''
   composerDraft.subject = ''
+  composerDraft.body = ''
   composerDraft.threadId = ''
   composerKey.value += 1
   composerOpen.value = true
 }
 
-function openReply(): void {
-  if (!canSend.value || !activeConnection.value) {
-    openReconnect()
-    return
-  }
-  const thread = selectedThread.value
-  const latest = thread?.messages.at(-1)
-  const accountEmail = activeConnection.value.accountEmail.trim().toLowerCase()
-  if (!thread || !latest || !accountEmail) return
+function replyRecipients(thread: MailThreadDetail): string[] {
+  const latest = thread.messages.at(-1)
+  const accountEmail = activeConnection.value?.accountEmail.trim().toLowerCase() || ''
+  if (!latest || !accountEmail) return []
 
   const fromEmail = latest.from?.email?.toLowerCase() || ''
-  const primary = fromEmail && fromEmail !== accountEmail
+  return fromEmail && fromEmail !== accountEmail
     ? uniqueAddressEmails(latest.replyTo.length ? latest.replyTo : [latest.from!], accountEmail)
     : uniqueAddressEmails(latest.to, accountEmail)
+}
+
+function openReplyForThread(thread: MailThreadDetail, initialBody = ''): boolean {
+  if (!canSend.value || !activeConnection.value) {
+    openReconnect()
+    return false
+  }
+  const primary = replyRecipients(thread)
   if (!primary.length) {
     toast.add({
       title: 'Nie znaleziono odbiorcy odpowiedzi',
@@ -817,17 +836,91 @@ function openReply(): void {
       color: 'warning',
       icon: 'i-lucide-circle-alert',
     })
-    return
+    return false
   }
 
   composerConnectionId.value = activeConnection.value.id
   composerDraft.to = primary.join(', ')
   composerDraft.cc = ''
   composerDraft.subject = thread.subject
+  composerDraft.body = initialBody
   composerDraft.threadId = thread.id
   composerKey.value += 1
   composerOpen.value = true
+  return true
 }
+
+function openReply(): void {
+  const thread = selectedThread.value
+  if (thread) openReplyForThread(thread)
+}
+
+function prepareReplyWithAgent(): void {
+  const thread = selectedThread.value
+  const connection = activeConnection.value
+  if (!thread || !connection || agentMailReplyPending.value) return
+  if (!replyRecipients(thread).length) {
+    openReplyForThread(thread)
+    return
+  }
+
+  const scope = contextScopeType.value && props.scopeId
+    ? {
+        type: contextScopeType.value,
+        id: props.scopeId,
+        ...(contextDescriptor.value?.label
+          ? { label: contextDescriptor.value.label }
+          : {}),
+      }
+    : { type: 'mailbox' as const }
+
+  const context = buildMailAgentReplyContext({
+    accountEmail: connection.accountEmail,
+    scope,
+    thread,
+  })
+  agentMailReplyTarget.value = thread
+  agentMailReplyRequestId.value = submitAgentInvocation({
+    preset: 'mail-reply',
+    prompt: MAIL_AGENT_REPLY_PROMPT,
+    credential: {
+      scope: scope.type === 'mailbox'
+        ? { type: 'mailbox' }
+        : { type: scope.type, id: scope.id },
+      participantEmails: mailAgentReplyParticipantEmails(context),
+      accountEmail: connection.accountEmail,
+    },
+    context: context as unknown as Record<string, unknown>,
+  })
+}
+
+watch(agentInvocationResult, (result) => {
+  if (!result || result.requestId !== agentMailReplyRequestId.value) return
+
+  const target = agentMailReplyTarget.value
+  const requestId = agentMailReplyRequestId.value
+  agentMailReplyRequestId.value = ''
+  agentMailReplyTarget.value = null
+  clearAgentInvocationResult(requestId)
+
+  if (result.status === 'error') {
+    toast.add({
+      title: 'Agent AI nie przygotował odpowiedzi',
+      description: result.message,
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+    return
+  }
+
+  if (!target || !openReplyForThread(target, result.text)) return
+  toast.add({
+    title: 'Szkic odpowiedzi jest gotowy',
+    description: 'Sprawdź treść i wprowadź zmiany przed wysłaniem.',
+    color: 'success',
+    icon: 'i-lucide-sparkles',
+  })
+})
 
 function uniqueAddressEmails(addresses: MailAddress[], excludedEmail: string): string[] {
   const seen = new Set<string>()
@@ -1653,6 +1746,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                       {{ selectedContextThread.suggested ? 'Potwierdź powiązanie' : `Powiąż z ${contextScopeType === 'case' ? 'tą sprawą' : 'tym klientem'}` }}
                     </template>
                   </UButton>
+                  <UButton
+                    v-if="canSend"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-sparkles"
+                    :loading="agentMailReplyPending"
+                    :disabled="agentMailReplyPending"
+                    @click="prepareReplyWithAgent"
+                  >
+                    Przygotuj odpowiedź przez Agenta AI
+                  </UButton>
                   <UButton v-if="canSend" icon="i-lucide-reply" @click="openReply">
                     Odpowiedz
                   </UButton>
@@ -1802,6 +1906,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
       :initial-to="composerDraft.to"
       :initial-cc="composerDraft.cc"
       :initial-subject="composerDraft.subject"
+      :initial-body="composerDraft.body"
       :thread-id="composerDraft.threadId"
       :context-type="contextScopeType || undefined"
       :context-id="contextScopeType ? props.scopeId : undefined"

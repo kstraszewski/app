@@ -1,4 +1,6 @@
 import type { SessionContext } from 'eve/context'
+import type { CrmAgentInvocation } from './invocation'
+import { readCrmAgentInvocation } from './invocation'
 
 export interface CrmAgentCaller {
   organizationId: string
@@ -6,6 +8,7 @@ export interface CrmAgentCaller {
   role: string
   userId: string
   canUseExperiments: boolean
+  invocation: CrmAgentInvocation | null
 }
 
 export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
@@ -31,5 +34,6 @@ export function requireCrmAgentCaller(ctx: SessionContext): CrmAgentCaller {
     role,
     userId: caller.principalId,
     canUseExperiments,
+    invocation: readCrmAgentInvocation(ctx),
   }
 }

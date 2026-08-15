@@ -47,7 +47,7 @@ function openHistory() {
         <span aria-hidden="true">·</span>
         <span>{{ showDemo ? 'Sprawa: Anna Kowalska' : 'Kontekst: aktywna organizacja' }}</span>
         <span aria-hidden="true">·</span>
-        <span class="assistant-page__model">Gemini 3.5 Flash-Lite</span>
+        <span class="assistant-page__model">Główny agent CRM</span>
       </div>
     </template>
 

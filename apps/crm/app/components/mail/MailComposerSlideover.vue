@@ -30,6 +30,7 @@ const props = withDefaults(defineProps<{
   initialTo?: string
   initialCc?: string
   initialSubject?: string
+  initialBody?: string
   threadId?: string
   contextType?: 'client' | 'case'
   contextId?: string
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<{
   initialTo: '',
   initialCc: '',
   initialSubject: '',
+  initialBody: '',
   threadId: '',
   externalSentUrl: null,
   maxAttachmentBytes: 3 * 1024 * 1024,
@@ -72,7 +74,7 @@ const form = reactive<ComposerForm>({
   cc: props.initialCc,
   bcc: '',
   subject: props.initialSubject,
-  body: '',
+  body: props.initialBody,
 })
 const attachments = ref<File[]>([])
 const showCc = ref(Boolean(props.initialCc))

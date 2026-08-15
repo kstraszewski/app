@@ -6,12 +6,50 @@ import {
   UnauthenticatedError,
 } from 'eve/channels/auth'
 import { verifyDataApiToken } from '@openexpert/data-api/token'
+import { CRM_AGENT_INVOCATION_CLAIMS } from '../../shared/types/agent-invocation'
 import {
   createAgentUserDataApiClient,
   getAgentDataApiVerificationOptions,
 } from '../lib/data-api'
 
 const organizationSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+function claimText(claims: Record<string, unknown>, name: string): string {
+  const value = claims[name]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function invocationAttributes(claims: Record<string, unknown>): Record<string, string> {
+  const preset = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.preset)
+  if (!preset) return {}
+
+  const modelProfile = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.modelProfile)
+  const caseId = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.caseId)
+  const caseTitle = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.caseTitle)
+  const clientId = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientId)
+  const clientName = claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientName)
+  if (
+    preset !== 'mail-reply'
+    || modelProfile !== 'flash-lite'
+    || !caseId
+    || !caseTitle
+    || !clientId
+    || !clientName
+  ) {
+    throw new ForbiddenError({ message: 'Nieprawidłowy preset uruchomienia Agenta AI.' })
+  }
+
+  return {
+    agentInvocationPreset: preset,
+    agentInvocationModelProfile: modelProfile,
+    agentInvocationCaseId: caseId,
+    agentInvocationCaseTitle: caseTitle,
+    agentInvocationClientId: clientId,
+    agentInvocationClientName: clientName,
+    agentInvocationClientEmail: claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientEmail),
+    agentInvocationClientPhone: claimText(claims, CRM_AGENT_INVOCATION_CLAIMS.clientPhone),
+  }
+}
 
 function requestSessionId(request: Request): string | null {
   const match = new URL(request.url).pathname.match(/\/eve\/v1\/session\/([^/]+)/)
@@ -64,6 +102,7 @@ function dataApiCrmSession(): AuthFn<Request> {
 
     const verificationOptions = getAgentDataApiVerificationOptions()
     let userId: string
+    let tokenClaims: Record<string, unknown>
     try {
       const claims = verifyDataApiToken(accessToken, {
         ...verificationOptions,
@@ -71,6 +110,7 @@ function dataApiCrmSession(): AuthFn<Request> {
       })
       userId = claims.sub?.trim() ?? ''
       if (!userId) throw new TypeError('Authenticated Data API JWT is missing sub')
+      tokenClaims = claims as Record<string, unknown>
     }
     catch {
       throw new UnauthenticatedError({
@@ -126,6 +166,7 @@ function dataApiCrmSession(): AuthFn<Request> {
         organizationSlug: String(organization.slug),
         role: String(membership.role ?? 'expert'),
         canUseExperiments: Boolean(experimentsRole),
+        ...invocationAttributes(tokenClaims),
       },
     }
   }

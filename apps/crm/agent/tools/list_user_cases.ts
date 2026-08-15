@@ -17,15 +17,17 @@ export default defineTool({
   async execute({ query: searchText, scope, limit }, ctx) {
     const caller = requireCrmAgentCaller(ctx)
     const dataApi = createAgentServiceClient()
+    const fixedCaseId = caller.invocation?.scope.caseId
     let casesQuery = dataApi
       .from('crm_cases')
       .select('id, title, status_code, priority, progress_percent, owner_user_id, updated_at', { count: 'exact' })
       .eq('organization_id', caller.organizationId)
       .order('updated_at', { ascending: false })
-      .limit(limit)
+      .limit(fixedCaseId ? 1 : limit)
 
-    if (scope === 'mine') casesQuery = casesQuery.eq('owner_user_id', caller.userId)
-    if (searchText) {
+    if (fixedCaseId) casesQuery = casesQuery.eq('id', fixedCaseId)
+    else if (scope === 'mine') casesQuery = casesQuery.eq('owner_user_id', caller.userId)
+    if (!fixedCaseId && searchText) {
       const escapedSearch = searchText.replace(/[\\%_]/g, value => `\\${value}`)
       casesQuery = casesQuery.ilike('title', `%${escapedSearch}%`)
     }
@@ -88,7 +90,7 @@ export default defineTool({
     }
 
     return {
-      scope,
+      scope: fixedCaseId ? 'fixed-invocation' : scope,
       total: count ?? caseRows.length,
       cases: caseRows.map(item => ({
         title: String(item.title),

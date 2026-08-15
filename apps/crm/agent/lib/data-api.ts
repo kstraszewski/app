@@ -141,3 +141,15 @@ export function createAgentServiceClient(): DataApiClient {
     () => signer.signBackend(),
   )
 }
+
+export function createAgentActingUserDataApiClient(userId: string): DataApiClient {
+  const normalizedUserId = userId.trim()
+  if (!normalizedUserId) throw new Error('A CRM user id is required.')
+
+  const environment = getAgentDataApiEnvironment()
+  const signer = getAgentDataApiServiceTokenSigner()
+  return createAuthenticatedDataApiClient(
+    environment.url,
+    () => signer.signUser(normalizedUserId),
+  )
+}

@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import type { InputResponse } from 'eve/client'
+import type { CrmAgentInvocationCredentialResponse } from '#shared/types/agent-invocation'
+import type {
+  EveMessage,
+  EveMessageData,
+  UseEveAgentSnapshot,
+} from 'eve/vue'
 import { useEveAgent } from 'eve/vue'
+import type { AgentInvocationRequest } from '~/composables/useAgentInvocation'
 
 type AssistantAvailability = 'available' | 'checking' | 'unavailable'
+type ClientContextJsonValue =
+  | boolean
+  | number
+  | string
+  | null
+  | readonly ClientContextJsonValue[]
+  | { readonly [key: string]: ClientContextJsonValue }
+type ClientContextJsonObject = { readonly [key: string]: ClientContextJsonValue }
 
 const props = withDefaults(defineProps<{
   demo?: boolean
@@ -22,12 +37,21 @@ const open = ref(false)
 const chat = ref<{ focusComposer: () => Promise<void> | void } | null>(null)
 const availability = ref<AssistantAvailability>(props.demo ? 'available' : 'checking')
 const availabilityMessage = ref('')
+const {
+  request: invocationRequest,
+  consume: consumeInvocationRequest,
+  complete: completeInvocation,
+  fail: failInvocation,
+} = useAgentInvocation()
+const activeInvocation = shallowRef<AgentInvocationRequest | null>(null)
+let startingInvocation = false
 
 const organizationSlug = computed(() => {
   const value = route.params.organizationSlug
   return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
 })
 const currentCaseId = computed(() => {
+  if (!/\/cases\/[^/]+(?:\/|$)/u.test(route.path)) return ''
   const value = route.params.id
   return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
 })
@@ -38,7 +62,9 @@ const messageWorkspace = computed(() => {
 })
 
 function friendlyAssistantError(caught: { message?: string } | null | undefined) {
-  const message = caught?.message?.trim() ?? ''
+  const responseMessage = (caught as any)?.data?.statusMessage
+    ?? (caught as any)?.data?.message
+  const message = (typeof responseMessage === 'string' ? responseMessage : caught?.message)?.trim() ?? ''
   if (/AI Gateway|API[_ ]?KEY|VERCEL_OIDC_TOKEN|credentials/iu.test(message)) {
     return 'Asystent nie jest jeszcze połączony z modelem AI. Skontaktuj się z administratorem.'
   }
@@ -50,6 +76,9 @@ function friendlyAssistantError(caught: { message?: string } | null | undefined)
   }
   if (/Nie wybrano organizacji/iu.test(message)) {
     return 'Wybierz organizację CRM i spróbuj ponownie.'
+  }
+  if (/spraw|klient|wiadomoś|zakres|preset/iu.test(message) && message.length <= 240) {
+    return message
   }
   return 'Asystent jest chwilowo niedostępny. Spróbuj ponownie.'
 }
@@ -97,6 +126,27 @@ async function checkAssistantAvailability() {
   }
 }
 
+function prepareAgentSend(input: any) {
+  const suppliedContext = input.clientContext
+  const context = suppliedContext
+    && typeof suppliedContext === 'object'
+    && !Array.isArray(suppliedContext)
+    ? suppliedContext
+    : suppliedContext === undefined
+      ? {}
+      : { suppliedClientContext: suppliedContext }
+
+  return {
+    ...input,
+    clientContext: {
+      ...context,
+      route: route.fullPath,
+      organizationSlug: organizationSlug.value,
+      ...(currentCaseId.value ? { currentCaseId: currentCaseId.value } : {}),
+    },
+  }
+}
+
 const {
   data,
   error,
@@ -109,14 +159,7 @@ const {
 } = useEveAgent({
   host: '/api/assistant',
   headers: assistantHeaders,
-  prepareSend: input => ({
-    ...input,
-    clientContext: {
-      route: route.fullPath,
-      organizationSlug: organizationSlug.value,
-      ...(currentCaseId.value ? { currentCaseId: currentCaseId.value } : {}),
-    },
-  }),
+  prepareSend: prepareAgentSend,
   onError: caught => {
     if (isModelConfigurationError(caught)) {
       availability.value = 'unavailable'
@@ -133,13 +176,47 @@ const {
   },
 })
 
+const {
+  data: invocationData,
+  error: invocationError,
+  reset: resetInvocationSession,
+  respond: respondToInvocation,
+  send: sendInvocation,
+  session: invocationSession,
+  status: invocationStatus,
+  stop: stopInvocationStream,
+} = useEveAgent({
+  host: '/api/assistant',
+  headers: assistantHeaders,
+  prepareSend: prepareAgentSend,
+  onFinish: finishInvocationTurn,
+  onError: caught => {
+    if (isModelConfigurationError(caught)) {
+      availability.value = 'unavailable'
+      availabilityMessage.value = friendlyAssistantError(caught)
+    }
+    failActiveInvocation(friendlyAssistantError(caught))
+  },
+})
+
+const showingInvocation = computed(() => Boolean(activeInvocation.value))
+const displayedData = computed(() => (
+  showingInvocation.value ? invocationData.value : data.value
+))
+const displayedError = computed(() => (
+  showingInvocation.value ? invocationError.value : error.value
+))
+const displayedAgentStatus = computed(() => (
+  showingInvocation.value ? invocationStatus.value : status.value
+))
+
 const displayStatus = computed(() => {
   if (availability.value === 'checking') return 'checking'
   if (availability.value === 'unavailable') return 'unavailable'
-  const parts = data.value.messages.flatMap(message => message.parts)
+  const parts = displayedData.value.messages.flatMap(message => message.parts)
   if (parts.some(part => part.type === 'authorization' && part.state === 'required')) return 'authorization'
   if (parts.some(part => part.type === 'dynamic-tool' && part.state === 'approval-requested')) return 'waiting'
-  return status.value
+  return displayedAgentStatus.value
 })
 
 watch(displayStatus, value => emit('statusChange', value), { immediate: true })
@@ -148,20 +225,162 @@ onMounted(() => {
   if (props.mode === 'page') void checkAssistantAvailability()
 })
 
+watch(
+  [invocationRequest, invocationStatus, availability],
+  () => { void startQueuedInvocation() },
+  { immediate: true },
+)
+
+function hasPendingInteraction(messages: readonly EveMessage[]): boolean {
+  return messages.some(message => message.parts.some(part => (
+    (part.type === 'authorization' && part.state === 'required')
+    || (
+      part.type === 'dynamic-tool'
+      && part.state === 'approval-requested'
+      && Boolean(part.toolMetadata?.eve?.inputRequest)
+    )
+  )))
+}
+
+function latestInvocationText(messages: readonly EveMessage[]): string {
+  const message = [...messages].reverse().find(item => item.role === 'assistant')
+  if (!message) return ''
+  return message.parts
+    .flatMap(part => part.type === 'text' ? [part.text.trim()] : [])
+    .filter(Boolean)
+    .join('\n\n')
+    .trim()
+}
+
+function finishInvocationTurn(snapshot: UseEveAgentSnapshot<EveMessageData>): void {
+  const active = activeInvocation.value
+  if (!active) return
+
+  if (snapshot.status === 'error') {
+    failActiveInvocation(friendlyAssistantError(snapshot.error))
+    return
+  }
+  if (hasPendingInteraction(snapshot.data.messages)) {
+    open.value = true
+    return
+  }
+
+  const text = latestInvocationText(snapshot.data.messages)
+  if (!text) {
+    failActiveInvocation('Agent nie zwrócił wyniku. Spróbuj ponownie.')
+    return
+  }
+
+  activeInvocation.value = null
+  completeInvocation(active.id, text)
+  open.value = false
+}
+
+function failActiveInvocation(message: string): void {
+  const active = activeInvocation.value
+  if (!active) return
+  activeInvocation.value = null
+  failInvocation(active.id, message)
+}
+
+async function invocationCredential(request: AgentInvocationRequest) {
+  const response = await $fetch<CrmAgentInvocationCredentialResponse>(
+    `/api/org/${encodeURIComponent(organizationSlug.value)}/assistant/invocations`,
+    {
+      method: 'POST',
+      body: request.credential,
+    },
+  )
+  return {
+    Authorization: `Bearer ${response.accessToken}`,
+  }
+}
+
+async function startQueuedInvocation(): Promise<void> {
+  const request = invocationRequest.value
+  if (
+    props.mode !== 'launcher'
+    || !request
+    || activeInvocation.value
+    || startingInvocation
+  ) return
+
+  open.value = true
+  if (invocationStatus.value === 'submitted' || invocationStatus.value === 'streaming') return
+
+  startingInvocation = true
+  try {
+    if (availability.value !== 'available') await checkAssistantAvailability()
+    if (invocationRequest.value?.id !== request.id) return
+    if (availability.value !== 'available') {
+      consumeInvocationRequest(request.id)
+      failInvocation(
+        request.id,
+        availabilityMessage.value || 'Agent AI jest chwilowo niedostępny.',
+      )
+      return
+    }
+
+    const headers = await invocationCredential(request)
+    resetInvocationSession()
+    await nextTick()
+    activeInvocation.value = request
+    consumeInvocationRequest(request.id)
+    const clientContext = {
+      ...request.context,
+      requestId: request.id,
+    } as unknown as ClientContextJsonObject
+    await sendInvocation(request.prompt, {
+      clientContext,
+      headers,
+    })
+  }
+  catch (caught) {
+    if (activeInvocation.value?.id === request.id) {
+      failActiveInvocation(friendlyAssistantError(caught as { message?: string }))
+    }
+    else {
+      consumeInvocationRequest(request.id)
+      failInvocation(request.id, friendlyAssistantError(caught as { message?: string }))
+    }
+  }
+  finally {
+    startingInvocation = false
+  }
+}
+
 async function sendMessage(message: string) {
   open.value = true
   if (availability.value !== 'available') return
+  const active = activeInvocation.value
+  if (active) {
+    await sendInvocation(message, {
+      headers: await invocationCredential(active),
+    })
+    return
+  }
   await send(message)
 }
 
 async function sendInputResponses(responses: readonly InputResponse[]) {
   if (!responses.length) return
   open.value = true
+  const active = activeInvocation.value
+  if (active) {
+    await respondToInvocation(responses, {
+      headers: await invocationCredential(active),
+    })
+    return
+  }
   await respond(responses)
 }
 
 async function cancelTurn(options: { silent?: boolean } = {}) {
-  const sessionId = session.value?.sessionId
+  const invocation = activeInvocation.value
+  const sessionId = invocation
+    ? invocationSession.value?.sessionId
+    : session.value?.sessionId
+  if (invocation) failActiveInvocation('Zadanie Agenta AI zostało zatrzymane.')
   try {
     if (sessionId) {
       await $fetch(`/api/assistant/eve/v1/session/${encodeURIComponent(sessionId)}/cancel`, {
@@ -190,12 +409,20 @@ async function cancelTurn(options: { silent?: boolean } = {}) {
     }
   }
   finally {
-    stop()
+    if (invocation) stopInvocationStream()
+    else stop()
   }
 }
 
 function runInBackground() {
-  stop()
+  const invocation = activeInvocation.value
+  if (invocation) {
+    failActiveInvocation('Agent kontynuuje pracę w tle, ale wynik nie zostanie automatycznie przekazany do miejsca wywołania.')
+    stopInvocationStream()
+  }
+  else {
+    stop()
+  }
   toast.add({
     title: 'Agent pracuje w tle',
     description: 'Odłączono podgląd bieżącego strumienia. Zadanie nadal działa na serwerze.',
@@ -205,9 +432,18 @@ function runInBackground() {
 }
 
 async function newConversation() {
-  if (status.value === 'submitted' || status.value === 'streaming') {
+  if (activeInvocation.value) {
+    if (invocationStatus.value === 'submitted' || invocationStatus.value === 'streaming') {
+      await cancelTurn({ silent: true })
+    }
+    else {
+      failActiveInvocation('Rozpoczęto nową rozmowę przed ukończeniem zadania.')
+    }
+  }
+  else if (status.value === 'submitted' || status.value === 'streaming') {
     await cancelTurn({ silent: true })
   }
+  resetInvocationSession()
   reset()
   await nextTick()
   await chat.value?.focusComposer()
@@ -233,9 +469,9 @@ defineExpose({ newConversation })
     <CrmEveChat
       v-if="mode === 'page'"
       ref="chat"
-      :messages="data.messages"
-      :status="status"
-      :error="error"
+      :messages="displayedData.messages"
+      :status="displayedAgentStatus"
+      :error="displayedError"
       :demo="props.demo"
       :availability="availability"
       :availability-message="availabilityMessage"
@@ -263,15 +499,15 @@ defineExpose({ newConversation })
       <USlideover
         v-model:open="open"
         title="Agent AI Eve"
-        description="Gemini 3.5 Flash-Lite · bezpieczny dostęp do spraw CRM"
+        description="Główny agent CRM · bezpieczny dostęp do spraw i wiedzy OpenExpert"
         :ui="{ content: 'sm:max-w-xl' }"
       >
         <template #body>
           <CrmEveChat
             ref="chat"
-            :messages="data.messages"
-            :status="status"
-            :error="error"
+            :messages="displayedData.messages"
+            :status="displayedAgentStatus"
+            :error="displayedError"
             :availability="availability"
             :availability-message="availabilityMessage"
             @send="sendMessage"

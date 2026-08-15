@@ -30,6 +30,7 @@ const migrationNames = [
   '0051_mortgage_application_strict_lifecycle.sql',
   '0052_multi_provider_mail_connections.sql',
   '0053_mail_context_thread_links.sql',
+  '0056_ceidg_snapshot_write_guard.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

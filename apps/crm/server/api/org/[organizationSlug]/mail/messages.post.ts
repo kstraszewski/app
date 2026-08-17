@@ -4,7 +4,10 @@ import {
   getHeader,
   type H3Event,
 } from 'h3'
-import type { MailSendPayload } from '../../../../../shared/types/mail.ts'
+import type {
+  MailContextScope,
+  MailSendPayload,
+} from '../../../../../shared/types/mail.ts'
 import type { ImapSmtpSendResult } from '~~/server/utils/mail-imap-smtp'
 import { gmailBlockedAttachmentExtension } from '../../../../../shared/utils/mail-security.ts'
 import { requireCrmSession } from '~~/server/utils/crm'
@@ -48,11 +51,13 @@ import {
 } from '~~/server/utils/mail-providers'
 import { connectionReferenceSecret } from '~~/server/utils/mail-thread-page'
 import {
-  resolveMailContextScope,
+  resolveMailContextScopes,
   upsertMailContextThreadLink,
-  type ResolvedMailContext,
 } from '~~/server/utils/mail-context'
-import { parseMailContextScope } from '~~/server/utils/mail-context-core'
+import {
+  parseMailContextScope,
+  parseMailContextScopes,
+} from '~~/server/utils/mail-context-core'
 
 // Vercel Functions reject request bodies above 4.5 MB before the handler runs.
 // Keep the complete multipart envelope at 4 MiB and reserve enough headroom for
@@ -133,20 +138,8 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
     throw reconnectError(connection)
   }
 
-  const contextType = multipartText(parts, 'contextType')
-  const contextId = multipartText(parts, 'contextId')
-  if (Boolean(contextType) !== Boolean(contextId)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Kontekst wiadomości jest niekompletny.',
-    })
-  }
-  const mailContext = contextType && contextId
-    ? await resolveMailContextScope(
-        session,
-        parseMailContextScope({ type: contextType, id: contextId }),
-      )
-    : null
+  const contextInput = multipartMailContextScopes(parts)
+  const mailContexts = await resolveMailContextScopes(session, contextInput.scopes)
 
   const idempotencyKey = multipartText(parts, 'idempotencyKey').toLowerCase()
   if (
@@ -255,7 +248,9 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       body,
       threadId,
       attachments,
-      context: mailContext?.scope,
+      ...(contextInput.hasContextsField
+        ? { contexts: mailContexts }
+        : mailContexts[0] ? { context: mailContexts[0] } : {}),
     })
     const claim = await claimRateLimitedMailSendRequest(
       event,
@@ -272,12 +267,12 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         runtime,
         connection,
       )
-      scheduleSentContextLink(
+      await linkSentContextsBestEffort(
         event,
         backendData,
         session,
         connection,
-        mailContext,
+        mailContexts,
         existing.threadId,
       )
       return {
@@ -336,12 +331,12 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         // Delivery is durable; a cosmetic connection status must not turn it into a retry.
       }
     }
-    scheduleSentContextLink(
+    await linkSentContextsBestEffort(
       event,
       backendData,
       session,
       connection,
-      mailContext,
+      mailContexts,
       sent.threadId,
     )
     return { data: sent }
@@ -391,29 +386,48 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   }
 })
 
-function scheduleSentContextLink(
+async function linkSentContextsBestEffort(
   event: H3Event,
   backendData: any,
   session: Awaited<ReturnType<typeof requireCrmSession>>,
   connection: MailConnectionRow,
-  context: ResolvedMailContext | null,
+  contexts: readonly MailContextScope[],
   threadReference: string,
-): void {
-  if (!context) return
+): Promise<void> {
+  if (!contexts.length) return
+
+  let referenceSecret: string
   try {
-    const task = upsertMailContextThreadLink(backendData, session, {
-      connectionId: connection.id,
-      provider: connection.provider,
-      referenceSecret: connectionReferenceSecret(event, connection),
-      scope: context.scope,
-      threadReference,
-      linkSource: 'sent_from_context',
-    }).catch(() => undefined)
-    scheduleOpenExpertBackgroundTask(task, event.waitUntil.bind(event))
+    referenceSecret = connectionReferenceSecret(event, connection)
   }
   catch {
-    // Delivery is already durable. Context-link scheduling must never turn a
-    // successful send (or idempotent replay) into a delivery error.
+    // Delivery is already durable. Link metadata must never turn a successful
+    // send (or an idempotent replay) into a delivery error.
+    return
+  }
+
+  const link = (scope: MailContextScope) => upsertMailContextThreadLink(
+    backendData,
+    session,
+    {
+      connectionId: connection.id,
+      provider: connection.provider,
+      referenceSecret,
+      scope,
+      threadReference,
+      linkSource: 'sent_from_context',
+    },
+  )
+  const attempts = await Promise.allSettled(contexts.map(link))
+  const failed = contexts.filter((_, index) => attempts[index]?.status === 'rejected')
+  if (!failed.length) return
+
+  try {
+    const retry = Promise.allSettled(failed.map(link)).then(() => undefined)
+    scheduleOpenExpertBackgroundTask(retry, event.waitUntil.bind(event))
+  }
+  catch {
+    // The provider delivery remains successful even if retry scheduling fails.
   }
 }
 
@@ -699,6 +713,45 @@ function multipartValue(parts: MailMultipartPart[], name: string): string {
 
 function multipartText(parts: MailMultipartPart[], name: string): string {
   return multipartValue(parts, name).trim()
+}
+
+function multipartMailContextScopes(parts: MailMultipartPart[]): {
+  scopes: MailContextScope[]
+  hasContextsField: boolean
+} {
+  const hasContextsField = parts.some(part => part.name === 'contexts' && !part.filename)
+  let scopes: MailContextScope[] = []
+  if (hasContextsField) {
+    const value = multipartText(parts, 'contexts')
+    try {
+      scopes = parseMailContextScopes(JSON.parse(value))
+    }
+    catch {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Nieprawidłowy kontekst poczty.',
+      })
+    }
+  }
+
+  // Keep the original pair for older composer clients. If both contracts are
+  // present, merge and canonicalize them instead of creating duplicate links.
+  const contextType = multipartText(parts, 'contextType')
+  const contextId = multipartText(parts, 'contextId')
+  if (Boolean(contextType) !== Boolean(contextId)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Kontekst wiadomości jest niekompletny.',
+    })
+  }
+  if (contextType && contextId) {
+    scopes.push(parseMailContextScope({ type: contextType, id: contextId }))
+  }
+
+  return {
+    scopes: parseMailContextScopes(scopes),
+    hasContextsField,
+  }
 }
 
 function parseRecipients(value: string, label: string): string[] {

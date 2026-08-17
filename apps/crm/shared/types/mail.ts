@@ -49,6 +49,35 @@ export interface MailConnectionPayload {
   connections: MailConnectionInfo[]
 }
 
+export interface MailRecipientCrmSuggestion {
+  source: 'crm'
+  email: string
+  label: string
+  clientId: string
+  clientLabel: string
+  personId?: string
+}
+
+export interface MailRecipientProviderSuggestion {
+  source: 'provider'
+  email: string
+  label: string
+  providerId: string
+}
+
+export type MailRecipientSuggestionSourceStatus = 'ok' | 'skipped' | 'unavailable'
+
+export interface MailRecipientSearchPayload {
+  data: {
+    crm: MailRecipientCrmSuggestion[]
+    provider: MailRecipientProviderSuggestion[]
+  }
+  sources: {
+    crm: Exclude<MailRecipientSuggestionSourceStatus, 'skipped'>
+    provider: MailRecipientSuggestionSourceStatus
+  }
+}
+
 export interface MailFolderSummary {
   id: MailFolderId
   label: string
@@ -139,6 +168,32 @@ export interface MailContextDescriptor extends MailContextScope {
   composeTo: string[]
   emailCount: number
   emailsTruncated: boolean
+  /** Clients belonging to a case, in primary-first order. */
+  relatedClients?: MailContextRelatedClient[]
+  /** Cases belonging to a client, with active cases first. */
+  relatedCases?: MailContextRelatedCase[]
+}
+
+export interface MailContextRelatedClient {
+  id: string
+  label: string
+  isPrimary: boolean
+  composeTo: string[]
+}
+
+export interface MailContextRelatedCase {
+  id: string
+  label: string
+  closedAt: string | null
+}
+
+export interface MailComposerContextClientCases {
+  clientId: string
+  cases: MailContextRelatedCase[]
+}
+
+export interface MailComposerContextCasesPayload {
+  data: MailComposerContextClientCases[]
 }
 
 export type MailContextFolderId = Extract<MailFolderId, 'INBOX' | 'SENT'>

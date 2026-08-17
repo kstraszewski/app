@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import type { FormError, FormErrorEvent, FormSubmitEvent } from '@nuxt/ui'
-import type { MailProviderId, MailSendPayload } from '#shared/types/mail'
+import type {
+  MailComposerContextCasesPayload,
+  MailContextScope,
+  MailProviderId,
+  MailSendPayload,
+} from '#shared/types/mail'
 import { gmailBlockedAttachmentExtension } from '#shared/utils/mail-security'
 import { apiErrorMessage } from '~/utils/api-error'
+import type {
+  MailProviderRecipientSuggestion,
+  MailRecipientSelection,
+} from '~/utils/mail-recipients'
 import {
   isValidMailRecipient,
+  mailRecipientKey,
   splitMailRecipients,
+  uniqueMailRecipientSelections,
 } from '~/utils/mail-recipients'
 
 interface ComposerForm {
@@ -14,6 +25,26 @@ interface ComposerForm {
   bcc: string
   subject: string
   body: string
+  contextCaseId: string
+}
+
+interface ComposerContextClient {
+  id: string
+  label: string
+  isPrimary?: boolean
+  composeTo?: string[]
+}
+
+interface ComposerContextCase {
+  id: string
+  label: string
+  closedAt?: string | null
+}
+
+interface ComposerClientIdentity {
+  id: string
+  label: string
+  email?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -34,6 +65,11 @@ const props = withDefaults(defineProps<{
   threadId?: string
   contextType?: 'client' | 'case'
   contextId?: string
+  contextLabel?: string
+  contextClients?: readonly ComposerContextClient[]
+  contextCases?: readonly ComposerContextCase[]
+  providerSuggestions?: readonly MailProviderRecipientSuggestion[]
+  preview?: boolean
 }>(), {
   initialTo: '',
   initialCc: '',
@@ -43,6 +79,11 @@ const props = withDefaults(defineProps<{
   externalSentUrl: null,
   maxAttachmentBytes: 3 * 1024 * 1024,
   maxTotalAttachmentBytes: 3 * 1024 * 1024,
+  contextLabel: '',
+  contextClients: () => [],
+  contextCases: () => [],
+  providerSuggestions: () => [],
+  preview: false,
 })
 
 const emit = defineEmits<{
@@ -50,6 +91,8 @@ const emit = defineEmits<{
   sent: [value: MailSendPayload['data']]
 }>()
 
+const { crmApiPath } = useOrganizationContext()
+const toast = useToast()
 const discardConfirmationOpen = ref(false)
 const sendConfirmationOpen = ref(false)
 const sentSuccessfully = ref(false)
@@ -75,7 +118,11 @@ const form = reactive<ComposerForm>({
   bcc: '',
   subject: props.initialSubject,
   body: props.initialBody,
+  contextCaseId: props.contextType === 'case' ? props.contextId || '' : '',
 })
+const toSelections = ref<MailRecipientSelection[]>(initialRecipientSelections(props.initialTo, true))
+const ccSelections = ref<MailRecipientSelection[]>(initialRecipientSelections(props.initialCc))
+const bccSelections = ref<MailRecipientSelection[]>([])
 const attachments = ref<File[]>([])
 const showCc = ref(Boolean(props.initialCc))
 const showBcc = ref(false)
@@ -84,6 +131,10 @@ const sendError = ref('')
 const deliveryAmbiguous = ref(false)
 const idempotencyKey = ref('')
 const lastAttemptFingerprint = ref('')
+const contextCasesLoading = ref(false)
+const contextCasesError = ref('')
+const fetchedCasesByClient = shallowRef(new Map<string, ComposerContextCase[]>())
+let contextCasesRequestId = 0
 const isReply = computed(() => Boolean(props.threadId))
 const title = computed(() => isReply.value ? 'Odpowiedz w wątku' : 'Nowa wiadomość')
 const attachmentBytes = computed(() => (
@@ -108,11 +159,11 @@ const attachmentError = computed(() => {
   return ''
 })
 const hasChanges = computed(() => (
-  form.to !== props.initialTo
-  || form.cc !== props.initialCc
+  recipientFieldFingerprint(form.to) !== recipientFieldFingerprint(props.initialTo)
+  || recipientFieldFingerprint(form.cc) !== recipientFieldFingerprint(props.initialCc)
   || form.bcc !== ''
   || form.subject !== props.initialSubject
-  || Boolean(form.body)
+  || form.body !== props.initialBody
   || attachments.value.length > 0
 ))
 const uniqueRecipientCount = computed(() => new Set(
@@ -126,6 +177,136 @@ const recipientCountLabel = computed(() => {
   if (count === 1) return '1 adres'
   if (count > 1 && count < 5) return `${count} adresy`
   return `${count} adresów`
+})
+const selectedRecipientClients = computed<ComposerClientIdentity[]>(() => {
+  const clients = new Map<string, ComposerClientIdentity>()
+  for (const selection of uniqueMailRecipientSelections([
+    ...toSelections.value,
+    ...ccSelections.value,
+  ])) {
+    if (selection.source !== 'crm' || !selection.clientId) continue
+    clients.set(selection.clientId, {
+      id: selection.clientId,
+      label: selection.clientLabel?.trim() || selection.label.trim() || selection.email,
+      email: selection.email,
+    })
+  }
+  return [...clients.values()]
+})
+const caseRelatedClientIds = computed(() => new Set(
+  props.contextClients.map(client => client.id),
+))
+const caseClientMismatch = computed(() => (
+  props.contextType === 'case'
+  && caseRelatedClientIds.value.size > 0
+  && selectedRecipientClients.value.some(client => !caseRelatedClientIds.value.has(client.id))
+))
+const crmContextClients = computed<ComposerClientIdentity[]>(() => {
+  const clients = new Map<string, ComposerClientIdentity>()
+  if (props.contextType === 'client' && props.contextId) {
+    clients.set(props.contextId, {
+      id: props.contextId,
+      label: props.contextLabel.trim() || 'Bieżący klient',
+      email: splitMailRecipients(props.initialTo)[0],
+    })
+  }
+  for (const client of selectedRecipientClients.value) clients.set(client.id, client)
+
+  if (props.contextType === 'case' && !clients.size) {
+    const fallback = props.contextClients.find(client => client.isPrimary)
+      || (props.contextClients.length === 1 ? props.contextClients[0] : undefined)
+    if (fallback) {
+      clients.set(fallback.id, {
+        id: fallback.id,
+        label: fallback.label,
+        email: fallback.composeTo?.[0],
+      })
+    }
+  }
+  return [...clients.values()]
+})
+const crmContextClientIds = computed(() => crmContextClients.value.map(client => client.id))
+const fixedContextCase = computed<ComposerContextCase | null>(() => (
+  props.contextType === 'case' && props.contextId
+    ? {
+        id: props.contextId,
+        label: props.contextLabel.trim() || 'Bieżąca sprawa',
+        closedAt: null,
+      }
+    : null
+))
+const availableContextCases = computed<ComposerContextCase[]>(() => {
+  if (fixedContextCase.value) return [fixedContextCase.value]
+  const clientIds = crmContextClientIds.value
+  if (!clientIds.length) return []
+
+  const casesByClient = clientIds.map((clientId) => {
+    if (props.contextType === 'client' && clientId === props.contextId && props.contextCases.length) {
+      return [...props.contextCases]
+    }
+    return fetchedCasesByClient.value.get(clientId) || []
+  })
+  if (casesByClient.some(cases => !cases.length)) return []
+
+  const remainingIds = casesByClient.slice(1).map(cases => new Set(cases.map(item => item.id)))
+  return casesByClient[0]!
+    .filter(item => remainingIds.every(ids => ids.has(item.id)))
+    .sort((left, right) => {
+      const closedDifference = Number(Boolean(left.closedAt)) - Number(Boolean(right.closedAt))
+      return closedDifference || left.label.localeCompare(right.label, 'pl')
+    })
+})
+const selectedContextCase = computed<ComposerContextCase | null>(() => (
+  fixedContextCase.value
+  || availableContextCases.value.find(item => item.id === form.contextCaseId)
+  || null
+))
+const contextCaseItems = computed(() => availableContextCases.value.map(item => ({
+  label: item.closedAt ? `${item.label} · zamknięta` : item.label,
+  value: item.id,
+})))
+const contextCaseSelectionRequired = computed(() => (
+  !fixedContextCase.value
+  && crmContextClients.value.length > 0
+  && availableContextCases.value.length > 0
+  && !selectedContextCase.value
+))
+const contextScopes = computed<MailContextScope[]>(() => {
+  const scopes: MailContextScope[] = crmContextClients.value
+    .slice(0, 10)
+    .map(client => ({ type: 'client', id: client.id }))
+  if (selectedContextCase.value) {
+    scopes.push({ type: 'case', id: selectedContextCase.value.id })
+  }
+  return scopes.sort((left, right) => (
+    left.type.localeCompare(right.type) || left.id.localeCompare(right.id)
+  ))
+})
+const hasCrmContext = computed(() => (
+  crmContextClients.value.length > 0
+  || Boolean(fixedContextCase.value)
+  || contextCasesLoading.value
+  || Boolean(contextCasesError.value)
+))
+const hasCompleteCrmContext = computed(() => (
+  crmContextClients.value.length > 0 && Boolean(selectedContextCase.value)
+))
+const sendActionLabel = computed(() => (
+  hasCompleteCrmContext.value
+    ? 'Wyślij i przypnij'
+    : contextScopes.value.length ? 'Wyślij i przypisz' : 'Wyślij'
+))
+const contextSummary = computed(() => {
+  if (hasCompleteCrmContext.value) {
+    return 'Po wysłaniu cały wątek pojawi się przy kliencie i sprawie.'
+  }
+  if (crmContextClients.value.length) {
+    return availableContextCases.value.length
+      ? 'Wybierz sprawę, aby wątek był widoczny przy kliencie i sprawie.'
+      : 'Wątek zostanie przypięty do klienta. Nie znaleziono jego powiązanej sprawy.'
+  }
+  if (fixedContextCase.value) return 'Po wysłaniu cały wątek pojawi się przy tej sprawie.'
+  return ''
 })
 const requiresSendConfirmation = computed(() => (
   attachments.value.length > 0
@@ -142,6 +323,101 @@ const attachmentDescription = computed(() => {
     : base
 })
 
+function initialRecipientSelections(
+  value: string,
+  useClientContext = false,
+): MailRecipientSelection[] {
+  return splitMailRecipients(value).map((email, index) => {
+    if (useClientContext && index === 0 && props.contextType === 'client' && props.contextId) {
+      return {
+        email,
+        label: props.contextLabel.trim() || email,
+        source: 'crm' as const,
+        clientId: props.contextId,
+      }
+    }
+    const relatedClient = props.contextClients.find(client => (
+      client.composeTo?.some(candidate => mailRecipientKey(candidate) === mailRecipientKey(email))
+    ))
+    if (relatedClient) {
+      return {
+        email,
+        label: relatedClient.label,
+        source: 'crm' as const,
+        clientId: relatedClient.id,
+      }
+    }
+    const providerSuggestion = props.providerSuggestions.find(suggestion => (
+      mailRecipientKey(suggestion.email) === mailRecipientKey(email)
+    ))
+    return providerSuggestion
+      ? { ...providerSuggestion, email }
+      : { email, label: email, source: 'manual' as const }
+  })
+}
+
+function recipientFieldFingerprint(value: string): string {
+  return [...new Set(
+    splitMailRecipients(value).map(email => mailRecipientKey(email)),
+  )].join('\n')
+}
+
+async function loadContextCases(clientIds: readonly string[]): Promise<void> {
+  const currentRequestId = ++contextCasesRequestId
+  if (fixedContextCase.value || !clientIds.length) {
+    contextCasesLoading.value = false
+    contextCasesError.value = ''
+    return
+  }
+  const missingIds = clientIds.filter((clientId) => {
+    if (fetchedCasesByClient.value.has(clientId)) return false
+    return !(props.contextType === 'client'
+      && clientId === props.contextId
+      && props.contextCases.length)
+  })
+  if (!missingIds.length) {
+    contextCasesLoading.value = false
+    contextCasesError.value = ''
+    return
+  }
+
+  contextCasesLoading.value = true
+  contextCasesError.value = ''
+  try {
+    const payload = await $fetch<MailComposerContextCasesPayload>(
+      crmApiPath('/cases/composer-context'),
+      {
+        method: 'POST',
+        body: { clientIds: missingIds },
+      },
+    )
+    if (currentRequestId !== contextCasesRequestId) return
+
+    const next = new Map(fetchedCasesByClient.value)
+    for (const item of payload.data) next.set(item.clientId, item.cases)
+    fetchedCasesByClient.value = next
+    contextCasesError.value = ''
+  }
+  catch {
+    if (currentRequestId !== contextCasesRequestId) return
+    contextCasesError.value = 'Nie udało się pobrać wszystkich spraw. Spróbuj ponownie.'
+  }
+  finally {
+    if (currentRequestId === contextCasesRequestId) contextCasesLoading.value = false
+  }
+}
+
+watch(crmContextClientIds, ids => void loadContextCases(ids), { immediate: true })
+watch(availableContextCases, (cases) => {
+  if (fixedContextCase.value) {
+    form.contextCaseId = fixedContextCase.value.id
+    return
+  }
+  if (form.contextCaseId && cases.some(item => item.id === form.contextCaseId)) return
+  const activeCases = cases.filter(item => !item.closedAt)
+  form.contextCaseId = activeCases.length === 1 ? activeCases[0]!.id : ''
+}, { immediate: true })
+
 function validateComposer(state: Partial<ComposerForm>): FormError[] {
   const errors: FormError[] = []
   const recipientGroups = [
@@ -156,6 +432,30 @@ function validateComposer(state: Partial<ComposerForm>): FormError[] {
     errors.push({
       name: 'to',
       message: 'Wiadomość może mieć łącznie maksymalnie 50 odbiorców.',
+    })
+  }
+  if (crmContextClients.value.length > 10) {
+    errors.push({
+      name: 'to',
+      message: 'Jedną wiadomość możesz przypiąć do maksymalnie 10 klientów.',
+    })
+  }
+  if (caseClientMismatch.value) {
+    errors.push({
+      name: 'to',
+      message: 'Wybrany klient nie jest powiązany z bieżącą sprawą.',
+    })
+  }
+  if (contextCaseSelectionRequired.value) {
+    errors.push({
+      name: 'contextCaseId',
+      message: 'Wybierz sprawę, do której ma zostać przypięty wątek.',
+    })
+  }
+  if (contextCasesError.value && !fixedContextCase.value) {
+    errors.push({
+      name: 'contextCaseId',
+      message: contextCasesError.value,
     })
   }
   const subject = state.subject?.trim() || ''
@@ -199,7 +499,7 @@ function recipientFieldErrors(
 }
 
 async function requestSend(_event: FormSubmitEvent<ComposerForm>): Promise<void> {
-  if (sending.value || attachmentError.value) return
+  if (sending.value || attachmentError.value || contextCasesLoading.value) return
   if (requiresSendConfirmation.value) {
     sendConfirmationOpen.value = true
     return
@@ -208,8 +508,17 @@ async function requestSend(_event: FormSubmitEvent<ComposerForm>): Promise<void>
 }
 
 async function sendMessage(): Promise<void> {
-  if (sending.value || attachmentError.value) return
+  if (sending.value || attachmentError.value || contextCasesLoading.value) return
   sendConfirmationOpen.value = false
+  if (props.preview) {
+    toast.add({
+      title: 'To jest bezpieczny podgląd composera',
+      description: 'W trybie podglądu żadna wiadomość nie zostanie wysłana.',
+      color: 'info',
+      icon: 'i-lucide-eye',
+    })
+    return
+  }
   sending.value = true
   sendError.value = ''
   deliveryAmbiguous.value = false
@@ -228,6 +537,9 @@ async function sendMessage(): Promise<void> {
     body.append('subject', form.subject.trim())
     body.append('body', form.body)
     if (props.threadId) body.append('threadId', props.threadId)
+    if (contextScopes.value.length) {
+      body.append('contexts', JSON.stringify(contextScopes.value))
+    }
     if (props.contextType && props.contextId) {
       body.append('contextType', props.contextType)
       body.append('contextId', props.contextId)
@@ -282,9 +594,6 @@ async function composerFingerprint(): Promise<string> {
       ),
     })),
   )
-  const context = props.contextType && props.contextId
-    ? { type: props.contextType, id: props.contextId }
-    : null
   return JSON.stringify({
     to: normalizeRecipients(form.to),
     cc: normalizeRecipients(form.cc),
@@ -293,7 +602,7 @@ async function composerFingerprint(): Promise<string> {
     body: form.body,
     connectionId: props.connectionId,
     threadId: props.threadId,
-    context,
+    contexts: contextScopes.value,
     attachments: attachmentFingerprints,
   })
 }
@@ -360,23 +669,6 @@ function formatBytes(value: number): string {
   >
     <template #body>
       <div class="mail-composer">
-        <div class="mail-composer__account">
-          <img
-            v-if="providerIcon.startsWith('/')"
-            :src="providerIcon"
-            alt=""
-          >
-          <UIcon
-            v-else
-            :name="providerIcon"
-            class="mail-composer__account-icon"
-          />
-          <span>
-            <small>Nadawca · {{ providerLabel }}</small>
-            <strong>{{ accountEmail }}</strong>
-          </span>
-        </div>
-
         <UAlert
           v-if="sendError"
           color="error"
@@ -411,37 +703,28 @@ function formatBytes(value: number): string {
           @error="focusFirstError"
         >
           <section class="mail-composer__recipients" aria-labelledby="mail-composer-recipients-title">
+            <span id="mail-composer-recipients-title" class="sr-only">Odbiorcy</span>
             <header class="mail-composer__recipients-header">
-              <span>
-                <strong id="mail-composer-recipients-title">Odbiorcy</strong>
-                <small v-if="uniqueRecipientCount">{{ recipientCountLabel }}</small>
-              </span>
-              <span class="mail-composer__recipient-actions">
-                <UButton
-                  v-if="!showCc"
-                  type="button"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  aria-controls="mail-composer-cc"
-                  :aria-expanded="showCc"
-                  @click="showCc = true"
+              <div class="mail-composer__account">
+                <img
+                  v-if="providerIcon.startsWith('/')"
+                  :src="providerIcon"
+                  alt=""
                 >
-                  DW
-                </UButton>
-                <UButton
-                  v-if="!showBcc"
-                  type="button"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  aria-controls="mail-composer-bcc"
-                  :aria-expanded="showBcc"
-                  @click="showBcc = true"
-                >
-                  UDW
-                </UButton>
-              </span>
+                <UIcon
+                  v-else
+                  :name="providerIcon"
+                  class="mail-composer__account-icon"
+                />
+                <span>
+                  <small>Nadawca</small>
+                  <strong>{{ accountEmail }}</strong>
+                  <em>· {{ providerLabel }}</em>
+                </span>
+              </div>
+              <small v-if="uniqueRecipientCount" class="mail-composer__recipient-count">
+                {{ recipientCountLabel }}
+              </small>
             </header>
 
             <UFormField
@@ -450,19 +733,51 @@ function formatBytes(value: number): string {
               orientation="horizontal"
               required
               :ui="{
-                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
-                wrapper: 'pt-2.5',
+                root: 'grid grid-cols-[32px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2',
                 labelWrapper: 'justify-start',
                 label: 'text-xs font-semibold text-muted',
                 container: 'min-w-0',
                 error: 'mt-1.5',
               }"
             >
-              <MailRecipientInput
-                v-model="form.to"
-                :disabled="sending"
-                placeholder="Wpisz nazwę klienta lub adres e-mail"
-              />
+              <div class="mail-composer__to-row">
+                <MailRecipientInput
+                  v-model="form.to"
+                  v-model:selections="toSelections"
+                  :disabled="sending"
+                  :connection-id="preview ? '' : connectionId"
+                  :provider-label="providerLabel"
+                  :provider-suggestions="providerSuggestions"
+                  :placeholder="toSelections.length ? 'Dodaj' : 'Wpisz nazwę klienta lub adres e-mail'"
+                />
+                <span class="mail-composer__recipient-actions">
+                  <UButton
+                    v-if="!showCc"
+                    type="button"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    aria-controls="mail-composer-cc"
+                    :aria-expanded="showCc"
+                    @click="showCc = true"
+                  >
+                    DW
+                  </UButton>
+                  <UButton
+                    v-if="!showBcc"
+                    type="button"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    aria-controls="mail-composer-bcc"
+                    :aria-expanded="showBcc"
+                    @click="showBcc = true"
+                  >
+                    UDW
+                  </UButton>
+                </span>
+              </div>
             </UFormField>
 
             <UFormField
@@ -472,8 +787,8 @@ function formatBytes(value: number): string {
               label="DW"
               orientation="horizontal"
               :ui="{
-                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
-                wrapper: 'pt-2.5',
+                root: 'grid grid-cols-[32px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2',
                 labelWrapper: 'justify-start',
                 label: 'text-xs font-semibold text-muted',
                 container: 'min-w-0',
@@ -482,7 +797,11 @@ function formatBytes(value: number): string {
             >
               <MailRecipientInput
                 v-model="form.cc"
+                v-model:selections="ccSelections"
                 :disabled="sending"
+                :connection-id="preview ? '' : connectionId"
+                :provider-label="providerLabel"
+                :provider-suggestions="providerSuggestions"
                 placeholder="Dodaj odbiorców kopii"
               />
             </UFormField>
@@ -495,8 +814,8 @@ function formatBytes(value: number): string {
               help="Ukryci przed pozostałymi odbiorcami."
               orientation="horizontal"
               :ui="{
-                root: 'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2',
-                wrapper: 'pt-2.5',
+                root: 'grid grid-cols-[32px_minmax(0,1fr)] items-start gap-x-2',
+                wrapper: 'pt-2',
                 labelWrapper: 'justify-start',
                 label: 'text-xs font-semibold text-muted',
                 container: 'min-w-0',
@@ -506,10 +825,142 @@ function formatBytes(value: number): string {
             >
               <MailRecipientInput
                 v-model="form.bcc"
+                v-model:selections="bccSelections"
                 :disabled="sending"
+                :connection-id="preview ? '' : connectionId"
+                :provider-label="providerLabel"
+                :provider-suggestions="providerSuggestions"
                 placeholder="Dodaj ukrytych odbiorców"
               />
             </UFormField>
+          </section>
+
+          <section
+            v-if="hasCrmContext"
+            class="mail-composer__crm-context"
+            aria-labelledby="mail-composer-context-title"
+          >
+            <div class="mail-composer__crm-context-main">
+              <span class="mail-composer__crm-context-title">
+                <UIcon name="i-lucide-link-2" aria-hidden="true" />
+                <strong id="mail-composer-context-title">CRM</strong>
+              </span>
+              <div class="mail-composer__crm-context-links">
+                <div class="mail-composer__crm-context-values">
+                  <span
+                    v-for="client in crmContextClients"
+                    :key="client.id"
+                    class="mail-composer__context-chip mail-composer__context-chip--client"
+                  >
+                    <UIcon name="i-lucide-contact-round" aria-hidden="true" />
+                    <span>{{ client.label }}</span>
+                    <small>CRM</small>
+                  </span>
+                  <span v-if="!crmContextClients.length" class="mail-composer__context-empty">
+                    Klient z pola „Do”
+                  </span>
+                </div>
+                <UIcon
+                  name="i-lucide-arrow-right"
+                  class="mail-composer__crm-context-connector"
+                  aria-hidden="true"
+                />
+                <div class="mail-composer__crm-context-case">
+                  <span
+                    v-if="fixedContextCase"
+                    class="mail-composer__context-chip mail-composer__context-chip--case"
+                  >
+                    <UIcon name="i-lucide-briefcase-business" aria-hidden="true" />
+                    <span>{{ fixedContextCase.label }}</span>
+                  </span>
+                  <span
+                    v-else-if="selectedContextCase && availableContextCases.length === 1"
+                    class="mail-composer__context-chip mail-composer__context-chip--case"
+                  >
+                    <UIcon name="i-lucide-briefcase-business" aria-hidden="true" />
+                    <span>{{ selectedContextCase.label }}</span>
+                  </span>
+                  <UFormField
+                    v-else-if="availableContextCases.length"
+                    name="contextCaseId"
+                    :ui="{ error: 'mt-1.5' }"
+                  >
+                    <USelect
+                      v-model="form.contextCaseId"
+                      class="w-full"
+                      size="sm"
+                      :items="contextCaseItems"
+                      value-key="value"
+                      placeholder="Wybierz sprawę"
+                      icon="i-lucide-briefcase-business"
+                      :disabled="sending || contextCasesLoading"
+                      aria-label="Wybierz sprawę dla wysyłanej wiadomości"
+                    />
+                  </UFormField>
+                  <span v-else class="mail-composer__context-empty">
+                    {{ contextCasesLoading ? 'Pobieram powiązane sprawy…' : 'Brak powiązanej sprawy' }}
+                  </span>
+                </div>
+              </div>
+              <span
+                v-if="contextCasesLoading"
+                class="mail-composer__crm-context-loading mail-composer__crm-context-status"
+              >
+                <UIcon name="i-lucide-loader-circle" class="animate-spin" aria-hidden="true" />
+                Szukam
+              </span>
+              <UBadge
+                v-else
+                class="mail-composer__crm-context-status"
+                color="success"
+                variant="subtle"
+                size="xs"
+              >
+                Auto
+              </UBadge>
+            </div>
+
+            <UAlert
+              v-if="caseClientMismatch"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              title="Klient spoza bieżącej sprawy"
+              description="Usuń tego odbiorcę albo otwórz composer z właściwej sprawy."
+            />
+            <UAlert
+              v-else-if="contextCasesError"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-wifi-off"
+              title="Nie udało się pobrać spraw"
+              :description="contextCasesError"
+            >
+              <template #actions>
+                <UButton
+                  color="warning"
+                  variant="soft"
+                  size="xs"
+                  :loading="contextCasesLoading"
+                  @click="loadContextCases(crmContextClientIds)"
+                >
+                  Spróbuj ponownie
+                </UButton>
+              </template>
+            </UAlert>
+            <p
+              v-if="contextSummary && !hasCompleteCrmContext"
+              class="mail-composer__crm-context-summary"
+            >
+              <UIcon
+                :name="hasCompleteCrmContext ? 'i-lucide-circle-check' : 'i-lucide-info'"
+                aria-hidden="true"
+              />
+              {{ contextSummary }}
+            </p>
+            <p v-else-if="contextSummary" class="sr-only">
+              {{ contextSummary }}
+            </p>
           </section>
 
           <UFormField
@@ -589,7 +1040,11 @@ function formatBytes(value: number): string {
 
     <template #footer>
       <div class="mail-composer__footer">
-        <p>CRM nie zapisuje treści ani załączników wysłanej wiadomości.</p>
+        <p>
+          {{ preview
+            ? 'Tryb podglądu — wiadomość nie zostanie wysłana.'
+            : 'CRM nie zapisuje treści ani załączników wysłanej wiadomości.' }}
+        </p>
         <div>
           <UButton
             color="neutral"
@@ -604,9 +1059,9 @@ function formatBytes(value: number): string {
             form="mail-composer-form"
             icon="i-lucide-send"
             :loading="sending"
-            :disabled="Boolean(attachmentError)"
+            :disabled="Boolean(attachmentError) || contextCasesLoading || caseClientMismatch"
           >
-            Wyślij
+            {{ sendActionLabel }}
           </UButton>
         </div>
       </div>
@@ -631,6 +1086,18 @@ function formatBytes(value: number): string {
           {{ attachments.length === 1 ? 'załącznik' : 'załączników' }}
           <template v-if="attachments.length"> · {{ formatBytes(attachmentBytes) }}</template>
         </p>
+        <div v-if="contextScopes.length" class="mail-composer__send-context-summary">
+          <span>
+            <UIcon name="i-lucide-link-2" aria-hidden="true" />
+            Powiązanie po wysłaniu
+          </span>
+          <strong>
+            {{ crmContextClients.map(client => client.label).join(', ') }}
+            <template v-if="selectedContextCase">
+              · {{ selectedContextCase.label }}
+            </template>
+          </strong>
+        </div>
         <UAlert
           v-if="form.bcc.trim()"
           color="info"
@@ -671,51 +1138,60 @@ function formatBytes(value: number): string {
 <style scoped>
 .mail-composer {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .mail-composer__account {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 10px;
-  padding: 11px 13px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--oe-radius-control);
-  background: var(--ui-bg-muted);
+  gap: 7px;
 }
 
 .mail-composer__account img {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .mail-composer__account-icon {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
   color: var(--ui-primary);
 }
 
 .mail-composer__account span {
-  display: grid;
+  display: flex;
   min-width: 0;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .mail-composer__account small {
   color: var(--ui-text-muted);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .mail-composer__account strong {
   overflow: hidden;
   color: var(--ui-text-highlighted);
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.mail-composer__account em {
+  flex: 0 0 auto;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  font-style: normal;
+}
+
 .mail-composer__form {
   display: grid;
-  gap: 17px;
+  gap: 13px;
 }
 
 .mail-composer__recipients {
@@ -727,47 +1203,206 @@ function formatBytes(value: number): string {
 
 .mail-composer__recipients-header {
   display: flex;
-  min-height: 39px;
+  min-height: 34px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 8px 6px 12px;
+  gap: 8px;
+  padding: 5px 9px;
   border-bottom: 1px solid var(--ui-border);
 }
 
-.mail-composer__recipients-header > span:first-child {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.mail-composer__recipients-header strong {
-  color: var(--ui-text-highlighted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.mail-composer__recipients-header small {
+.mail-composer__recipient-count {
+  flex: 0 0 auto;
   color: var(--ui-text-muted);
-  font-size: 10px;
+  font-size: 9px;
+}
+
+.mail-composer__to-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
 }
 
 .mail-composer__recipient-actions {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: 2px;
+  gap: 0;
+}
+
+.mail-composer__recipient-actions :deep(button) {
+  min-height: 32px;
+  padding-inline: 7px;
 }
 
 .mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal']) {
   display: grid;
   justify-items: stretch !important;
-  padding: 9px 11px;
+  padding: 6px 9px;
   background: var(--ui-bg);
 }
 
 .mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal'] + [data-slot='root'][data-orientation='horizontal']) {
   border-top: 1px solid var(--ui-border);
+}
+
+.mail-composer__crm-context {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ui-success) 24%, var(--ui-border));
+  border-radius: var(--oe-radius-control);
+  background: color-mix(in srgb, var(--ui-success) 3%, var(--ui-bg));
+}
+
+.mail-composer__crm-context-main {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+}
+
+.mail-composer__crm-context-title,
+.mail-composer__crm-context-loading,
+.mail-composer__crm-context-summary,
+.mail-composer__send-context-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mail-composer__crm-context-title :deep(svg) {
+  width: 14px;
+  height: 14px;
+  color: var(--ui-success);
+}
+
+.mail-composer__crm-context-title strong {
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.mail-composer__crm-context-loading {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.mail-composer__crm-context-loading :deep(svg) {
+  width: 13px;
+  height: 13px;
+}
+
+.mail-composer__crm-context-status {
+  justify-self: end;
+}
+
+.mail-composer__crm-context-links {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(72px, 0.75fr) auto minmax(112px, 1.25fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.mail-composer__crm-context-connector {
+  width: 11px;
+  height: 11px;
+  color: var(--ui-text-muted);
+}
+
+.mail-composer__crm-context-values {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mail-composer__crm-context-case {
+  min-width: 0;
+}
+
+.mail-composer__context-chip {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--oe-radius-control);
+  background: var(--ui-bg);
+  color: var(--ui-text-highlighted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.mail-composer__context-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-composer__context-chip > :deep(svg) {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.mail-composer__context-chip--client {
+  border-color: color-mix(in srgb, var(--ui-success) 30%, var(--ui-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-success) 9%, var(--ui-bg));
+}
+
+.mail-composer__context-chip--client > :deep(svg),
+.mail-composer__crm-context-summary > :deep(svg) {
+  color: var(--ui-success);
+}
+
+.mail-composer__context-chip--client small {
+  flex: 0 0 auto;
+  color: var(--ui-success);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.mail-composer__context-chip--case > :deep(svg) {
+  color: var(--ui-text-muted);
+}
+
+.mail-composer__context-chip--case {
+  width: 100%;
+}
+
+.mail-composer__context-empty {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.mail-composer__crm-context :deep([data-slot='alert']) {
+  margin: 0 9px 9px;
+}
+
+.mail-composer__crm-context-summary {
+  margin: 0;
+  padding: 7px 9px;
+  border-top: 1px solid color-mix(in srgb, var(--ui-success) 16%, var(--ui-border));
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.mail-composer__crm-context-summary > :deep(svg) {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
 }
 
 .mail-composer__attachment-total {
@@ -813,10 +1448,36 @@ function formatBytes(value: number): string {
   color: var(--ui-text-highlighted);
 }
 
+.mail-composer__send-context-summary {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-success) 24%, var(--ui-border));
+  border-radius: var(--oe-radius-control);
+  background: color-mix(in srgb, var(--ui-success) 7%, var(--ui-bg));
+  font-size: 12px;
+}
+
+.mail-composer__send-context-summary > span {
+  color: var(--ui-success);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 @media (max-width: 640px) {
   .mail-composer__recipients :deep([data-slot='root'][data-orientation='horizontal']) {
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 32px minmax(0, 1fr);
     padding: 8px;
+  }
+
+  .mail-composer__account small {
+    display: none;
+  }
+
+  .mail-composer__crm-context-case :deep([role='combobox']) {
+    min-height: 44px;
   }
 
   .mail-composer__footer {
@@ -832,6 +1493,30 @@ function formatBytes(value: number): string {
   .mail-composer__recipient-actions :deep(button),
   .mail-composer__footer :deep(button) {
     min-height: 44px;
+  }
+}
+
+@media (max-width: 359px) {
+  .mail-composer__to-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mail-composer__recipient-actions {
+    justify-content: flex-end;
+  }
+
+  .mail-composer__crm-context-main {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .mail-composer__crm-context-links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mail-composer__crm-context-connector {
+    display: none;
   }
 }
 </style>

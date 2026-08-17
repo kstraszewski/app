@@ -23,7 +23,7 @@
     "test:mortgage-template-ai": "node --test --experimental-strip-types test/mortgage-template-ai.test.ts",
     "test:multiform-template-editor": "node --test --experimental-strip-types test/multiform-template-editor.test.ts",
     "test:notifications": "node --test --experimental-strip-types test/notifications.test.ts",
-    "test:mail": "node --test --experimental-strip-types test/gmail-message.test.ts test/gmail-send.test.ts test/mail-agent-reply.test.ts test/mail-body-display.test.ts test/mail-context.test.ts test/mail-host-security.test.ts test/mail-html-display.test.ts test/mail-html.test.ts test/mail-imap-smtp.test.ts test/mail-microsoft.test.ts test/mail-multipart.test.ts test/mail-oauth-refresh-cas.test.ts test/mail-recipients.test.ts test/mail-remote-image.test.ts test/mail-security.test.ts",
+    "test:mail": "node --test --experimental-strip-types test/gmail-message.test.ts test/gmail-send.test.ts test/mail-agent-reply.test.ts test/mail-body-display.test.ts test/mail-context.test.ts test/mail-host-security.test.ts test/mail-html-display.test.ts test/mail-html.test.ts test/mail-imap-smtp.test.ts test/mail-microsoft.test.ts test/mail-multipart.test.ts test/mail-oauth-refresh-cas.test.ts test/mail-recipient-search.test.ts test/mail-recipients.test.ts test/mail-remote-image.test.ts test/mail-security.test.ts",
     "test:message-attachments": "node --test --experimental-strip-types test/case-conversation-attachment-cursor.test.ts",
     "test:messaging:api": "node test/case-messaging-api-smoke.mjs",
     "test:property-import": "node --test --experimental-strip-types test/property-import.test.ts",

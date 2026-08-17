@@ -8,6 +8,7 @@ type PageHeaderTab = {
   count?: number
   exact?: boolean
   active?: boolean
+  compact?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -39,6 +40,7 @@ const tabsElement = ref<HTMLElement | null>(null)
 const hasAvatar = computed(() => Boolean(props.avatarSrc || props.avatarText))
 let tabsResizeObserver: ResizeObserver | null = null
 let tabScrollFrame: number | null = null
+let activeDensityTransition: ViewTransition | null = null
 
 function tabIsActive(tab: PageHeaderTab) {
   if (tab.active !== undefined) return tab.active
@@ -48,6 +50,38 @@ function tabIsActive(tab: PageHeaderTab) {
       && JSON.stringify(route.query) === JSON.stringify(target.query)
   }
   return route.path === target.path || route.path.startsWith(`${target.path}/`)
+}
+
+function animateDensityChange(event: MouseEvent, tab: PageHeaderTab) {
+  if (
+    !import.meta.client
+    || event.defaultPrevented
+    || event.button !== 0
+    || event.detail === 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey
+    || tabIsActive(tab)
+    || Boolean(tab.compact) === props.compact
+    || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    || typeof document.startViewTransition !== 'function'
+  ) return
+
+  event.preventDefault()
+  activeDensityTransition?.skipTransition()
+
+  const transition = document.startViewTransition(async () => {
+    await router.push(tab.to)
+    await nextTick()
+  })
+
+  activeDensityTransition = transition
+  void transition.finished
+    .catch(() => {})
+    .finally(() => {
+      if (activeDensityTransition === transition) activeDensityTransition = null
+    })
 }
 
 const tabSignature = computed(() => props.tabs.map((tab) => {
@@ -111,6 +145,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   tabsResizeObserver?.disconnect()
   if (tabScrollFrame !== null) window.cancelAnimationFrame(tabScrollFrame)
+  activeDensityTransition?.skipTransition()
 })
 </script>
 
@@ -176,6 +211,7 @@ onBeforeUnmount(() => {
         class="crm-page-header__tab"
         :class="{ 'crm-page-header__tab--active': tabIsActive(tab) }"
         :aria-current="tabIsActive(tab) ? 'page' : undefined"
+        @click.capture="animateDensityChange($event, tab)"
       >
         <UIcon v-if="tab.icon" :name="tab.icon" />
         <span>{{ tab.label }}</span>
@@ -202,6 +238,47 @@ onBeforeUnmount(() => {
   margin-bottom: 28px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--ui-border);
+  view-transition-name: crm-page-header;
+}
+
+@supports (view-transition-name: crm-page-header) {
+  :global(::view-transition-group(crm-page-header)) {
+    animation-duration: var(--oe-duration-slow);
+    animation-timing-function: var(--ease-in-out);
+  }
+
+  :global(::view-transition-old(crm-page-header)),
+  :global(::view-transition-new(crm-page-header)) {
+    animation-duration: var(--oe-duration-slow);
+    animation-timing-function: var(--ease-out);
+    mix-blend-mode: normal;
+  }
+
+  :global(::view-transition-group(crm-page-content)) {
+    animation-duration: var(--oe-duration-slow);
+    animation-timing-function: var(--ease-in-out);
+  }
+
+  :global(::view-transition-old(crm-page-content)) {
+    animation-duration: 100ms;
+    animation-timing-function: var(--ease-out);
+    animation-fill-mode: both;
+    mix-blend-mode: normal;
+  }
+
+  :global(::view-transition-new(crm-page-content)) {
+    animation-delay: calc(var(--oe-duration-slow) - var(--oe-duration-fast));
+    animation-duration: var(--oe-duration-fast);
+    animation-timing-function: var(--ease-out);
+    animation-fill-mode: both;
+    mix-blend-mode: normal;
+  }
+
+  :global(::view-transition-old(root)),
+  :global(::view-transition-new(root)) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
 }
 
 .crm-page-header--without-tabs {
@@ -217,7 +294,6 @@ onBeforeUnmount(() => {
   row-gap: 8px;
   margin-bottom: 0;
   padding: 10px 20px 0;
-  background: var(--ui-bg);
 }
 
 .crm-page-header.crm-page-header--compact.crm-page-header--without-tabs {
@@ -555,6 +631,15 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .crm-page-header__tabs {
     scroll-behavior: auto;
+  }
+
+  :global(::view-transition-group(crm-page-header)),
+  :global(::view-transition-group(crm-page-content)),
+  :global(::view-transition-old(crm-page-header)),
+  :global(::view-transition-new(crm-page-header)),
+  :global(::view-transition-old(crm-page-content)),
+  :global(::view-transition-new(crm-page-content)) {
+    animation-duration: 1ms;
   }
 }
 </style>

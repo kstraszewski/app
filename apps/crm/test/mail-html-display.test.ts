@@ -108,6 +108,16 @@ describe('sandboxed mail HTML display', () => {
     )
     assert.match(workspaceSource, />\s*Odpowiedź AI\s*</u)
     assert.match(workspaceSource, /aria-label="Otwórz wiadomość u dostawcy"/u)
+    assert.match(workspaceSource, /aria-label="Przygotuj odpowiedź przez Agenta AI"/u)
+    assert.match(workspaceSource, /@container \(max-width: 480px\)/u)
+    assert.match(
+      workspaceSource,
+      /@container \(max-width: 480px\)[\s\S]*?\.mail-detail__action--agent\s*\{[^}]*width:\s*44px !important;[^}]*flex:\s*0 0 44px !important;/u,
+    )
+    assert.match(
+      workspaceSource,
+      /\.mail-detail__action--agent :deep\(\[data-slot="label"\]\)\s*\{[^}]*display:\s*none;/su,
+    )
     assert.doesNotMatch(
       workspaceSource,
       /\.mail-detail__actions :deep\(a\),\s*\.mail-detail__actions :deep\(button\)\s*\{[^}]*width:\s*100%/su,

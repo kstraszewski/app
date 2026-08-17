@@ -20,6 +20,7 @@ const props = defineProps<{
     count?: number
     exact?: boolean
     active?: boolean
+    compact?: boolean
   }>
 }>()
 
@@ -60,17 +61,19 @@ const hasAuthConfig = useHasAuthConfig()
       </template>
     </CrmPageHeader>
 
-    <UAlert
-      v-if="!hasAuthConfig"
-      class="crm-alert"
-      color="warning"
-      variant="subtle"
-      icon="i-lucide-alert-triangle"
-      title="Brakuje konfiguracji platformy"
-      description="Uzupełnij .env, żeby API CRM mogło czytać i zapisywać dane."
-    />
+    <div class="crm-page__content">
+      <UAlert
+        v-if="!hasAuthConfig"
+        class="crm-alert"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-alert-triangle"
+        title="Brakuje konfiguracji platformy"
+        description="Uzupełnij .env, żeby API CRM mogło czytać i zapisywać dane."
+      />
 
-    <slot />
+      <slot />
+    </div>
   </div>
 </template>
 
@@ -79,11 +82,24 @@ const hasAuthConfig = useHasAuthConfig()
   min-width: 0;
 }
 
+.crm-page__content {
+  min-width: 0;
+  view-transition-name: crm-page-content;
+}
+
 .crm-page--workspace {
   display: flex;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  flex-direction: column;
+}
+
+.crm-page--workspace .crm-page__content {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1 1 0;
   flex-direction: column;
 }
 

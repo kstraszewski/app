@@ -393,8 +393,8 @@ watch(
 
 const caseTabs = computed(() => [
   { label: 'Podsumowanie', icon: 'i-lucide-layout-dashboard', to: viewLocation('overview') },
-  { label: 'Czat z klientem', icon: 'i-lucide-messages-square', to: viewLocation('messages') },
-  { label: 'Poczta e-mail', icon: 'i-lucide-mail', to: viewLocation('mail') },
+  { label: 'Czat z klientem', icon: 'i-lucide-messages-square', compact: true, to: viewLocation('messages') },
+  { label: 'Poczta e-mail', icon: 'i-lucide-mail', compact: true, to: viewLocation('mail') },
   { label: 'Kredyt i oferty', icon: 'i-lucide-landmark', count: data.value.data.offers.length, to: viewLocation('credit') },
   { label: 'Dokumenty i wnioski', icon: 'i-lucide-files', count: data.value.data.documents.length, to: viewLocation('documents') },
   { label: 'Delegacje', icon: 'i-lucide-send', count: delegatedTasks.value.length, to: viewLocation('delegations') },

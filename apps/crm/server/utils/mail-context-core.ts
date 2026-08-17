@@ -11,6 +11,8 @@ import { decodeMicrosoftThreadReference } from './mail-microsoft.ts'
 
 export const MAX_MAIL_CONTEXT_EMAILS = 12
 export const MAX_MAIL_CONTEXT_THREAD_REFERENCE_CHARACTERS = 4_096
+export const MAX_MAIL_CONTEXT_CLIENT_SCOPES = 10
+export const MAX_MAIL_CONTEXT_CASE_SCOPES = 1
 
 export function parseMailContextScope(value: unknown): MailContextScope {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -26,6 +28,55 @@ export function parseMailContextScope(value: unknown): MailContextScope {
     throw invalidContextError()
   }
   return { type, id }
+}
+
+/**
+ * Parses, deduplicates and orders all CRM scopes carried by a composer send.
+ * Keeping the result canonical is important because it is included in the
+ * idempotency hash of the logical send request.
+ */
+export function parseMailContextScopes(value: unknown): MailContextScope[] {
+  if (!Array.isArray(value)) throw invalidContextError()
+
+  const unique = new Map<string, MailContextScope>()
+  for (const item of value) {
+    const scope = parseMailContextScope(item)
+    unique.set(`${scope.type}:${scope.id}`, scope)
+  }
+
+  const scopes = [...unique.values()]
+  const clientCount = scopes.filter(scope => scope.type === 'client').length
+  const caseCount = scopes.filter(scope => scope.type === 'case').length
+  if (
+    clientCount > MAX_MAIL_CONTEXT_CLIENT_SCOPES
+    || caseCount > MAX_MAIL_CONTEXT_CASE_SCOPES
+  ) throw invalidContextError()
+
+  return scopes.sort((left, right) => {
+    if (left.type !== right.type) return left.type === 'case' ? -1 : 1
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+  })
+}
+
+/** Returns selected clients that do not belong to the selected case. */
+export function unrelatedMailContextClientIds(
+  scopes: readonly MailContextScope[],
+  relationship: {
+    linkedClientIds: readonly unknown[]
+    fallbackClientId?: unknown
+  },
+): string[] {
+  if (!scopes.some(scope => scope.type === 'case')) return []
+
+  const related = new Set(
+    [relationship.fallbackClientId, ...relationship.linkedClientIds]
+      .map(value => String(value ?? '').trim().toLowerCase())
+      .filter(isUuid),
+  )
+  return scopes
+    .filter((scope): scope is MailContextScope & { type: 'client' } => scope.type === 'client')
+    .map(scope => scope.id)
+    .filter(id => !related.has(id))
 }
 
 export function normalizeMailContextEmails(

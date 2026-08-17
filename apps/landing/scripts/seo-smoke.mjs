@@ -5,13 +5,14 @@ const canonicalOrigin = new URL(
   process.env.SEO_CANONICAL_ORIGIN || 'https://www.openexpert.app',
 ).origin
 
-const publicRoutes = ['/', '/personalizacja', '/o-nas']
+const publicRoutes = ['/', '/personalizacja', '/poczta-dla-ekseprta', '/o-nas']
 const noindexRoutes = ['/waitlist', '/multiform-eve', '/multiform-eve/admin', '/eksperci', '/placowki']
 const socialImages = new Map([
   ['/', '/openexpert-og.png'],
   ['/eksperci', '/eksperci-og.png'],
   ['/placowki', '/placowki-og.png'],
   ['/personalizacja', '/openexpert-og.png'],
+  ['/poczta-dla-ekseprta', '/openexpert-og.png'],
   ['/o-nas', '/o-nas-og.png'],
 ])
 
@@ -75,6 +76,7 @@ for (const [source, target] of [
   ['/placowki/', '/placowki'],
   ['/plac%C3%B3wki', '/placowki'],
   ['/personalizacja/', '/personalizacja'],
+  ['/poczta-dla-ekseprta/', '/poczta-dla-ekseprta'],
   ['/o-nas/', '/o-nas'],
 ]) {
   const { response } = await request(source)

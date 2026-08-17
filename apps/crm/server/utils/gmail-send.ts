@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import type { MailContextScope } from '../../shared/types/mail.ts'
 
 const CRLF = '\r\n'
 const MIME_BASE64_LINE_LENGTH = 76
@@ -41,6 +42,7 @@ export interface GmailSendRequestHashInput {
     type: 'client' | 'case'
     id: string
   }
+  contexts?: readonly MailContextScope[]
 }
 
 export function gmailSendRequestHash(input: GmailSendRequestHashInput): string {
@@ -50,6 +52,9 @@ export function gmailSendRequestHash(input: GmailSendRequestHashInput): string {
     size: attachment.data.byteLength,
     sha256: createHash('sha256').update(attachment.data).digest('hex'),
   }))
+  const contexts = input.contexts?.length
+    ? canonicalHashContexts(input.contexts)
+    : null
   return createHash('sha256').update(JSON.stringify({
     to: input.to.map(value => value.toLowerCase()),
     cc: input.cc.map(value => value.toLowerCase()),
@@ -57,9 +62,26 @@ export function gmailSendRequestHash(input: GmailSendRequestHashInput): string {
     subject: input.subject,
     body: input.body,
     threadId: input.threadId,
-    ...(input.context ? { context: input.context } : {}),
+    ...(contexts?.length
+      ? { contexts }
+      : input.context ? { context: input.context } : {}),
     attachments,
   }), 'utf8').digest('hex')
+}
+
+function canonicalHashContexts(contexts: readonly MailContextScope[]): MailContextScope[] {
+  const unique = new Map<string, MailContextScope>()
+  for (const context of contexts) {
+    const scope = {
+      type: context.type,
+      id: String(context.id).trim().toLowerCase(),
+    } as MailContextScope
+    unique.set(`${scope.type}:${scope.id}`, scope)
+  }
+  return [...unique.values()].sort((left, right) => {
+    if (left.type !== right.type) return left.type === 'case' ? -1 : 1
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+  })
 }
 
 export function gmailSendMessageId(idempotencyKey: string): string {

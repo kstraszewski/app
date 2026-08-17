@@ -1,96 +1,207 @@
 <script setup lang="ts">
+import type { MailRecipientSearchPayload } from '#shared/types/mail'
 import type { ClientListItem } from '~/types/clients'
+import type {
+  MailProviderRecipientSuggestion,
+  MailRecipientSelection,
+  MailRecipientSelectionSource,
+} from '~/utils/mail-recipients'
 import {
   isValidMailRecipient,
+  isValidMailRecipientList,
   mailRecipientInitials,
+  mailRecipientKey,
+  mailRecipientMatchesSearch,
+  mailRecipientSelectionKey,
+  orderMailRecipientSuggestions,
+  resolveUnambiguousMailRecipientSelection,
   serializeMailRecipients,
   splitMailRecipients,
+  uniqueMailRecipientSuggestions,
   uniqueMailRecipients,
 } from '~/utils/mail-recipients'
 
-interface RecipientOption {
-  email: string
-  label: string
+interface RecipientOption extends MailRecipientSelection {
+  selectionKey: string
   description: string
-  clientId?: string
-  clientLabel?: string
-  source: 'crm' | 'manual'
 }
+
+interface RecipientGroupLabel extends RecipientOption {
+  type: 'label'
+}
+
+type RecipientMenuItem = RecipientOption | RecipientGroupLabel
 
 const props = withDefaults(defineProps<{
   modelValue: string
   placeholder?: string
   disabled?: boolean
   autofocus?: boolean
+  selections?: readonly MailRecipientSelection[]
+  providerSuggestions?: readonly MailProviderRecipientSuggestion[]
+  connectionId?: string
+  providerLabel?: string
+  lookupDisabled?: boolean
 }>(), {
   placeholder: 'Wpisz nazwę lub adres e-mail',
   disabled: false,
   autofocus: false,
+  providerSuggestions: () => [],
+  connectionId: '',
+  providerLabel: '',
+  lookupDisabled: false,
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:selections': [value: MailRecipientSelection[]]
 }>()
 
-const { crmApiPath } = useOrganizationContext()
+const { crmApiPath, orgApiPath } = useOrganizationContext()
 const searchTerm = ref('')
 const results = ref<RecipientOption[]>([])
+const remoteProviderResults = ref<MailProviderRecipientSuggestion[]>([])
 const knownOptions = shallowRef(new Map<string, RecipientOption>())
+const selectedIdentities = shallowRef(new Map<string, MailRecipientSelection>())
 const pending = ref(false)
 const searchError = ref('')
 const mounted = ref(false)
 let requestId = 0
+let prefillRequestId = 0
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-const selectedEmails = computed<string[]>({
-  get: () => uniqueMailRecipients(props.modelValue),
-  set: value => emit('update:modelValue', serializeMailRecipients(value)),
+const selectedEmails = computed(() => uniqueMailRecipients(props.modelValue))
+const crmOptions = computed(() => results.value
+  .filter(suggestion => mailRecipientMatchesSearch(suggestion, searchTerm.value)))
+const providerOptions = computed(() => {
+  return uniqueMailRecipientSuggestions([
+    ...props.providerSuggestions,
+    ...remoteProviderResults.value,
+  ])
+    .filter(suggestion => mailRecipientMatchesSearch(suggestion, searchTerm.value))
+    .map(toRecipientOption)
+})
+const suggestionOptions = computed<RecipientOption[]>(() => orderMailRecipientSuggestions([
+  ...crmOptions.value,
+  ...providerOptions.value,
+]))
+const mailboxGroupLabel = computed(() => {
+  const providerLabel = props.providerLabel.trim()
+  return providerLabel ? `Kontakty ${providerLabel}` : 'Kontakty z poczty'
+})
+const items = computed<RecipientMenuItem[][]>(() => {
+  const crmSuggestions = suggestionOptions.value.filter(option => option.source === 'crm')
+  const mailboxOptions = suggestionOptions.value.filter(option => option.source === 'provider')
+  const groups: RecipientMenuItem[][] = []
+
+  if (crmSuggestions.length) {
+    groups.push([
+      recipientGroupLabel('crm', 'Klienci CRM'),
+      ...crmSuggestions,
+    ])
+  }
+  if (mailboxOptions.length) {
+    groups.push([
+      recipientGroupLabel('mailbox', mailboxGroupLabel.value),
+      ...mailboxOptions,
+    ])
+  }
+  return groups
+})
+const canCreateDraft = computed(() => isValidMailRecipientList(searchTerm.value))
+const optionsBySelectionKey = computed(() => {
+  const options = new Map<string, RecipientOption>(knownOptions.value)
+  for (const option of providerOptions.value) options.set(option.selectionKey, option)
+  for (const selection of selectedIdentities.value.values()) {
+    const option = toRecipientOption(selection)
+    options.set(option.selectionKey, option)
+  }
+  return options
 })
 
-const items = computed<RecipientOption[]>(() => {
-  const options = new Map<string, RecipientOption>()
-  for (const option of results.value) options.set(recipientKey(option.email), option)
-  for (const email of selectedEmails.value) {
-    const key = recipientKey(email)
-    if (!options.has(key)) options.set(key, optionForEmail(email))
-  }
-  return [...options.values()]
+const selectedOptionKeys = computed<string[]>({
+  get: () => selectedEmails.value.map((email) => (
+    mailRecipientSelectionKey(selectionForEmail(email))
+  )),
+  set: (keys) => {
+    const selections = keys
+      .map(key => selectionForKey(key))
+      .filter((selection): selection is MailRecipientSelection => Boolean(selection))
+    updateSelectedRecipients(selections)
+  },
 })
 
 const statusMessage = computed(() => {
-  if (pending.value) return 'Wyszukuję klientów w CRM.'
-  if (searchError.value) return 'Wyszukiwanie klientów jest chwilowo niedostępne. Nadal możesz wpisać adres ręcznie.'
+  const suggestionCount = suggestionOptions.value.length
+  if (pending.value) return providerOptions.value.length
+    ? 'Pokazuję kontakty z poczty i wyszukuję pozostałych odbiorców.'
+    : 'Wyszukuję klientów w CRM i kontakty z poczty.'
+  if (searchError.value) return searchError.value
   if (searchTerm.value.trim()) {
-    return results.value.length
-      ? `Znaleziono ${results.value.length} podpowiedzi.`
-      : 'Nie znaleziono kontaktu w CRM. Możesz dodać adres ręcznie.'
+    return suggestionCount
+      ? `Znaleziono ${suggestionCount} podpowiedzi.`
+      : 'Nie znaleziono kontaktu. Możesz dodać adres ręcznie.'
   }
   return ''
 })
 
-function recipientKey(value: string): string {
-  return value.trim().toLocaleLowerCase('en-US')
+function manualSelection(email: string): MailRecipientSelection {
+  return { email, label: email, source: 'manual' }
 }
 
-function optionForEmail(email: string): RecipientOption {
-  return knownOptions.value.get(recipientKey(email)) || {
-    email,
-    label: email,
-    description: email,
+function recipientGroupLabel(key: string, label: string): RecipientGroupLabel {
+  return {
+    type: 'label',
+    label,
+    email: '',
+    description: '',
     source: 'manual',
+    selectionKey: `group:${key}`,
   }
 }
 
-function itemEmail(item: unknown): string {
-  if (typeof item === 'string') return item
-  if (item && typeof item === 'object' && 'email' in item && typeof item.email === 'string') {
-    return item.email
+function toRecipientOption(selection: MailRecipientSelection): RecipientOption {
+  const email = selection.email.trim()
+  const normalized = {
+    ...selection,
+    email,
+    label: selection.label.trim() || email,
   }
-  return String(item || '')
+  return {
+    ...normalized,
+    selectionKey: mailRecipientSelectionKey(normalized),
+    description: email,
+  }
+}
+
+function toRecipientSelection(selection: MailRecipientSelection): MailRecipientSelection {
+  const option = selection as MailRecipientSelection & Partial<Pick<RecipientOption, 'selectionKey' | 'description'>>
+  const { selectionKey: _selectionKey, description: _description, ...recipient } = option
+  return recipient
+}
+
+function selectionForEmail(email: string): MailRecipientSelection {
+  return selectedIdentities.value.get(mailRecipientKey(email)) || manualSelection(email)
+}
+
+function selectionForKey(key: string): MailRecipientSelection | undefined {
+  const option = optionsBySelectionKey.value.get(key)
+  return option ? toRecipientSelection(option) : undefined
 }
 
 function itemOption(item: unknown): RecipientOption {
-  return optionForEmail(itemEmail(item))
+  if (typeof item === 'string') {
+    return optionsBySelectionKey.value.get(item) || toRecipientOption(manualSelection(item))
+  }
+  if (item && typeof item === 'object' && 'email' in item && typeof item.email === 'string') {
+    return toRecipientOption(item as MailRecipientSelection)
+  }
+  const fallback = String(item || '')
+  return toRecipientOption(manualSelection(fallback))
+}
+
+function itemEmail(item: unknown): string {
+  return itemOption(item).email
 }
 
 function itemLabel(item: unknown): string {
@@ -103,64 +214,210 @@ function itemInitials(item: unknown): string {
   return mailRecipientInitials(option.label === option.email ? null : option.label, option.email)
 }
 
+function itemSource(item: unknown): MailRecipientSelectionSource {
+  return itemOption(item).source
+}
+
 function itemIsValid(item: unknown): boolean {
   return isValidMailRecipient(itemEmail(item))
 }
 
+function uniqueSelectionsByEmailLast(
+  selections: readonly MailRecipientSelection[],
+): MailRecipientSelection[] {
+  const unique: MailRecipientSelection[] = []
+  const indexes = new Map<string, number>()
+  for (const selection of selections) {
+    const email = selection.email.trim()
+    if (!email) continue
+    const normalized = { ...selection, email, label: selection.label.trim() || email }
+    const key = mailRecipientKey(email)
+    const existingIndex = indexes.get(key)
+    if (existingIndex === undefined) {
+      indexes.set(key, unique.length)
+      unique.push(normalized)
+    }
+    else {
+      unique[existingIndex] = normalized
+    }
+  }
+  return unique
+}
+
+function setSelectedIdentities(selections: readonly MailRecipientSelection[]): void {
+  selectedIdentities.value = new Map(
+    uniqueSelectionsByEmailLast(selections)
+      .map(selection => [mailRecipientKey(selection.email), selection]),
+  )
+}
+
+function updateSelectedRecipients(selections: readonly MailRecipientSelection[]): void {
+  const normalized = uniqueSelectionsByEmailLast(selections)
+  setSelectedIdentities(normalized)
+  emit('update:modelValue', serializeMailRecipients(normalized.map(selection => selection.email)))
+  emit('update:selections', normalized)
+}
+
+function synchronizeSelectedIdentities(): void {
+  const current = selectedIdentities.value
+  const controlledSelections = props.selections
+  const next = selectedEmails.value.map((email) => {
+    if (controlledSelections !== undefined) {
+      return resolveUnambiguousMailRecipientSelection(email, controlledSelections)
+        || manualSelection(email)
+    }
+    return current.get(mailRecipientKey(email)) || manualSelection(email)
+  })
+  setSelectedIdentities(next)
+}
+
 function rememberOptions(options: RecipientOption[]): void {
-  const next = new Map(knownOptions.value)
-  for (const option of options) next.set(recipientKey(option.email), option)
+  const next = new Map<string, RecipientOption>()
+  for (const option of uniqueMailRecipientSuggestions([
+    ...knownOptions.value.values(),
+    ...options,
+  ])) {
+    next.set(mailRecipientSelectionKey(option), option)
+  }
   knownOptions.value = next
 }
 
 function clientOptions(client: ClientListItem): RecipientOption[] {
   const candidates = [
     client.matchedPerson?.email
-      ? { email: client.matchedPerson.email, name: client.matchedPerson.display_name }
+      ? {
+          email: client.matchedPerson.email,
+          name: client.matchedPerson.display_name,
+          personId: client.matchedPerson.id,
+        }
       : null,
     client.primaryPerson?.email
-      ? { email: client.primaryPerson.email, name: client.primaryPerson.display_name }
+      ? {
+          email: client.primaryPerson.email,
+          name: client.primaryPerson.display_name,
+          personId: client.primaryPerson.id,
+        }
       : null,
     client.primary_email
-      ? { email: client.primary_email, name: client.display_name }
+      ? { email: client.primary_email, name: client.display_name, personId: undefined }
       : null,
-  ].filter((candidate): candidate is { email: string, name: string } => Boolean(candidate?.email))
+  ].filter((candidate): candidate is { email: string, name: string, personId: string | undefined } => Boolean(candidate?.email))
 
   const options = new Map<string, RecipientOption>()
   for (const candidate of candidates) {
     const email = candidate.email.trim()
-    const key = recipientKey(email)
+    const key = mailRecipientKey(email)
     if (!email || options.has(key)) continue
-    options.set(key, {
+    options.set(key, toRecipientOption({
       email,
       label: candidate.name?.trim() || email,
-      description: email,
       clientId: client.id,
-      clientLabel: candidate.name !== client.display_name ? client.display_name : undefined,
+      clientLabel: client.display_name,
+      personId: candidate.personId,
       source: 'crm',
-    })
+    }))
   }
   return [...options.values()]
 }
 
+async function resolvePrefilledRecipients(emails: readonly string[]): Promise<void> {
+  if (props.lookupDisabled) return
+  const unresolvedEmails = uniqueMailRecipients(emails)
+    .filter(email => (
+      isValidMailRecipient(email)
+      && selectionForEmail(email).source === 'manual'
+    ))
+  if (!unresolvedEmails.length) return
+
+  const currentRequestId = ++prefillRequestId
+  const responses = await Promise.allSettled(unresolvedEmails.map(email => (
+    $fetch<{ data: ClientListItem[] }>(crmApiPath('/clients'), {
+      query: {
+        q: email,
+        has_email: true,
+        sort: 'relevance',
+        limit: 8,
+      },
+    })
+  )))
+  if (!mounted.value || currentRequestId !== prefillRequestId) return
+
+  const exactOptionsByEmail = new Map<string, RecipientOption[]>()
+  responses.forEach((response, index) => {
+    if (response.status !== 'fulfilled') return
+    const email = unresolvedEmails[index] || ''
+    const emailKey = mailRecipientKey(email)
+    const exactOptions = (response.value.data || [])
+      .flatMap(clientOptions)
+      .filter(option => mailRecipientKey(option.email) === emailKey)
+    exactOptionsByEmail.set(emailKey, exactOptions)
+  })
+
+  const exactOptions = [...exactOptionsByEmail.values()].flat()
+  if (!exactOptions.length) return
+  rememberOptions(exactOptions)
+
+  let didUpgrade = false
+  const upgraded = selectedEmails.value.map((email) => {
+    const current = selectionForEmail(email)
+    const exactSelection = resolveUnambiguousMailRecipientSelection(
+      email,
+      exactOptionsByEmail.get(mailRecipientKey(email)) || [],
+    )
+    if (!exactSelection) return current
+    if (mailRecipientSelectionKey(exactSelection) !== mailRecipientSelectionKey(current)) {
+      didUpgrade = true
+    }
+    return toRecipientSelection(exactSelection)
+  })
+  if (!didUpgrade) return
+  setSelectedIdentities(upgraded)
+  emit('update:selections', upgraded)
+}
+
 async function runSearch(query: string, currentRequestId: number): Promise<void> {
   try {
-    const payload = await $fetch<{ data: ClientListItem[] }>(crmApiPath('/clients'), {
-      query: {
-        q: query || undefined,
-        has_email: true,
-        sort: query ? 'relevance' : 'updated_desc',
+    if (!query) {
+      const payload = await $fetch<{ data: ClientListItem[] }>(crmApiPath('/clients'), {
+        query: {
+          has_email: true,
+          sort: 'updated_desc',
+          limit: 8,
+        },
+      })
+      if (currentRequestId !== requestId) return
+      const options = (payload.data || []).flatMap(clientOptions)
+      results.value = orderMailRecipientSuggestions(options)
+      remoteProviderResults.value = []
+      rememberOptions(options)
+      return
+    }
+
+    const payload = await $fetch<MailRecipientSearchPayload>(orgApiPath('/mail/recipients/search'), {
+      method: 'POST',
+      body: {
+        q: query,
+        connectionId: props.connectionId || undefined,
         limit: 8,
       },
     })
     if (currentRequestId !== requestId) return
-    const options = (payload.data || []).flatMap(clientOptions)
-    results.value = options
+    const options = payload.data.crm.map(toRecipientOption)
+    results.value = orderMailRecipientSuggestions(options)
+    remoteProviderResults.value = payload.data.provider
     rememberOptions(options)
+
+    if (payload.sources.crm === 'unavailable') {
+      searchError.value = 'Wyszukiwanie klientów w CRM jest chwilowo niedostępne.'
+    }
+    else if (payload.sources.provider === 'unavailable') {
+      searchError.value = 'Wyszukiwanie kontaktów w poczcie jest chwilowo niedostępne.'
+    }
   }
   catch (error: unknown) {
     if (currentRequestId !== requestId) return
     results.value = []
+    remoteProviderResults.value = []
     searchError.value = apiErrorMessage(error)
   }
   finally {
@@ -170,9 +427,24 @@ async function runSearch(query: string, currentRequestId: number): Promise<void>
 
 function scheduleSearch(immediate = false): void {
   if (!mounted.value) return
-  if (debounceTimer) clearTimeout(debounceTimer)
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = undefined
+  }
   const currentRequestId = ++requestId
+  if (props.lookupDisabled) {
+    pending.value = false
+    searchError.value = ''
+    results.value = []
+    remoteProviderResults.value = []
+    return
+  }
   const query = searchTerm.value.trim()
+  if (query.length === 1 || query.length > 100) {
+    pending.value = false
+    searchError.value = ''
+    return
+  }
   pending.value = true
   searchError.value = ''
 
@@ -180,30 +452,41 @@ function scheduleSearch(immediate = false): void {
     void runSearch(query, currentRequestId)
     return
   }
-  debounceTimer = setTimeout(() => void runSearch(query, currentRequestId), 250)
+  debounceTimer = setTimeout(() => {
+    debounceTimer = undefined
+    void runSearch(query, currentRequestId)
+  }, 250)
 }
 
 function addRecipients(value: string): void {
+  if (!isValidMailRecipientList(value)) return
+  const existing = selectedEmails.value.map(selectionForEmail)
+  const existingKeys = new Set(existing.map(selection => mailRecipientKey(selection.email)))
   const additions = splitMailRecipients(value)
-  if (!additions.length) return
-  selectedEmails.value = uniqueMailRecipients([...selectedEmails.value, ...additions])
+    .filter(email => !existingKeys.has(mailRecipientKey(email)))
+    .map(manualSelection)
+  if (!additions.length) {
+    searchTerm.value = ''
+    return
+  }
+  updateSelectedRecipients([...existing, ...additions])
   searchTerm.value = ''
 }
 
 function commitDraft(): void {
   const draft = searchTerm.value.trim()
-  if (draft) addRecipients(draft)
+  if (isValidMailRecipientList(draft)) addRecipients(draft)
 }
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.isComposing || ![',', ';'].includes(event.key) || !searchTerm.value.trim()) return
   event.preventDefault()
-  addRecipients(searchTerm.value)
+  commitDraft()
 }
 
 function handlePaste(event: ClipboardEvent): void {
   const value = event.clipboardData?.getData('text') || ''
-  if (!/[;,\n]/u.test(value)) return
+  if (!/[;,\n]/u.test(value) || !isValidMailRecipientList(value)) return
   event.preventDefault()
   addRecipients(value)
 }
@@ -211,21 +494,32 @@ function handlePaste(event: ClipboardEvent): void {
 function createLabel(value: string): string {
   const recipients = splitMailRecipients(value)
   if (recipients.length > 1) return `Dodaj ${recipients.length} adresy`
-  return isValidMailRecipient(value)
-    ? `Dodaj ${value.trim()}`
-    : `Dodaj i popraw przed wysłaniem: ${value.trim()}`
+  return `Dodaj ${value.trim()}`
 }
 
-watch(searchTerm, () => scheduleSearch())
+watch(
+  [() => props.modelValue, () => props.selections],
+  () => {
+    synchronizeSelectedIdentities()
+    if (mounted.value) void resolvePrefilledRecipients(selectedEmails.value)
+  },
+  { deep: true, immediate: true },
+)
+watch(
+  [searchTerm, () => props.connectionId, () => props.lookupDisabled],
+  () => scheduleSearch(),
+)
 
 onMounted(() => {
   mounted.value = true
+  void resolvePrefilledRecipients(selectedEmails.value)
   scheduleSearch(true)
 })
 
 onBeforeUnmount(() => {
   mounted.value = false
   requestId += 1
+  prefillRequestId += 1
   if (debounceTimer) clearTimeout(debounceTimer)
 })
 </script>
@@ -233,15 +527,15 @@ onBeforeUnmount(() => {
 <template>
   <div class="mail-recipient-input">
     <UInputMenu
-      v-model="selectedEmails"
+      v-model="selectedOptionKeys"
       v-model:search-term="searchTerm"
       class="w-full"
       multiple
-      create-item="always"
-      value-key="email"
+      :create-item="canCreateDraft ? { when: 'always', position: 'bottom' } : false"
+      value-key="selectionKey"
       label-key="label"
       description-key="description"
-      by="email"
+      by="selectionKey"
       :items="items"
       :placeholder="placeholder"
       :disabled="disabled"
@@ -255,9 +549,12 @@ onBeforeUnmount(() => {
       :content="{ sideOffset: 6 }"
       :ui="{
         base: 'min-h-11 items-center',
-        content: 'min-w-[min(520px,calc(100vw-32px))]',
+        content: '!max-h-96 min-w-[min(520px,calc(100vw-32px))] bg-default',
         tagsItem: 'max-w-full rounded-full py-0.5 ps-1 pe-1.5',
+        tagsItemDelete: 'size-6 shrink-0 justify-center',
+        tagsItemDeleteIcon: 'size-3.5',
         tagsItemText: 'min-w-0',
+        tagsInput: 'min-w-12 w-12',
       }"
       @create="addRecipients"
       @blur="commitDraft"
@@ -265,11 +562,33 @@ onBeforeUnmount(() => {
       @paste="handlePaste"
     >
       <template #tags-item-text="{ item }">
-        <span class="mail-recipient-input__tag" :class="{ 'is-invalid': !itemIsValid(item) }">
-          <UAvatar size="3xs" :text="itemInitials(item)" alt="" aria-hidden="true" />
-          <span :title="itemEmail(item)">{{ itemLabel(item) }}</span>
+        <span
+          class="mail-recipient-input__tag"
+          :class="{
+            'is-crm': itemSource(item) === 'crm',
+            'is-provider': itemSource(item) === 'provider',
+            'is-invalid': !itemIsValid(item),
+          }"
+        >
+          <UBadge
+            v-if="itemSource(item) === 'crm'"
+            color="success"
+            variant="subtle"
+            size="xs"
+            icon="i-lucide-contact-round"
+            class="mail-recipient-input__crm-mark"
+          >
+            CRM
+          </UBadge>
+          <UAvatar v-else size="3xs" :text="itemInitials(item)" alt="" aria-hidden="true" />
+          <span class="mail-recipient-input__tag-label" :title="itemEmail(item)">{{ itemLabel(item) }}</span>
           <UIcon v-if="!itemIsValid(item)" name="i-lucide-circle-alert" aria-hidden="true" />
         </span>
+      </template>
+
+      <template #tags-item-delete="{ item }">
+        <UIcon name="i-lucide-x" aria-hidden="true" />
+        <span class="sr-only">Usuń {{ itemLabel(item) }}</span>
       </template>
 
       <template #item="{ item }">
@@ -285,15 +604,30 @@ onBeforeUnmount(() => {
             <small>{{ item.email }}</small>
             <small v-if="item.clientLabel">Klient: {{ item.clientLabel }}</small>
           </span>
-          <UBadge v-if="item.source === 'crm'" color="neutral" variant="soft" size="xs">
+          <UBadge
+            v-if="item.source === 'crm'"
+            color="success"
+            variant="subtle"
+            size="xs"
+            icon="i-lucide-contact-round"
+          >
             CRM
+          </UBadge>
+          <UBadge
+            v-else-if="item.source === 'provider'"
+            color="neutral"
+            variant="subtle"
+            size="xs"
+            icon="i-lucide-contact"
+          >
+            Kontakt
           </UBadge>
         </div>
       </template>
 
       <template #create-item-label="{ item }">
-        <span class="mail-recipient-input__create" :class="{ 'is-invalid': !splitMailRecipients(item).every(isValidMailRecipient) }">
-          <UIcon :name="splitMailRecipients(item).every(isValidMailRecipient) ? 'i-lucide-plus' : 'i-lucide-circle-alert'" aria-hidden="true" />
+        <span class="mail-recipient-input__create">
+          <UIcon name="i-lucide-plus" aria-hidden="true" />
           {{ createLabel(item) }}
         </span>
       </template>
@@ -315,7 +649,9 @@ onBeforeUnmount(() => {
                 ? 'Wyszukuję klientów…'
                 : searchError
                   ? 'Nie udało się pobrać podpowiedzi. Wpisz adres ręcznie.'
-                  : 'Brak kontaktu w CRM. Wpisz pełny adres i naciśnij Enter.'
+                  : lookupDisabled
+                    ? 'Brak kontaktu w poczcie. Wpisz pełny adres e-mail.'
+                    : 'Nie znaleziono klienta ani kontaktu. Wpisz pełny adres e-mail.'
             }}
           </span>
         </div>
@@ -346,10 +682,21 @@ onBeforeUnmount(() => {
   gap: 5px;
 }
 
-.mail-recipient-input__tag > span {
+.mail-recipient-input__tag-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mail-recipient-input :deep([data-slot='tagsItem']:has(.mail-recipient-input__tag.is-crm)) {
+  border-color: color-mix(in srgb, var(--ui-success) 34%, transparent);
+  background: color-mix(in srgb, var(--ui-success) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-success) 16%, transparent);
+}
+
+.mail-recipient-input__crm-mark {
+  flex: 0 0 auto;
+  padding-inline: 5px;
 }
 
 .mail-recipient-input__tag > :deep(svg) {
@@ -358,8 +705,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
-.mail-recipient-input__tag.is-invalid,
-.mail-recipient-input__create.is-invalid {
+.mail-recipient-input__tag.is-invalid {
   color: var(--ui-error);
 }
 

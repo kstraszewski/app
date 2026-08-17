@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{
   recipient: string
   contextType: 'client' | 'case'
   contextId: string
+  contextLabel?: string
   subject?: string
   label?: string
 }>(), {
@@ -89,7 +90,7 @@ async function openComposer(): Promise<void> {
 function handleSent(_result: MailSendPayload['data']): void {
   toast.add({
     title: 'Wiadomość została wysłana',
-    description: selectedConnection.value?.accountEmail,
+    description: 'Wątek został przypięty do wybranego kontekstu w CRM.',
     color: 'success',
     icon: 'i-lucide-send',
   })
@@ -142,6 +143,7 @@ function handleSent(_result: MailSendPayload['data']): void {
     :initial-subject="props.subject"
     :context-type="props.contextType"
     :context-id="props.contextId"
+    :context-label="props.contextLabel"
     @sent="handleSent"
   />
 </template>

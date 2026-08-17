@@ -26,6 +26,7 @@ import {
   MAIL_AGENT_REPLY_PROMPT,
   mailAgentReplyParticipantEmails,
 } from '~/utils/mail-agent-reply'
+import type { MailProviderRecipientSuggestion } from '~/utils/mail-recipients'
 
 type MailWorkspaceScopeType = 'mailbox' | 'client' | 'case'
 type MailContextPageTokens = Partial<Record<MailContextFolderId, string>>
@@ -460,6 +461,34 @@ const {
 )
 
 const selectedThread = computed(() => selectedThreadPayload.value?.data ?? null)
+const providerRecipientSuggestions = computed<MailProviderRecipientSuggestion[]>(() => {
+  const accountEmail = (composerConnection.value?.accountEmail || '').trim().toLowerCase()
+  const addresses: MailAddress[] = [
+    ...threadPayload.value.data.flatMap(thread => thread.participants),
+    ...(selectedThread.value?.messages.flatMap(message => [
+      ...(message.from ? [message.from] : []),
+      ...message.replyTo,
+      ...message.to,
+      ...message.cc,
+    ]) || []),
+  ]
+  const suggestions = new Map<string, MailProviderRecipientSuggestion>()
+  for (const address of addresses) {
+    const email = address.email?.trim() || ''
+    const key = email.toLowerCase()
+    if (!email || key === accountEmail) continue
+    const label = address.name.trim() || address.label.trim() || email
+    const existing = suggestions.get(key)
+    if (existing && existing.label !== existing.email) continue
+    suggestions.set(key, {
+      email,
+      label,
+      source: 'provider',
+      providerId: `${composerConnection.value?.id || 'mail'}:${key}`,
+    })
+  }
+  return [...suggestions.values()].slice(0, 100)
+})
 const selectedContextThread = computed(() => {
   if (!contextScopeType.value) return null
   const thread = threadPayload.value.data.find(item => item.id === selectedThreadId.value)
@@ -2053,6 +2082,10 @@ function securityWarningDescription(security: MailMessageSecurity): string {
       :thread-id="composerDraft.threadId"
       :context-type="contextScopeType || undefined"
       :context-id="contextScopeType ? props.scopeId : undefined"
+      :context-label="contextDescriptor?.label"
+      :context-clients="contextDescriptor?.relatedClients"
+      :context-cases="contextDescriptor?.relatedCases"
+      :provider-suggestions="providerRecipientSuggestions"
       @sent="handleMessageSent"
     />
 
@@ -3127,6 +3160,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
     min-height: 44px;
     flex: 0 1 auto;
     justify-content: center;
+    overflow: hidden;
     white-space: nowrap;
   }
 
@@ -3164,6 +3198,23 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   .mail-message__header {
     gap: 10px;
     padding: 12px 14px;
+  }
+}
+
+@container (max-width: 480px) {
+  .mail-detail__action--reply {
+    flex: 1 1 auto !important;
+  }
+
+  .mail-detail__action--agent {
+    width: 44px !important;
+    min-width: 44px !important;
+    flex: 0 0 44px !important;
+    padding-inline: 0 !important;
+  }
+
+  .mail-detail__action--agent :deep([data-slot="label"]) {
+    display: none;
   }
 }
 

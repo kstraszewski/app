@@ -34,7 +34,7 @@ export default defineAppConfig({
       variants: {
         square: {
           true: {
-            base: 'aspect-square px-0',
+            base: 'aspect-square justify-center px-0',
           },
         },
       },

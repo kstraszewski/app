@@ -28,6 +28,7 @@ export async function loadMailThreadPage(
     search?: string
     participantEmails?: string[]
     pageToken?: string
+    maxResults?: number
   },
 ): Promise<MailThreadListPayload> {
   const session = await requireCrmSession(event)
@@ -63,8 +64,10 @@ async function fetchProviderPage(
     search?: string
     participantEmails?: string[]
     pageToken?: string
+    maxResults?: number
   },
 ): Promise<MailThreadListPayload> {
+  const maxResults = Math.min(20, Math.max(1, Math.trunc(input.maxResults ?? 20)))
   if (connection.provider === 'imap') {
     const module = await import('./mail-imap-smtp.ts')
     return module.fetchImapSmtpThreadPage(
@@ -74,7 +77,7 @@ async function fetchProviderPage(
         query: input.search,
         participantEmails: input.participantEmails,
         pageToken: input.pageToken,
-        maxResults: 20,
+        maxResults,
       },
     )
   }
@@ -87,7 +90,7 @@ async function fetchProviderPage(
         ? mailContextSearchQuery('google', input.participantEmails, input.search)
         : input.search,
       pageToken: input.pageToken,
-      maxResults: 20,
+      maxResults,
     })
   }
 
@@ -101,7 +104,7 @@ async function fetchProviderPage(
         ? mailContextSearchQuery('microsoft', input.participantEmails, input.search)
         : input.search,
       cursor: input.pageToken,
-      maxResults: 20,
+      maxResults,
       referenceSecret: connectionReferenceSecret(event, connection),
     },
   )

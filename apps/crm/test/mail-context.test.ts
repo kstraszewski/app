@@ -6,8 +6,129 @@ import {
   mailContextSearchQuery,
   mailContextThreadKeyHash,
   normalizeMailContextEmails,
+  parseMailContextScopes,
+  unrelatedMailContextClientIds,
 } from '../server/utils/mail-context-core.ts'
+import {
+  groupMailComposerContextCases,
+  parseMailComposerContextClientIds,
+} from '../server/utils/mail-composer-context.ts'
 import type { MailThreadSummary } from '../shared/types/mail.ts'
+
+const CASE_ID = '11111111-1111-4111-8111-111111111111'
+const CLIENT_A_ID = '22222222-2222-4222-8222-222222222222'
+const CLIENT_B_ID = '33333333-3333-4333-8333-333333333333'
+
+test('composer context client IDs are normalized, deduplicated and bounded', () => {
+  assert.deepEqual(
+    parseMailComposerContextClientIds([CLIENT_A_ID.toUpperCase(), CLIENT_A_ID, CLIENT_B_ID]),
+    [CLIENT_A_ID, CLIENT_B_ID],
+  )
+  assert.throws(() => parseMailComposerContextClientIds([]), /Nieprawidłowi klienci/u)
+  assert.throws(() => parseMailComposerContextClientIds([CLIENT_A_ID, 'invalid']), /Nieprawidłowi klienci/u)
+  assert.throws(() => parseMailComposerContextClientIds(Array.from(
+    { length: 11 },
+    (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  )), /Nieprawidłowi klienci/u)
+})
+
+test('composer context returns only minimal, deduplicated cases per client', () => {
+  const olderCaseId = '44444444-4444-4444-8444-444444444444'
+  const closedCaseId = '55555555-5555-4555-8555-555555555555'
+  const newestCaseId = '66666666-6666-4666-8666-666666666666'
+  assert.deepEqual(groupMailComposerContextCases(
+    [CLIENT_A_ID, CLIENT_B_ID],
+    [
+      {
+        id: olderCaseId,
+        client_id: CLIENT_A_ID,
+        title: 'Starsza sprawa',
+        closed_at: null,
+        updated_at: '2026-01-01T00:00:00.000Z',
+        ignored_private_field: 'must not leak',
+      },
+    ],
+    [
+      { client_id: CLIENT_A_ID, case_id: newestCaseId },
+      { client_id: CLIENT_A_ID, case_id: newestCaseId },
+      { client_id: CLIENT_B_ID, case_id: closedCaseId },
+    ],
+    [
+      {
+        id: newestCaseId,
+        title: 'Najnowsza sprawa',
+        closed_at: null,
+        updated_at: '2026-02-01T00:00:00.000Z',
+      },
+      {
+        id: closedCaseId,
+        title: 'Zamknięta sprawa',
+        closed_at: '2026-02-02T00:00:00.000Z',
+        updated_at: '2026-02-02T00:00:00.000Z',
+      },
+    ],
+  ), [
+    {
+      clientId: CLIENT_A_ID,
+      cases: [
+        { id: newestCaseId, label: 'Najnowsza sprawa', closedAt: null },
+        { id: olderCaseId, label: 'Starsza sprawa', closedAt: null },
+      ],
+    },
+    {
+      clientId: CLIENT_B_ID,
+      cases: [{
+        id: closedCaseId,
+        label: 'Zamknięta sprawa',
+        closedAt: '2026-02-02T00:00:00.000Z',
+      }],
+    },
+  ])
+})
+
+test('send contexts are deduplicated, normalized and canonically ordered', () => {
+  assert.deepEqual(parseMailContextScopes([
+    { type: 'client', id: CLIENT_B_ID.toUpperCase() },
+    { type: 'case', id: CASE_ID },
+    { type: 'client', id: CLIENT_A_ID },
+    { type: 'client', id: CLIENT_B_ID },
+  ]), [
+    { type: 'case', id: CASE_ID },
+    { type: 'client', id: CLIENT_A_ID },
+    { type: 'client', id: CLIENT_B_ID },
+  ])
+})
+
+test('send contexts allow at most one case and ten unique clients', () => {
+  assert.throws(() => parseMailContextScopes([
+    { type: 'case', id: CASE_ID },
+    { type: 'case', id: '44444444-4444-4444-8444-444444444444' },
+  ]), /Nieprawidłowy kontekst poczty/u)
+
+  assert.throws(() => parseMailContextScopes(Array.from({ length: 11 }, (_, index) => ({
+    type: 'client',
+    id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  }))), /Nieprawidłowy kontekst poczty/u)
+})
+
+test('case/client relationship accepts join-table links and the legacy primary fallback', () => {
+  const scopes = parseMailContextScopes([
+    { type: 'case', id: CASE_ID },
+    { type: 'client', id: CLIENT_A_ID },
+    { type: 'client', id: CLIENT_B_ID },
+  ])
+  assert.deepEqual(unrelatedMailContextClientIds(scopes, {
+    linkedClientIds: [CLIENT_A_ID],
+    fallbackClientId: CLIENT_B_ID,
+  }), [])
+  assert.deepEqual(unrelatedMailContextClientIds(scopes, {
+    linkedClientIds: [CLIENT_A_ID],
+  }), [CLIENT_B_ID])
+  assert.deepEqual(unrelatedMailContextClientIds(
+    scopes.filter(scope => scope.type === 'client'),
+    { linkedClientIds: [] },
+  ), [])
+})
 
 test('context emails preserve primary-first order, deduplicate and bound output', () => {
   const result = normalizeMailContextEmails([

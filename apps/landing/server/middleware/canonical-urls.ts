@@ -5,6 +5,7 @@ const CANONICAL_REDIRECTS = new Map([
   ['/placowki/', '/placowki'],
   ['/placówki/', '/placowki'],
   ['/personalizacja/', '/personalizacja'],
+  ['/poczta-dla-ekseprta/', '/poczta-dla-ekseprta'],
   ['/o-nas/', '/o-nas'],
 ])
 

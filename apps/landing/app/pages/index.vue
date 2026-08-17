@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { siteOrigin } = useLandingSeo({
   title: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
-  description: 'OpenExpert dla pośredników kredytowych: CRM w Twojej marce, OpenExpert Mail z gwarancją 99,99% dostępności, rozliczenia i agenci AI.',
+  description: 'OpenExpert dla pośredników kredytowych: CRM w Twojej marce, poczta zintegrowana z klientami i sprawami, rozliczenia oraz agenci AI.',
   path: '/',
   socialImageAlt: 'OpenExpert — platforma do budowy własnego pośrednictwa kredytowego',
 })

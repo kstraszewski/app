@@ -1,24 +1,48 @@
 <script setup lang="ts">
+withDefaults(defineProps<{
+  showProductLink?: boolean
+}>(), {
+  showProductLink: true,
+})
+
 const mailFeatures = [
   {
-    icon: 'lucide:mail',
-    title: 'Gmail, Microsoft i inne skrzynki',
-    description: 'Podłącz Gmail, Outlook lub Microsoft 365, a także inną skrzynkę przez szyfrowane IMAP i SMTP.',
-  },
-  {
-    icon: 'lucide:message-square',
-    title: 'Pełna obsługa bez opuszczania CRM',
-    description: 'Czytaj, wyszukuj, pisz i odpowiadaj bez przełączania kart i narzędzi.',
+    icon: 'lucide:user-round',
+    title: 'Cała korespondencja w widoku klienta',
+    description: 'Wiadomości z klientem masz przy jego karcie — razem z danymi, dokumentami i historią współpracy.',
   },
   {
     icon: 'lucide:link-2',
-    title: 'Bankowy e-mail od razu przy sprawie',
-    description: 'OpenExpert rozpoznaje klienta i sprawę, a decyzję lub formularz informacyjny dodasz bez ręcznego pobierania załączników.',
+    title: 'Maile powiązane z właściwą sprawą',
+    description: 'OpenExpert pokazuje pasujące wiadomości w widoku sprawy, a ważne wątki możesz z nią trwale powiązać.',
+  },
+  {
+    icon: 'lucide:sparkles',
+    title: 'Propozycje odpowiedzi od agenta AI',
+    description: 'Agent analizuje wiadomość i kontekst sprawy, a potem przygotowuje szkic, który sprawdzasz przed wysłaniem.',
+  },
+  {
+    icon: 'lucide:mail-check',
+    title: 'Twoja skrzynka, bez zmiany adresu',
+    description: 'Podłącz Gmail, Outlook, Microsoft 365 lub inną skrzynkę przez szyfrowane IMAP i SMTP.',
+  },
+]
+
+const mailAssurances = [
+  {
+    icon: 'lucide:gauge',
+    title: '99,99% dostępności*',
+    description: 'Gwarancja dla usługi OpenExpert Mail',
+  },
+  {
+    icon: 'lucide:lock-keyhole',
+    title: 'Prywatny, szyfrowany dostęp',
+    description: 'Skrzynka jest widoczna tylko dla jej właściciela',
   },
   {
     icon: 'lucide:shield-check',
-    title: 'Bezpieczny podgląd bez śledzenia',
-    description: 'Piksele śledzące i aktywny kod nie uruchamiają się podczas czytania wiadomości.',
+    title: 'Bezpieczny podgląd',
+    description: 'Bez uruchamiania pikseli śledzących i aktywnego kodu',
   },
 ]
 
@@ -53,47 +77,23 @@ const previewThreads = [
       <header class="mail-heading">
         <div class="mail-heading__copy">
           <p class="mail-label">OpenExpert Mail</p>
-          <h2 id="mail-title">
-            Poczta ma po prostu działać.
-            <em>Zawsze, kiedy jej potrzebujesz.</em>
+          <h2 id="mail-title" aria-label="Poczta e-mail zintegrowana z CRM.">
+            <span aria-hidden="true">Poczta e-mail.</span>{{ ' ' }}
+            <em aria-hidden="true">Zintegrowana z CRM.</em>
           </h2>
-          <p class="mail-lead">Czytaj, wyszukuj, wysyłaj i odpowiadaj bez wychodzenia z OpenExpert. Z poziomu klienta lub sprawy znajdziesz pasujące wątki, przypniesz je do kontekstu i odpiszesz bez przełączania narzędzi.</p>
         </div>
 
-        <aside class="availability-card" aria-labelledby="availability-title">
-          <div class="availability-card__topline">
-            <span class="availability-status"><i aria-hidden="true" /> Niezawodność i bezpieczeństwo</span>
-            <Icon name="lucide:shield-check" aria-hidden="true" />
-          </div>
-
-          <p class="availability-number" aria-label="99,99 procent dostępności">
-            <strong>99,99</strong><span>%</span>
+        <div class="mail-heading__intro">
+          <p class="mail-lead">Całą korespondencję masz tam, gdzie pracujesz: w widoku klienta i sprawy. Widzisz pełny kontekst, a agent AI przygotowuje propozycje odpowiedzi — bez przełączania się między CRM-em a skrzynką.</p>
+          <p class="mail-heading__note">
+            <Icon name="lucide:inbox" aria-hidden="true" />
+            <span>Czytaj, wyszukuj, pisz i odpowiadaj bez opuszczania OpenExpert.</span>
           </p>
-          <h3 id="availability-title">gwarantowanej dostępności OpenExpert Mail</h3>
-          <p class="availability-explanation">W prostych słowach: możesz liczyć na pocztę przez całą dobę — także wtedy, gdy klient, bank lub partner czeka na odpowiedź.</p>
-
-          <div class="availability-facts" role="list" aria-label="Ochrona poczty w OpenExpert Mail">
-            <span role="listitem">
-              <Icon name="lucide:user-round-check" aria-hidden="true" />
-              <span class="availability-fact__copy">
-                <strong>Prywatny dostęp</strong>
-                <small>Każda skrzynka jest dostępna tylko dla jej właściciela.</small>
-              </span>
-            </span>
-            <span role="listitem">
-              <Icon name="lucide:lock-keyhole" aria-hidden="true" />
-              <span class="availability-fact__copy">
-                <strong>Szyfrowane dane</strong>
-                <small>Dane dostępowe do poczty są chronione szyfrowaniem.</small>
-              </span>
-            </span>
-          </div>
-
-          <p class="availability-assurance">
-            <Icon name="lucide:shield-check" aria-hidden="true" />
-            <span>Wiadomości pozostają w Twojej skrzynce — ich treść nie jest zapisywana w CRM.</span>
-          </p>
-        </aside>
+          <NuxtLink v-if="showProductLink" to="/poczta-dla-ekseprta" class="mail-product-link">
+            Poznaj OpenExpert Mail
+            <Icon name="lucide:arrow-right" aria-hidden="true" />
+          </NuxtLink>
+        </div>
       </header>
 
       <div class="mail-showcase">
@@ -142,8 +142,8 @@ const previewThreads = [
             <div class="mail-detail">
               <div class="mail-detail__context">
                 <span>
-                  <Icon name="lucide:circle-check" aria-hidden="true" />
-                  Powiązano automatycznie
+                  <Icon name="lucide:link-2" aria-hidden="true" />
+                  Sugerowane powiązanie
                 </span>
                 <strong>Anna Kowalska · Sprawa OE-142</strong>
               </div>
@@ -175,6 +175,17 @@ const previewThreads = [
                   <p>Z poważaniem<br>PKO Bank Polski</p>
                 </div>
 
+                <div class="mail-ai-suggestion">
+                  <span class="mail-ai-suggestion__icon">
+                    <Icon name="lucide:sparkles" aria-hidden="true" />
+                  </span>
+                  <span class="mail-ai-suggestion__copy">
+                    <strong>Agent AI przygotował propozycję odpowiedzi</strong>
+                    <small>Na podstawie tej wiadomości oraz kontekstu sprawy OE-142.</small>
+                  </span>
+                  <span class="mail-ai-suggestion__action">Przejrzyj szkic</span>
+                </div>
+
                 <footer class="mail-message__footer">
                   <span class="mail-attachment">
                     <Icon name="lucide:file-text" aria-hidden="true" />
@@ -182,7 +193,8 @@ const previewThreads = [
                   </span>
                   <span class="mail-reply mail-reply--primary">
                     <Icon name="lucide:file-check-2" aria-hidden="true" />
-                    Dodaj decyzję do sprawy i wyślij do klienta
+                    Dodaj decyzję do sprawy
+                    <Icon name="lucide:arrow-right" aria-hidden="true" />
                   </span>
                 </footer>
               </div>
@@ -201,6 +213,16 @@ const previewThreads = [
           </li>
         </ol>
       </div>
+
+      <ul class="mail-assurances" aria-label="Niezawodność i bezpieczeństwo OpenExpert Mail">
+        <li v-for="assurance in mailAssurances" :key="assurance.title">
+          <Icon :name="assurance.icon" aria-hidden="true" />
+          <span>
+            <strong>{{ assurance.title }}</strong>
+            <small>{{ assurance.description }}</small>
+          </span>
+        </li>
+      </ul>
 
       <p class="mail-guarantee-note"><span aria-hidden="true">*</span> Gwarancja 99,99% dotyczy dostępności usługi OpenExpert Mail. Wysyłanie i odbieranie wiadomości zależy także od działania podłączonego dostawcy poczty, takiego jak Google, Microsoft lub serwer IMAP/SMTP, oraz połączenia internetowego.</p>
     </div>
@@ -224,14 +246,14 @@ const previewThreads = [
 
 .mail-heading {
   display: grid;
-  grid-template-columns: minmax(0, 0.88fr) minmax(520px, 1.12fr);
-  align-items: stretch;
-  gap: clamp(56px, 7vw, 112px);
-  margin-bottom: 52px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(390px, 0.7fr);
+  align-items: end;
+  gap: clamp(48px, 7vw, 108px);
+  margin-bottom: 38px;
 }
 
 .mail-heading__copy {
-  align-self: center;
+  min-width: 0;
 }
 
 .mail-label {
@@ -245,12 +267,12 @@ const previewThreads = [
 }
 
 .mail-heading h2 {
-  max-width: 720px;
-  font-size: clamp(44px, 4.2vw, 62px);
-  font-variation-settings: 'opsz' 58, 'wght' 300;
+  max-width: 880px;
+  font-size: clamp(58px, 6.5vw, 92px);
+  font-variation-settings: 'opsz' 82, 'wght' 280;
   font-weight: 300;
-  letter-spacing: -0.047em;
-  line-height: 1.03;
+  letter-spacing: -0.055em;
+  line-height: 0.96;
 }
 
 .mail-heading h2 em {
@@ -262,166 +284,127 @@ const previewThreads = [
   font-weight: 340;
 }
 
-.mail-lead {
-  max-width: 610px;
-  margin-top: 25px;
-  color: #aaa;
-  font-size: 16px;
-  line-height: 1.65;
-}
-
-.availability-card {
-  min-width: 0;
-  border: 1px solid #5a8f76;
-  border-radius: 6px;
-  background: #e9f3ed;
-  color: #0b2117;
-  padding: clamp(28px, 3vw, 42px);
-}
-
-.availability-card__topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 35px;
-}
-
-.availability-card__topline > :deep(svg) {
-  width: 30px;
-  height: 30px;
-  color: #247653;
-  stroke-width: 1.4;
-}
-
-.availability-status {
-  display: inline-flex;
-  min-height: 31px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #9cc8af;
-  border-radius: 999px;
-  padding: 5px 11px;
-  color: #245b43;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  line-height: 1.3;
-  text-transform: uppercase;
-}
-
-.availability-status i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #27885f;
-  box-shadow: 0 0 0 4px rgba(39, 136, 95, 0.12);
-}
-
-.availability-number {
-  display: flex;
-  align-items: flex-start;
-  white-space: nowrap;
-}
-
-.availability-number strong {
-  font-size: clamp(78px, 8vw, 124px);
-  font-variation-settings: 'opsz' 110, 'wght' 260;
-  font-weight: 260;
-  letter-spacing: -0.078em;
-  line-height: 0.75;
-}
-
-.availability-number span {
-  margin: 1px 0 0 10px;
-  color: #247653;
-  font-size: clamp(25px, 2.8vw, 40px);
-  font-weight: 400;
-  line-height: 1;
-}
-
-.availability-card h3 {
-  margin-top: 22px;
-  font-size: clamp(19px, 1.7vw, 24px);
-  font-weight: 500;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-}
-
-.availability-explanation {
-  max-width: 580px;
-  margin-top: 12px;
-  color: #385d4b;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.availability-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin-top: 27px;
-  background: #a9c9b8;
-}
-
-.availability-facts > span {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: start;
-  gap: 11px;
-  background: #f4f8f5;
-  padding: 16px 17px;
-}
-
-.availability-facts > span > :deep(svg) {
-  width: 22px;
-  height: 22px;
-  color: #247653;
-  stroke-width: 1.55;
-}
-
-.availability-fact__copy {
+.mail-heading__intro {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 24px;
+  padding-bottom: 5px;
 }
 
-.availability-facts strong {
-  color: #154b34;
+.mail-lead {
+  color: #b2b2b2;
   font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.2;
+  line-height: 1.68;
 }
 
-.availability-facts small {
-  color: #547061;
-  font-size: 10.5px;
-  line-height: 1.45;
-}
-
-.availability-assurance {
+.mail-heading__note {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  margin-top: 10px;
-  border: 1px solid #b7d2c3;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #2f5542;
   border-radius: 4px;
-  background: #e1eee6;
-  color: #385d4b;
-  padding: 10px 13px;
-  font-size: 10.5px;
-  line-height: 1.45;
+  background: #0d1b14;
+  color: #b9dcca;
+  padding: 12px 14px;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
-.availability-assurance > :deep(svg) {
+.mail-heading__note > :deep(svg) {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: #8fd8b8;
+  stroke-width: 1.5;
+}
+
+.mail-product-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  border: 1px solid #d8f4e6;
+  border-radius: 4px;
+  background: #b9e8d1;
+  box-shadow: 0 5px 18px rgb(143 216 184 / 14%);
+  color: #10231a;
+  padding: 11px 17px;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.mail-product-link:hover {
+  border-color: #effff7;
+  background: #cef2df;
+  transform: translateY(-1px);
+}
+
+.mail-product-link:focus-visible {
+  outline-color: #b9e8d1;
+  outline-offset: 4px;
+}
+
+.mail-product-link :deep(svg) {
   width: 16px;
   height: 16px;
-  flex: 0 0 auto;
-  color: #247653;
-  stroke-width: 1.6;
+  stroke-width: 1.7;
+}
+
+.mail-assurances {
+  display: grid;
+  overflow: hidden;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 20px;
+  border: 1px solid #343434;
+  border-radius: 6px;
+  background: #343434;
+  list-style: none;
+}
+
+.mail-assurances li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 31px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  background: #0d0d0d;
+  padding: 18px 21px;
+}
+
+.mail-assurances li > :deep(svg) {
+  width: 24px;
+  height: 24px;
+  color: #8fd8b8;
+  stroke-width: 1.4;
+}
+
+.mail-assurances li > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mail-assurances strong {
+  color: #e8e8e8;
+  font-size: 13px;
+  font-weight: 580;
+  line-height: 1.3;
+}
+
+.mail-assurances small {
+  color: #858585;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .mail-showcase {
@@ -792,6 +775,67 @@ const previewThreads = [
   margin-top: 13px;
 }
 
+.mail-ai-suggestion {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border-top: 1px solid #294437;
+  background: #0d1812;
+  padding: 12px 15px;
+}
+
+.mail-ai-suggestion__icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #3a694f;
+  border-radius: 50%;
+  background: #152a1f;
+  color: #a3e2c3;
+}
+
+.mail-ai-suggestion__icon :deep(svg) {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.6;
+}
+
+.mail-ai-suggestion__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mail-ai-suggestion__copy strong {
+  overflow: hidden;
+  color: #dcebe2;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-ai-suggestion__copy small {
+  overflow: hidden;
+  color: #779487;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-ai-suggestion__action {
+  flex: 0 0 auto;
+  border: 1px solid #416e58;
+  border-radius: 3px;
+  color: #b9e8d1;
+  padding: 6px 8px;
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
 .mail-message__footer {
   display: flex;
   align-items: center;
@@ -827,11 +871,16 @@ const previewThreads = [
 
 .mail-reply--primary {
   max-width: 260px;
-  min-height: 34px;
+  min-height: 38px;
   justify-content: center;
-  border-color: #74ad91;
-  background: #dcebe2;
+  border-color: #d8f4e6;
+  background: #b9e8d1;
+  box-shadow:
+    inset 0 -2px 0 rgb(16 35 26 / 16%),
+    0 5px 14px rgb(0 0 0 / 28%);
   color: #10231a;
+  padding: 9px 12px;
+  font-size: 9px;
   font-weight: 650;
   line-height: 1.3;
   text-align: center;
@@ -926,12 +975,8 @@ const previewThreads = [
     max-width: 690px;
   }
 
-  .availability-card {
-    max-width: 760px;
-  }
-
-  .availability-number strong {
-    font-size: clamp(90px, 15vw, 116px);
+  .mail-heading__intro {
+    max-width: 650px;
   }
 
   .mail-showcase {
@@ -970,55 +1015,26 @@ const previewThreads = [
     font-size: clamp(37px, 11.5vw, 50px);
   }
 
+  .mail-heading__intro {
+    gap: 18px;
+    padding-bottom: 0;
+  }
+
+  .mail-product-link {
+    width: 100%;
+  }
+
   .mail-lead {
-    margin-top: 20px;
     font-size: 15px;
     line-height: 1.62;
   }
 
-  .availability-card {
-    padding: 25px 20px 20px;
-  }
-
-  .availability-card__topline {
-    margin-bottom: 29px;
-  }
-
-  .availability-card__topline > :deep(svg) {
-    display: none;
-  }
-
-  .availability-status {
-    min-height: 28px;
-    padding: 4px 9px;
-    font-size: 8px;
-  }
-
-  .availability-number strong {
-    font-size: clamp(69px, 22vw, 94px);
-  }
-
-  .availability-number span {
-    margin-left: 6px;
-    font-size: 25px;
-  }
-
-  .availability-card h3 {
-    margin-top: 19px;
-    font-size: 19px;
-  }
-
-  .availability-explanation {
-    font-size: 13px;
-  }
-
-  .availability-facts {
+  .mail-assurances {
     grid-template-columns: 1fr;
-    margin-top: 22px;
   }
 
-  .availability-facts > span {
-    padding: 14px 15px;
+  .mail-assurances li {
+    padding: 15px 17px;
   }
 
   .mail-preview__bar {
@@ -1093,6 +1109,23 @@ const previewThreads = [
     font-size: 11px;
   }
 
+  .mail-ai-suggestion {
+    grid-template-columns: 30px minmax(0, 1fr);
+    padding: 12px 13px;
+  }
+
+  .mail-ai-suggestion__copy strong,
+  .mail-ai-suggestion__copy small {
+    white-space: normal;
+  }
+
+  .mail-ai-suggestion__action {
+    min-height: 36px;
+    grid-column: 1 / -1;
+    padding: 10px 12px;
+    text-align: center;
+  }
+
   .mail-message__footer {
     align-items: stretch;
     flex-direction: column;
@@ -1135,18 +1168,10 @@ const previewThreads = [
     width: calc(100% - 32px);
   }
 
-  .availability-card {
-    padding-right: 16px;
-    padding-left: 16px;
-  }
-
-  .availability-number strong {
-    font-size: 64px;
-  }
-
-  .availability-number span {
-    margin-top: 0;
-    font-size: 22px;
+  .mail-heading__note {
+    align-items: flex-start;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .mail-preview__connected {

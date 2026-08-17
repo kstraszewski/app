@@ -131,6 +131,7 @@ const clientTabs = computed(() => [
   {
     label: 'Poczta e-mail',
     icon: 'i-lucide-mail',
+    compact: true,
     to: viewLocation('mail'),
   },
   {
@@ -1048,6 +1049,7 @@ const headerMenuItems = computed(() => [
           :recipient="data.data.primary_email"
           context-type="client"
           :context-id="data.data.id"
+          :context-label="data.data.display_name"
         />
         <UButton
           color="neutral"

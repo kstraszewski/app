@@ -192,6 +192,22 @@ test('creates deterministic content hashes and Message-ID values for idempotency
     ...input,
     context: { type: 'client', id: '7dce3174-3c4a-4468-b599-6160ba65a699' },
   }))
+  const multiContextHash = gmailSendRequestHash({
+    ...input,
+    contexts: [
+      { type: 'client', id: '7dce3174-3c4a-4468-b599-6160ba65a699' },
+      { type: 'case', id: '11111111-1111-4111-8111-111111111111' },
+    ],
+  })
+  assert.equal(multiContextHash, gmailSendRequestHash({
+    ...input,
+    contexts: [
+      { type: 'client', id: '7DCE3174-3C4A-4468-B599-6160BA65A699' },
+      { type: 'case', id: '11111111-1111-4111-8111-111111111111' },
+      { type: 'client', id: '7dce3174-3c4a-4468-b599-6160ba65a699' },
+    ],
+  }))
+  assert.notEqual(first, multiContextHash)
   assert.equal(
     gmailSendMessageId('58f147b8-62c1-4c0b-81a8-e0d2bafed903'),
     '<58f147b8-62c1-4c0b-81a8-e0d2bafed903@mail.openexpert.app>',

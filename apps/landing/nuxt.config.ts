@@ -259,6 +259,9 @@ export default defineNuxtConfig({
     '/personalizacja': {
       prerender: true,
     },
+    '/poczta-dla-ekseprta': {
+      prerender: true,
+    },
     '/o-nas': {
       prerender: true,
     },

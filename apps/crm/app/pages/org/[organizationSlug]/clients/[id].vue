@@ -1014,8 +1014,6 @@ const headerMenuItems = computed(() => [
   <CrmShell
     :title="data.data.display_name || 'Klient'"
     :workspace="currentView === 'mail'"
-    eyebrow="Klient · karta CRM"
-    description="Relacja, sprawy, zgody, wizyty i pełna historia obsługi w jednym miejscu."
     :back-to="orgPath('/clients')"
     back-label="Wróć do klientów"
     :tabs="pending && !data.data.id ? [] : clientTabs"

@@ -40,14 +40,16 @@ import {
 import type { PortalAppointment, PortalPayload } from '~/types/portal'
 import {
   buildMeetingPreparationSummary,
+  completedMeetingPreparationChecklistItemIds,
   createMeetingPreparationState,
   meetingPreparationProgress,
   parseMeetingPreparationState,
   profileIsReady,
 } from '~/utils/meeting-preparation'
-import type {
-  PortalMeetingPreparation,
-  SaveMeetingPreparationBody,
+import {
+  inferredMeetingPreparationChecklistItemIds,
+  type PortalMeetingPreparation,
+  type SaveMeetingPreparationBody,
 } from '#shared/types/meeting-preparation'
 
 const props = withDefaults(defineProps<{
@@ -137,9 +139,15 @@ const dashboardTo = computed(() => props.preview ? '/preview?scenario=first-meet
 const progress = computed(() => meetingPreparationProgress(state))
 const profileReady = computed(() => profileIsReady(state.profile))
 const checklistItems = computed(() => visibleChecklistItems(state.profile))
+const inferredChecklistIds = computed(() => new Set(
+  inferredMeetingPreparationChecklistItemIds(state.profile),
+))
+const completedChecklistIds = computed(() => new Set(
+  completedMeetingPreparationChecklistItemIds(state),
+))
 const checkedVisibleCount = computed(() => {
   const visibleIds = new Set(checklistItems.value.map(item => item.id))
-  return state.checkedItemIds.filter(id => visibleIds.has(id)).length
+  return [...completedChecklistIds.value].filter(id => visibleIds.has(id)).length
 })
 const selectedQuestions = computed(() => expertQuestions.filter(question => (
   state.selectedQuestionIds.includes(question.id)
@@ -371,6 +379,7 @@ function markConceptRead(id: string, event: Event) {
 }
 
 function toggleChecklistItem(id: string) {
+  if (inferredChecklistIds.value.has(id)) return
   const index = state.checkedItemIds.indexOf(id)
   if (index >= 0) state.checkedItemIds.splice(index, 1)
   else state.checkedItemIds.push(id)
@@ -899,7 +908,7 @@ async function completePreparation() {
                 <span>10</span>
                 <div>
                   <h3>Ile wynoszą Twoje miesięczne zobowiązania?</h3>
-                  <p>Uwzględnij raty, limity kart i inne stałe zobowiązania kredytowe.</p>
+                  <p>Uwzględnij raty, limity kart i kont, poręczenia oraz inne stałe zobowiązania kredytowe.</p>
                 </div>
               </div>
               <div class="preparation-options preparation-options--two">
@@ -1017,6 +1026,10 @@ async function completePreparation() {
               <div class="preparation-progress preparation-progress--light" role="progressbar" :aria-valuenow="checkedVisibleCount" aria-valuemin="0" :aria-valuemax="checklistItems.length">
                 <span :style="{ width: `${Math.round((checkedVisibleCount / Math.max(1, checklistItems.length)) * 100)}%` }" />
               </div>
+              <p v-if="inferredChecklistIds.size" class="preparation-checklist-source">
+                <UIcon name="i-lucide-sparkles" />
+                {{ inferredChecklistIds.size }} {{ inferredChecklistIds.size === 1 ? 'temat uzupełniliśmy' : 'tematy uzupełniliśmy' }} z odpowiedzi w kroku „Punkt startu”.
+              </p>
             </div>
 
             <div class="preparation-checklist">
@@ -1028,13 +1041,21 @@ async function completePreparation() {
                     :key="item.id"
                     type="button"
                     role="checkbox"
-                    :aria-checked="state.checkedItemIds.includes(item.id)"
-                    :class="{ 'is-checked': state.checkedItemIds.includes(item.id) }"
+                    :aria-checked="completedChecklistIds.has(item.id)"
+                    :aria-disabled="inferredChecklistIds.has(item.id)"
+                    :disabled="inferredChecklistIds.has(item.id)"
+                    :class="{
+                      'is-checked': completedChecklistIds.has(item.id),
+                      'is-inferred': inferredChecklistIds.has(item.id),
+                    }"
                     @click="toggleChecklistItem(item.id)"
                   >
-                    <UIcon :name="state.checkedItemIds.includes(item.id) ? 'i-lucide-square-check-big' : 'i-lucide-square'" />
+                    <UIcon :name="completedChecklistIds.has(item.id) ? 'i-lucide-square-check-big' : 'i-lucide-square'" />
                     <span>
-                      <strong>{{ item.label }}</strong>
+                      <span class="preparation-checklist__label">
+                        <strong>{{ item.label }}</strong>
+                        <em v-if="inferredChecklistIds.has(item.id)">Z ODPOWIEDZI</em>
+                      </span>
                       <small>{{ item.description }}</small>
                     </span>
                   </button>
@@ -1693,6 +1714,8 @@ async function completePreparation() {
 
 .preparation-checklist-progress { margin: 22px 0 27px; }
 .preparation-checklist-progress > span { display: block; margin-bottom: 7px; color: var(--ui-text-muted); font-size: 11px; }
+.preparation-checklist-source { display: flex; align-items: center; gap: 6px; margin: 9px 0 0; color: var(--ui-text-muted); font-size: 9px; }
+.preparation-checklist-source svg { flex: 0 0 auto; width: 12px; height: 12px; }
 .preparation-progress--light { height: 6px; background: var(--ui-bg-elevated); }
 .preparation-progress--light > span { background: var(--ui-bg-inverted); }
 
@@ -1702,11 +1725,15 @@ async function completePreparation() {
 .preparation-checklist button, .preparation-questions button { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 11px; width: 100%; padding: 14px; border: 1px solid var(--ui-border); border-radius: 13px; background: var(--ui-bg); color: var(--ui-text); text-align: left; cursor: pointer; }
 .preparation-checklist button:hover, .preparation-questions button:hover { border-color: var(--ui-border-accented); background: var(--ui-bg-muted); }
 .preparation-checklist button.is-checked, .preparation-questions button.is-selected { border-color: #000; background: var(--ui-bg-muted); }
+.preparation-checklist button.is-inferred { cursor: default; opacity: 1; }
+.preparation-checklist button.is-inferred:hover { border-color: #000; background: var(--ui-bg-muted); }
 .preparation-checklist button > svg, .preparation-questions button > svg { width: 20px; height: 20px; margin-top: 1px; }
 .preparation-checklist button.is-checked > svg, .preparation-questions button.is-selected > svg { color: var(--ui-text-highlighted); }
 .preparation-checklist button strong, .preparation-checklist button small, .preparation-questions button strong, .preparation-questions button small { display: block; }
 .preparation-checklist button strong, .preparation-questions button strong { color: var(--ui-text-highlighted); font-size: 12px; font-weight: 650; line-height: 1.4; }
 .preparation-checklist button small, .preparation-questions button small { margin-top: 3px; color: var(--ui-text-muted); font-size: 10px; line-height: 1.45; }
+.preparation-checklist__label { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.preparation-checklist__label em { flex: 0 0 auto; padding: 3px 6px; border-radius: 999px; background: var(--ui-bg-inverted); color: var(--ui-text-inverted); font-size: 7px; font-style: normal; font-weight: 700; letter-spacing: 0.07em; line-height: 1.2; }
 
 .preparation-card__header--questions { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; max-width: none; }
 .preparation-card__header--questions > div:first-child { max-width: 680px; }

@@ -119,6 +119,25 @@ function documentTimeline(document: Row): SafeTimelineItem {
   }
 }
 
+function publicPortalDocument(document: Row) {
+  const missing = String(document.status_code) === 'missing'
+  const verified = !missing && Boolean(document.verified_at)
+  return {
+    id: String(document.id),
+    name: String(document.name),
+    documentType: String(document.document_type),
+    status: missing
+      ? 'missing' as const
+      : verified
+        ? 'verified' as const
+        : 'received' as const,
+    receivedAt: document.received_at ? String(document.received_at) : null,
+    verifiedAt: document.verified_at ? String(document.verified_at) : null,
+    updatedAt: String(document.updated_at),
+    canDownload: !missing && Boolean(document.uploaded_by_client_person_id),
+  }
+}
+
 async function loadPagedPortalRows(
   fetchPage: (from: number, to: number) => any,
   errorContext: string,
@@ -619,6 +638,7 @@ export async function loadPortalCases(
         total: caseDocuments.length,
         uploaded: uploadedDocuments.length,
         pending: missingDocuments.length,
+        items: caseDocuments.map(publicPortalDocument),
       },
       multiform: {
         enabled: grant.multiformEnabled,

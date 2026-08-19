@@ -140,3 +140,18 @@ export function safePortalFileName(
   if (!candidate || candidate === '.' || candidate === '..') return fallback
   return candidate.slice(0, 180)
 }
+
+export function portalDocumentContentDisposition(
+  fileName: string,
+  disposition: 'inline' | 'attachment',
+): string {
+  const safeName = safePortalFileName(fileName, 'dokument')
+  const asciiName = safeName
+    .replace(/[^\x20-\x7e]/gu, '_')
+    .replace(/["\\]/gu, '_')
+  const encodedName = encodeURIComponent(safeName).replace(
+    /['()*]/gu,
+    character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+  return `${disposition}; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+}

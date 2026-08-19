@@ -25,6 +25,17 @@ export interface PortalCaseStep {
   status: PortalProgressStatus
 }
 
+export interface PortalCaseDocument {
+  id: string
+  name: string
+  documentType: string
+  status: 'missing' | 'received' | 'verified'
+  receivedAt?: string | null
+  verifiedAt?: string | null
+  updatedAt: string
+  canDownload: boolean
+}
+
 export interface PortalCaseAction {
   kind: 'upload_document' | 'complete_multiform' | 'wait'
   title: string
@@ -85,6 +96,7 @@ export interface PortalCase {
     total: number
     uploaded: number
     pending: number
+    items?: PortalCaseDocument[]
   } | null
   action?: PortalCaseAction | null
   timeline?: PortalTimelineItem[]

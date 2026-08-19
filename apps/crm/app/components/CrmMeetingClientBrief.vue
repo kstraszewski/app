@@ -181,6 +181,28 @@ const displayedFacts = computed(() => props.compact ? compactFacts.value : fullF
 const answeredCount = computed(() => fullFacts.value.filter(item => !item.missing).length)
 const totalAnswers = 11
 const progress = computed(() => Math.round(answeredCount.value / totalAnswers * 100))
+const completedChecklistItemCount = computed(() => {
+  const value = profile.value
+  const completedIds = new Set(props.preparation?.answers.checkedItemIds ?? [])
+  if (!value) return completedIds.size
+
+  if (
+    value.goal
+    && value.stage
+    && value.propertyBudget
+    && value.propertyBudget !== 'unknown'
+  ) completedIds.add('goal-budget')
+  if (
+    value.comfortablePayment
+    && value.comfortablePayment !== 'unknown'
+  ) completedIds.add('comfortable-payment')
+  if (
+    value.monthlyObligations
+    && value.monthlyObligations !== 'prefer_meeting'
+  ) completedIds.add('liabilities')
+
+  return completedIds.size
+})
 const updateLabel = computed(() => {
   if (!props.preparation?.updatedAt) return ''
   return new Intl.DateTimeFormat('pl-PL', {
@@ -258,7 +280,7 @@ const updateLabel = computed(() => {
         <span><UIcon name="i-lucide-refresh-cw" /> Zapisano {{ updateLabel }}</span>
         <span v-if="!compact">
           {{ preparation.answers.readConceptIds.length }} przeczytanych materiałów ·
-          {{ preparation.answers.checkedItemIds.length }} elementów checklisty ·
+          {{ completedChecklistItemCount }} elementów checklisty ·
           {{ preparation.answers.selectedQuestionIds.length }} pytań na rozmowę
         </span>
       </footer>

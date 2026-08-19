@@ -54,6 +54,7 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
     messaging: {
       ablyApiKey: process.env.NUXT_ABLY_API_KEY || '',
     },

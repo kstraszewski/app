@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   buildMeetingPreparationSummary,
+  completedMeetingPreparationChecklistItemIds,
   createMeetingPreparationState,
   meetingPreparationProgress,
   parseMeetingPreparationState,
   profileIsReady,
 } from '../app/utils/meeting-preparation.ts'
+import { inferredMeetingPreparationChecklistItemIds } from '../shared/types/meeting-preparation.ts'
 
 function completedProfile() {
   return {
@@ -75,5 +77,40 @@ describe('meeting preparation answers', () => {
     assert.ok(meetingPreparationProgress(answers) > 55)
     assert.match(buildMeetingPreparationSummary(answers), /600–800 tys\. zł/)
     assert.match(buildMeetingPreparationSummary(answers), /Brief jest zapisany przy sprawie/)
+  })
+
+  it('reuses equivalent profile answers instead of asking for the same checklist confirmation', () => {
+    const answers = createMeetingPreparationState()
+    answers.profile = {
+      ...completedProfile(),
+      incomeSources: ['employment'],
+    }
+
+    assert.deepEqual(inferredMeetingPreparationChecklistItemIds(answers.profile), [
+      'goal-budget',
+      'comfortable-payment',
+      'liabilities',
+    ])
+    assert.deepEqual(completedMeetingPreparationChecklistItemIds(answers), [
+      'goal-budget',
+      'comfortable-payment',
+      'liabilities',
+    ])
+    assert.match(buildMeetingPreparationSummary(answers), /PRZYGOTOWANE INFORMACJE \(3 z/u)
+  })
+
+  it('does not infer readiness from unknown or meeting-only answers', () => {
+    const answers = createMeetingPreparationState()
+    answers.profile = {
+      ...completedProfile(),
+      propertyBudget: 'unknown',
+      monthlyObligations: 'prefer_meeting',
+      comfortablePayment: 'unknown',
+      incomeSources: ['employment'],
+    }
+    answers.checkedItemIds = ['household']
+
+    assert.deepEqual(inferredMeetingPreparationChecklistItemIds(answers.profile), [])
+    assert.deepEqual(completedMeetingPreparationChecklistItemIds(answers), ['household'])
   })
 })

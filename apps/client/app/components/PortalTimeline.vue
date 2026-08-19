@@ -15,6 +15,17 @@ const authenticatedUser = useAuthUser()
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadedFileName = ref('')
+const pendingDocumentCount = computed(() => {
+  const items = props.caseData.documents?.items
+  if (items) return items.filter(document => document.status === 'missing').length
+  return props.caseData.documents?.pending ?? 0
+})
+const documentsPath = computed(() => ({
+  path: props.preview
+    ? `/preview/cases/${encodeURIComponent(props.caseData.id)}`
+    : `/cases/${encodeURIComponent(props.caseData.id)}`,
+  query: { view: 'documents' },
+}))
 
 function refreshMutatedCase() {
   clearNuxtData(clientPortalDataKey(authenticatedUser.value?.id))
@@ -171,22 +182,35 @@ async function uploadDocument(event: Event) {
           </div>
 
           <div v-if="action.kind === 'upload_document'" class="action-update__cta">
-            <input
-              ref="uploadInput"
-              class="portal-sr-only"
-              type="file"
-              accept="application/pdf,image/jpeg,image/png"
-              @change="uploadDocument"
-            >
-            <UButton
-              variant="solid"
-              icon="i-lucide-upload"
-              :loading="uploading"
-              @click="uploadInput?.click()"
-            >
-              {{ uploadedFileName ? 'Dodaj kolejny' : action.label || 'Dodaj dokument' }}
-            </UButton>
-            <small>{{ uploadedFileName || 'PDF, JPG, PNG do 20 MB' }}</small>
+            <template v-if="pendingDocumentCount">
+              <UButton
+                variant="solid"
+                icon="i-lucide-arrow-right"
+                trailing
+                :to="documentsPath"
+              >
+                Przejdź do dokumentów
+              </UButton>
+              <small>Do przesłania: {{ pendingDocumentCount }}</small>
+            </template>
+            <template v-else>
+              <input
+                ref="uploadInput"
+                class="portal-sr-only"
+                type="file"
+                accept="application/pdf,image/jpeg,image/png"
+                @change="uploadDocument"
+              >
+              <UButton
+                variant="solid"
+                icon="i-lucide-upload"
+                :loading="uploading"
+                @click="uploadInput?.click()"
+              >
+                {{ uploadedFileName ? 'Dodaj kolejny' : action.label || 'Dodaj dokument' }}
+              </UButton>
+              <small>{{ uploadedFileName || 'PDF, JPG, PNG do 20 MB' }}</small>
+            </template>
           </div>
 
           <div v-else-if="action.kind === 'complete_multiform'" class="action-update__cta">

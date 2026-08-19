@@ -17,6 +17,9 @@ importers:
 
   apps/client:
     dependencies:
+      '@ai-sdk/gateway':
+        specifier: 4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@nuxt/ui':
         specifier: ^4.10.0
         version: 4.10.0(1aa9b21b9613425375fbedb9a5e65011)
@@ -44,6 +47,9 @@ importers:
       ably:
         specifier: ^2.26.0
         version: 2.26.0
+      ai:
+        specifier: 7.0.38
+        version: 7.0.38(zod@4.4.3)
       h3:
         specifier: 1.15.11
         version: 1.15.11

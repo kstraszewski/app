@@ -10,30 +10,46 @@ const props = withDefaults(defineProps<{
   preview: false,
 })
 
-type CaseView = 'updates' | 'details'
+type CaseView = 'updates' | 'documents' | 'details'
 
 const route = useRoute()
 const casePath = computed(() => props.preview
   ? `/preview/cases/${encodeURIComponent(props.caseData.id)}`
   : `/cases/${encodeURIComponent(props.caseData.id)}`)
+const hasDocuments = computed(() => hasPortalCaseDocuments(props.caseData.documents))
 const activeView = computed<CaseView>(() => {
+  if (route.query.view === 'documents' && hasDocuments.value) return 'documents'
   if (route.query.view === 'details') return 'details'
   return 'updates'
 })
-const viewTabs = computed(() => [
-  {
-    value: 'updates' as const,
+const viewTabs = computed(() => {
+  const tabs: Array<{
+    value: CaseView
+    label: string
+    icon: string
+    to: string | { path: string, query: { view: CaseView } }
+  }> = [{
+    value: 'updates',
     label: 'Aktualności',
     icon: 'i-lucide-list-tree',
     to: casePath.value,
-  },
-  {
-    value: 'details' as const,
+  }]
+  if (hasDocuments.value) {
+    tabs.push({
+      value: 'documents',
+      label: 'Dokumenty',
+      icon: 'i-lucide-files',
+      to: { path: casePath.value, query: { view: 'documents' } },
+    })
+  }
+  tabs.push({
+    value: 'details',
     label: 'Szczegóły',
     icon: 'i-lucide-folder-open',
     to: { path: casePath.value, query: { view: 'details' } },
-  },
-])
+  })
+  return tabs
+})
 
 const updatedLabel = computed(() => {
   const date = new Date(props.caseData.updatedAt)
@@ -47,11 +63,15 @@ const updatedLabel = computed(() => {
 })
 
 const viewHeading = computed(() => {
+  if (activeView.value === 'documents') return 'Dokumenty Twojej sprawy'
   if (activeView.value === 'details') return 'Szczegóły i postęp sprawy'
   return 'Co dzieje się w Twojej sprawie'
 })
 
 const viewDescription = computed(() => {
+  if (activeView.value === 'documents') {
+    return 'W jednym miejscu zobaczysz dokumenty wymagane i już przesłane.'
+  }
   if (activeView.value === 'details') {
     return 'Zakres, postęp i najważniejsze informacje w jednym miejscu.'
   }
@@ -84,7 +104,10 @@ const viewDescription = computed(() => {
           <p>{{ viewDescription }}</p>
         </header>
 
-        <nav class="portal-case-main__tabs" aria-label="Widok sprawy">
+        <nav
+          :class="['portal-case-main__tabs', { 'has-documents': hasDocuments }]"
+          aria-label="Widok sprawy"
+        >
           <NuxtLink
             v-for="tab in viewTabs"
             :key="tab.value"
@@ -109,6 +132,12 @@ const viewDescription = computed(() => {
         </div>
         <div class="portal-case-main__updates">
           <PortalTimeline
+            :case-data="caseData"
+            :preview="preview"
+          />
+        </div>
+        <div class="portal-case-main__documents">
+          <PortalDocumentsPanel
             :case-data="caseData"
             :preview="preview"
           />
@@ -219,9 +248,29 @@ const viewDescription = computed(() => {
   height: 17px;
 }
 
+.portal-case-main__tabs.has-documents {
+  display: grid;
+}
+
+.portal-case-main__tab--details {
+  display: none !important;
+}
+
 .portal-case-main__details {
   display: none;
   max-width: 560px;
+}
+
+.portal-case-main__documents {
+  display: none;
+}
+
+.portal-case-main.is-view-documents .portal-case-main__updates {
+  display: none;
+}
+
+.portal-case-main.is-view-documents .portal-case-main__documents {
+  display: block;
 }
 
 @media (max-width: 1100px) {
@@ -251,11 +300,21 @@ const viewDescription = computed(() => {
     width: 100%;
   }
 
-  .portal-case-main__updates {
+  .portal-case-main__tabs.has-documents {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .portal-case-main__tab--details {
+    display: inline-flex !important;
+  }
+
+  .portal-case-main__updates,
+  .portal-case-main__documents {
     display: none;
   }
 
   .portal-case-main.is-view-updates .portal-case-main__updates,
+  .portal-case-main.is-view-documents .portal-case-main__documents,
   .portal-case-main.is-view-details .portal-case-main__details {
     display: block;
   }

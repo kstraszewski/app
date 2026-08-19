@@ -10,12 +10,13 @@ import {
   selectPreferredPortalGrantScope,
   type PortalGrantScopeLike,
 } from '../shared/utils/portal-grant-scope.ts'
+import { hasPortalCaseDocuments } from '../app/utils/portal-documents.ts'
 
 const now = Date.parse('2026-08-01T10:00:00.000Z')
 
 describe('client portal case action', () => {
   it('prioritizes required documents over an unfinished Multiwniosek', () => {
-    assert.equal(buildPortalCaseAction({
+    const action = buildPortalCaseAction({
       caseId: 'case-1',
       statusCode: 'analiza',
       progressPercent: 30,
@@ -23,7 +24,9 @@ describe('client portal case action', () => {
       multiformEnabled: true,
       multiformEligible: true,
       multiformCompletedAt: null,
-    }).kind, 'upload_document')
+    })
+    assert.equal(action.kind, 'upload_document')
+    assert.equal(action.to, '/cases/case-1?view=documents')
   })
 
   it('offers Multiwniosek only to an eligible person while it is unfinished', () => {
@@ -134,6 +137,31 @@ describe('client portal document summary privacy', () => {
       uploadedByClientPersonId: 'person-1',
       statusCode: 'received',
     }, primaryScope), false)
+  })
+})
+
+describe('client portal documents entry point', () => {
+  it('stays hidden until a document is required or uploaded', () => {
+    assert.equal(hasPortalCaseDocuments(null), false)
+    assert.equal(hasPortalCaseDocuments({
+      total: 0,
+      uploaded: 0,
+      pending: 0,
+      items: [],
+    }), false)
+  })
+
+  it('appears for either a missing requirement or an existing upload', () => {
+    assert.equal(hasPortalCaseDocuments({
+      total: 1,
+      uploaded: 0,
+      pending: 1,
+    }), true)
+    assert.equal(hasPortalCaseDocuments({
+      total: 1,
+      uploaded: 1,
+      pending: 0,
+    }), true)
   })
 })
 

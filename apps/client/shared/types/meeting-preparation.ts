@@ -113,6 +113,39 @@ export interface SaveMeetingPreparationBody {
   completed?: boolean
 }
 
+/**
+ * Checklist confirmations that are already answered by the bounded profile.
+ *
+ * Keep this deliberately conservative: an item belongs here only when the
+ * profile question carries the same meaning as the checklist confirmation.
+ * More detailed prompts (for example the source of own funds or employment
+ * dates) must still be confirmed by the client in the checklist.
+ */
+export function inferredMeetingPreparationChecklistItemIds(
+  profile: MeetingPreparationProfile,
+): string[] {
+  const ids: string[] = []
+
+  if (
+    profile.goal
+    && profile.stage
+    && profile.propertyBudget
+    && profile.propertyBudget !== 'unknown'
+  ) ids.push('goal-budget')
+
+  if (
+    profile.comfortablePayment
+    && profile.comfortablePayment !== 'unknown'
+  ) ids.push('comfortable-payment')
+
+  if (
+    profile.monthlyObligations
+    && profile.monthlyObligations !== 'prefer_meeting'
+  ) ids.push('liabilities')
+
+  return ids
+}
+
 function nullableChoice<const T extends readonly string[]>(
   value: unknown,
   choices: T,

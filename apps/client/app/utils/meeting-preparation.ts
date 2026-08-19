@@ -17,9 +17,10 @@ import {
 } from '../data/meeting-preparation.ts'
 import {
   emptyMeetingPreparationProfile,
+  inferredMeetingPreparationChecklistItemIds,
   normalizeMeetingPreparationProfile,
   type MeetingPreparationAnswers,
-} from '#shared/types/meeting-preparation'
+} from '#shared/types/meeting-preparation.ts'
 
 export type MeetingPreparationState = MeetingPreparationAnswers
 
@@ -97,6 +98,15 @@ export function profileIsReady(profile: MeetingPreparationProfile): boolean {
   )
 }
 
+export function completedMeetingPreparationChecklistItemIds(
+  state: MeetingPreparationState,
+): string[] {
+  return [...new Set([
+    ...state.checkedItemIds,
+    ...inferredMeetingPreparationChecklistItemIds(state.profile),
+  ])]
+}
+
 export function meetingPreparationProgress(state: MeetingPreparationState): number {
   const profileParts = [
     Boolean(state.profile.goal),
@@ -115,7 +125,8 @@ export function meetingPreparationProgress(state: MeetingPreparationState): numb
   const conceptProgress = Math.min(1, state.readConceptIds.length / meetingConcepts.length) * 15
   const checklist = visibleChecklistItems(state.profile)
   const visibleChecklistIds = new Set(checklist.map(item => item.id))
-  const checked = state.checkedItemIds.filter(id => visibleChecklistIds.has(id)).length
+  const checked = completedMeetingPreparationChecklistItemIds(state)
+    .filter(id => visibleChecklistIds.has(id)).length
   const checklistProgress = Math.min(1, checked / Math.max(1, checklist.length)) * 15
   const questionProgress = Math.min(1, state.selectedQuestionIds.length / 5) * 15
 
@@ -127,7 +138,8 @@ export function buildMeetingPreparationSummary(state: MeetingPreparationState): 
     state.selectedQuestionIds.includes(question.id)
   ))
   const checklist = visibleChecklistItems(state.profile)
-  const checkedItems = checklist.filter(item => state.checkedItemIds.includes(item.id))
+  const completedChecklistIds = new Set(completedMeetingPreparationChecklistItemIds(state))
+  const checkedItems = checklist.filter(item => completedChecklistIds.has(item.id))
   const lines = [
     'MOJE PRZYGOTOWANIE DO SPOTKANIA Z EKSPERTEM',
     '',

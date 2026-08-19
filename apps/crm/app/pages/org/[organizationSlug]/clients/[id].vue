@@ -10,6 +10,7 @@ import type {
   ClientConsentCaptureRequest,
   ClientConsentState,
   ClientDetailResponse,
+  ClientPerson,
 } from '~/types/clients'
 import {
   ceidgClientCompanySummary,
@@ -215,6 +216,40 @@ function formatHeaderDate(value: string | null | undefined) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : headerDate.format(date)
+}
+
+function clientJsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function maskedIdentityValue(value: unknown, visibleCharacters = 4) {
+  const normalized = String(value ?? '').replace(/\s+/gu, '').trim()
+  if (!normalized) return ''
+  return `${'•'.repeat(Math.max(3, normalized.length - visibleCharacters))}${normalized.slice(-visibleCharacters)}`
+}
+
+function personIdentityDocument(person: ClientPerson) {
+  return clientJsonRecord(clientJsonRecord(person.metadata).identityDocument)
+}
+
+function personIdentityItems(person: ClientPerson) {
+  const identityDocument = personIdentityDocument(person)
+  return [
+    person.pesel ? `PESEL ${maskedIdentityValue(person.pesel)}` : '',
+    person.date_of_birth ? `ur. ${formatShortDate(person.date_of_birth)}` : '',
+    identityDocument.documentNumber
+      ? `Dokument ${maskedIdentityValue(identityDocument.documentNumber)}`
+      : '',
+    identityDocument.expiresOn
+      ? `ważny do ${formatShortDate(String(identityDocument.expiresOn))}`
+      : '',
+  ].filter(Boolean)
+}
+
+function personHasAiIdentityData(person: ClientPerson) {
+  return personIdentityDocument(person).source === 'client_portal_gemini'
 }
 
 const clientInitials = computed(() => {
@@ -1182,7 +1217,15 @@ const headerMenuItems = computed(() => [
                     <strong>{{ person.display_name }}</strong>
                     <small>{{ personRoleLabel(person.role) }}</small>
                   </div>
-                  <p>{{ person.email || person.phone || 'Brak danych kontaktowych' }}</p>
+                  <div class="related-person__summary">
+                    <p>{{ person.email || person.phone || 'Brak danych kontaktowych' }}</p>
+                    <div v-if="personIdentityItems(person).length" class="related-person__identity">
+                      <span v-for="item in personIdentityItems(person)" :key="item">{{ item }}</span>
+                      <span v-if="personHasAiIdentityData(person)" class="is-ai">
+                        <UIcon name="i-lucide-scan-text" /> Uzupełnione przez Gemini
+                      </span>
+                    </div>
+                  </div>
                 </article>
               </div>
               <div v-else class="client-empty client-empty--compact">
@@ -2685,7 +2728,11 @@ const headerMenuItems = computed(() => [
   font-size: 11px;
 }
 
-.related-people article > p {
+.related-person__summary {
+  justify-items: end;
+}
+
+.related-person__summary > p {
   max-width: 240px;
   margin: 0;
   overflow: hidden;
@@ -2693,6 +2740,32 @@ const headerMenuItems = computed(() => [
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.related-person__identity {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px !important;
+  max-width: 330px;
+}
+
+.related-person__identity > span {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.related-person__identity > span.is-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-info);
+}
+
+.related-person__identity svg {
+  width: 12px;
+  height: 12px;
 }
 
 .client-context-list > div {
@@ -3898,8 +3971,13 @@ const headerMenuItems = computed(() => [
     grid-template-columns: 36px minmax(0, 1fr);
   }
 
-  .related-people article > p {
+  .related-person__summary {
     grid-column: 2;
+    justify-items: start;
+  }
+
+  .related-person__identity {
+    justify-content: flex-start;
   }
 
   .client-history-summary,

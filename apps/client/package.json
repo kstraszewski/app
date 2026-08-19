@@ -2,6 +2,9 @@
   "name": "@openexpert/client",
   "private": true,
   "type": "module",
+  "imports": {
+    "#shared/*": "./shared/*"
+  },
   "engines": {
     "node": ">=24.11.0 <25"
   },
@@ -16,11 +19,13 @@
     "test:conversation-inbox": "node --test --experimental-strip-types test/portal-conversation-inbox.test.ts test/portal-preview-conversations.test.ts",
     "test:dashboard": "node --test --experimental-strip-types test/portal-dashboard.test.ts",
     "test:demo": "node --test --experimental-strip-types test/demo-session.test.ts",
+    "test:identity-documents": "node --test --experimental-strip-types test/portal-identity-document-ai.test.ts",
     "test:meeting-preparation": "node --test --experimental-strip-types test/meeting-preparation.test.ts",
     "test:session-expiry": "node --test --experimental-strip-types test/session-expiry.test.ts",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "4.0.29",
     "@nuxt/ui": "^4.10.0",
     "@openexpert/auth": "workspace:*",
     "@openexpert/data-api": "workspace:*",
@@ -30,6 +35,7 @@
     "@openexpert/mortgage": "workspace:*",
     "@openexpert/storage": "workspace:*",
     "ably": "^2.26.0",
+    "ai": "7.0.38",
     "h3": "1.15.11",
     "nuxt": "^4.5.1",
     "tailwindcss": "^4.3.3",

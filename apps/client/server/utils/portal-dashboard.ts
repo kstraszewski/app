@@ -107,7 +107,7 @@ export function buildPortalCaseAction(
       title: 'Uzupełnij brakujące dokumenty',
       description: `Ekspert czeka na uzupełnienie ${suffix}.`,
       label: 'Dodaj dokumenty',
-      to: `/cases/${input.caseId}`,
+      to: `/cases/${input.caseId}?view=documents`,
     }
   }
 

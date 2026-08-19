@@ -426,6 +426,7 @@ export async function loadMortgageCatalog(
     .from('mortgage_products')
     .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color)')
     .eq('is_active', true)
+    .neq('mortgage_banks.slug', 'openexpert-bank')
     .order('name')
   throwDbError(productError)
 

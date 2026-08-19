@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
   const { data: banks, error: banksError } = await session.dataApi
     .from('mortgage_banks')
     .select('id, slug, name, website_url, logo_url, logo_background_color, updated_at')
+    .neq('slug', 'openexpert-bank')
     .order('name')
   throwDbError(banksError)
 

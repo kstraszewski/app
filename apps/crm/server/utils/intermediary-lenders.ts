@@ -181,7 +181,8 @@ export async function resolveIntermediaryLenders(
   const [banksResult, aliasesResult] = await Promise.all([
     dataApi
       .from('mortgage_banks')
-      .select('id, name') as Promise<QueryResult<MortgageBankRow>>,
+      .select('id, name')
+      .neq('slug', 'openexpert-bank') as Promise<QueryResult<MortgageBankRow>>,
     dataApi
       .from('mortgage_bank_aliases')
       .select('bank_id, value, valid_from, valid_to')

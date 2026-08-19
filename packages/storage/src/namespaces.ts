@@ -44,6 +44,14 @@ export const STORAGE_NAMESPACE_DEFINITIONS = Object.freeze({
       'text/csv',
     ]),
   }),
+  'crm-mock-bank-outbox': Object.freeze({
+    access: 'private',
+    maxBytes: 5 * 1024 * 1024,
+    allowedContentTypes: Object.freeze([
+      'application/json',
+      'application/zip',
+    ]),
+  }),
   'crm-property-images': Object.freeze({
     access: 'private',
     maxBytes: 8 * 1024 * 1024,

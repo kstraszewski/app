@@ -4,6 +4,7 @@ import {
   mortgageBackofficeUuid,
   throwMortgageBackofficeDbError,
 } from '~~/server/utils/mortgage-backoffice'
+import { resolveMortgageBankLogoUrl } from '~~/server/utils/openexpert-mock-bank-brand'
 import {
   asRecord,
   getRequiredParam,
@@ -338,7 +339,7 @@ export default defineEventHandler(async (event) => {
 
   const logoUrl = override?.logo_path
     ? session.dataApi.storage.from(logoBucket).getPublicUrl(String(override.logo_path)).data.publicUrl
-    : text(bank.logo_url)
+    : resolveMortgageBankLogoUrl(bank.slug, bank.logo_url)
 
   return {
     role: session.role,

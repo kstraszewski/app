@@ -32,6 +32,16 @@ const dateFormatter = new Intl.DateTimeFormat('pl-PL', {
 })
 
 const nextAction = computed(() => resolveCaseMortgageNextAction(props.caseData))
+const nextActionIsMockSubmit = computed(() => {
+  if (nextAction.value.kind !== 'submit-application' || !nextAction.value.application_id) return false
+  const application = props.caseData.bank_applications.find(item => item.id === nextAction.value.application_id)
+  return application?.mock_bank?.enabled === true
+})
+const nextActionTitle = computed(() => (
+  nextActionIsMockSubmit.value
+    ? `Złóż wniosek — ${nextAction.value.bank_name ?? 'OpenExpert Bank'}`
+    : nextAction.value.title
+))
 const bankRows = computed(() => (
   [...props.caseData.bank_applications]
     .sort((left, right) => left.slot - right.slot)
@@ -166,7 +176,7 @@ function stepIcon(step: MortgageProcessStepPresentation) {
             {{ deadlineLabel }}
           </span>
         </div>
-        <h2 id="mortgage-next-title">{{ nextAction.title }}</h2>
+        <h2 id="mortgage-next-title">{{ nextActionTitle }}</h2>
         <p>{{ nextAction.description || 'Otwórz krok, aby kontynuować obsługę sprawy.' }}</p>
       </div>
 
@@ -178,7 +188,7 @@ function stepIcon(step: MortgageProcessStepPresentation) {
         trailing-icon="i-lucide-arrow-right"
         @click="openAction(nextAction)"
       >
-        {{ mortgageActionLabel(nextAction.kind) }}
+        {{ nextActionIsMockSubmit ? 'Złóż wniosek' : mortgageActionLabel(nextAction.kind) }}
       </UButton>
     </div>
 

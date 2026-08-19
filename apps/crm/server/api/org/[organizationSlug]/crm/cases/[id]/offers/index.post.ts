@@ -7,6 +7,7 @@ import { serverDataBackend } from '~~/server/utils/data-api'
 import { createError, readBody } from 'h3'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import { createDraftCaseBankApplication } from '~~/server/utils/case-bank-applications'
+import { isOpenExpertMockBankEnabled } from '~~/server/utils/openexpert-mock-bank-service'
 import {
   asRecord,
   getRequiredParam,
@@ -104,7 +105,8 @@ export default defineEventHandler(async (event) => {
     }),
   }
 
-  const catalog = await loadMortgageCatalog(session)
+  const mockBankEnabled = isOpenExpertMockBankEnabled(event, session.organizationId)
+  const catalog = await loadMortgageCatalog(session, { includeMock: mockBankEnabled })
   const product = catalog.products.find(item => String(item.id) === productId)
   if (!product) throw createError({ statusCode: 404, statusMessage: 'Mortgage product not found' })
 

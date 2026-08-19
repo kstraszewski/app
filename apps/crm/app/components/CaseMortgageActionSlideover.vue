@@ -55,12 +55,17 @@ interface MortgageAiReviewChallenge {
 const aiReviewChallenge = ref<MortgageAiReviewChallenge | null>(null)
 const uploadCommandId = ref('')
 const uploadExpectedRevision = ref(0)
+const processCommandId = ref('')
 const consentBatchIdentity = ref<MortgageConsentBatchIdentity>({
   baseRevision: 0,
   commandIdsByClientId: {},
 })
 
 const process = computed(() => props.application?.mortgage_process ?? null)
+const isMockBank = computed(() => (
+  props.offer?.bank_is_mock === true
+  && props.application?.mock_bank?.enabled === true
+))
 const recipients = computed(() => {
   if (process.value?.recipients?.length) {
     return process.value.recipients.map(recipient => ({
@@ -130,7 +135,9 @@ const title = computed(() => {
   if (props.actionKind === 'close-application') return `Wycofaj wniosek — ${bank}`
   if (props.actionKind === 'confirm-completeness') return `Potwierdź kompletność — ${bank}`
   if (props.actionKind === 'open-documents') return `Zarejestruj braki — ${bank}`
-  if (props.actionKind === 'submit-application') return `Wyślij wniosek — ${bank}`
+  if (props.actionKind === 'submit-application') {
+    return isMockBank.value ? `Złóż wniosek — ${bank}` : `Wyślij wniosek — ${bank}`
+  }
   return `Proces hipoteczny — ${bank}`
 })
 
@@ -145,6 +152,9 @@ const description = computed(() => {
   if (props.actionKind === 'open-documents') return 'Zapisz datę wezwania banku do uzupełnienia informacji lub dokumentów.'
   if (props.actionKind === 'complete-application') return 'System ponownie sprawdzi kompletność decyzji, okres związania ofertą i przekazanie projektu umowy przed dopuszczeniem wyboru finalnej umowy.'
   if (props.actionKind === 'close-application') return 'Wycofanie kończy tę ścieżkę bankową i pozostaje w audytowalnej historii sprawy.'
+  if (props.actionKind === 'submit-application' && isMockBank.value) {
+    return 'System złoży wniosek w testowym OpenExpert Banku. Bank potwierdzi odbiór i kompletność, a następnie wyśle mockową decyzję do podłączonej skrzynki.'
+  }
   return 'Wysłanie zostanie zapisane dopiero po walidacji ważnego ESIS i dowodu przekazania go wszystkim wnioskodawcom.'
 })
 
@@ -159,6 +169,7 @@ const submitLabel = computed(() => {
   if (props.actionKind === 'open-documents') return 'Zapisz wezwanie'
   if (props.actionKind === 'complete-application') return 'Zakończ walidację'
   if (props.actionKind === 'close-application') return 'Wycofaj wniosek'
+  if (props.actionKind === 'submit-application' && isMockBank.value) return 'Złóż wniosek'
   return 'Zapisz wysłanie wniosku'
 })
 
@@ -184,6 +195,7 @@ function resetForm() {
   aiReviewChallenge.value = null
   expertOverrideReason.value = ''
   expertOverrideConfirmed.value = false
+  processCommandId.value = newCommandId()
   resetUploadCommandIdentity()
   resetConsentBatchIdentity()
 }
@@ -398,6 +410,18 @@ async function executeCommand() {
   if (type === 'submit_application') command.submittedAt = at
   if (type === 'complete_application') command.completedAt = at
   if (type === 'close_application') command.closedAt = at
+  if (type === 'submit_application' && isMockBank.value) {
+    if (!processCommandId.value) processCommandId.value = newCommandId()
+    await $fetch(crmApiPath(`/cases/${props.caseId}/applications/${props.application.id}/mock-bank/submit`), {
+      method: 'POST',
+      body: {
+        requestId: processCommandId.value,
+        expectedRevision: revision.value,
+        submittedAt: at,
+      },
+    })
+    return
+  }
   await $fetch(crmApiPath(`/cases/${props.caseId}/applications/${props.application.id}/commands`), {
     method: 'POST',
     body: {
@@ -494,6 +518,8 @@ async function submit() {
     toast.add({
       title: props.actionKind === 'upload-esis' || props.actionKind === 'upload-decision'
         ? 'Dokument przeanalizowany i zapisany'
+        : props.actionKind === 'submit-application' && isMockBank.value
+          ? 'Wniosek złożony, decyzja wysłana e-mailem'
         : 'Zapisano krok procesu hipotecznego',
       color: 'success',
       icon: 'i-lucide-shield-check',
@@ -526,6 +552,12 @@ async function submit() {
       }
       else {
         localError.value = apiErrorMessage(caught) || (caught instanceof Error ? caught.message : 'Nie udało się zapisać kroku.')
+      }
+      if (props.actionKind === 'submit-application' && isMockBank.value) {
+        // The lifecycle transitions may already have committed before an email
+        // provider failure. A retry needs a fresh dispatch lease/request ID.
+        processCommandId.value = newCommandId()
+        emit('refresh')
       }
     }
   }
@@ -700,7 +732,7 @@ async function submit() {
           variant="subtle"
           icon="i-lucide-shield-check"
           title="Walidacja przed wysłaniem"
-          description="System sprawdzi ważność ESIS oraz dowód przekazania go każdemu wnioskodawcy. Braków nie da się ominąć zmianą statusu."
+          :description="isMockBank ? 'System sprawdzi ważność i doręczenie ESIS. Po złożeniu OpenExpert Bank potwierdzi kompletność i wyśle pozytywną decyzję jako PDF w ZIP-ie zabezpieczonym PESEL-em głównego wnioskodawcy.' : 'System sprawdzi ważność ESIS oraz dowód przekazania go każdemu wnioskodawcy. Braków nie da się ominąć zmianą statusu.'"
         />
       </div>
     </template>

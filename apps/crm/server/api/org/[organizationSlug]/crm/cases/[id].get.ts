@@ -1,9 +1,11 @@
 import { createError } from 'h3'
+import { serverDataBackend } from '~~/server/utils/data-api'
 import { caseDocumentPublicSelect } from '~~/server/utils/case-documents'
 import { caseUuidPattern } from '~~/server/utils/case-identifiers'
 import { attachSignedPropertyImages, propertyPublicSelect } from '~~/server/utils/case-properties'
 import { getRequiredParam, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { loadMortgageApplicationReadModels } from '~~/server/utils/mortgage-application-read-model'
+import { isOpenExpertMockBankEnabled } from '~~/server/utils/openexpert-mock-bank-service'
 
 type Row = Record<string, any>
 
@@ -14,6 +16,8 @@ function singleRelation<T>(value: T | T[] | null | undefined): T | null {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
+  const backendData = serverDataBackend(event) as any
+  const mockBankEnabled = isOpenExpertMockBankEnabled(event, session.organizationId)
   const id = getRequiredParam(event, 'id')
   if (!caseUuidPattern.test(id)) {
     throw createError({ statusCode: 404, statusMessage: 'Case not found' })
@@ -148,6 +152,7 @@ export default defineEventHandler(async (event) => {
     activitiesResult,
     handoffsResult,
     workflowsResult,
+    mockBankDispatchesResult,
   ] = await Promise.all([
     clientIds.length
       ? session.dataApi
@@ -159,7 +164,7 @@ export default defineEventHandler(async (event) => {
     bankIds.length
       ? session.dataApi
           .from('mortgage_banks')
-          .select('id, logo_url, logo_background_color')
+          .select('id, slug, is_mock, logo_url, logo_background_color')
           .in('id', bankIds)
       : Promise.resolve({ data: [], error: null }),
     session.dataApi
@@ -225,6 +230,14 @@ export default defineEventHandler(async (event) => {
           .in('domain', itemDomains)
           .or(`organization_id.is.null,organization_id.eq.${session.organizationId}`)
       : Promise.resolve({ data: [], error: null }),
+    submissionIds.length
+      ? backendData
+          .from('crm_mock_bank_dispatches')
+          .select('application_id, kind, status, attempts, last_attempt_at, lease_expires_at, sent_at')
+          .eq('organization_id', session.organizationId)
+          .eq('case_id', id)
+          .in('application_id', submissionIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
   throwDbError(clientsResult.error)
   throwDbError(banksResult.error)
@@ -234,6 +247,7 @@ export default defineEventHandler(async (event) => {
   throwDbError(activitiesResult.error)
   throwDbError(handoffsResult.error)
   throwDbError(workflowsResult.error)
+  throwDbError(mockBankDispatchesResult.error)
 
   const tasks = (tasksResult.data ?? []) as Row[]
   const activities = (activitiesResult.data ?? []) as Row[]
@@ -263,6 +277,13 @@ export default defineEventHandler(async (event) => {
   const clientById = new Map(((clientsResult.data ?? []) as Row[]).map(client => [String(client.id), client]))
   const bankById = new Map(((banksResult.data ?? []) as Row[]).map(bank => [String(bank.id), bank]))
   const submissionById = new Map(((submissionsResult.data ?? []) as Row[]).map(submission => [String(submission.id), submission]))
+  const mockDispatchesByApplicationId = new Map<string, Map<string, Row>>()
+  for (const dispatch of (mockBankDispatchesResult.data ?? []) as Row[]) {
+    const applicationId = String(dispatch.application_id)
+    const applicationDispatches = mockDispatchesByApplicationId.get(applicationId) ?? new Map<string, Row>()
+    applicationDispatches.set(String(dispatch.kind), dispatch)
+    mockDispatchesByApplicationId.set(applicationId, applicationDispatches)
+  }
   const offerById = new Map(offers.map(offer => [String(offer.id), offer]))
   const mortgageReadModels = await loadMortgageApplicationReadModels(
     session,
@@ -326,6 +347,7 @@ export default defineEventHandler(async (event) => {
     current_user_id: session.userId,
     data: {
       ...caseRow,
+      mock_bank_enabled: mockBankEnabled,
       owner: caseRow.owner_user_id
         ? profileById.get(String(caseRow.owner_user_id)) ?? null
         : null,
@@ -337,6 +359,20 @@ export default defineEventHandler(async (event) => {
         : null,
       bank_applications: bankApplications.flatMap((application) => {
         const submission = submissionById.get(String(application.submission_id))
+        const bank = bankById.get(String(application.bank_id))
+        const mockDispatches = mockDispatchesByApplicationId.get(String(application.submission_id))
+        const mockDispatch = (kind: string) => {
+          const dispatch = mockDispatches?.get(kind)
+          return dispatch
+            ? {
+                status: dispatch.status,
+                attempts: Number(dispatch.attempts ?? 0),
+                last_attempt_at: dispatch.last_attempt_at ?? null,
+                lease_expires_at: dispatch.lease_expires_at ?? null,
+                sent_at: dispatch.sent_at ?? null,
+              }
+            : null
+        }
         return submission
           ? [{
               ...application,
@@ -348,6 +384,14 @@ export default defineEventHandler(async (event) => {
               notes: submission.notes ?? null,
               metadata: submission.metadata ?? {},
               updated_at: String(submission.updated_at),
+              mock_bank: bank?.is_mock === true
+                ? {
+                    enabled: mockBankEnabled,
+                    application_number: String(submission.external_reference ?? ''),
+                    esis: mockDispatch('esis'),
+                    credit_decision: mockDispatch('credit_decision'),
+                  }
+                : null,
               ...(mortgageReadModels.get(String(application.submission_id)) ?? {
                 mortgage_process: null,
                 next_action: null,
@@ -373,6 +417,8 @@ export default defineEventHandler(async (event) => {
             ?? (offer.catalog_snapshot?.version?.unknown_fields?.length ? 'partial' : 'complete'),
           bank_logo_url: bank?.logo_url ?? null,
           bank_logo_background: bank?.logo_background_color ?? null,
+          bank_slug: bank?.slug ?? null,
+          bank_is_mock: bank?.is_mock === true,
         }
       }),
       documents: documentsResult.data ?? [],

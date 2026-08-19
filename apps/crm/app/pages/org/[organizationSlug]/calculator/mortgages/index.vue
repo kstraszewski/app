@@ -32,6 +32,7 @@ type CatalogProduct = {
     slug: string
     name: string
     website_url: string
+    isMock: boolean
     logoUrl: string | null
     logoBackground: string | null
     override?: { revision?: number } | null
@@ -687,7 +688,29 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
         <div v-else-if="!visibleOffers.length" class="empty"><UIcon name="i-lucide-list-filter" /><h3>Brak wyników dla filtrów</h3><p>Usuń część limitów lub wybierz więcej banków.</p></div>
         <div v-else class="offer-grid">
           <article v-for="(offer, index) in visibleOffers" :key="offer.product.id" class="offer" :class="{ selected: selected?.product.id === offer.product.id, ineligible: !offer.eligible }">
-            <header><div class="offer-heading"><span class="rank">#{{ index + 1 }}</span><span v-if="offer.product.bank.logoUrl" class="bank-logo" :style="offer.product.bank.logoBackground ? { backgroundColor: offer.product.bank.logoBackground } : undefined"><img :src="offer.product.bank.logoUrl" :alt="`Logo ${offer.product.bank.name}`"></span><div><small>{{ offer.product.bank.name }}</small><h3>{{ offer.product.name }}</h3></div></div><span class="score">{{ offer.product.version.completeness_score }}% danych</span></header>
+            <header>
+              <div class="offer-heading">
+                <span class="rank">#{{ index + 1 }}</span>
+                <span v-if="offer.product.bank.logoUrl" class="bank-logo" :style="offer.product.bank.logoBackground ? { backgroundColor: offer.product.bank.logoBackground } : undefined">
+                  <img :src="offer.product.bank.logoUrl" :alt="`Logo ${offer.product.bank.name}`">
+                </span>
+                <div>
+                  <small>{{ offer.product.bank.name }}</small>
+                  <h3>{{ offer.product.name }}</h3>
+                </div>
+              </div>
+              <div class="offer-statuses">
+                <UBadge
+                  v-if="offer.product.bank.isMock"
+                  color="warning"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-flask-conical"
+                  label="Bank testowy · dane syntetyczne"
+                />
+                <span class="score">{{ offer.product.version.completeness_score }}% danych</span>
+              </div>
+            </header>
             <div class="primary-price"><span>Pierwsza rata</span><strong>{{ money(offer.result.firstInstallment) }}</strong><small>+ {{ money(offer.result.firstRecurringCosts) }} kosztów miesięcznych</small><small v-if="offer.result.capitalizedCosts">Saldo brutto {{ money(offer.result.grossLoanAmount) }} · koszty doliczone do kapitału {{ money(offer.result.capitalizedCosts) }} (na starcie {{ money(offer.result.financedCosts) }})</small></div>
             <dl>
               <div><dt>Po okresie stałym</dt><dd>{{ offer.result.postFixedInstallment == null ? '—' : money(offer.result.postFixedInstallment) }}</dd></div>
@@ -812,6 +835,7 @@ function offerRequirements(offer: { product: CatalogProduct, result: MortgageCat
 .section-title>span,
 .chip.active,
 .primary{color:var(--ui-text-inverted)}
+.offer-statuses{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
 .comparison-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.comparison-heading>.primary{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding-inline:14px;white-space:nowrap}.comparison-heading>.primary svg{font-size:16px}
 @media(max-width:1100px){.workspace{grid-template-columns:1fr}.scenario-panel{position:static;grid-template-columns:repeat(2,minmax(0,1fr))}.panel-heading,.panel-heading--compact,fieldset{grid-column:1/-1}.offer-grid{grid-template-columns:1fr}.detail-columns{grid-template-columns:1fr}.notice{grid-template-columns:auto 1fr}.notice>span{grid-column:2}}
 @media(max-width:700px){.scenario-panel{grid-template-columns:1fr}.results-toolbar,.source,.schedule-heading,.comparison-heading{align-items:stretch;flex-direction:column}.results-toolbar label{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}.notice{grid-template-columns:1fr}.notice>span{grid-column:1}.offer dl{grid-template-columns:1fr}.offer-options__change{grid-template-columns:1fr;align-items:stretch}.primary-price strong{font-size:24px}.comparison-heading>.primary{justify-content:center}}

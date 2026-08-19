@@ -45,6 +45,10 @@ const props = withDefaults(defineProps<{
   embedded: false,
 })
 
+const emit = defineEmits<{
+  sent: [value: MailSendPayload['data']]
+}>()
+
 const EmbeddedWorkspaceRoot = defineComponent({
   name: 'MailEmbeddedWorkspaceRoot',
   setup(_componentProps, { slots }) {
@@ -1014,6 +1018,7 @@ async function handleMessageSent(result: MailSendPayload['data']): Promise<void>
     color: 'success',
     icon: 'i-lucide-send',
   })
+  emit('sent', result)
   await refreshThreads()
   if (selectedThreadId.value && result.threadId === selectedThreadId.value) {
     await refreshSelectedThread()

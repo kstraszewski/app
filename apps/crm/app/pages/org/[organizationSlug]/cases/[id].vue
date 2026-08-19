@@ -138,6 +138,7 @@ const emptyCase = (): CaseDetailResponse => ({
     selected_offer_id: null,
     selected_property_id: null,
     bank_applications: [],
+    mock_bank_enabled: false,
     contract_application_id: null,
     contract_signed_at: null,
     documents: [],
@@ -1287,6 +1288,7 @@ watch(
         scope-type="case"
         :scope-id="data.data.id"
         embedded
+        @sent="refresh()"
       />
     </div>
 
@@ -1297,6 +1299,7 @@ watch(
           :focused-application-id="focusedApplicationId"
           @refresh="refresh()"
           @open-documents="goToView('documents', '#case-documents')"
+          @open-action="openMortgageAction"
         />
       </div>
 
@@ -1680,7 +1683,7 @@ watch(
           </header>
           <ol v-if="data.data.recent_activities.length" class="full-activity-list">
             <li v-for="activity in data.data.recent_activities" :key="activity.id">
-              <span><UIcon name="i-lucide-clock-3" /></span>
+              <span><UIcon :name="activity.activity_type === 'email_sent' ? 'i-lucide-send' : 'i-lucide-clock-3'" /></span>
               <div>
                 <strong>{{ activity.title }}</strong>
                 <p v-if="activity.body">{{ activity.body }}</p>

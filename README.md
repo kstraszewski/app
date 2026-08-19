@@ -185,6 +185,11 @@ NUXT_AUTH_EMAIL_FROM=OpenExpert <security@auth.openexpert.app>
 NUXT_AUTH_EMAIL_REPLY_TO=hello@openexpert.app
 NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
 NUXT_RESEND_REPLY_TO=hello@openexpert.app
+NUXT_MOCK_BANK_ENABLED=true
+NUXT_MOCK_BANK_ORGANIZATION_IDS=<uuid-organizacji-demo>
+NUXT_MOCK_BANK_RESEND_API_KEY=re_...
+NUXT_MOCK_BANK_EMAIL_FROM=OpenExpert Bank <dokumenty@bank.openexpert.app>
+NUXT_MOCK_BANK_EMAIL_REPLY_TO=demo@openexpert.app
 ```
 
 Zweryfikuj w Resend osobne subdomeny nadawcze dla auth i komunikacji
@@ -197,12 +202,46 @@ maili produktowych; zgodność z `NUXT_RESEND_*` pozostaje wyłącznie lokalnie.
 Wszystkie klucze są serwerowe, a `Reply-To` musi wskazywać rzeczywiście
 monitorowaną skrzynkę.
 
+Symulator OpenExpert Banku jest domyślnie włączony lokalnie i wyłączony w
+produkcji. Produkcyjne uruchomienie wymaga jednocześnie
+`NUXT_MOCK_BANK_ENABLED=true` i jawnego allowlistu UUID tenantów w
+`NUXT_MOCK_BANK_ORGANIZATION_IDS`; bank testowy nie pojawi się w pozostałych
+organizacjach. Lokalnie korzysta z tego samego Mailpita co pozostałe
+wiadomości; produkcyjnie wymaga zweryfikowanej domeny nadawczej i osobnego,
+ograniczonego klucza Resend.
+
+Przepływ demonstracyjny zachowuje rzeczywiste reguły procesu hipotecznego:
+
+1. Podłącz skrzynkę doradcy i uzupełnij PESEL głównego wnioskodawcy.
+2. W kalkulatorze zapisz ofertę „Hipoteka Demo” OpenExpert Banku. Zapis oferty
+   automatycznie tworzy roboczy wniosek i nadaje numer `OEB-YYYYMMDD-######`.
+3. Na karcie wniosku wybierz „Wyślij do banku”. Do skrzynki trafi aktualny ESIS
+   jako PDF w archiwum AES-256 ZIP; hasłem jest PESEL głównego wnioskodawcy.
+4. Pobierz PDF z wiadomości, dodaj go jako ESIS do wniosku i zapisz przekazanie
+   dokumentu wszystkim wnioskodawcom.
+5. Wybierz „Złóż wniosek”. Symulator zapisze kanoniczne potwierdzenie odbioru i
+   kompletności, po czym wyśle pozytywną decyzję w takim samym archiwum ZIP.
+6. Dodaj decyzję przez istniejącą akcję dokumentową. PDF przechodzi tę samą
+   kontrolę AI i reguły zgodności co dokument rzeczywistego banku.
+
+Workspace poczty obecnie pokazuje metadane załączników, ale nie pobiera ich z
+Gmaila, Microsoft Graph ani IMAP do CRM. Dlatego krok pobrania i dodania PDF
+jest dziś ręczny; symulator celowo nie omija kanonicznego pipeline'u dokumentów.
+
+Status „przyjęty do wysyłki” oznacza potwierdzenie dostawcy poczty, a nie
+doręczenie do skrzynki. Po niejednoznacznym błędzie transportu przed ponowieniem
+sprawdź skrzynkę odbiorczą. Dokładne zaszyfrowane bajty są utrwalane na czas
+bezpiecznego retry, usuwane po przyjęciu wiadomości, a porzucone lub nieudane
+payloady trafiają do trwałej kolejki usunięcia po 7 dniach.
+
 Transport Resend waliduje nadawcę, odbiorców i nagłówki, wymaga wersji HTML
 oraz plain text, a każde żądanie ma 10-sekundowy timeout. Błędy `429` i `5xx`
 są ponawiane maksymalnie dwa razy z wykładniczym backoffem i jitterem. Wszystkie
-próby tego samego zdarzenia używają identycznego klucza idempotency, więc retry
-nie generuje duplikatów. Ponawiane są także timeouty i błędy sieciowe bez
-statusu HTTP; błędy `4xx` (poza `429`) nie są ponawiane.
+próby tej samej generacji używają identycznego payloadu i klucza idempotency,
+co pozwala Resend deduplikować je w jego oknie idempotencji. Ponawiane są także
+timeouty i błędy sieciowe bez statusu HTTP; po wyczerpaniu prób wynik pozostaje
+niejednoznaczny i wymaga sprawdzenia skrzynki. Błędy `4xx` (poza `429`) nie są
+ponawiane.
 Lokalny fallback SMTP ma te same limity czasu i wyłączony dostęp do plików oraz
 zdalnych URL-i; nie należy konfigurować go jako produkcyjnego fallbacku dla
 Resend.

@@ -291,7 +291,7 @@ export default defineEventHandler(async (event) => {
       .limit(100),
     session.dataApi
       .from('crm_activities')
-      .select('*', { count: 'exact' })
+      .select('id, organization_id, actor_user_id, client_id, case_id, case_item_id, submission_id, activity_type, title, body, payload, created_at', { count: 'exact' })
       .eq('organization_id', session.organizationId)
       .or(relatedEntityFilter)
       .order('created_at', { ascending: false })

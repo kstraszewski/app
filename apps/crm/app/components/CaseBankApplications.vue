@@ -3,6 +3,7 @@ import type {
   CaseBankApplication,
   CaseDetail,
   MortgageApplicationStatus,
+  OpenExpertMockBankDispatch,
   SavedCaseOffer,
 } from '~/types/cases'
 import { isMortgageOfferApplicationReady } from '~/utils/mortgage-offer-readiness'
@@ -15,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   refresh: []
   openDocuments: []
+  openAction: [payload: { applicationId: string, kind: 'submit-application' }]
 }>()
 
 const { crmApiPath, orgPath } = useOrganizationContext()
@@ -24,13 +26,28 @@ const adding = ref(false)
 const focusingId = ref('')
 const removingId = ref('')
 const signingId = ref('')
+const requestingMockEsisId = ref('')
+const requestingMockDecisionId = ref('')
 const draftToRemove = ref<CaseBankApplication | null>(null)
 const contractToSign = ref<CaseBankApplication | null>(null)
+const clockMs = ref(Date.now())
+let clockTimer: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  clockTimer = setInterval(() => {
+    clockMs.value = Date.now()
+  }, 5_000)
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
 
 const applicationBankIds = computed(() => new Set(props.caseData.bank_applications.map(application => application.bank_id)))
 const availableOffers = computed(() => props.caseData.offers.filter(offer => (
   Boolean(offer.bank_id)
   && isMortgageOfferApplicationReady(offer.calculation_status)
+  && (offer.bank_is_mock !== true || props.caseData.mock_bank_enabled)
   && !applicationBankIds.value.has(String(offer.bank_id))
 )))
 const incompleteOfferCount = computed(() => props.caseData.offers.filter(offer => (
@@ -58,6 +75,66 @@ watch(candidateItems, (items) => {
 
 function offerFor(application: CaseBankApplication): SavedCaseOffer | null {
   return props.caseData.offers.find(offer => offer.id === application.offer_id) ?? null
+}
+
+function isMockBankOffer(application: CaseBankApplication) {
+  return offerFor(application)?.bank_is_mock === true
+}
+
+function isMockBankApplication(application: CaseBankApplication) {
+  return isMockBankOffer(application) && application.mock_bank?.enabled === true
+}
+
+function hasActiveMockDispatchLease(dispatch: OpenExpertMockBankDispatch) {
+  return dispatch.status === 'pending'
+    && Date.parse(dispatch.lease_expires_at ?? '') > clockMs.value
+}
+
+function isMockResendCooldownActive(sentAt: string | null | undefined) {
+  const timestamp = Date.parse(sentAt ?? '')
+  return Number.isFinite(timestamp) && timestamp + 60_000 > clockMs.value
+}
+
+function canRequestMockEsis(application: CaseBankApplication) {
+  if (!isMockBankApplication(application)) return false
+  if (application.mortgage_process?.stage !== 'pre_application') return false
+  const dispatch = application.mock_bank?.esis
+  if (dispatch && hasActiveMockDispatchLease(dispatch)) return false
+  if (dispatch?.status === 'sent' && isMockResendCooldownActive(dispatch.sent_at)) return false
+  const esisStatus = application.mortgage_process?.steps?.esis?.status
+  return !esisStatus || ['missing', 'expired'].includes(esisStatus)
+}
+
+function canSubmitMockApplication(application: CaseBankApplication) {
+  return isMockBankApplication(application)
+    && application.next_action?.kind === 'submit-application'
+}
+
+function canRequestMockDecision(application: CaseBankApplication) {
+  if (!isMockBankApplication(application)) return false
+  if (application.mortgage_process?.stage !== 'under_review') return false
+  const dispatch = application.mock_bank?.credit_decision
+  if (dispatch && hasActiveMockDispatchLease(dispatch)) return false
+  if (dispatch?.status === 'sent' && isMockResendCooldownActive(dispatch.sent_at)) return false
+  return !application.mortgage_process?.steps?.decision?.artifact_id
+}
+
+
+function mockDispatchNeedsRetry(application: CaseBankApplication) {
+  const dispatches = [application.mock_bank?.esis, application.mock_bank?.credit_decision]
+  return dispatches.some(dispatch => dispatch?.status === 'failed'
+    || (dispatch?.status === 'pending' && !hasActiveMockDispatchLease(dispatch)))
+}
+
+function newRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes)
+  else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256) })
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 function propertyFor(application: CaseBankApplication) {
@@ -169,6 +246,70 @@ async function focusApplication(application: CaseBankApplication) {
   }
   finally {
     focusingId.value = ''
+  }
+}
+
+async function requestMockEsis(application: CaseBankApplication) {
+  if (!canRequestMockEsis(application) || requestingMockEsisId.value) return
+  const forceResend = application.mock_bank?.esis?.status === 'sent'
+  requestingMockEsisId.value = application.id
+  try {
+    const response = await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/applications/${application.id}/mock-bank/esis`), {
+      method: 'POST',
+      body: { requestId: newRequestId(), forceResend },
+    })
+    emit('refresh')
+    toast.add({
+      title: response?.alreadySent ? 'ESIS był już przekazany' : 'ESIS przyjęty do wysyłki',
+      description: response?.data?.applicationNumber
+        ? `OpenExpert Bank · ${response.data.applicationNumber}`
+        : 'Sprawdź podłączoną skrzynkę pocztową.',
+      color: 'success',
+      icon: 'i-lucide-mail-check',
+    })
+  }
+  catch (error) {
+    emit('refresh')
+    toast.add({
+      title: 'Nie udało się wysłać mockowego ESIS',
+      description: apiErrorMessage(error) || 'Sprawdź konfigurację poczty i spróbuj ponownie.',
+      color: 'error',
+    })
+  }
+  finally {
+    requestingMockEsisId.value = ''
+  }
+}
+
+async function requestMockDecision(application: CaseBankApplication) {
+  if (!canRequestMockDecision(application) || requestingMockDecisionId.value) return
+  const forceResend = application.mock_bank?.credit_decision?.status === 'sent'
+  requestingMockDecisionId.value = application.id
+  try {
+    const response = await ($fetch as any)(crmApiPath(`/cases/${props.caseData.id}/applications/${application.id}/mock-bank/decision`), {
+      method: 'POST',
+      body: { requestId: newRequestId(), forceResend },
+    })
+    emit('refresh')
+    toast.add({
+      title: response?.alreadySent ? 'Decyzja była już przekazana' : 'Decyzja przyjęta do wysyłki',
+      description: response?.data?.applicationNumber
+        ? `OpenExpert Bank · ${response.data.applicationNumber}`
+        : 'Sprawdź podłączoną skrzynkę pocztową.',
+      color: 'success',
+      icon: 'i-lucide-mail-check',
+    })
+  }
+  catch (error) {
+    emit('refresh')
+    toast.add({
+      title: 'Nie udało się wysłać mockowej decyzji',
+      description: apiErrorMessage(error) || 'Sprawdź konfigurację poczty i spróbuj ponownie.',
+      color: 'error',
+    })
+  }
+  finally {
+    requestingMockDecisionId.value = ''
   }
 }
 
@@ -286,8 +427,12 @@ async function signContract() {
             <UIcon v-else name="i-lucide-landmark" />
           </span>
           <div>
-            <strong>{{ offerFor(application)?.bank_name ?? 'Bank' }}</strong>
+            <strong>
+              {{ offerFor(application)?.bank_name ?? 'Bank' }}
+              <UBadge v-if="isMockBankOffer(application)" color="neutral" variant="subtle" size="xs">Bank testowy</UBadge>
+            </strong>
             <small>{{ offerFor(application)?.product_name ?? 'Oferta kredytowa' }}</small>
+            <small v-if="application.external_reference" class="bank-application__reference">Nr bankowy: {{ application.external_reference }}</small>
           </div>
         </div>
 
@@ -299,6 +444,47 @@ async function signContract() {
         <p class="bank-application__property"><UIcon name="i-lucide-house" />{{ propertyLabel(application) }}</p>
 
         <div class="bank-application__actions">
+          <UButton
+            v-if="canRequestMockEsis(application)"
+            color="primary"
+            variant="soft"
+            size="sm"
+            icon="i-lucide-send"
+            :loading="requestingMockEsisId === application.id"
+            :disabled="Boolean(requestingMockEsisId)"
+            @click="requestMockEsis(application)"
+          >
+            {{ application.mock_bank?.esis?.status === 'sent'
+              ? 'Wyślij ponownie ESIS'
+              : application.mock_bank?.esis?.status === 'failed'
+                ? 'Ponów wysyłkę ESIS'
+                : 'Wyślij do banku' }}
+          </UButton>
+          <UButton
+            v-if="canSubmitMockApplication(application)"
+            color="primary"
+            size="sm"
+            icon="i-lucide-file-check-2"
+            @click="emit('openAction', { applicationId: application.id, kind: 'submit-application' })"
+          >
+            Złóż wniosek
+          </UButton>
+          <UButton
+            v-if="canRequestMockDecision(application)"
+            color="primary"
+            variant="soft"
+            size="sm"
+            icon="i-lucide-mail-plus"
+            :loading="requestingMockDecisionId === application.id"
+            :disabled="Boolean(requestingMockDecisionId)"
+            @click="requestMockDecision(application)"
+          >
+            {{ application.mock_bank?.credit_decision?.status === 'sent'
+              ? 'Wyślij ponownie decyzję'
+              : application.mock_bank?.credit_decision?.status === 'failed'
+                ? 'Ponów decyzję'
+                : 'Wyślij decyzję' }}
+          </UButton>
           <UButton
             color="neutral"
             variant="soft"
@@ -330,6 +516,39 @@ async function signContract() {
             @click="confirmDraftRemoval(application)"
           />
         </div>
+        <p
+          v-if="isMockBankOffer(application) && application.mock_bank?.esis?.status === 'sent'"
+          class="bank-application__mock-status"
+        >
+          <UIcon name="i-lucide-mail-check" /> Dostawca poczty przyjął ESIS do wysyłki
+        </p>
+        <p
+          v-if="isMockBankOffer(application) && application.mock_bank?.credit_decision?.status === 'sent'"
+          class="bank-application__mock-status"
+        >
+          <UIcon name="i-lucide-mail-check" /> Dostawca poczty przyjął decyzję do wysyłki
+        </p>
+        <p
+          v-if="isMockBankApplication(application) && (
+            (application.mock_bank?.esis && hasActiveMockDispatchLease(application.mock_bank.esis))
+            || (application.mock_bank?.credit_decision && hasActiveMockDispatchLease(application.mock_bank.credit_decision))
+          )"
+          class="bank-application__mock-status bank-application__mock-status--pending"
+        >
+          <UIcon name="i-lucide-loader-circle" /> Wysyłka dokumentu jest w toku
+        </p>
+        <p
+          v-if="isMockBankApplication(application) && mockDispatchNeedsRetry(application)"
+          class="bank-application__mock-status bank-application__mock-status--pending"
+        >
+          <UIcon name="i-lucide-rotate-ccw" /> Poprzednia próba nie została zakończona — przed ponowieniem sprawdź skrzynkę odbiorczą
+        </p>
+        <p
+          v-if="isMockBankOffer(application) && application.mock_bank?.enabled === false"
+          class="bank-application__mock-status bank-application__mock-status--disabled"
+        >
+          <UIcon name="i-lucide-toggle-left" /> Symulator banku jest wyłączony w tym środowisku
+        </p>
       </article>
     </div>
 
@@ -430,6 +649,11 @@ async function signContract() {
 .bank-applications__heading { justify-content: space-between; gap: 18px; }
 .bank-applications__heading > div:first-child { display: grid; gap: 3px; }
 .bank-applications__heading p, .bank-applications__heading h2, .bank-applications__heading small, .bank-application p, .bank-applications__note { margin: 0; }
+.bank-application__identity strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bank-application__reference { color: var(--ui-primary); font-family: var(--font-mono); }
+.bank-application__mock-status { display: flex; align-items: center; gap: 6px; color: var(--ui-success); font-size: 12px; }
+.bank-application__mock-status--disabled { color: var(--ui-text-muted); }
+.bank-application__mock-status--pending { color: var(--ui-warning); }
 .bank-applications__heading p { color: var(--ui-primary); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .bank-applications__heading h2 { color: var(--ui-text-highlighted); font-size: 18px; }
 .bank-applications__heading h2 span { color: var(--ui-primary); font-family: var(--font-mono); }

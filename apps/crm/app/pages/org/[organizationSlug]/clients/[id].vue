@@ -490,6 +490,7 @@ function appointmentTime(value: string) {
 
 function activityIcon(activityType: string) {
   if (activityType === 'client_portal_account_archived') return 'i-lucide-archive'
+  if (activityType === 'email_sent') return 'i-lucide-send'
   if (activityType.includes('created')) return 'i-lucide-circle-plus'
   if (activityType.includes('status')) return 'i-lucide-refresh-cw'
   if (activityType.includes('document') || activityType.includes('submission')) return 'i-lucide-file-check-2'
@@ -504,6 +505,7 @@ function activityLabel(activityType: string) {
     client_created: 'Utworzenie klienta',
     client_updated: 'Zmiana danych',
     client_portal_account_archived: 'Archiwizacja konta panelu klienta',
+    email_sent: 'Wysłanie wiadomości e-mail',
     case_created: 'Nowa sprawa',
     status_changed: 'Zmiana statusu',
     note: 'Notatka',
@@ -1083,6 +1085,7 @@ const headerMenuItems = computed(() => [
           context-type="client"
           :context-id="data.data.id"
           :context-label="data.data.display_name"
+          @sent="refresh()"
         />
         <UButton
           color="neutral"
@@ -1492,6 +1495,7 @@ const headerMenuItems = computed(() => [
           scope-type="client"
           :scope-id="data.data.id"
           embedded
+          @sent="refresh()"
         />
       </section>
 
@@ -1896,7 +1900,7 @@ const headerMenuItems = computed(() => [
             <div>
               <p>Pełny ślad obsługi</p>
               <h2 id="client-history-title">Historia klienta</h2>
-              <span>Zmiany w CRM, powiązane sprawy oraz decyzje dotyczące zgód.</span>
+              <span>Zmiany w CRM, komunikacja e-mail, powiązane sprawy oraz decyzje dotyczące zgód.</span>
             </div>
             <UBadge color="neutral" variant="outline">{{ historyItems.length }} zdarzenia</UBadge>
           </header>

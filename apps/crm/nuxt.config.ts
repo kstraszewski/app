@@ -45,6 +45,19 @@ const authPasskeyEnabled = process.env.NUXT_AUTH_PASSKEY_ENABLED !== 'false'
 const authPasskeyOrigin = authBaseUrl.replace(/\/$/u, '')
 const authPasskeyRpId = process.env.NUXT_AUTH_PASSKEY_RP_ID
   || new URL(authPasskeyOrigin).hostname
+const mockBankEnabled = process.env.NUXT_MOCK_BANK_ENABLED
+  ? process.env.NUXT_MOCK_BANK_ENABLED === 'true'
+  : !isProduction
+const mockBankOrganizationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const mockBankOrganizationIds = Array.from(new Set(
+  (process.env.NUXT_MOCK_BANK_ORGANIZATION_IDS || '')
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean),
+))
+if (mockBankOrganizationIds.some(value => !mockBankOrganizationIdPattern.test(value))) {
+  throw new Error('NUXT_MOCK_BANK_ORGANIZATION_IDS must be a comma-separated list of UUIDs')
+}
 
 export default defineNuxtConfig({
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
@@ -238,6 +251,30 @@ export default defineNuxtConfig({
         secure: process.env.NUXT_SMTP_SECURE === 'true',
         user: process.env.NUXT_SMTP_USER || '',
         password: process.env.NUXT_SMTP_PASSWORD || '',
+      },
+    },
+    mockBank: {
+      enabled: mockBankEnabled,
+      // Local/test environments are isolated and may expose the simulator to
+      // every fixture tenant. A production deployment always requires an
+      // explicit immutable organization-id allowlist in addition to enabled.
+      allowAllOrganizations: !isProduction,
+      organizationIds: mockBankOrganizationIds,
+      email: {
+        // The synthetic bank has an explicit sending identity. In local
+        // development an empty key intentionally selects SMTP/Mailpit instead
+        // of accidentally reusing the application's generic Resend key.
+        apiKey: process.env.NUXT_MOCK_BANK_RESEND_API_KEY || '',
+        from: process.env.NUXT_MOCK_BANK_EMAIL_FROM
+          || (isProduction ? '' : 'OpenExpert Bank <dokumenty@bank.openexpert.local>'),
+        replyTo: process.env.NUXT_MOCK_BANK_EMAIL_REPLY_TO || '',
+        smtp: {
+          host: process.env.NUXT_SMTP_HOST || (isProduction ? '' : '127.0.0.1'),
+          port: Number(process.env.NUXT_SMTP_PORT || 55325),
+          secure: process.env.NUXT_SMTP_SECURE === 'true',
+          user: process.env.NUXT_SMTP_USER || '',
+          password: process.env.NUXT_SMTP_PASSWORD || '',
+        },
       },
     },
     authSms: {

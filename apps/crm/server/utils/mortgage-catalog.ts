@@ -1,5 +1,6 @@
 import { createError } from 'h3'
 import { throwDbError, type CrmSession } from './crm'
+import { resolveMortgageBankLogoUrl } from './openexpert-mock-bank-brand'
 
 const logoBucket = 'mortgage-bank-logos'
 
@@ -419,12 +420,12 @@ export function mergeMortgageVersion(baseVersion: JsonRecord, parameters: unknow
 
 export async function loadMortgageCatalog(
   session: CrmSession,
-  options: { includeDisabled?: boolean } = {},
+  options: { includeDisabled?: boolean, includeMock?: boolean } = {},
 ): Promise<{ products: JsonRecord[], retrievedAt: string | null }> {
   const today = new Date().toISOString().slice(0, 10)
   const { data: products, error: productError } = await session.dataApi
     .from('mortgage_products')
-    .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color)')
+    .select('id, slug, name, category, bank_id, current_published_version_id, mortgage_banks!inner(id, slug, name, website_url, logo_url, logo_background_color, is_mock)')
     .eq('is_active', true)
     .order('name')
   throwDbError(productError)
@@ -510,6 +511,7 @@ export async function loadMortgageCatalog(
       const rawBank = Array.isArray(product.mortgage_banks)
         ? product.mortgage_banks[0]
         : product.mortgage_banks
+      if (rawBank?.is_mock === true && !options.includeMock) return []
       const source = sourceById.get(version.source_document_id) ?? null
       const variant = defaultVariantByVersion.get(version.id) ?? null
       const baseVersion = {
@@ -521,7 +523,7 @@ export async function loadMortgageCatalog(
       }
       const logoUrl = bankOverride?.logo_path
         ? session.dataApi.storage.from(logoBucket).getPublicUrl(bankOverride.logo_path).data.publicUrl
-        : rawBank.logo_url
+        : resolveMortgageBankLogoUrl(rawBank.slug, rawBank.logo_url)
       return [{
         id: product.id,
         slug: product.slug,
@@ -534,6 +536,7 @@ export async function loadMortgageCatalog(
           website_url: bankOverride?.custom_website_url ?? rawBank.website_url,
           baseName: rawBank.name,
           baseWebsiteUrl: rawBank.website_url,
+          isMock: rawBank.is_mock === true,
           isEnabled: bankOverride?.is_enabled ?? true,
           logoUrl,
           logoBackground: bankOverride?.logo_path ? null : rawBank.logo_background_color,

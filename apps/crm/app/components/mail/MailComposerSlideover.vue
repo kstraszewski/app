@@ -131,6 +131,8 @@ const sendError = ref('')
 const deliveryAmbiguous = ref(false)
 const idempotencyKey = ref('')
 const lastAttemptFingerprint = ref('')
+const lastAttemptContentFingerprint = ref('')
+const lastAttemptContexts = ref<MailContextScope[] | null>(null)
 const contextCasesLoading = ref(false)
 const contextCasesError = ref('')
 const fetchedCasesByClient = shallowRef(new Map<string, ComposerContextCase[]>())
@@ -434,25 +436,25 @@ function validateComposer(state: Partial<ComposerForm>): FormError[] {
       message: 'Wiadomość może mieć łącznie maksymalnie 50 odbiorców.',
     })
   }
-  if (crmContextClients.value.length > 10) {
+  if (!deliveryAmbiguous.value && crmContextClients.value.length > 10) {
     errors.push({
       name: 'to',
       message: 'Jedną wiadomość możesz przypiąć do maksymalnie 10 klientów.',
     })
   }
-  if (caseClientMismatch.value) {
+  if (!deliveryAmbiguous.value && caseClientMismatch.value) {
     errors.push({
       name: 'to',
       message: 'Wybrany klient nie jest powiązany z bieżącą sprawą.',
     })
   }
-  if (contextCaseSelectionRequired.value) {
+  if (!deliveryAmbiguous.value && contextCaseSelectionRequired.value) {
     errors.push({
       name: 'contextCaseId',
       message: 'Wybierz sprawę, do której ma zostać przypięty wątek.',
     })
   }
-  if (contextCasesError.value && !fixedContextCase.value) {
+  if (!deliveryAmbiguous.value && contextCasesError.value && !fixedContextCase.value) {
     errors.push({
       name: 'contextCaseId',
       message: contextCasesError.value,
@@ -499,7 +501,11 @@ function recipientFieldErrors(
 }
 
 async function requestSend(_event: FormSubmitEvent<ComposerForm>): Promise<void> {
-  if (sending.value || attachmentError.value || contextCasesLoading.value) return
+  if (
+    sending.value
+    || attachmentError.value
+    || (contextCasesLoading.value && !deliveryAmbiguous.value)
+  ) return
   if (requiresSendConfirmation.value) {
     sendConfirmationOpen.value = true
     return
@@ -508,7 +514,11 @@ async function requestSend(_event: FormSubmitEvent<ComposerForm>): Promise<void>
 }
 
 async function sendMessage(): Promise<void> {
-  if (sending.value || attachmentError.value || contextCasesLoading.value) return
+  if (
+    sending.value
+    || attachmentError.value
+    || (contextCasesLoading.value && !deliveryAmbiguous.value)
+  ) return
   sendConfirmationOpen.value = false
   if (props.preview) {
     toast.add({
@@ -521,12 +531,30 @@ async function sendMessage(): Promise<void> {
   }
   sending.value = true
   sendError.value = ''
+  const retryingAmbiguousSend = deliveryAmbiguous.value
   deliveryAmbiguous.value = false
   try {
-    const fingerprint = await composerFingerprint()
-    if (!idempotencyKey.value || fingerprint !== lastAttemptFingerprint.value) {
+    const currentContexts = contextScopes.value.map(context => ({ ...context }))
+    const fingerprints = await composerFingerprints(currentContexts)
+    const recoveringUnchangedSend = Boolean(
+      retryingAmbiguousSend
+      && lastAttemptContexts.value
+      && fingerprints.content === lastAttemptContentFingerprint.value,
+    )
+    const sendContexts = recoveringUnchangedSend && lastAttemptContexts.value
+      ? lastAttemptContexts.value
+      : currentContexts
+    const fingerprint = recoveringUnchangedSend
+      ? lastAttemptFingerprint.value
+      : fingerprints.request
+    if (
+      !idempotencyKey.value
+      || (!recoveringUnchangedSend && fingerprint !== lastAttemptFingerprint.value)
+    ) {
       idempotencyKey.value = crypto.randomUUID()
       lastAttemptFingerprint.value = fingerprint
+      lastAttemptContentFingerprint.value = fingerprints.content
+      lastAttemptContexts.value = sendContexts
     }
     const body = new FormData()
     body.append('connectionId', props.connectionId)
@@ -537,8 +565,8 @@ async function sendMessage(): Promise<void> {
     body.append('subject', form.subject.trim())
     body.append('body', form.body)
     if (props.threadId) body.append('threadId', props.threadId)
-    if (contextScopes.value.length) {
-      body.append('contexts', JSON.stringify(contextScopes.value))
+    if (sendContexts.length) {
+      body.append('contexts', JSON.stringify(sendContexts))
     }
     if (props.contextType && props.contextId) {
       body.append('contextType', props.contextType)
@@ -573,7 +601,10 @@ function isDeliveryAmbiguous(error: unknown): boolean {
   )
 }
 
-async function composerFingerprint(): Promise<string> {
+async function composerFingerprints(contexts: readonly MailContextScope[]): Promise<{
+  content: string
+  request: string
+}> {
   const seenRecipients = new Set<string>()
   const normalizeRecipients = (value: string): string[] => (
     splitMailRecipients(value)
@@ -594,7 +625,7 @@ async function composerFingerprint(): Promise<string> {
       ),
     })),
   )
-  return JSON.stringify({
+  const content = {
     to: normalizeRecipients(form.to),
     cc: normalizeRecipients(form.cc),
     bcc: normalizeRecipients(form.bcc),
@@ -602,9 +633,12 @@ async function composerFingerprint(): Promise<string> {
     body: form.body,
     connectionId: props.connectionId,
     threadId: props.threadId,
-    contexts: contextScopes.value,
     attachments: attachmentFingerprints,
-  })
+  }
+  return {
+    content: JSON.stringify(content),
+    request: JSON.stringify({ ...content, contexts }),
+  }
 }
 
 function bytesToHex(value: ArrayBuffer): string {
@@ -1059,7 +1093,7 @@ function formatBytes(value: number): string {
             form="mail-composer-form"
             icon="i-lucide-send"
             :loading="sending"
-            :disabled="Boolean(attachmentError) || contextCasesLoading || caseClientMismatch"
+            :disabled="Boolean(attachmentError) || (!deliveryAmbiguous && (contextCasesLoading || caseClientMismatch))"
           >
             {{ sendActionLabel }}
           </UButton>

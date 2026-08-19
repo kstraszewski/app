@@ -1,5 +1,5 @@
 import { useRuntimeConfig } from '#imports'
-import { getQuery } from 'h3'
+import { createError, getQuery } from 'h3'
 import {
   mortgageBankFileEmbeddingDimensions,
   mortgageBankFileEmbeddingModel,
@@ -72,12 +72,14 @@ export default defineEventHandler(async (event) => {
     backendData
       .from('mortgage_banks')
       .select('id, name, logo_url')
+      .eq('is_mock', false)
       .order('name'),
     (() => {
       let request = backendData
         .from('mortgage_products')
-        .select('id, bank_id, name')
+        .select('id, bank_id, name, mortgage_banks!inner(is_mock)')
         .eq('is_active', true)
+        .eq('mortgage_banks.is_mock', false)
         .order('name')
       if (bankId) request = request.eq('bank_id', bankId)
       return request
@@ -86,6 +88,13 @@ export default defineEventHandler(async (event) => {
   if (categoriesResult.error) throw categoriesResult.error
   if (institutionsResult.error) throw institutionsResult.error
   if (productsResult.error) throw productsResult.error
+
+  if (bankId && !(institutionsResult.data ?? []).some((row: DatabaseRecord) => String(row.id) === bankId)) {
+    throw createError({ statusCode: 400, statusMessage: 'Wybrana instytucja nie obsługuje bazy wiedzy.' })
+  }
+  if (productId && !(productsResult.data ?? []).some((row: DatabaseRecord) => String(row.id) === productId)) {
+    throw createError({ statusCode: 400, statusMessage: 'Wybrany produkt nie obsługuje bazy wiedzy.' })
+  }
 
   const categories = (categoriesResult.data ?? []) as DatabaseRecord[]
   const category = requestedCategory

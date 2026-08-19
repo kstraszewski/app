@@ -202,6 +202,7 @@ export async function listExperimentKnowledgeInstitutions(
   const result = await context.backendData
     .from('mortgage_banks')
     .select('id, slug, name, logo_url, brand_color, brand_foreground_color')
+    .eq('is_mock', false)
     .order('name')
   if (result.error) throw result.error
   return ((result.data ?? []) as DatabaseRecord[]).map(institutionResponse)
@@ -215,6 +216,7 @@ async function resolveExperimentKnowledgeInstitutions(
   const result = await context.backendData
     .from('mortgage_banks')
     .select('id, slug, name, logo_url, brand_color, brand_foreground_color')
+    .eq('is_mock', false)
     .in('id', institutionIds)
     .order('name')
   if (result.error) throw result.error

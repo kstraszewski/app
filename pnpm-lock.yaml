@@ -126,6 +126,9 @@ importers:
       '@unovis/ts':
         specifier: 1.6.7
         version: 1.6.7
+      '@zip.js/zip.js':
+        specifier: ^2.8.34
+        version: 2.8.34
       ably:
         specifier: ^2.26.0
         version: 2.26.0

@@ -335,6 +335,7 @@ export async function ingestMortgageBankFile(
     .from('mortgage_banks')
     .select('id')
     .eq('id', input.bankId)
+    .eq('is_mock', false)
     .maybeSingle()
   if (bankResult.error) throw bankResult.error
   if (!bankResult.data) throw createError({ statusCode: 404, statusMessage: 'Financial institution not found' })

@@ -18,6 +18,10 @@ const props = withDefaults(defineProps<{
   label: 'Napisz',
 })
 
+const emit = defineEmits<{
+  sent: [value: MailSendPayload['data']]
+}>()
+
 const requestFetch = useRequestFetch()
 const toast = useToast()
 const { organizationSlug, orgApiPath, orgPath } = useOrganizationContext()
@@ -87,13 +91,14 @@ async function openComposer(): Promise<void> {
   await navigateTo(orgPath('/mail'))
 }
 
-function handleSent(_result: MailSendPayload['data']): void {
+function handleSent(result: MailSendPayload['data']): void {
   toast.add({
     title: 'Wiadomość została wysłana',
     description: 'Wątek został przypięty do wybranego kontekstu w CRM.',
     color: 'success',
     icon: 'i-lucide-send',
   })
+  emit('sent', result)
 }
 </script>
 

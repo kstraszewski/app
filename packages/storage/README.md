@@ -20,6 +20,7 @@ turn a private namespace into a public upload.
 | `crm-case-documents` | private | 25 MiB |
 | `crm-legal-documents` | private | 5 MiB |
 | `crm-message-attachments` | private | 25 MiB |
+| `crm-mock-bank-outbox` | private | 5 MiB |
 | `crm-property-images` | private | 8 MiB |
 | `facility-images` | private | 8 MiB |
 | `expert-brand-assets` | public | 5 MiB |
@@ -44,10 +45,19 @@ private store/bucket
 ├── crm-case-documents/<existing storage_path>
 ├── crm-legal-documents/<existing storage_path>
 ├── crm-message-attachments/<existing storage_path>
+├── crm-mock-bank-outbox/<tenant/application/dispatch/generation payload>
 ├── crm-property-images/<existing storage_path>
 ├── facility-images/<existing storage_path>
 └── mortgage-bank-files/<existing storage_path>
 ```
+
+`crm-mock-bank-outbox` accepts only JSON delivery manifests and ZIP archives.
+They freeze one exact provider payload for safe idempotent retry and are queued
+for deletion as soon as the corresponding delivery is durably marked sent (or
+when its dispatch is deleted). Failed deliveries retain their objects so the
+same generation can be retried byte-for-byte; failed or abandoned payloads
+that remain unresolved for 7 days are queued for deletion and a later retry
+starts a fresh generation.
 
 ## Core API
 

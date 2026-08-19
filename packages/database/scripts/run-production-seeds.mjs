@@ -8,6 +8,12 @@ const SHOWCASE_COMMAND = [
   '--confirm',
   'SEED_OPENEXPERT_PRODUCTION_SHOWCASE',
 ]
+const MOCK_BANK_COMMAND = [
+  resolve(dirname(fileURLToPath(import.meta.url)), 'seed-production-openexpert-mock-bank.mjs'),
+  '--apply',
+  '--confirm',
+  'SEED_OPENEXPERT_PRODUCTION_MOCK_BANK',
+]
 const KNOWLEDGE_MIGRATION_COMMAND = [
   resolve(dirname(fileURLToPath(import.meta.url)), 'migrate-production-knowledge-release.mjs'),
   '--apply',
@@ -59,10 +65,11 @@ if (!runMode) {
 const commands = {
   'bank-files': [BANK_FILES_COMMAND, MULTIFORM_TEMPLATES_COMMAND],
   'showcase-and-bank-files': [BANK_FILES_COMMAND, MULTIFORM_TEMPLATES_COMMAND, SHOWCASE_COMMAND],
+  'mock-bank-and-bank-files': [BANK_FILES_COMMAND, MULTIFORM_TEMPLATES_COMMAND, MOCK_BANK_COMMAND],
 }[runMode]
 if (!commands) {
   throw new Error(
-    'OPENEXPERT_RUN_PRODUCTION_SEEDS must be bank-files or showcase-and-bank-files.',
+    'OPENEXPERT_RUN_PRODUCTION_SEEDS must be bank-files, showcase-and-bank-files or mock-bank-and-bank-files.',
   )
 }
 

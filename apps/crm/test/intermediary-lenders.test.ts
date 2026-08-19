@@ -5,6 +5,7 @@ import {
   applyIntermediaryCooperatingLenderSelection,
   applyIntermediaryLenderSelection,
   buildIntermediaryLenders,
+  resolveIntermediaryLenders,
 } from '../server/utils/intermediary-lenders.ts'
 
 test('builds a sorted bank catalogue using the active legal-name alias', () => {
@@ -87,4 +88,37 @@ test('resolves the cooperation snapshot without changing the represented lender 
     selection.settings.relationship.lenderNames,
     ['Historyczna nazwa reprezentowanego banku'],
   )
+})
+
+test('never exposes a synthetic bank in the statutory intermediary lender list', async () => {
+  const filters: Array<{ relation: string, column: string, value: unknown }> = []
+  const rows = {
+    mortgage_banks: { data: [{ id: 'real-bank', name: 'Bank Rzeczywisty' }], error: null },
+    mortgage_bank_aliases: { data: [], error: null },
+  }
+  const dataApi = {
+    from(relation: keyof typeof rows) {
+      const result = rows[relation]
+      const query = {
+        select() { return query },
+        eq(column: string, value: unknown) {
+          filters.push({ relation, column, value })
+          return query
+        },
+        then(resolve: (value: typeof result) => unknown, reject: (reason: unknown) => unknown) {
+          return Promise.resolve(result).then(resolve, reject)
+        },
+      }
+      return query
+    },
+  }
+
+  const lenders = await resolveIntermediaryLenders(dataApi as any, '2026-08-19')
+
+  assert.deepEqual(lenders, [{ id: 'real-bank', name: 'Bank Rzeczywisty' }])
+  assert.ok(filters.some(filter => (
+    filter.relation === 'mortgage_banks'
+    && filter.column === 'is_mock'
+    && filter.value === false
+  )))
 })

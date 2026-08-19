@@ -45,6 +45,7 @@ test('declares the storage buckets as access-controlled namespaces', () => {
     'crm-case-documents',
     'crm-legal-documents',
     'crm-message-attachments',
+    'crm-mock-bank-outbox',
     'crm-property-images',
     'facility-images',
     'expert-brand-assets',
@@ -54,6 +55,14 @@ test('declares the storage buckets as access-controlled namespaces', () => {
   assert.equal(getStorageNamespaceDefinition('mortgage-bank-logos').access, 'public')
   assert.equal(getStorageNamespaceDefinition('expert-brand-assets').access, 'public')
   assert.equal(getStorageNamespaceDefinition('crm-case-documents').access, 'private')
+  assert.deepEqual(
+    getStorageNamespaceDefinition('crm-mock-bank-outbox'),
+    {
+      access: 'private',
+      maxBytes: 5 * 1024 * 1024,
+      allowedContentTypes: ['application/json', 'application/zip'],
+    },
+  )
   assert.deepEqual(
     getStorageNamespaceDefinition('crm-legal-documents'),
     {

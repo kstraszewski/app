@@ -1,8 +1,10 @@
 import { createError, setHeader, type H3Event } from 'h3'
+import type { MailContextScope } from '../../shared/types/mail.ts'
 import type { CrmSession } from './crm.ts'
 import { throwDbError } from './crm.ts'
 import { gmailSendRequestHash, type GmailSendRequestHashInput } from './gmail-send.ts'
 import type { MailConnectionRow } from './mail-connections.ts'
+import { mailSendRequestCrmContext } from './mail-crm-activities.ts'
 import {
   connectionBoundMailMessageId,
   mailSendCanRecoverWithoutNewAttempt,
@@ -22,6 +24,9 @@ export interface MailSendRequestRow {
   provider_thread_id: string | null
   attempts: number
   error_code: string | null
+  crm_client_ids: string[]
+  crm_case_id: string | null
+  crm_context_resolved: boolean
   created_at: string
   updated_at: string
 }
@@ -46,6 +51,7 @@ export async function claimRateLimitedMailSendRequest(
   connection: MailConnectionRow,
   idempotencyKey: string,
   requestHash: string,
+  contexts: readonly MailContextScope[],
 ): Promise<{ row: MailSendRequestRow; claimed: boolean }> {
   const existing = await findMailSendRequest(
     backendData,
@@ -56,7 +62,10 @@ export async function claimRateLimitedMailSendRequest(
   if (existing) {
     assertMailSendRequestHash(existing, requestHash)
     if (mailSendCanRecoverWithoutNewAttempt(existing.status)) {
-      return { row: existing, claimed: false }
+      return {
+        row: await ensureMailSendRequestCrmContext(backendData, existing, contexts),
+        claimed: false,
+      }
     }
   }
 
@@ -74,7 +83,10 @@ export async function claimRateLimitedMailSendRequest(
     if (raced) {
       assertMailSendRequestHash(raced, requestHash)
       if (mailSendCanRecoverWithoutNewAttempt(raced.status)) {
-        return { row: raced, claimed: false }
+        return {
+          row: await ensureMailSendRequestCrmContext(backendData, raced, contexts),
+          claimed: false,
+        }
       }
     }
     setHeader(event, 'Retry-After', rateLimit.retryAfterSeconds)
@@ -90,6 +102,7 @@ export async function claimRateLimitedMailSendRequest(
     connection,
     idempotencyKey,
     requestHash,
+    contexts,
   )
 }
 
@@ -99,7 +112,9 @@ async function claimMailSendRequest(
   connection: MailConnectionRow,
   idempotencyKey: string,
   requestHash: string,
+  contexts: readonly MailContextScope[],
 ): Promise<{ row: MailSendRequestRow; claimed: boolean }> {
+  const crmContext = mailSendRequestCrmContext(contexts)
   const values = {
     organization_id: session.organizationId,
     owner_user_id: session.userId,
@@ -109,6 +124,9 @@ async function claimMailSendRequest(
     message_id_header: mailSendMessageId(connection.id, idempotencyKey),
     status: 'pending',
     attempts: 1,
+    crm_client_ids: crmContext.crmClientIds,
+    crm_case_id: crmContext.crmCaseId,
+    crm_context_resolved: true,
   }
   const inserted = await backendData
     .from('mail_send_requests')
@@ -129,15 +147,23 @@ async function claimMailSendRequest(
     idempotencyKey,
   )
   assertMailSendRequestHash(existing, requestHash)
-  if (existing.status !== 'failed') {
-    return { row: existing, claimed: false }
+  const contextualExisting = await ensureMailSendRequestCrmContext(
+    backendData,
+    existing,
+    contexts,
+  )
+  if (contextualExisting.status !== 'failed') {
+    return {
+      row: contextualExisting,
+      claimed: false,
+    }
   }
 
   const retried = await backendData
     .from('mail_send_requests')
     .update({
       status: 'pending',
-      attempts: existing.attempts + 1,
+      attempts: contextualExisting.attempts + 1,
       error_code: null,
     })
     .eq('organization_id', session.organizationId)
@@ -152,14 +178,47 @@ async function claimMailSendRequest(
     return { row: retried.data as MailSendRequestRow, claimed: true }
   }
   return {
-    row: await loadMailSendRequest(
+    row: await ensureMailSendRequestCrmContext(
       backendData,
-      session,
-      connection.id,
-      idempotencyKey,
+      await loadMailSendRequest(
+        backendData,
+        session,
+        connection.id,
+        idempotencyKey,
+      ),
+      contexts,
     ),
     claimed: false,
   }
+}
+
+async function ensureMailSendRequestCrmContext(
+  backendData: any,
+  row: MailSendRequestRow,
+  contexts: readonly MailContextScope[],
+): Promise<MailSendRequestRow> {
+  const expected = mailSendRequestCrmContext(contexts)
+  if (row.crm_context_resolved === true) return row
+
+  // Only rows created before CRM audit contexts existed carry the unresolved
+  // sentinel. Backfilling it exactly once also repairs a missing activity for
+  // a sent row. A resolved no-match remains empty forever.
+
+  const updated = await backendData
+    .from('mail_send_requests')
+    .update({
+      crm_client_ids: expected.crmClientIds,
+      crm_case_id: expected.crmCaseId,
+      crm_context_resolved: true,
+    })
+    .eq('id', row.id)
+    .eq('organization_id', row.organization_id)
+    .eq('owner_user_id', row.owner_user_id)
+    .eq('connection_id', row.connection_id)
+    .select('*')
+    .single()
+  throwDbError(updated.error)
+  return updated.data as MailSendRequestRow
 }
 
 export async function markMailSendRequestSent(
@@ -260,5 +319,13 @@ async function updateMailSendRequest(
     .eq('owner_user_id', row.owner_user_id)
     .eq('connection_id', row.connection_id)
     .eq('id', row.id)
+    .select('id')
+    .maybeSingle()
   throwDbError(result.error)
+  if (!result.data) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Stan tej próby wysyłki nie jest już dostępny.',
+    })
+  }
 }

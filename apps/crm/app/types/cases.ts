@@ -77,6 +77,25 @@ export interface SavedCaseOffer {
   saved_at: string
   bank_logo_url?: string | null
   bank_logo_background?: string | null
+  bank_slug?: string | null
+  bank_is_mock?: boolean
+}
+
+export type OpenExpertMockBankDispatchStatus = 'pending' | 'sent' | 'failed'
+
+export interface OpenExpertMockBankDispatch {
+  status: OpenExpertMockBankDispatchStatus
+  attempts: number
+  last_attempt_at: string | null
+  lease_expires_at: string | null
+  sent_at: string | null
+}
+
+export interface OpenExpertMockBankApplicationState {
+  enabled: boolean
+  application_number: string
+  esis: OpenExpertMockBankDispatch | null
+  credit_decision: OpenExpertMockBankDispatch | null
 }
 
 export type MortgageApplicationStatus =
@@ -223,6 +242,7 @@ export interface CaseBankApplication {
   updated_at: string
   mortgage_process?: MortgageApplicationProcess | null
   next_action?: MortgageNextAction | null
+  mock_bank?: OpenExpertMockBankApplicationState | null
 }
 
 export type DocumentRequirement = SharedDocumentRequirement
@@ -420,6 +440,7 @@ export interface CaseDetail {
   closed_at: string | null
   created_at: string
   updated_at: string
+  mock_bank_enabled: boolean
   owner: CaseUserSummary | null
   selected_offer_id: string | null
   selected_property_id: string | null

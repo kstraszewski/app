@@ -10,6 +10,7 @@ import { asRecord } from '~~/server/utils/crm'
 import { drainClientLegalDocumentDeliveries } from '~~/server/utils/client-legal-document-deliveries'
 import { drainCrmDocumentStorageCleanups } from '~~/server/utils/crm-document-storage-cleanup'
 import { drainNotificationDeliveryJobs } from '~~/server/utils/notifications'
+import { cleanupOpenExpertMockBankPayloads } from '~~/server/utils/openexpert-mock-bank-cleanup'
 
 interface NotificationRuntimeConfig {
   outboxSecret?: string
@@ -52,7 +53,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const runId = randomUUID()
-  const [notificationResult, legalDocumentResult, documentStorageResult] = await Promise.all([
+  const [
+    notificationResult,
+    legalDocumentResult,
+    documentStorageResult,
+    mockBankPayloadResult,
+  ] = await Promise.all([
     drainNotificationDeliveryJobs(
       event,
       `crm-notifications:${runId}`,
@@ -68,24 +74,29 @@ export default defineEventHandler(async (event) => {
       `crm-document-storage:${runId}`,
       Math.min(limit, 25),
     ),
+    cleanupOpenExpertMockBankPayloads(event, { limit: Math.min(limit, 20) }),
   ])
   return {
     data: {
       claimed: notificationResult.claimed
         + legalDocumentResult.claimed
-        + documentStorageResult.claimed,
+        + documentStorageResult.claimed
+        + mockBankPayloadResult.claimed,
       completed: notificationResult.completed
         + legalDocumentResult.completed
         + documentStorageResult.completed
-        + documentStorageResult.retained,
+        + documentStorageResult.retained
+        + mockBankPayloadResult.completed,
       delivered: notificationResult.delivered + legalDocumentResult.delivered,
       failed: notificationResult.failed
         + legalDocumentResult.failed
-        + documentStorageResult.failed,
+        + documentStorageResult.failed
+        + mockBankPayloadResult.failed,
       blocked: legalDocumentResult.blocked,
       notifications: notificationResult,
       legalDocuments: legalDocumentResult,
       documentStorage: documentStorageResult,
+      mockBankPayloads: mockBankPayloadResult,
     },
   }
 })

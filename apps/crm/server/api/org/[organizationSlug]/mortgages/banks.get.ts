@@ -1,14 +1,19 @@
 import { hasSuperAdminRole, requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { resolveMortgageBankLogoUrl } from '~~/server/utils/openexpert-mock-bank-brand'
+import { isOpenExpertMockBankEnabled } from '~~/server/utils/openexpert-mock-bank-service'
 
 const logoBucket = 'mortgage-bank-logos'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
   const superAdmin = await hasSuperAdminRole(session)
-  const { data: banks, error: banksError } = await session.dataApi
+  const mockBankEnabled = isOpenExpertMockBankEnabled(event, session.organizationId)
+  let banksQuery = session.dataApi
     .from('mortgage_banks')
-    .select('id, slug, name, website_url, logo_url, logo_background_color, updated_at')
+    .select('id, slug, name, website_url, logo_url, logo_background_color, is_mock, updated_at')
     .order('name')
+  if (!mockBankEnabled) banksQuery = banksQuery.eq('is_mock', false)
+  const { data: banks, error: banksError } = await banksQuery
   throwDbError(banksError)
 
   const bankIds = (banks ?? []).map((bank: any) => bank.id)
@@ -63,7 +68,7 @@ export default defineEventHandler(async (event) => {
       const override = overrideByBank.get(bank.id) as any
       const logoUrl = override?.logo_path
         ? session.dataApi.storage.from(logoBucket).getPublicUrl(override.logo_path).data.publicUrl
-        : bank.logo_url
+        : resolveMortgageBankLogoUrl(bank.slug, bank.logo_url)
       return {
         id: bank.id,
         slug: bank.slug,

@@ -13,6 +13,7 @@ import {
   throwBankApplicationDbError,
 } from '~~/server/utils/case-bank-applications'
 import { assertUuid, requireCrmCase } from '~~/server/utils/case-documents'
+import { isOpenExpertMockBankEnabled } from '~~/server/utils/openexpert-mock-bank-service'
 import {
   asRecord,
   getRequiredParam,
@@ -31,6 +32,33 @@ export default defineEventHandler(async (event) => {
   const offerId = requiredText(body.offer_id, 'offer_id')
   assertUuid(offerId, 'offer_id')
   await requireCrmCase(session, caseId)
+
+  const offerScopeResult = await session.dataApi
+    .from('crm_case_offer_snapshots')
+    .select('id, bank_id')
+    .eq('organization_id', session.organizationId)
+    .eq('case_id', caseId)
+    .eq('id', offerId)
+    .maybeSingle()
+  throwDbError(offerScopeResult.error)
+  if (!offerScopeResult.data) {
+    throw createError({ statusCode: 404, statusMessage: 'Saved mortgage offer not found' })
+  }
+  if (offerScopeResult.data.bank_id) {
+    const bankScopeResult = await session.dataApi
+      .from('mortgage_banks')
+      .select('is_mock')
+      .eq('id', offerScopeResult.data.bank_id)
+      .maybeSingle()
+    throwDbError(bankScopeResult.error)
+    if (bankScopeResult.data?.is_mock === true
+      && !isOpenExpertMockBankEnabled(event, session.organizationId)) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'OpenExpert Bank jest wyłączony dla tej organizacji.',
+      })
+    }
+  }
 
   if (await loadCaseContractSelection(session, caseId)) {
     throw createError({

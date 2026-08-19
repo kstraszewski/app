@@ -861,6 +861,9 @@ export type Database = {
           client_id: string | null
           created_at: string
           id: string
+          mock_bank_dispatch_generation: number | null
+          mock_bank_dispatch_id: string | null
+          mail_send_request_id: string | null
           organization_id: string
           payload: Json
           submission_id: string | null
@@ -876,6 +879,9 @@ export type Database = {
           client_id?: string | null
           created_at?: string
           id?: string
+          mock_bank_dispatch_generation?: number | null
+          mock_bank_dispatch_id?: string | null
+          mail_send_request_id?: string | null
           organization_id: string
           payload?: Json
           submission_id?: string | null
@@ -891,6 +897,9 @@ export type Database = {
           client_id?: string | null
           created_at?: string
           id?: string
+          mock_bank_dispatch_generation?: number | null
+          mock_bank_dispatch_id?: string | null
+          mail_send_request_id?: string | null
           organization_id?: string
           payload?: Json
           submission_id?: string | null
@@ -2999,6 +3008,197 @@ export type Database = {
           },
         ]
       }
+      crm_mock_bank_dispatches: {
+        Row: {
+          application_id: string
+          archive_sha256: string | null
+          archive_size_bytes: number | null
+          archive_storage_bucket: string
+          archive_storage_path: string
+          attempts: number
+          case_id: string
+          created_at: string
+          error_code: string | null
+          failed_at: string | null
+          generation: number
+          generation_started_at: string
+          id: string
+          kind: string
+          last_attempt_at: string
+          lease_expires_at: string | null
+          manifest_sha256: string | null
+          manifest_size_bytes: number | null
+          manifest_storage_bucket: string
+          manifest_storage_path: string
+          organization_id: string
+          payload_id: string
+          payload_ready_at: string | null
+          payload_sha256: string | null
+          provider_message_id: string | null
+          recipient_connection_id: string | null
+          request_id: string
+          requested_by_user_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_id: string
+          archive_sha256?: string | null
+          archive_size_bytes?: number | null
+          archive_storage_bucket?: string
+          archive_storage_path: string
+          attempts?: number
+          case_id: string
+          created_at: string
+          error_code?: string | null
+          failed_at?: string | null
+          generation?: number
+          generation_started_at: string
+          id: string
+          kind: string
+          last_attempt_at: string
+          lease_expires_at?: string | null
+          manifest_sha256?: string | null
+          manifest_size_bytes?: number | null
+          manifest_storage_bucket?: string
+          manifest_storage_path: string
+          organization_id: string
+          payload_id: string
+          payload_ready_at?: string | null
+          payload_sha256?: string | null
+          provider_message_id?: string | null
+          recipient_connection_id?: string | null
+          request_id: string
+          requested_by_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at: string
+        }
+        Update: {
+          application_id?: string
+          archive_sha256?: string | null
+          archive_size_bytes?: number | null
+          archive_storage_bucket?: string
+          archive_storage_path?: string
+          attempts?: number
+          case_id?: string
+          created_at?: string
+          error_code?: string | null
+          failed_at?: string | null
+          generation?: number
+          generation_started_at?: string
+          id?: string
+          kind?: string
+          last_attempt_at?: string
+          lease_expires_at?: string | null
+          manifest_sha256?: string | null
+          manifest_size_bytes?: number | null
+          manifest_storage_bucket?: string
+          manifest_storage_path?: string
+          organization_id?: string
+          payload_id?: string
+          payload_ready_at?: string | null
+          payload_sha256?: string | null
+          provider_message_id?: string | null
+          recipient_connection_id?: string | null
+          request_id?: string
+          requested_by_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_mock_bank_dispatches_application_fk"
+            columns: ["organization_id", "case_id", "application_id"]
+            isOneToOne: false
+            referencedRelation: "crm_case_bank_applications"
+            referencedColumns: ["organization_id", "case_id", "submission_id"]
+          },
+          {
+            foreignKeyName: "crm_mock_bank_dispatches_recipient_connection_fk"
+            columns: [
+              "organization_id",
+              "requested_by_user_id",
+              "recipient_connection_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "mail_connections"
+            referencedColumns: ["organization_id", "owner_user_id", "id"]
+          },
+          {
+            foreignKeyName: "crm_mock_bank_dispatches_requested_actor_fk"
+            columns: ["organization_id", "requested_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_memberships"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
+      crm_mock_bank_payload_cleanup_jobs: {
+        Row: {
+          attempts: number
+          available_at: string
+          claim_token: string | null
+          completed_at: string | null
+          created_at: string
+          dispatch_id: string
+          generation: number
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          object_kind: string
+          object_sha256: string | null
+          organization_id: string
+          payload_id: string
+          status: string
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          claim_token?: string | null
+          completed_at?: string | null
+          created_at?: string
+          dispatch_id: string
+          generation: number
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          object_kind: string
+          object_sha256?: string | null
+          organization_id: string
+          payload_id: string
+          status?: string
+          storage_bucket: string
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          claim_token?: string | null
+          completed_at?: string | null
+          created_at?: string
+          dispatch_id?: string
+          generation?: number
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          object_kind?: string
+          object_sha256?: string | null
+          organization_id?: string
+          payload_id?: string
+          status?: string
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       crm_product_types: {
         Row: {
           code: string
@@ -4344,6 +4544,9 @@ export type Database = {
           attempts: number
           connection_id: string
           created_at: string
+          crm_case_id: string | null
+          crm_client_ids: string[]
+          crm_context_resolved: boolean
           error_code: string | null
           id: string
           idempotency_key: string
@@ -4360,6 +4563,9 @@ export type Database = {
           attempts?: number
           connection_id: string
           created_at?: string
+          crm_case_id?: string | null
+          crm_client_ids?: string[]
+          crm_context_resolved?: boolean
           error_code?: string | null
           id?: string
           idempotency_key: string
@@ -4376,6 +4582,9 @@ export type Database = {
           attempts?: number
           connection_id?: string
           created_at?: string
+          crm_case_id?: string | null
+          crm_client_ids?: string[]
+          crm_context_resolved?: boolean
           error_code?: string | null
           id?: string
           idempotency_key?: string
@@ -5073,6 +5282,7 @@ export type Database = {
           brand_foreground_color: string | null
           created_at: string
           id: string
+          is_mock: boolean
           logo_background_color: string | null
           logo_url: string | null
           name: string
@@ -5085,6 +5295,7 @@ export type Database = {
           brand_foreground_color?: string | null
           created_at?: string
           id?: string
+          is_mock?: boolean
           logo_background_color?: string | null
           logo_url?: string | null
           name: string
@@ -5097,6 +5308,7 @@ export type Database = {
           brand_foreground_color?: string | null
           created_at?: string
           id?: string
+          is_mock?: boolean
           logo_background_color?: string | null
           logo_url?: string | null
           name?: string
@@ -7049,6 +7261,63 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      claim_crm_mock_bank_payload_cleanup_jobs: {
+        Args: { p_limit?: number }
+        Returns: Json
+      }
+      commit_crm_mock_bank_dispatch_payload: {
+        Args: {
+          p_archive_sha256: string
+          p_archive_size_bytes: number
+          p_dispatch_id: string
+          p_generation: number
+          p_manifest_sha256: string
+          p_manifest_size_bytes: number
+          p_payload_sha256: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      renew_crm_mock_bank_dispatch_send_lease: {
+        Args: {
+          p_dispatch_id: string
+          p_generation: number
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      finalize_crm_mock_bank_dispatch: {
+        Args: {
+          p_dispatch_id: string
+          p_error_code?: string | null
+          p_provider_message_id?: string | null
+          p_request_id: string
+          p_status: string
+        }
+        Returns: Json
+      }
+      finalize_crm_mock_bank_payload_cleanup_job: {
+        Args: {
+          p_claim_token: string
+          p_error_code?: string | null
+          p_job_id: string
+          p_succeeded: boolean
+        }
+        Returns: undefined
+      }
+      reserve_crm_mock_bank_dispatch: {
+        Args: {
+          p_application_id: string
+          p_case_id: string
+          p_force_resend?: boolean
+          p_kind: string
+          p_organization_id: string
+          p_recipient_connection_id: string
+          p_request_id: string
+          p_requested_by_user_id: string
+        }
+        Returns: Json
       }
       claim_client_legal_document_deliveries: {
         Args: { p_limit?: number; p_worker_id: string }

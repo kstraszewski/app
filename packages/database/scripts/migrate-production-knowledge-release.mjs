@@ -31,6 +31,8 @@ const migrationNames = [
   '0052_multi_provider_mail_connections.sql',
   '0053_mail_context_thread_links.sql',
   '0056_ceidg_snapshot_write_guard.sql',
+  '0057_email_sent_crm_activities.sql',
+  '0058_openexpert_mock_bank.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -146,6 +148,26 @@ async function ensureProductionMigrationRole(client) {
       )
       await client.query(grantStatement.rows[0].sql)
       console.log('+ role openexpert_owner')
+    }
+
+    const serviceRole = await client.query(`
+      SELECT
+        EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'openexpert_service')
+          AS service_role_exists,
+        pg_has_role('openexpert_owner', 'openexpert_service', 'USAGE')
+          AS owner_can_set_service
+    `)
+    if (serviceRole.rows[0]?.service_role_exists !== true) {
+      throw new Error('The openexpert_service role is unavailable')
+    }
+    if (serviceRole.rows[0]?.owner_can_set_service !== true) {
+      if (role.rolcreaterole !== true) {
+        throw new Error(
+          'Production migration connection cannot grant the trusted service role to openexpert_owner',
+        )
+      }
+      await client.query('GRANT openexpert_service TO openexpert_owner')
+      console.log('+ membership openexpert_owner -> openexpert_service')
     }
 
     const migrationTableOwner = await client.query(`

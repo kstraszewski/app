@@ -55,6 +55,11 @@ import {
   upsertMailContextThreadLink,
 } from '~~/server/utils/mail-context'
 import {
+  additionalMailRecipientClientScopes,
+  resolveMailRecipientClientScopes,
+  mailSendRequestCrmScopes,
+} from '~~/server/utils/mail-crm-activities'
+import {
   parseMailContextScope,
   parseMailContextScopes,
 } from '~~/server/utils/mail-context-core'
@@ -139,7 +144,6 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   }
 
   const contextInput = multipartMailContextScopes(parts)
-  const mailContexts = await resolveMailContextScopes(session, contextInput.scopes)
 
   const idempotencyKey = multipartText(parts, 'idempotencyKey').toLowerCase()
   if (
@@ -162,6 +166,22 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
   if (to.length + cc.length + bcc.length > 50) {
     throw createError({ statusCode: 400, statusMessage: 'Wiadomość ma zbyt wielu odbiorców.' })
   }
+
+  // Exact server-side matching makes manually entered recipients reliable and
+  // covers Bcc without exposing recipient addresses in the audit trail. A case
+  // context remains authoritative so unrelated recipients are never attached
+  // to the selected case implicitly.
+  const matchedClientContexts = contextInput.scopes.some(scope => scope.type === 'case')
+    ? []
+    : await resolveMailRecipientClientScopes(session, [...to, ...cc, ...bcc])
+  const inferredClientContexts = additionalMailRecipientClientScopes(
+    contextInput.scopes,
+    matchedClientContexts,
+  )
+  const mailContexts = await resolveMailContextScopes(session, [
+    ...contextInput.scopes,
+    ...inferredClientContexts,
+  ])
 
   const threadId = multipartText(parts, 'threadId')
   if (
@@ -240,7 +260,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       : null
     if (reply) subject = reply.subject
 
-    const requestHash = mailSendRequestHash({
+    const requestHashBase = {
       to,
       cc,
       bcc,
@@ -248,9 +268,12 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       body,
       threadId,
       attachments,
+    }
+    const requestHash = mailSendRequestHash({
+      ...requestHashBase,
       ...(contextInput.hasContextsField
-        ? { contexts: mailContexts }
-        : mailContexts[0] ? { context: mailContexts[0] } : {}),
+        ? { contexts: contextInput.scopes }
+        : contextInput.scopes[0] ? { context: contextInput.scopes[0] } : {}),
     })
     const claim = await claimRateLimitedMailSendRequest(
       event,
@@ -259,7 +282,9 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       connection,
       idempotencyKey,
       requestHash,
+      mailContexts,
     )
+    const durableMailContexts = mailSendRequestCrmScopes(claim.row)
     if (!claim.claimed) {
       const existing = await resolveExistingSendRequest(
         backendData,
@@ -272,7 +297,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
         backendData,
         session,
         connection,
-        mailContexts,
+        durableMailContexts,
         existing.threadId,
       )
       return {
@@ -336,7 +361,7 @@ export default defineEventHandler(async (event): Promise<MailSendPayload> => {
       backendData,
       session,
       connection,
-      mailContexts,
+      durableMailContexts,
       sent.threadId,
     )
     return { data: sent }

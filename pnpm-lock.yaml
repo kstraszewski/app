@@ -15,37 +15,6 @@ importers:
         specifier: ^2.9.6
         version: 2.9.6
 
-  apps/bank-mail-agent:
-    dependencies:
-      '@openexpert/crm-agent-capabilities':
-        specifier: workspace:*
-        version: link:../../packages/crm-agent-capabilities
-      '@openexpert/data-api':
-        specifier: workspace:*
-        version: link:../../packages/data-api
-      ai:
-        specifier: 7.0.38
-        version: 7.0.38(zod@4.4.3)
-      eve:
-        specifier: 0.31.1
-        version: 0.31.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.38(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.5.10)(rollup@4.62.4)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@typescript/native-preview':
-        specifier: 7.0.0-dev.20260523.1
-        version: 7.0.0-dev.20260523.1
-      just-bash:
-        specifier: ^3.1.0
-        version: 3.1.0
-      microsandbox:
-        specifier: 0.5.10
-        version: 0.5.10
-
   apps/client:
     dependencies:
       '@ai-sdk/gateway':
@@ -236,6 +205,37 @@ importers:
       vue-tsc:
         specifier: ^3.3.8
         version: 3.3.8(typescript@6.0.3)
+
+  apps/crm/services/bank-mail-agent:
+    dependencies:
+      '@openexpert/crm-agent-capabilities':
+        specifier: workspace:*
+        version: link:../../../../packages/crm-agent-capabilities
+      '@openexpert/data-api':
+        specifier: workspace:*
+        version: link:../../../../packages/data-api
+      ai:
+        specifier: 7.0.38
+        version: 7.0.38(zod@4.4.3)
+      eve:
+        specifier: 0.31.1
+        version: 0.31.1(@opentelemetry/api@1.9.1)(@vercel/blob@2.6.1)(@vercel/functions@3.7.7(@aws-sdk/credential-provider-web-identity@3.972.70)(ws@8.21.1))(ai@7.0.38(zod@4.4.3))(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(ioredis@5.10.1)(jiti@2.7.0)(just-bash@3.1.0)(lru-cache@11.3.5)(microsandbox@0.5.10)(rollup@4.62.4)(vite@8.1.5(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.46.1)(yaml@2.9.0))
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260523.1
+        version: 7.0.0-dev.20260523.1
+      just-bash:
+        specifier: ^3.1.0
+        version: 3.1.0
+      microsandbox:
+        specifier: 0.5.10
+        version: 0.5.10
 
   apps/landing:
     dependencies:

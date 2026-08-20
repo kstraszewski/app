@@ -6,6 +6,7 @@ import {
   BANK_MAIL_AGENT_SERVICE_ID,
   dispatchBankMailAgentWithDependencies,
   normalizeBankMailAgentServiceUrl,
+  selectBankMailAgentServiceUrl,
   type BankMailAgentDispatchInput,
   type BankMailAgentDispatcherDependencies,
 } from '../server/utils/bank-mail-agent-dispatch-core.ts'
@@ -279,4 +280,18 @@ test('only accepts HTTPS service roots, with loopback HTTP for local development
   assert.throws(() => normalizeBankMailAgentServiceUrl('http://agent.example'), /HTTPS/u)
   assert.throws(() => normalizeBankMailAgentServiceUrl('https://agent.example/eve'), /service root/u)
   assert.throws(() => normalizeBankMailAgentServiceUrl('https://user:secret@agent.example'), /credentials/u)
+})
+
+test('prefers the private Vercel service binding over a configured fallback', () => {
+  assert.equal(
+    selectBankMailAgentServiceUrl(
+      ' https://internal-bank-mail.example ',
+      'https://legacy-bank-mail.example',
+    ),
+    'https://internal-bank-mail.example',
+  )
+  assert.equal(
+    selectBankMailAgentServiceUrl(undefined, ' http://127.0.0.1:3014 '),
+    'http://127.0.0.1:3014',
+  )
 })

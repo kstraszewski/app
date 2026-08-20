@@ -2,6 +2,7 @@ import { Client } from 'eve/client'
 import type { H3Event } from 'h3'
 import {
   dispatchBankMailAgentWithDependencies,
+  selectBankMailAgentServiceUrl,
   type BankMailAgentDispatchInput,
   type BankMailAgentDispatcherDependencies,
   type BankMailAgentDispatchResult,
@@ -23,7 +24,10 @@ export async function dispatchBankMailAgent(
   const signer = serverDataTokenSigner(event)
 
   return dispatchBankMailAgentWithDependencies(
-    runtimeConfig.bankMailAgent?.serviceUrl ?? '',
+    selectBankMailAgentServiceUrl(
+      process.env.BANK_MAIL_AGENT_INTERNAL_URL,
+      runtimeConfig.bankMailAgent?.serviceUrl,
+    ),
     input,
     {
       rpc: (name, args) => (

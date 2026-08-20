@@ -103,6 +103,13 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export function selectBankMailAgentServiceUrl(
+  internalBindingUrl: unknown,
+  configuredUrl: unknown,
+): string {
+  return text(internalBindingUrl) || text(configuredUrl)
+}
+
 function requiredUuid(value: unknown, label: string): string {
   const normalized = text(value).toLowerCase()
   if (!uuidPattern.test(normalized)) throw new TypeError(`Invalid ${label}.`)

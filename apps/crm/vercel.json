@@ -6,12 +6,25 @@
   "services": {
     "web": {
       "root": ".",
-      "framework": "nuxtjs"
+      "framework": "nuxtjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "bank-mail-eve",
+          "format": "url",
+          "env": "BANK_MAIL_AGENT_INTERNAL_URL"
+        }
+      ]
     },
     "eve": {
       "root": ".",
       "buildCommand": "eve build",
       "entrypoint": "agent",
+      "framework": "eve"
+    },
+    "bank-mail-eve": {
+      "root": "services/bank-mail-agent",
+      "buildCommand": "eve build",
       "framework": "eve"
     }
   },

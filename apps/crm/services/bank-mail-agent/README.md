@@ -1,6 +1,7 @@
-# Bank Mail Agent (EVE)
+# CRM Bank Mail Agent (EVE)
 
-Samodzielny, ograniczony agent do analizy jednej wiadomości bankowej. Jego
+Prywatny, ograniczony agent backendowy aplikacji Nuxt `apps/crm`, przeznaczony
+do analizy jednej wiadomości bankowej. Jego
 górną granicą autonomii jest utworzenie idempotentnej propozycji dopasowania
 maila do sprawy. Agent nie dołącza plików, nie zmienia procesu kredytowego i nie
 wysyła poczty.
@@ -20,9 +21,11 @@ redakcję PESEL/NIP oraz rejestrację intake. Do modelu należy wysłać wyłąc
 ograniczony tekst wiadomości i bezpieczne wyniki inspekcji dokumentów. UUID
 organizacji, skrzynki, właściciela i intake nie są częścią promptu.
 
-Agent uruchamia się jako osobny serwis EVE. Kanał `/eve` jest zamknięty i
-wymaga krótko żyjącego Data API JWT z rolą `openexpert_service` oraz dokładnymi
-claims:
+Agent uruchamia się jako prywatny serwis EVE w tym samym projekcie Vercel co
+Nuxt CRM. Nie ma publicznego rewrite'u ani osobnego projektu Vercel; dispatcher
+Nuxt dociera do niego wyłącznie przez service binding. Kanał `/eve` jest
+zamknięty i dodatkowo wymaga krótko żyjącego Data API JWT z rolą
+`openexpert_service` oraz dokładnymi claims:
 
 ```json
 {
@@ -71,17 +74,22 @@ prawidłowo podpisanego tokena serwisowego; dzięki temu test lokalny odtwarza
 produkcyjną granicę zaufania.
 
 ```bash
-pnpm --filter @openexpert/bank-mail-agent eve:info
-pnpm --filter @openexpert/bank-mail-agent typecheck
-pnpm --filter @openexpert/bank-mail-agent test
-pnpm --filter @openexpert/bank-mail-agent eval:list
-pnpm --filter @openexpert/bank-mail-agent eval
-pnpm --filter @openexpert/bank-mail-agent build
-pnpm --filter @openexpert/bank-mail-agent dev
+pnpm --filter @openexpert/crm-bank-mail-agent eve:info
+pnpm --filter @openexpert/crm-bank-mail-agent typecheck
+pnpm --filter @openexpert/crm-bank-mail-agent test
+pnpm --filter @openexpert/crm-bank-mail-agent eval:list
+pnpm --filter @openexpert/crm-bank-mail-agent eval
+pnpm --filter @openexpert/crm-bank-mail-agent build
+pnpm --filter @openexpert/crm-bank-mail-agent dev
 ```
 
 `dev` nasłuchuje na stałym porcie `3014`, aby nie kolidować z pozostałymi
 agentami EVE uruchamianymi przez Turbo.
+
+Zwykłe `pnpm dev:crm` uruchamia równolegle Nuxt CRM, głównego agenta EVE oraz
+ten prywatny serwis. W produkcji `apps/crm/vercel.json` wstrzykuje do Nuxt URL
+bindingu jako `BANK_MAIL_AGENT_INTERNAL_URL`; tej zmiennej nie ustawia się
+ręcznie i agent nie ma publicznego rewrite'u.
 
 `eval` uruchamia trzy deterministyczne scenariusze EVE z `mockModel` i wyłącznie
 syntetycznymi narzędziami: prompt injection, wieloznaczne dopasowanie oraz
@@ -96,7 +104,7 @@ pokrywają testy `test/*.test.ts` oraz środowiskowy smoke test dispatchera.
 Domyślne debugowanie jest celowo PII-free:
 
 1. `eve info` pokazuje faktycznie odkryty model, kanał, sandbox i zestaw tools.
-2. `pnpm --filter @openexpert/bank-mail-agent eval` odtwarza syntetyczne,
+2. `pnpm --filter @openexpert/crm-bank-mail-agent eval` odtwarza syntetyczne,
    deterministyczne ścieżki i zapisuje artefakty pod
    `evals/fixture/.eve/evals/`.
 3. `eve logs --events` pokazuje kolejność kroków i kody błędów bez potrzeby

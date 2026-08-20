@@ -2,9 +2,10 @@
 
 ## Status
 
-The repository contains the safe proposal-only foundation for a standalone
-bank-mail EVE agent. It does not yet enable provider webhooks, attachment
-download, decryption, or automatic document attachment in production.
+The repository contains the safe proposal-only foundation for a private
+bank-mail EVE backend inside the `apps/crm` Nuxt project. It does not yet enable
+provider webhooks, attachment download, decryption, or automatic document
+attachment in production.
 
 The first production boundary is intentionally narrow:
 
@@ -12,7 +13,7 @@ The first production boundary is intentionally narrow:
 provider ingestion
   -> authenticate sender + normalize/redact
   -> idempotent intake and analysis lease
-  -> standalone EVE
+  -> private bank-mail EVE service in the CRM deployment
        -> trusted intake metadata
        -> owner-scoped CRM candidate search
        -> minimal case/application context
@@ -26,7 +27,7 @@ idempotency, attachment safety, and every domain mutation remain deterministic.
 
 ## Runtime separation
 
-- `apps/bank-mail-agent` is a standalone EVE deployment using the pinned
+- `apps/crm/services/bank-mail-agent` is a private EVE service using the pinned
   `deepseek/deepseek-v4-flash-0731` checkpoint.
 - The primary CRM agent uses the pinned
   `deepseek/deepseek-v4-pro-0813` checkpoint.
@@ -37,6 +38,12 @@ idempotency, attachment safety, and every domain mutation remain deterministic.
   intake/run scope.
 - CRM reads made by the mail agent use an acting-user token for the mailbox
   owner, preserving RLS. The service client is limited to narrow ledger RPCs.
+
+`apps/crm/vercel.json` deploys Nuxt, the primary EVE agent, and the bank-mail
+agent atomically as one Vercel project. Only the Nuxt service receives the
+`BANK_MAIL_AGENT_INTERNAL_URL` binding. The bank-mail service has no public
+rewrite and still validates a short-lived, intake-scoped service JWT on every
+session request.
 
 ## Signed invocation scope
 
@@ -136,7 +143,7 @@ Production diagnostics are content-free:
 Full traces are allowed only for a synthetic corpus outside production, behind
 both synthetic-trace flags documented in the agent README. Useful commands are
 `eve info`, `eve dev`, `eve logs --events`, `eve traces --verbose`, package unit
-tests, and a future `eve eval --strict` corpus. Security gates should assert
+tests, and the deterministic `eve eval --strict` fixture corpus. Security gates should assert
 zero false automatic attachments, zero cross-tenant results, and zero protected
 identifiers in outputs/events.
 
@@ -148,5 +155,6 @@ identifiers in outputs/events.
    isolated scanner/decryptor described above.
 3. Add the expert review UI and connect approval to the existing mortgage
    artifact upload/ledger service with explicit automation provenance.
-4. Add synthetic multi-bank EVE eval fixtures and live-model quality/cost gates.
+4. Expand the synthetic EVE fixtures to a multi-bank corpus and add live-model
+   quality/cost gates.
 5. Define retention/DPIA rules for inbound mail staging and encrypted files.

@@ -129,6 +129,13 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    hooks: {
+      compiled() {
+        if (process.env.VERCEL === '1') {
+          setTimeout(() => process.exit(0), 0)
+        }
+      },
+    },
     serverAssets: [
       {
         baseName: 'mortgage-template-pdfs',

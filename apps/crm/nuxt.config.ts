@@ -144,6 +144,7 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    sourceMap: false,
     alias: {
       ...eveSharedAliases,
     },

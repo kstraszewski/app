@@ -1,4 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -48,6 +49,15 @@ const authPasskeyOrigin = authBaseUrl.replace(/\/$/u, '')
 const authPasskeyRpId = process.env.NUXT_AUTH_PASSKEY_RP_ID
   || new URL(authPasskeyOrigin).hostname
 const resendApiKey = process.env.NUXT_RESEND_API_KEY || ''
+const eveSharedDirectoryUrl = new URL('./node_modules/eve/dist/src/shared/', import.meta.url)
+const eveSharedAliases = Object.fromEntries(
+  readdirSync(eveSharedDirectoryUrl, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.js'))
+    .map(entry => [
+      `#shared/${entry.name}`,
+      fileURLToPath(new URL(entry.name, eveSharedDirectoryUrl)),
+    ]),
+)
 const mockBankEnabled = process.env.NUXT_MOCK_BANK_ENABLED
   ? process.env.NUXT_MOCK_BANK_ENABLED === 'true'
   : !isProduction
@@ -129,6 +139,9 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    alias: {
+      ...eveSharedAliases,
+    },
     hooks: {
       compiled() {
         if (process.env.VERCEL === '1') {

@@ -449,6 +449,27 @@ export async function persistOrRecoverOpenExpertMockBankObject(input: {
   return stored
 }
 
+/**
+ * Repairs only an uncommitted zero-byte object left by an incompatible storage
+ * adapter. Once payload hashes are committed this path is never called, so an
+ * immutable, valid first writer remains authoritative.
+ */
+export async function discardEmptyUncommittedOpenExpertMockBankObject(input: {
+  storage: StorageClient
+  path: string
+}): Promise<boolean> {
+  const object = await input.storage.head({
+    namespace: OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE,
+    path: input.path,
+  })
+  if (!object || object.size !== 0) return false
+  await input.storage.delete({
+    namespace: OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE,
+    path: input.path,
+  })
+  return true
+}
+
 export async function loadOpenExpertMockBankObject(input: {
   storage: StorageClient
   path: string

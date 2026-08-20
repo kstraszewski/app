@@ -31,6 +31,7 @@ import {
   OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
   openExpertMockBankFullPayloadSha256,
   persistOrRecoverOpenExpertMockBankObject,
+  discardEmptyUncommittedOpenExpertMockBankObject,
   type OpenExpertMockBankPayloadIdentity,
   type OpenExpertMockBankPersistedPayloadManifest,
   type OpenExpertMockBankStoredObject,
@@ -300,6 +301,17 @@ async function createOrRecoverPayload(input: {
 }): Promise<PersistedPayload> {
   const storage = serverStorageClient(input.event)
   const identity = identityFromReservation(input.reservation)
+
+  await Promise.all([
+    discardEmptyUncommittedOpenExpertMockBankObject({
+      storage,
+      path: input.reservation.manifestStoragePath,
+    }),
+    discardEmptyUncommittedOpenExpertMockBankObject({
+      storage,
+      path: input.reservation.archiveStoragePath,
+    }),
+  ])
 
   let manifestObject = await loadOpenExpertMockBankObject({
     storage,

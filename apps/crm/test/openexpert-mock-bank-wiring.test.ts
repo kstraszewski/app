@@ -272,6 +272,7 @@ test('sent replay, explicit resend and active leases have distinct semantics', (
 
 test('same-generation retry reuses committed private payload and hashes', () => {
   assert.match(platformStorage, /bypassPrivateDownloadCache: true/u)
+  assert.match(mockDelivery, /discardEmptyUncommittedOpenExpertMockBankObject/u)
   assert.match(migration, /UNIQUE \(application_id, kind\)/u)
   assert.match(migration, /UNIQUE \(request_id\)/u)
   assert.match(migration, /generation_started_at timestamptz NOT NULL/u)

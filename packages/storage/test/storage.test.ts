@@ -16,6 +16,7 @@ import {
   StorageUnsupportedError,
   StorageValidationError,
 } from '../src/index.ts'
+import { normalizeVercelBlobPutBody } from '../src/providers/vercel-blob.ts'
 
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
   const reader = stream.getReader()
@@ -449,6 +450,15 @@ test('validates external provider topology without loading either network SDK', 
     }),
     StorageConfigurationError,
   )
+})
+
+test('normalizes binary views for the Vercel Blob upload contract', () => {
+  const backing = Uint8Array.from([9, 1, 2, 3, 8])
+  const normalized = normalizeVercelBlobPutBody(backing.subarray(1, 4))
+
+  assert.ok(normalized instanceof ArrayBuffer)
+  assert.deepEqual([...new Uint8Array(normalized)], [1, 2, 3])
+  assert.equal(normalizeVercelBlobPutBody('plain text'), 'plain text')
 })
 
 test('creates a constrained browser PUT URL for S3-compatible storage', async () => {

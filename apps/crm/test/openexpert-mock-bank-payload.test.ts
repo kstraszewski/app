@@ -7,6 +7,7 @@ import {
 } from '@openexpert/storage'
 import {
   decodeOpenExpertMockBankPayloadManifest,
+  discardEmptyUncommittedOpenExpertMockBankObject,
   encodeOpenExpertMockBankPayloadManifest,
   loadOpenExpertMockBankObject,
   MAX_OPENEXPERT_MOCK_BANK_OUTBOX_OBJECT_BYTES,
@@ -182,4 +183,31 @@ test('recovers the immutable stored bytes even when upload reports a provider-ge
     }),
     /obiekt storage przekracza limit/u,
   )
+})
+
+test('discards only zero-byte objects before the payload is committed', async () => {
+  const deleted: string[] = []
+  let size = 0
+  const storage = {
+    head: async ({ path }: { path: string }) => ({
+      namespace: 'crm-mock-bank-outbox' as const,
+      path,
+      access: 'private' as const,
+      size,
+    }),
+    delete: async ({ path }: { path: string }) => { deleted.push(path) },
+  } as StorageClient
+
+  assert.equal(await discardEmptyUncommittedOpenExpertMockBankObject({
+    storage,
+    path: 'broken.json',
+  }), true)
+  assert.deepEqual(deleted, ['broken.json'])
+
+  size = 10
+  assert.equal(await discardEmptyUncommittedOpenExpertMockBankObject({
+    storage,
+    path: 'valid.json',
+  }), false)
+  assert.deepEqual(deleted, ['broken.json'])
 })

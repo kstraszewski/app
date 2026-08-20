@@ -172,6 +172,20 @@ function encodeKeyForUrl(key: string): string {
   return key.split('/').map(segment => encodeURIComponent(segment)).join('/')
 }
 
+/**
+ * The public storage contract accepts ArrayBufferView values, while
+ * @vercel/blob intentionally does not accept Uint8Array/DataView directly.
+ * Copy views into an exact ArrayBuffer so byte offsets cannot leak unrelated
+ * bytes and the SDK does not silently persist an empty object.
+ */
+export function normalizeVercelBlobPutBody(
+  body: ProviderUploadInput['body'],
+): ProviderUploadInput['body'] {
+  if (!ArrayBuffer.isView(body)) return body
+  const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+  return Uint8Array.from(bytes).buffer
+}
+
 export function createVercelBlobStorageProvider(
   options: VercelBlobStorageProviderOptions,
 ): StorageProvider {
@@ -184,7 +198,7 @@ export function createVercelBlobStorageProvider(
 
     async upload(input: ProviderUploadInput): Promise<ProviderObject> {
       const sdk = await loadVercelBlobSdk()
-      const result = await sdk.put(input.key, input.body, {
+      const result = await sdk.put(input.key, normalizeVercelBlobPutBody(input.body), {
         ...authOptions(options.stores[input.access]),
         access: input.access,
         addRandomSuffix: false,

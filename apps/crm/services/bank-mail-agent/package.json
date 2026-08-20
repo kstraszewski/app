@@ -17,7 +17,7 @@
     "eve:info": "eve info",
     "start": "eve start",
     "test": "node --test --experimental-strip-types test/*.test.ts",
-    "typecheck": "tsgo && tsgo -p evals/fixture/tsconfig.json"
+    "typecheck": "tsgo -p tsconfig.typecheck.json && tsgo -p evals/fixture/tsconfig.json"
   },
   "dependencies": {
     "@openexpert/crm-agent-capabilities": "workspace:*",

@@ -1,0 +1,16 @@
+diff --git a/dist/_build/rolldown.mjs b/dist/_build/rolldown.mjs
+index 6b89021d2947a63cd91b0899abf8d2b923632f72..1751953b2ced2cb888573a08039c40ace7ffc7fe 100644
+--- a/dist/_build/rolldown.mjs
++++ b/dist/_build/rolldown.mjs
+@@ -59,6 +59,11 @@ const getRolldownConfig = async (nitro) => {
+ 		}
+ 	};
+ 	config = defu(nitro.options.rolldownConfig, nitro.options.rollupConfig, config);
++	// Vercel Services build nested Eve applications in an isolated root where
++	// Rolldown's automatic tsconfig discovery can resolve generated host modules
++	// against a missing project file. Eve compiles the authored TypeScript before
++	// Nitro bundles the host, so allow that discovery to be disabled explicitly.
++	if (process.env.OPENEXPERT_EVE_DISABLE_NITRO_TSCONFIG === "1") config.tsconfig = false;
+ 	const outputConfig = config.output;
+ 	if (outputConfig.inlineDynamicImports || outputConfig.format === "iife") {
+ 		delete outputConfig.inlineDynamicImports;

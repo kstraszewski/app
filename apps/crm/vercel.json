@@ -24,7 +24,7 @@
     },
     "bank-mail-eve": {
       "root": "services/bank-mail-agent",
-      "buildCommand": "eve build",
+      "buildCommand": "OPENEXPERT_EVE_DISABLE_NITRO_TSCONFIG=1 eve build",
       "framework": "eve"
     }
   },

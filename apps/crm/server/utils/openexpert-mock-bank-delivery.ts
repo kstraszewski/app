@@ -15,6 +15,7 @@ import {
   type OpenExpertMockBankDocumentKind,
 } from './openexpert-mock-bank-documents.ts'
 import {
+  OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION,
   openExpertMockBankEmailIdempotencyKey,
   openExpertMockBankEmailTemplate,
 } from './openexpert-mock-bank-email.ts'
@@ -135,6 +136,8 @@ function buildManifest(input: {
     kind: input.kind,
     applicationNumber: input.context.applicationNumber,
     applicantNames: input.context.applicantNames,
+    issueDate: dates.issueDate,
+    validUntil: input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil,
     ...(input.kind === 'credit_decision' ? { decisionOutcome: 'positive' as const } : {}),
   })
   return {
@@ -158,6 +161,12 @@ function buildManifest(input: {
           name: 'email_type',
           value: input.kind === 'esis' ? 'mock_bank_esis' : 'mock_bank_decision',
         },
+        {
+          name: 'bank_event',
+          value: input.kind === 'esis' ? 'esis_available' : 'credit_decision_issued',
+        },
+        { name: 'bank_slug', value: 'openexpert_bank' },
+        { name: 'template_version', value: String(OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION) },
         { name: 'application_id', value: input.context.applicationId },
       ],
       attachment: {

@@ -255,6 +255,11 @@ async function applyMigrations(databaseUrl, migrations) {
         throw caught
       }
     }
+
+    // Standard PostgREST deployments listen on this channel. Neon Data API uses
+    // a managed cache and additionally requires the control-plane refresh from
+    // the deployment runbook below.
+    await client.query("SELECT pg_notify('pgrst', 'reload schema')")
   }
   finally {
     await client.end()

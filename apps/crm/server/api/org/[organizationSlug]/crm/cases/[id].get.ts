@@ -6,12 +6,21 @@ import { attachSignedPropertyImages, propertyPublicSelect } from '~~/server/util
 import { getRequiredParam, requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { loadMortgageApplicationReadModels } from '~~/server/utils/mortgage-application-read-model'
 import { isOpenExpertMockBankEnabled } from '~~/server/utils/openexpert-mock-bank-service'
+import { resolveMortgageBankLogoUrl } from '~~/server/utils/openexpert-mock-bank-brand'
 
 type Row = Record<string, any>
 
 function singleRelation<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null
   return value ?? null
+}
+
+function isMissingMockBankSchemaCache(
+  error: { code?: string, message?: string } | null | undefined,
+): boolean {
+  if (String(error?.code ?? '') !== 'PGRST205') return false
+  const message = String(error?.message ?? '')
+  return message.includes('crm_mock_bank_dispatches') && message.includes('schema cache')
 }
 
 export default defineEventHandler(async (event) => {
@@ -247,7 +256,9 @@ export default defineEventHandler(async (event) => {
   throwDbError(activitiesResult.error)
   throwDbError(handoffsResult.error)
   throwDbError(workflowsResult.error)
-  throwDbError(mockBankDispatchesResult.error)
+  const mockBankSchemaReady = !isMissingMockBankSchemaCache(mockBankDispatchesResult.error)
+  if (mockBankSchemaReady) throwDbError(mockBankDispatchesResult.error)
+  const mockBankReadModelEnabled = mockBankEnabled && mockBankSchemaReady
 
   const tasks = (tasksResult.data ?? []) as Row[]
   const activities = (activitiesResult.data ?? []) as Row[]
@@ -347,7 +358,7 @@ export default defineEventHandler(async (event) => {
     current_user_id: session.userId,
     data: {
       ...caseRow,
-      mock_bank_enabled: mockBankEnabled,
+      mock_bank_enabled: mockBankReadModelEnabled,
       owner: caseRow.owner_user_id
         ? profileById.get(String(caseRow.owner_user_id)) ?? null
         : null,
@@ -386,7 +397,7 @@ export default defineEventHandler(async (event) => {
               updated_at: String(submission.updated_at),
               mock_bank: bank?.is_mock === true
                 ? {
-                    enabled: mockBankEnabled,
+                    enabled: mockBankReadModelEnabled,
                     application_number: String(submission.external_reference ?? ''),
                     esis: mockDispatch('esis'),
                     credit_decision: mockDispatch('credit_decision'),
@@ -415,7 +426,7 @@ export default defineEventHandler(async (event) => {
           ...offer,
           calculation_status: offer.calculation_snapshot?.status
             ?? (offer.catalog_snapshot?.version?.unknown_fields?.length ? 'partial' : 'complete'),
-          bank_logo_url: bank?.logo_url ?? null,
+          bank_logo_url: resolveMortgageBankLogoUrl(bank?.slug, bank?.logo_url),
           bank_logo_background: bank?.logo_background_color ?? null,
           bank_slug: bank?.slug ?? null,
           bank_is_mock: bank?.is_mock === true,

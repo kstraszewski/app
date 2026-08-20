@@ -26,6 +26,7 @@ import {
   type OpenExpertMockBankFinancialTerms,
 } from '../server/utils/openexpert-mock-bank-documents.ts'
 import {
+  OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION,
   openExpertMockBankEmailIdempotencyKey,
   openExpertMockBankEmailTemplate,
 } from '../server/utils/openexpert-mock-bank-email.ts'
@@ -252,20 +253,46 @@ test('builds accessible Polish mail without exposing the PESEL value', () => {
     kind: 'credit_decision',
     applicationNumber,
     applicantNames: ['Anna <Ściśle> & Tajna', 'Jan Żółć-Kowalski'],
+    issueDate: '2026-08-19',
+    validUntil: '2026-10-10',
     decisionOutcome: 'positive',
   })
 
-  assert.equal(template.subject, `Pozytywna decyzja kredytowa – ${applicationNumber}`)
+  assert.equal(OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION, 2)
+  assert.equal(template.subject, `[DEMO] OpenExpert Bank — decyzja pozytywna — ${applicationNumber}`)
   assert.match(template.html, /<html lang="pl" dir="ltr">/u)
   assert.match(template.html, /<body lang="pl" dir="ltr"/u)
   assert.equal(template.html.match(/<h1\b/gu)?.length, 1)
+  assert.ok((template.html.match(/role="presentation"/gu)?.length ?? 0) >= 5)
+  assert.match(template.html, /ŚRODOWISKO DEMO/u)
+  assert.match(template.html, /DECYZJA POZYTYWNA/u)
+  assert.match(template.html, /10 października 2026/u)
+  assert.match(template.html, /Co dalej\?/u)
   assert.match(template.html, /Anna &lt;Ściśle&gt; &amp; Tajna/u)
   assert.match(template.text, /Jan Żółć-Kowalski/u)
   assert.match(template.text, new RegExp(applicationNumber, 'u'))
-  assert.match(template.text, /Wynik decyzji: POZYTYWNA/u)
+  assert.match(template.text, /Status: DECYZJA POZYTYWNA/u)
+  assert.match(template.text, /Ważny do: 10 października 2026/u)
   assert.match(template.text, /Hasłem do archiwum ZIP jest 11-cyfrowy numer PESEL/u)
   assert.ok(!template.html.includes(pesel))
   assert.ok(!template.text.includes(pesel))
   assert.doesNotMatch(template.html, /<a\b|https?:\/\/|unsubscribe|wypisz/iu)
   assert.doesNotMatch(template.text, /https?:\/\/|unsubscribe|wypisz/iu)
+})
+
+test('renders a distinct ESIS notification with document validity and safe instructions', () => {
+  const template = openExpertMockBankEmailTemplate({
+    kind: 'esis',
+    applicationNumber,
+    applicantNames,
+    issueDate: '2026-08-19',
+    validUntil: '2026-09-18',
+  })
+
+  assert.equal(template.subject, `[DEMO] OpenExpert Bank — formularz ESIS — ${applicationNumber}`)
+  assert.match(template.html, /Formularz informacyjny ESIS jest gotowy/u)
+  assert.match(template.html, /ESIS GOTOWY/u)
+  assert.match(template.html, /18 września 2026/u)
+  assert.match(template.text, /Zapisz załączone archiwum ZIP/u)
+  assert.match(template.text, /dodaj go do właściwego wniosku w OpenExpert/u)
 })

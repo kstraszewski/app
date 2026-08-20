@@ -113,9 +113,7 @@ export default defineNuxtConfig({
       },
     },
     authEmail: {
-      apiKey: process.env.NUXT_AUTH_RESEND_API_KEY
-        || (isProduction ? '' : process.env.NUXT_RESEND_API_KEY)
-        || '',
+      apiKey: process.env.NUXT_RESEND_API_KEY || '',
       from: process.env.NUXT_AUTH_EMAIL_FROM
         || (isProduction ? '' : process.env.NUXT_RESEND_FROM)
         || (isProduction ? '' : 'OpenExpert <security@auth.openexpert.local>'),

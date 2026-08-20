@@ -1,17 +1,8 @@
 import { createError, readBody } from 'h3'
 import { assertUuid, requireCrmCase } from '~~/server/utils/case-documents'
 import { asRecord, getRequiredParam, requireCrmSession } from '~~/server/utils/crm'
-import { dispatchOpenExpertMockBankDocument } from '~~/server/utils/openexpert-mock-bank-actions'
-import { requireOpenExpertMockBankDeliveryConfigured } from '~~/server/utils/openexpert-mock-bank-delivery'
-import {
-  assertOpenExpertMockBankRequestId,
-  deriveOpenExpertMockBankChildRequestId,
-} from '~~/server/utils/openexpert-mock-bank-documents'
-import {
-  requireOpenExpertMockBankContext,
-  requireOpenExpertMockBankRecipient,
-} from '~~/server/utils/openexpert-mock-bank-service'
-import { executeMortgageApplicationCommand } from '~~/server/utils/mortgage-application-process'
+import { assertOpenExpertMockBankRequestId } from '~~/server/utils/openexpert-mock-bank-documents'
+import { emitOpenExpertMockBankEvent } from '~~/server/utils/openexpert-mock-bank-simulator'
 
 function requestIdValue(value: unknown): string {
   try {
@@ -57,70 +48,16 @@ export default defineEventHandler(async (event) => {
   const requestId = requestIdValue(body.requestId)
   const expectedRevision = expectedRevisionValue(body.expectedRevision)
   const submittedAt = submittedAtValue(body.submittedAt)
-  let context = await requireOpenExpertMockBankContext(
+  return emitOpenExpertMockBankEvent({
     event,
     session,
     caseId,
     applicationId,
-  )
-  if (!['pre_application', 'submitted', 'awaiting_completeness', 'under_review'].includes(context.process.stage)) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Wniosek nie znajduje się na etapie umożliwiającym mockowe złożenie.',
-    })
-  }
-
-  // Validate all external prerequisites before committing the first lifecycle
-  // transition. A later provider failure remains safely retryable through the
-  // durable dispatch ledger and the canonical command event log.
-  requireOpenExpertMockBankDeliveryConfigured(event, session.organizationId)
-  const recipient = await requireOpenExpertMockBankRecipient(event, session)
-
-  let stage = context.process.stage
-  let revision = context.process.revision
-  if (stage === 'pre_application') {
-    const result = await executeMortgageApplicationCommand(event, session, caseId, applicationId, {
-      commandId: requestId,
+    bankEvent: {
+      type: 'application_submitted',
+      requestId,
       expectedRevision,
-      command: { type: 'submit_application', submittedAt },
-    })
-    stage = result.stage
-    revision = result.revision
-  }
-  if (stage === 'submitted') {
-    const result = await executeMortgageApplicationCommand(event, session, caseId, applicationId, {
-      commandId: deriveOpenExpertMockBankChildRequestId(requestId, 'acknowledge-application'),
-      expectedRevision: revision,
-      command: { type: 'acknowledge_application', acknowledgedAt: submittedAt },
-    })
-    stage = result.stage
-    revision = result.revision
-  }
-  if (stage === 'awaiting_completeness') {
-    const result = await executeMortgageApplicationCommand(event, session, caseId, applicationId, {
-      commandId: deriveOpenExpertMockBankChildRequestId(requestId, 'confirm-completeness'),
-      expectedRevision: revision,
-      command: { type: 'confirm_completeness', confirmedAt: submittedAt },
-    })
-    stage = result.stage
-    revision = result.revision
-  }
-  if (stage !== 'under_review') {
-    throw createError({ statusCode: 409, statusMessage: 'Bank nie potwierdził kompletności wniosku.' })
-  }
-
-  context = await requireOpenExpertMockBankContext(event, session, caseId, applicationId)
-  const delivery = await dispatchOpenExpertMockBankDocument({
-    event,
-    session,
-    caseId,
-    context,
-    kind: 'credit_decision',
-    requestId: deriveOpenExpertMockBankChildRequestId(requestId, 'credit-decision-email'),
-    recipient,
+      submittedAt,
+    },
   })
-  return {
-    ...delivery,
-    process: { stage, revision },
-  }
 })

@@ -5,6 +5,7 @@ import {
   throwMortgageBackofficeDbError,
 } from '~~/server/utils/mortgage-backoffice'
 import { mortgageLegacyVersionToDraft } from '~~/server/utils/mortgage-legacy-offer-draft'
+import { resolveMortgageBankLogoUrl } from '~~/server/utils/openexpert-mock-bank-brand'
 import { getRequiredParam } from '~~/server/utils/crm'
 
 export default defineEventHandler(async (event) => {
@@ -127,7 +128,12 @@ export default defineEventHandler(async (event) => {
         updatedAt: product.updated_at,
       },
       bank: rawBank
-        ? { id: rawBank.id, slug: rawBank.slug, name: rawBank.name, logoUrl: rawBank.logo_url ?? null }
+        ? {
+            id: rawBank.id,
+            slug: rawBank.slug,
+            name: rawBank.name,
+            logoUrl: resolveMortgageBankLogoUrl(rawBank.slug, rawBank.logo_url),
+          }
         : null,
       draft: {
         id: draft?.id ?? '',

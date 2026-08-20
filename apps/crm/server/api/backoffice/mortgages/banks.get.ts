@@ -1,4 +1,5 @@
 import { mortgageOfferValidity, requireMortgageBackoffice, throwMortgageBackofficeDbError } from '~~/server/utils/mortgage-backoffice'
+import { resolveMortgageBankLogoUrl } from '~~/server/utils/openexpert-mock-bank-brand'
 
 export default defineEventHandler(async (event) => {
   const { backendData } = await requireMortgageBackoffice(event)
@@ -83,7 +84,7 @@ export default defineEventHandler(async (event) => {
       id: bank.id,
       slug: bank.slug,
       name: bank.name,
-      logoUrl: bank.logo_url ?? null,
+      logoUrl: resolveMortgageBankLogoUrl(bank.slug, bank.logo_url),
       logoBackground: bank.logo_background_color ?? null,
       isEnabled: true,
       offers: productsByBank.get(bank.id) ?? [],

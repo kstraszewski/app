@@ -45,7 +45,7 @@ VALUES (
   'openexpert-bank',
   'OpenExpert Bank',
   'https://openexpert.app',
-  'https://crm.openexpert.app/assets/openexpert-bank.svg',
+  'https://openexpert-crm.vercel.app/assets/openexpert-bank.svg',
   '#FFFFFF',
   '#111827',
   '#FFFFFF',

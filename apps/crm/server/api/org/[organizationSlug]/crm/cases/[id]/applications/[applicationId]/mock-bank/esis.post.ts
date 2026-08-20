@@ -1,11 +1,6 @@
 import { createError, readBody } from 'h3'
-import { dispatchOpenExpertMockBankDocument } from '~~/server/utils/openexpert-mock-bank-actions'
-import { requireOpenExpertMockBankDeliveryConfigured } from '~~/server/utils/openexpert-mock-bank-delivery'
 import { assertOpenExpertMockBankRequestId } from '~~/server/utils/openexpert-mock-bank-documents'
-import {
-  requireOpenExpertMockBankContext,
-  requireOpenExpertMockBankRecipient,
-} from '~~/server/utils/openexpert-mock-bank-service'
+import { emitOpenExpertMockBankEvent } from '~~/server/utils/openexpert-mock-bank-simulator'
 import { assertUuid, requireCrmCase } from '~~/server/utils/case-documents'
 import { asRecord, getRequiredParam, requireCrmSession } from '~~/server/utils/crm'
 
@@ -40,28 +35,11 @@ export default defineEventHandler(async (event) => {
   }
   const requestId = requestIdValue(body.requestId)
   const forceResend = forceResendValue(body.forceResend)
-  const context = await requireOpenExpertMockBankContext(
+  return emitOpenExpertMockBankEvent({
     event,
     session,
     caseId,
     applicationId,
-  )
-  if (context.process.stage !== 'pre_application') {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Formularz ESIS można zamówić tylko przed złożeniem wniosku.',
-    })
-  }
-  requireOpenExpertMockBankDeliveryConfigured(event, session.organizationId)
-  const recipient = await requireOpenExpertMockBankRecipient(event, session)
-  return dispatchOpenExpertMockBankDocument({
-    event,
-    session,
-    caseId,
-    context,
-    kind: 'esis',
-    requestId,
-    recipient,
-    forceResend,
+    bankEvent: { type: 'esis_requested', requestId, forceResend },
   })
 })

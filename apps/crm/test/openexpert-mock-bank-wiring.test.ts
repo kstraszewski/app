@@ -12,6 +12,8 @@ const catalog = source('../server/utils/mortgage-catalog.ts')
 const productsRoute = source('../server/api/org/[organizationSlug]/mortgages/products.get.ts')
 const banksRoute = source('../server/api/org/[organizationSlug]/mortgages/banks.get.ts')
 const bankDetailRoute = source('../server/api/org/[organizationSlug]/mortgages/banks/[bankId].get.ts')
+const backofficeBanksRoute = source('../server/api/backoffice/mortgages/banks.get.ts')
+const backofficeOfferRoute = source('../server/api/backoffice/mortgages/offers/[offerId].get.ts')
 const saveOfferRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/offers/index.post.ts')
 const createApplicationRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/index.post.ts')
 const bankFilesRoute = source('../server/api/org/[organizationSlug]/mortgages/files/index.get.ts')
@@ -19,6 +21,7 @@ const experimentKnowledge = source('../server/utils/experiment-knowledge.ts')
 const intermediaryLenders = source('../server/utils/intermediary-lenders.ts')
 const mockBrand = source('../server/utils/openexpert-mock-bank-brand.ts')
 const mockService = source('../server/utils/openexpert-mock-bank-service.ts')
+const mockSimulator = source('../server/utils/openexpert-mock-bank-simulator.ts')
 const mockActions = source('../server/utils/openexpert-mock-bank-actions.ts')
 const mockDelivery = source('../server/utils/openexpert-mock-bank-delivery.ts')
 const mockDispatch = source('../server/utils/openexpert-mock-bank-dispatch.ts')
@@ -33,18 +36,31 @@ const mortgageActionUi = source('../app/components/CaseMortgageActionSlideover.v
 const notificationOutboxRoute = source('../server/api/internal/notifications/outbox.post.ts')
 const notificationOutboxWorker = source('../../../packages/tasks/src/trigger/notification-outbox.ts')
 const migration = source('../../../packages/database/postgres/migrations/0058_openexpert_mock_bank.sql')
+const logoRepairMigration = source('../../../packages/database/postgres/migrations/0059_openexpert_mock_bank_logo_url.sql')
 const bankLogo = source('../public/assets/openexpert-bank.svg')
 const envExample = source('../../../.env.example')
+const productionMigrator = source('../../../packages/database/scripts/migrate-production-knowledge-release.mjs')
+const readme = source('../../../README.md')
 
 test('mock-bank logo resolves on the current CRM origin in every environment', () => {
   assert.equal(
-    resolveMortgageBankLogoUrl('openexpert-bank', 'https://crm.openexpert.app/assets/openexpert-bank.svg'),
+    resolveMortgageBankLogoUrl('openexpert-bank', 'https://openexpert-crm.vercel.app/assets/openexpert-bank.svg'),
     '/assets/openexpert-bank.svg',
   )
   assert.equal(
     resolveMortgageBankLogoUrl('ing', 'https://www.ing.pl/logo.svg'),
     'https://www.ing.pl/logo.svg',
   )
+})
+
+test('case read model fails closed while the managed Data API schema cache is stale', () => {
+  assert.match(caseRoute, /String\(error\?\.code \?\? ''\) !== 'PGRST205'/u)
+  assert.match(caseRoute, /message\.includes\('crm_mock_bank_dispatches'\) && message\.includes\('schema cache'\)/u)
+  assert.match(caseRoute, /mock_bank_enabled: mockBankReadModelEnabled/u)
+  assert.match(caseRoute, /enabled: mockBankReadModelEnabled/u)
+  assert.match(productionMigrator, /pg_notify\('pgrst', 'reload schema'\)/u)
+  assert.match(readme, /neonctl@latest data-api refresh-schema/u)
+  assert.match(readme, /Samo postgresowe `NOTIFY pgrst` nie odświeża zarządzanego cache'u Neon/u)
 })
 
 test('feature flag controls mock-bank discovery and offer persistence', () => {
@@ -74,12 +90,16 @@ test('feature flag controls mock-bank discovery and offer persistence', () => {
     /bank\.is_mock !== true \|\| String\(bank\.slug\) !== OPENEXPERT_MOCK_BANK_SLUG/u,
   )
   assert.match(migration, /'openexpert-bank',\s*'OpenExpert Bank'/u)
-  assert.match(migration, /'https:\/\/crm\.openexpert\.app\/assets\/openexpert-bank\.svg'/u)
+  assert.match(migration, /'https:\/\/openexpert-crm\.vercel\.app\/assets\/openexpert-bank\.svg'/u)
+  assert.match(logoRepairMigration, /UPDATE public\.mortgage_banks/u)
+  assert.match(logoRepairMigration, /slug = 'openexpert-bank'/u)
+  assert.match(logoRepairMigration, /is_mock = true/u)
+  assert.match(logoRepairMigration, /https:\/\/openexpert-crm\.vercel\.app\/assets\/openexpert-bank\.svg/u)
   assert.match(migration, /is_mock = true/u)
 
   assert.match(mockBrand, /OPENEXPERT_MOCK_BANK_LOGO_PATH = '\/assets\/openexpert-bank\.svg'/u)
   assert.match(mockBrand, /bankSlug === 'openexpert-bank'/u)
-  for (const consumer of [banksRoute, bankDetailRoute, catalog]) {
+  for (const consumer of [banksRoute, bankDetailRoute, catalog, caseRoute, backofficeBanksRoute, backofficeOfferRoute]) {
     assert.match(consumer, /resolveMortgageBankLogoUrl/u)
   }
 
@@ -89,15 +109,22 @@ test('feature flag controls mock-bank discovery and offer persistence', () => {
   assert.match(bankLogo, /fill="#16A34A"/u)
 })
 
-test('mock-bank mail uses its dedicated key and local Mailpit by default', () => {
+test('all CRM email services share one Resend key while the simulator keeps its own identity', () => {
+  const authConfigStart = config.indexOf('    authEmail: {')
   const mockConfigStart = config.indexOf('    mockBank: {')
+  const authConfigEnd = mockConfigStart
   const mockConfigEnd = config.indexOf('    authSms: {', mockConfigStart)
+  assert.ok(authConfigStart >= 0)
+  assert.ok(authConfigEnd > authConfigStart)
   assert.ok(mockConfigStart >= 0)
   assert.ok(mockConfigEnd > mockConfigStart)
+  const authConfig = config.slice(authConfigStart, authConfigEnd)
   const mockConfig = config.slice(mockConfigStart, mockConfigEnd)
 
-  assert.match(mockConfig, /apiKey: process\.env\.NUXT_MOCK_BANK_RESEND_API_KEY \|\| ''/u)
-  assert.doesNotMatch(mockConfig, /process\.env\.NUXT_RESEND_API_KEY/u)
+  assert.match(config, /const resendApiKey = process\.env\.NUXT_RESEND_API_KEY \|\| ''/u)
+  assert.match(authConfig, /apiKey: resendApiKey/u)
+  assert.match(mockConfig, /apiKey: resendApiKey/u)
+  assert.doesNotMatch(config, /NUXT_(?:AUTH|MOCK_BANK)_RESEND_API_KEY/u)
   assert.match(mockConfig, /host: process\.env\.NUXT_SMTP_HOST \|\| \(isProduction \? '' : '127\.0\.0\.1'\)/u)
   assert.match(mockConfig, /port: Number\(process\.env\.NUXT_SMTP_PORT \|\| 55325\)/u)
   assert.match(mockConfig, /allowAllOrganizations: !isProduction/u)
@@ -105,8 +132,8 @@ test('mock-bank mail uses its dedicated key and local Mailpit by default', () =>
   assert.match(config, /process\.env\.NUXT_MOCK_BANK_ORGANIZATION_IDS/u)
   assert.match(config, /mockBankOrganizationIds\.some\(value => !mockBankOrganizationIdPattern\.test\(value\)\)/u)
 
-  assert.match(envExample, /^# NUXT_MOCK_BANK_RESEND_API_KEY=re_your_mock_bank_api_key$/mu)
-  assert.doesNotMatch(envExample, /^NUXT_MOCK_BANK_RESEND_API_KEY=/mu)
+  assert.match(envExample, /^NUXT_RESEND_API_KEY=re_your_api_key$/mu)
+  assert.doesNotMatch(envExample, /NUXT_(?:AUTH|MOCK_BANK)_RESEND_API_KEY/u)
   assert.match(envExample, /^# NUXT_MOCK_BANK_ORGANIZATION_IDS=[0-9a-f-]+$/mu)
   assert.doesNotMatch(envExample, /^NUXT_MOCK_BANK_ORGANIZATION_IDS=/mu)
   assert.match(envExample, /^NUXT_SMTP_PORT=55325$/mu)
@@ -135,7 +162,7 @@ test('organization gate also protects saved offers and non-demo bank directories
   assert.match(bankFilesRoute, /\.eq\('mortgage_banks\.is_mock', false\)/u)
 })
 
-test('ESIS and decision endpoints validate scope, stage and delivery prerequisites', () => {
+test('ESIS and decision endpoints emit typed events into the bank simulator service', () => {
   for (const route of [esisRoute, decisionRoute]) {
     assert.match(route, /await requireCrmSession\(event\)/u)
     assert.match(route, /await requireCrmCase\(session, caseId\)/u)
@@ -143,36 +170,37 @@ test('ESIS and decision endpoints validate scope, stage and delivery prerequisit
     assert.match(route, /\['requestId', 'forceResend'\]\.includes\(key\)/u)
     assert.match(route, /if \(typeof value !== 'boolean'\)/u)
     assert.match(route, /const forceResend = forceResendValue\(body\.forceResend\)/u)
-    assert.match(route, /await requireOpenExpertMockBankContext\(/u)
-
-    const configuredAt = route.indexOf('requireOpenExpertMockBankDeliveryConfigured(event, session.organizationId)')
-    const recipientAt = route.indexOf('await requireOpenExpertMockBankRecipient(event, session)')
-    const dispatchAt = route.indexOf('return dispatchOpenExpertMockBankDocument({')
-    assert.ok(configuredAt >= 0)
-    assert.ok(recipientAt > configuredAt)
-    assert.ok(dispatchAt > recipientAt)
-    assert.match(route.slice(dispatchAt), /forceResend,/u)
+    assert.match(route, /return emitOpenExpertMockBankEvent\(\{/u)
+    assert.match(route, /bankEvent:/u)
+    assert.match(route, /forceResend/u)
   }
 
-  assert.match(esisRoute, /context\.process\.stage !== 'pre_application'/u)
-  assert.match(esisRoute, /kind: 'esis'/u)
-  assert.match(decisionRoute, /context\.process\.stage !== 'under_review'/u)
-  assert.match(decisionRoute, /kind: 'credit_decision'/u)
+  assert.match(esisRoute, /type: 'esis_requested'/u)
+  assert.match(decisionRoute, /type: 'credit_decision_requested'/u)
+  assert.match(mockSimulator, /export type OpenExpertMockBankEvent/u)
+  assert.match(mockSimulator, /context\.process\.stage !== 'pre_application'/u)
+  assert.match(mockSimulator, /context\.process\.stage !== 'under_review'/u)
+  assert.match(mockSimulator, /requireOpenExpertMockBankDeliveryConfigured\(input\.event, input\.session\.organizationId\)/u)
+  assert.match(mockSimulator, /return requireOpenExpertMockBankRecipient\(input\.event, input\.session\)/u)
+  assert.match(mockSimulator, /kind: 'esis'/u)
+  assert.match(mockSimulator, /kind: 'credit_decision'/u)
 })
 
 test('mock submit follows submit, acknowledgement, completeness and decision order', () => {
+  assert.match(submitRoute, /type: 'application_submitted'/u)
+  assert.match(submitRoute, /return emitOpenExpertMockBankEvent\(\{/u)
   assert.match(
-    submitRoute,
-    /\['pre_application', 'submitted', 'awaiting_completeness', 'under_review'\]\.includes\(context\.process\.stage\)/u,
+    mockSimulator,
+    /\['pre_application', 'submitted', 'awaiting_completeness', 'under_review'\][\s\S]*?\.includes\(context\.process\.stage\)/u,
   )
 
-  const configuredAt = submitRoute.indexOf('requireOpenExpertMockBankDeliveryConfigured(event, session.organizationId)')
-  const recipientAt = submitRoute.indexOf('await requireOpenExpertMockBankRecipient(event, session)')
-  const submitAt = submitRoute.indexOf("command: { type: 'submit_application'")
-  const acknowledgeAt = submitRoute.indexOf("command: { type: 'acknowledge_application'")
-  const completenessAt = submitRoute.indexOf("command: { type: 'confirm_completeness'")
-  const contextReloadAt = submitRoute.indexOf('\n  context = await requireOpenExpertMockBankContext', completenessAt)
-  const decisionAt = submitRoute.indexOf('const delivery = await dispatchOpenExpertMockBankDocument', contextReloadAt)
+  const configuredAt = mockSimulator.indexOf('requireOpenExpertMockBankDeliveryConfigured(input.event, input.session.organizationId)')
+  const recipientAt = mockSimulator.indexOf('return requireOpenExpertMockBankRecipient(input.event, input.session)')
+  const submitAt = mockSimulator.indexOf("command: { type: 'submit_application'")
+  const acknowledgeAt = mockSimulator.indexOf("command: { type: 'acknowledge_application'")
+  const completenessAt = mockSimulator.indexOf("command: { type: 'confirm_completeness'")
+  const contextReloadAt = mockSimulator.indexOf('\n  context = await requireOpenExpertMockBankContext', completenessAt)
+  const decisionAt = mockSimulator.indexOf('const delivery = await dispatchOpenExpertMockBankDocument', contextReloadAt)
 
   assert.ok(configuredAt >= 0)
   assert.ok(recipientAt > configuredAt)
@@ -182,11 +210,11 @@ test('mock submit follows submit, acknowledgement, completeness and decision ord
   assert.ok(contextReloadAt > completenessAt)
   assert.ok(decisionAt > contextReloadAt)
 
-  assert.match(submitRoute, /deriveOpenExpertMockBankChildRequestId\(requestId, 'acknowledge-application'\)/u)
-  assert.match(submitRoute, /deriveOpenExpertMockBankChildRequestId\(requestId, 'confirm-completeness'\)/u)
-  assert.match(submitRoute, /deriveOpenExpertMockBankChildRequestId\(requestId, 'credit-decision-email'\)/u)
-  assert.match(submitRoute, /if \(stage !== 'under_review'\)/u)
-  assert.match(submitRoute, /kind: 'credit_decision'/u)
+  assert.match(mockSimulator, /'acknowledge-application'/u)
+  assert.match(mockSimulator, /'confirm-completeness'/u)
+  assert.match(mockSimulator, /'credit-decision-email'/u)
+  assert.match(mockSimulator, /if \(stage !== 'under_review'\)/u)
+  assert.match(mockSimulator, /kind: 'credit_decision'/u)
 })
 
 test('sent replay, explicit resend and active leases have distinct semantics', () => {

@@ -180,26 +180,21 @@ przez SMTP do Mailpit. Produkcyjnie ustaw:
 
 ```text
 NUXT_RESEND_API_KEY=re_...
-NUXT_AUTH_RESEND_API_KEY=re_...
 NUXT_AUTH_EMAIL_FROM=OpenExpert <security@auth.openexpert.app>
 NUXT_AUTH_EMAIL_REPLY_TO=hello@openexpert.app
 NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
 NUXT_RESEND_REPLY_TO=hello@openexpert.app
 NUXT_MOCK_BANK_ENABLED=true
 NUXT_MOCK_BANK_ORGANIZATION_IDS=<uuid-organizacji-demo>
-NUXT_MOCK_BANK_RESEND_API_KEY=re_...
 NUXT_MOCK_BANK_EMAIL_FROM=OpenExpert Bank <dokumenty@bank.openexpert.app>
 NUXT_MOCK_BANK_EMAIL_REPLY_TO=demo@openexpert.app
 ```
 
-Zweryfikuj w Resend osobne subdomeny nadawcze dla auth i komunikacji
-produktowej. Dla każdej z nich skonfiguruj SPF, DKIM i DMARC oraz wyłącz
-śledzenie kliknięć i otwarć dla wiadomości uwierzytelniających. Używaj kluczy
-typu `sending_access` ograniczonych do właściwej domeny. W produkcji osobne
-`NUXT_AUTH_RESEND_API_KEY`, `NUXT_AUTH_EMAIL_FROM` i
-`NUXT_AUTH_EMAIL_REPLY_TO` są wymagane i nie fallbackują do konfiguracji
-maili produktowych; zgodność z `NUXT_RESEND_*` pozostaje wyłącznie lokalnie.
-Wszystkie klucze są serwerowe, a `Reply-To` musi wskazywać rzeczywiście
+Zweryfikuj w Resend osobne subdomeny nadawcze dla auth, komunikacji
+produktowej i symulatora banku. Dla każdej z nich skonfiguruj SPF, DKIM i DMARC
+oraz wyłącz śledzenie kliknięć i otwarć dla wiadomości uwierzytelniających.
+Wszystkie serwisy korzystają z jednego serwerowego `NUXT_RESEND_API_KEY`, ale
+mają osobne `From` i `Reply-To`; adres `Reply-To` musi wskazywać rzeczywiście
 monitorowaną skrzynkę.
 
 Symulator OpenExpert Banku jest domyślnie włączony lokalnie i wyłączony w
@@ -207,8 +202,8 @@ produkcji. Produkcyjne uruchomienie wymaga jednocześnie
 `NUXT_MOCK_BANK_ENABLED=true` i jawnego allowlistu UUID tenantów w
 `NUXT_MOCK_BANK_ORGANIZATION_IDS`; bank testowy nie pojawi się w pozostałych
 organizacjach. Lokalnie korzysta z tego samego Mailpita co pozostałe
-wiadomości; produkcyjnie wymaga zweryfikowanej domeny nadawczej i osobnego,
-ograniczonego klucza Resend.
+wiadomości; produkcyjnie wymaga zweryfikowanej domeny nadawczej i korzysta ze
+wspólnego klucza Resend poprzez odseparowany serwis symulatora.
 
 Przepływ demonstracyjny zachowuje rzeczywiste reguły procesu hipotecznego:
 
@@ -281,7 +276,17 @@ Utwórz osobne projekty Vercel dla `apps/landing`, `apps/crm` i opcjonalnie
 
 1. Dodaj Neon z Vercel Marketplace, włącz Data API z zewnętrznym JWKS i
    zastosuj w kolejności migracje `packages/database/postgres/migrations`
-   (w tym przenośny bootstrap `0000`).
+   (w tym przenośny bootstrap `0000`). Po każdej migracji zmieniającej tabele,
+   widoki lub RPC odśwież zarządzany cache Neon Data API przed promocją deployu:
+
+   ```bash
+   pnpm dlx neonctl@latest data-api refresh-schema \
+     --project-id <project-id> \
+     --branch <branch-id> \
+     --database <database>
+   ```
+
+   Samo postgresowe `NOTIFY pgrst` nie odświeża zarządzanego cache'u Neon.
 2. Utwórz logowalną rolę `openexpert_auth` z osobnym hasłem. Data API używa
    ról `anonymous`, `authenticated` i serwerowej `openexpert_service`; jej dostęp
    uprzywilejowany jest zapisany w jawnych politykach RLS, bez wymagania

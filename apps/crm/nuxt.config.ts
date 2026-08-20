@@ -45,6 +45,7 @@ const authPasskeyEnabled = process.env.NUXT_AUTH_PASSKEY_ENABLED !== 'false'
 const authPasskeyOrigin = authBaseUrl.replace(/\/$/u, '')
 const authPasskeyRpId = process.env.NUXT_AUTH_PASSKEY_RP_ID
   || new URL(authPasskeyOrigin).hostname
+const resendApiKey = process.env.NUXT_RESEND_API_KEY || ''
 const mockBankEnabled = process.env.NUXT_MOCK_BANK_ENABLED
   ? process.env.NUXT_MOCK_BANK_ENABLED === 'true'
   : !isProduction
@@ -234,9 +235,7 @@ export default defineNuxtConfig({
       invitationTtlSeconds: Number(process.env.NUXT_CLIENT_PORTAL_INVITATION_TTL_SECONDS || 3600),
     },
     authEmail: {
-      apiKey: process.env.NUXT_AUTH_RESEND_API_KEY
-        || (isProduction ? '' : process.env.NUXT_RESEND_API_KEY)
-        || '',
+      apiKey: resendApiKey,
       from: process.env.NUXT_AUTH_EMAIL_FROM
         || (isProduction ? '' : process.env.NUXT_RESEND_FROM)
         || (isProduction ? '' : 'OpenExpert <security@auth.openexpert.local>'),
@@ -261,10 +260,9 @@ export default defineNuxtConfig({
       allowAllOrganizations: !isProduction,
       organizationIds: mockBankOrganizationIds,
       email: {
-        // The synthetic bank has an explicit sending identity. In local
-        // development an empty key intentionally selects SMTP/Mailpit instead
-        // of accidentally reusing the application's generic Resend key.
-        apiKey: process.env.NUXT_MOCK_BANK_RESEND_API_KEY || '',
+        // The simulator is an application service with its own sender identity,
+        // but it deliberately shares the single transactional Resend transport.
+        apiKey: resendApiKey,
         from: process.env.NUXT_MOCK_BANK_EMAIL_FROM
           || (isProduction ? '' : 'OpenExpert Bank <dokumenty@bank.openexpert.local>'),
         replyTo: process.env.NUXT_MOCK_BANK_EMAIL_REPLY_TO || '',

@@ -70,6 +70,11 @@ function storageBoundary(event: H3Event) {
             storeId: optional(config.vercelBlob.privateStoreId),
           },
         },
+        // Private Blob reads can otherwise observe a cached 404 immediately
+        // after an immutable outbox upload. The mock-bank dispatcher verifies
+        // the object before committing its hashes, so it requires read-after-
+        // write semantics for this server-side path.
+        bypassPrivateDownloadCache: true,
       })
     : createMinioStorageProvider({
         endpoint: config.minio.endpoint,

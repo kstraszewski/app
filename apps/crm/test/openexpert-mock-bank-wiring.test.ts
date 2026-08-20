@@ -27,6 +27,7 @@ const mockDelivery = source('../server/utils/openexpert-mock-bank-delivery.ts')
 const mockDispatch = source('../server/utils/openexpert-mock-bank-dispatch.ts')
 const mockPayload = source('../server/utils/openexpert-mock-bank-payload.ts')
 const mockCleanup = source('../server/utils/openexpert-mock-bank-cleanup.ts')
+const platformStorage = source('../server/utils/platform-storage.ts')
 const esisRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/esis.post.ts')
 const submitRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/submit.post.ts')
 const decisionRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/decision.post.ts')
@@ -90,7 +91,7 @@ test('feature flag controls mock-bank discovery and offer persistence', () => {
     /bank\.is_mock !== true \|\| String\(bank\.slug\) !== OPENEXPERT_MOCK_BANK_SLUG/u,
   )
   assert.match(migration, /'openexpert-bank',\s*'OpenExpert Bank'/u)
-  assert.match(migration, /'https:\/\/openexpert-crm\.vercel\.app\/assets\/openexpert-bank\.svg'/u)
+  assert.match(migration, /'https:\/\/crm\.openexpert\.app\/assets\/openexpert-bank\.svg'/u)
   assert.match(logoRepairMigration, /UPDATE public\.mortgage_banks/u)
   assert.match(logoRepairMigration, /slug = 'openexpert-bank'/u)
   assert.match(logoRepairMigration, /is_mock = true/u)
@@ -270,6 +271,7 @@ test('sent replay, explicit resend and active leases have distinct semantics', (
 })
 
 test('same-generation retry reuses committed private payload and hashes', () => {
+  assert.match(platformStorage, /bypassPrivateDownloadCache: true/u)
   assert.match(migration, /UNIQUE \(application_id, kind\)/u)
   assert.match(migration, /UNIQUE \(request_id\)/u)
   assert.match(migration, /generation_started_at timestamptz NOT NULL/u)

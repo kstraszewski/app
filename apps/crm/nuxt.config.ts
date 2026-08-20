@@ -94,6 +94,11 @@ export default defineNuxtConfig({
     },
   },
   hooks: {
+    close() {
+      if (process.env.VERCEL === '1') {
+        setTimeout(() => process.exit(0), 0)
+      }
+    },
     'vite:extendConfig'(config) {
       const mutableConfig = config as typeof config & { server?: { hmr?: boolean } }
       mutableConfig.server ||= {}

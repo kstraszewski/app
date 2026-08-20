@@ -460,4 +460,8 @@ test('ledger, persisted manifest, logs and CRM activity never persist a PESEL va
     assert.doesNotMatch(log, /input\.context\.pesel|input\.recipient\.email|recipientEmail/u)
     assert.doesNotMatch(log, /\bpesel\s*:/iu)
   }
+  assert.match(mockDelivery, /safeProviderDeliveryFailureReason/u)
+  assert.match(mockDelivery, /\[redacted-email\]/u)
+  assert.match(mockDelivery, /\[redacted-api-key\]/u)
+  assert.match(mockDelivery, /\[redacted-private-id\]/u)
 })

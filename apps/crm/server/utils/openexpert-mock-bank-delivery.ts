@@ -59,6 +59,14 @@ interface PersistedPayload {
   payloadSha256: string
 }
 
+function safeProviderDeliveryFailureReason(error: EmailDeliveryError): string {
+  return error.message
+    .replace(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/giu, '[redacted-email]')
+    .replace(/\bre_[a-z0-9_-]+\b/giu, '[redacted-api-key]')
+    .replace(/\b\d{11}\b/gu, '[redacted-private-id]')
+    .slice(0, 500)
+}
+
 function senderConfig(input: {
   runtime: OpenExpertMockBankEmailConfig
   from?: string | null
@@ -466,6 +474,7 @@ export async function deliverOpenExpertMockBankDocument(input: {
         provider: error.provider,
         retryable: error.retryable,
         statusCode: error.statusCode,
+        reason: safeProviderDeliveryFailureReason(error),
       })
       throw createError({
         statusCode: error.retryable ? 503 : 502,

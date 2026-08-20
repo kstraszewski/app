@@ -1,7 +1,7 @@
 import { defineTool } from 'eve/tools'
 import { z } from 'zod'
 import { requireCrmAgentCaller } from '../lib/caller'
-import { createAgentServiceClient } from '../lib/data-api'
+import { createAgentActingUserDataApiClient } from '../lib/data-api'
 
 type Row = Record<string, any>
 
@@ -29,7 +29,7 @@ export default defineTool({
     }
     const caseId = fixedCaseId ?? requestedCaseId
     if (!caseId) throw new Error('Podaj identyfikator sprawy.')
-    const dataApi = createAgentServiceClient()
+    const dataApi = createAgentActingUserDataApiClient(caller.userId)
     const caseResult = await dataApi
       .from('crm_cases')
       .select('id, title, description, status_code, priority, progress_percent, opened_at, closed_at, updated_at')

@@ -21,6 +21,7 @@
     "db:stop": "turbo run db:stop --filter=@openexpert/database",
     "db:verify": "turbo run db:verify --filter=@openexpert/database",
     "dev": "turbo run dev",
+    "dev:bank-mail-agent": "turbo run dev --filter=@openexpert/bank-mail-agent",
     "dev:landing": "turbo run dev --filter=@openexpert/landing",
     "dev:crm": "node --env-file-if-exists=apps/landing/.env.local --env-file-if-exists=.env.local ./node_modules/turbo/bin/turbo run dev --filter=@openexpert/crm",
     "dev:client": "turbo run dev --filter=@openexpert/client",

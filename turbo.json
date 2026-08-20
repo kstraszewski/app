@@ -3,6 +3,9 @@
   "globalEnv": [
     "BETTER_AUTH_*",
     "DATABASE_URL",
+    "DATA_API_*",
+    "EVE_*",
+    "BANK_MAIL_AGENT_*",
     "NUXT_*",
     "AI_GATEWAY_API_KEY",
     "GOOGLE_GENERATIVE_AI_API_KEY",

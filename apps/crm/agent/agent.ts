@@ -17,7 +17,7 @@ export default defineAgent({
     },
   }),
   modelContextWindowTokens: CRM_AGENT_MODELS.default.contextWindowTokens,
-  reasoning: 'low',
+  reasoning: CRM_AGENT_MODELS.default.reasoningEffort,
   limits: {
     maxInputTokensPerSession: 200_000,
     maxOutputTokensPerSession: 20_000,

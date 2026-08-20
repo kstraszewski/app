@@ -1,7 +1,7 @@
 import { defineTool } from 'eve/tools'
 import { z } from 'zod'
 import { requireCrmAgentCaller } from '../lib/caller'
-import { createAgentServiceClient } from '../lib/data-api'
+import { createAgentActingUserDataApiClient } from '../lib/data-api'
 
 const caseScopeSchema = z.enum(['mine', 'organization'])
 
@@ -16,7 +16,7 @@ export default defineTool({
   }),
   async execute({ query: searchText, scope, limit }, ctx) {
     const caller = requireCrmAgentCaller(ctx)
-    const dataApi = createAgentServiceClient()
+    const dataApi = createAgentActingUserDataApiClient(caller.userId)
     const fixedCaseId = caller.invocation?.scope.caseId
     let casesQuery = dataApi
       .from('crm_cases')

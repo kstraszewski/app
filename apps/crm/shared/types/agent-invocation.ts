@@ -1,7 +1,10 @@
+import { MAIN_CRM_AGENT_MODEL } from '@openexpert/crm-agent-capabilities'
+
 export const CRM_AGENT_MODELS = {
   default: {
-    gatewayId: 'openai/gpt-5.6-luna',
-    contextWindowTokens: 1_050_000,
+    gatewayId: MAIN_CRM_AGENT_MODEL.id,
+    contextWindowTokens: 1_000_000,
+    reasoningEffort: MAIN_CRM_AGENT_MODEL.reasoningEffort,
   },
   flashLite: {
     gatewayId: 'google/gemini-3.5-flash-lite',

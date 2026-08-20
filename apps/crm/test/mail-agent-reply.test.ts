@@ -91,6 +91,14 @@ test('uses the verified Flash-Lite model profile for mail invocations', () => {
   })
 })
 
+test('uses the pinned Pro model for the primary CRM agent', () => {
+  assert.deepEqual(CRM_AGENT_MODELS.default, {
+    gatewayId: 'deepseek/deepseek-v4-pro-0813',
+    contextWindowTokens: 1_000_000,
+    reasoningEffort: 'low',
+  })
+})
+
 test('reads fixed case and client scope only from authenticated session attributes', () => {
   const invocation = readCrmAgentInvocation({
     session: {

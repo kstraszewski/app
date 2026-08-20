@@ -1,0 +1,35 @@
+{
+  "name": "@openexpert/bank-mail-agent",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.11.0 <25"
+  },
+  "imports": {
+    "#*": "./agent/*"
+  },
+  "scripts": {
+    "build": "eve build",
+    "dev": "eve dev --port 3014",
+    "eval": "cd evals/fixture && ../../node_modules/.bin/eve eval --strict --skip-report",
+    "eval:list": "cd evals/fixture && ../../node_modules/.bin/eve eval --list",
+    "eve:info": "eve info",
+    "start": "eve start",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "typecheck": "tsgo && tsgo -p evals/fixture/tsconfig.json"
+  },
+  "dependencies": {
+    "@openexpert/crm-agent-capabilities": "workspace:*",
+    "@openexpert/data-api": "workspace:*",
+    "ai": "7.0.38",
+    "eve": "0.31.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@typescript/native-preview": "7.0.0-dev.20260523.1",
+    "just-bash": "^3.1.0",
+    "microsandbox": "0.5.10"
+  }
+}

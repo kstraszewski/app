@@ -5,6 +5,8 @@ const isProduction = process.env.NODE_ENV === 'production'
 const multiformServiceUrl = process.env.NUXT_MULTIFORM_SERVICE_URL
   || process.env.NUXT_PUBLIC_MULTIFORM_EVE_URL?.replace(/\/multiform-eve\/?$/u, '')
   || (isProduction ? 'https://openexpert-landing.vercel.app' : 'http://127.0.0.1:3013')
+const bankMailAgentServiceUrl = process.env.NUXT_BANK_MAIL_AGENT_SERVICE_URL
+  || (isProduction ? '' : 'http://127.0.0.1:3014')
 const storageProvider = process.env.NUXT_STORAGE_PROVIDER
   || (process.env.VERCEL ? 'vercel-blob' : 'minio')
 const dataApiUrl = process.env.NUXT_DATA_API_URL
@@ -180,6 +182,9 @@ export default defineNuxtConfig({
         || '',
     },
     multiformServiceUrl,
+    bankMailAgent: {
+      serviceUrl: bankMailAgentServiceUrl,
+    },
     aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY || '',
     googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
     ceidg: {

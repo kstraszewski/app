@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "allowJs": true,
     "allowImportingTsExtensions": true,
     "strict": true,
     "esModuleInterop": true,
@@ -10,5 +11,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["agent/**/*.ts", "test/**/*.ts", ".eve/**/*.d.ts"]
+  "include": ["agent/**/*.ts", "test/**/*.ts", ".eve/**/*.d.ts", ".eve/**/*.mjs"]
 }

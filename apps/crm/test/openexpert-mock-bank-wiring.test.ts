@@ -28,6 +28,7 @@ const mockDispatch = source('../server/utils/openexpert-mock-bank-dispatch.ts')
 const mockPayload = source('../server/utils/openexpert-mock-bank-payload.ts')
 const mockCleanup = source('../server/utils/openexpert-mock-bank-cleanup.ts')
 const platformStorage = source('../server/utils/platform-storage.ts')
+const vercelBlobProvider = source('../../../packages/storage/src/providers/vercel-blob.ts')
 const esisRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/esis.post.ts')
 const submitRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/submit.post.ts')
 const decisionRoute = source('../server/api/org/[organizationSlug]/crm/cases/[id]/applications/[applicationId]/mock-bank/decision.post.ts')
@@ -272,6 +273,7 @@ test('sent replay, explicit resend and active leases have distinct semantics', (
 
 test('same-generation retry reuses committed private payload and hashes', () => {
   assert.match(platformStorage, /bypassPrivateDownloadCache: true/u)
+  assert.match(vercelBlobProvider, /result\.blob\.size === 0[\s\S]*?sdk\.head/u)
   assert.match(mockDelivery, /discardEmptyUncommittedOpenExpertMockBankObject/u)
   assert.match(migration, /UNIQUE \(application_id, kind\)/u)
   assert.match(migration, /UNIQUE \(request_id\)/u)

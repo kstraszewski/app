@@ -260,11 +260,18 @@ export function createVercelBlobStorageProvider(
         throw new Error(`Unexpected Vercel Blob response for "${input.key}"`)
       }
 
+      // Private Blob responses may omit Content-Length. The SDK represents an
+      // unknown streamed size as 0, so resolve authoritative metadata before
+      // exposing it through the provider-neutral storage contract.
+      const size = result.blob.size === 0
+        ? (await sdk.head(input.key, authOptions(options.stores[input.access]))).size
+        : result.blob.size
+
       return {
         object: {
           access: input.access,
           key: result.blob.pathname,
-          size: result.blob.size,
+          size,
           contentType: result.blob.contentType ?? undefined,
           etag: result.blob.etag,
           uploadedAt: result.blob.uploadedAt,

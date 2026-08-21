@@ -34,6 +34,7 @@ test('keeps text-only PDF.js extraction independent of native canvas', () => {
   assert.match(boundedPdfText, /globals\.DOMMatrix \|\|= class DOMMatrix/u)
   assert.match(boundedPdfText, /globals\.Path2D \|\|= class Path2D/u)
   assert.match(boundedPdfText, /globals\.ImageData \|\|= class ImageData/u)
+  assert.match(boundedPdfText, /import\('pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs'\)/u)
   assert.match(boundedPdfText, /only uses getTextContent\(\)/u)
 })
 

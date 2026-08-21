@@ -37,6 +37,10 @@ export async function extractBoundedPdfText(input: {
     throw new TypeError('PDF text extraction input is invalid')
   }
   ensurePdfJsTextGlobals()
+  // PDF.js uses its worker module in-process on Node. Import it explicitly so
+  // serverless file tracing includes pdf.worker.mjs; the library's own
+  // variable-path dynamic import is otherwise invisible to Vercel/NFT.
+  await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const loadingTask = getDocument({
     data: input.bytes.slice(),

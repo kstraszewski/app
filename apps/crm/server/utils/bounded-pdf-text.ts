@@ -1,14 +1,17 @@
 export const MAX_BANK_MAIL_PDF_TEXT_CHARACTERS = 250_000
 export const MAX_BANK_MAIL_PDF_PAGES = 100
 
-async function ensurePdfJsGlobals(): Promise<void> {
+function ensurePdfJsTextGlobals(): void {
   const globals = globalThis as unknown as Record<string, unknown>
   if (globals.DOMMatrix && globals.Path2D && globals.ImageData) return
 
-  const canvas = await import('@napi-rs/canvas')
-  globals.DOMMatrix ||= canvas.DOMMatrix
-  globals.Path2D ||= canvas.Path2D
-  globals.ImageData ||= canvas.ImageData
+  // pdfjs checks these browser globals while its Node module is initialized,
+  // even when the caller only uses getTextContent(). Text extraction never
+  // renders a page or calls their APIs, so inert constructors are sufficient
+  // and avoid loading a native canvas binary in serverless runtimes.
+  globals.DOMMatrix ||= class DOMMatrix { constructor(..._args: unknown[]) {} }
+  globals.Path2D ||= class Path2D { constructor(..._args: unknown[]) {} }
+  globals.ImageData ||= class ImageData { constructor(..._args: unknown[]) {} }
 }
 
 function normalizedText(value: string): string {
@@ -33,7 +36,7 @@ export async function extractBoundedPdfText(input: {
   ) {
     throw new TypeError('PDF text extraction input is invalid')
   }
-  await ensurePdfJsGlobals()
+  ensurePdfJsTextGlobals()
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const loadingTask = getDocument({
     data: input.bytes.slice(),

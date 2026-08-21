@@ -40,7 +40,6 @@
     "@nuxt/icon": "^2.3.1",
     "@nuxt/ui": "^4.10.0",
     "@nuxtjs/mdc": "0.22.2",
-    "@napi-rs/canvas": "1.0.2",
     "@openexpert/auth": "workspace:*",
     "@openexpert/crm-agent-capabilities": "workspace:*",
     "@openexpert/data-api": "workspace:*",

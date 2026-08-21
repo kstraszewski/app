@@ -28,13 +28,13 @@ test('deploys the automatic PDF worker through the durable notification drainer'
   assert.match(trigger, /AbortSignal\.timeout\(180_000\)/u)
 })
 
-test('ships the native PDF.js canvas runtime in the CRM serverless bundle', () => {
-  assert.equal(crmPackage.dependencies?.['@napi-rs/canvas'], '1.0.2')
-  assert.match(boundedPdfText, /await import\('@napi-rs\/canvas'\)/u)
-  assert.match(boundedPdfText, /globals\.DOMMatrix \|\|= canvas\.DOMMatrix/u)
-  assert.match(boundedPdfText, /globals\.Path2D \|\|= canvas\.Path2D/u)
-  assert.match(boundedPdfText, /globals\.ImageData \|\|= canvas\.ImageData/u)
-  assert.doesNotMatch(boundedPdfText, /class DOMMatrix|class Path2D/u)
+test('keeps text-only PDF.js extraction independent of native canvas', () => {
+  assert.equal(crmPackage.dependencies?.['@napi-rs/canvas'], undefined)
+  assert.doesNotMatch(boundedPdfText, /import\('@napi-rs\/canvas'\)/u)
+  assert.match(boundedPdfText, /globals\.DOMMatrix \|\|= class DOMMatrix/u)
+  assert.match(boundedPdfText, /globals\.Path2D \|\|= class Path2D/u)
+  assert.match(boundedPdfText, /globals\.ImageData \|\|= class ImageData/u)
+  assert.match(boundedPdfText, /only uses getTextContent\(\)/u)
 })
 
 test('keeps models, PDFs and unlock credentials outside Eve and Trigger payloads', () => {

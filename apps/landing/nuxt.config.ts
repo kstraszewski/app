@@ -248,6 +248,10 @@ export default defineNuxtConfig({
     '/personalizacja': {
       prerender: true,
     },
+    '/landing-v2': {
+      prerender: true,
+      headers: { 'x-robots-tag': 'noindex, nofollow' },
+    },
     '/poczta-dla-ekseprta': {
       prerender: true,
     },

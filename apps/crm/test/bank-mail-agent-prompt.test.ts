@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   buildBankMailAgentPrompt,
   buildBankMailAgentPromptPayload,
+  buildBankMailReanalysisPrompt,
+  buildBankMailReanalysisPromptPayload,
   sanitizeBankMailAgentText,
 } from '../server/utils/bank-mail-agent-prompt.ts'
 
@@ -51,4 +53,28 @@ test('serialized prompt carries no provider identifiers or protected values', ()
 
   assert.doesNotMatch(prompt, /90010112345|providerMessageId|connectionId/u)
   assert.match(prompt, /"noAutomaticAttachment":true/u)
+})
+
+test('builds a separate advisory-only reanalysis surface without request identifiers', () => {
+  const input = {
+    subject: 'Ponowna ocena ABC/2026/1234',
+    bodyText: 'PESEL 90010112345, wniosek ABC/2026/1234',
+    bodyTruncated: false,
+    attachments: [],
+  }
+  const payload = buildBankMailReanalysisPromptPayload(input)
+  const prompt = buildBankMailReanalysisPrompt(input)
+
+  assert.equal(payload.surface, 'bank-mail-reanalysis')
+  assert.equal(payload.task, 'advisory-reassess-case-match')
+  assert.deepEqual(payload.constraints, {
+    advisoryOnly: true,
+    noCanonicalMutations: true,
+    noAutomaticAttachment: true,
+    noProtectedIdentifiersIncluded: true,
+    useTrustedToolsForScopeAndSenderIdentity: true,
+    mustRecordReanalysisResult: true,
+  })
+  assert.match(prompt, /ABC\/2026\/1234/u)
+  assert.doesNotMatch(prompt, /90010112345|reanalysisRequestId|analysisRunId|intakeId/u)
 })

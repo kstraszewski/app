@@ -11,6 +11,7 @@ export default defineTool({
     const intake = await loadTrustedBankMailIntake(caller.intakeId)
 
     return {
+      invocationMode: caller.mode,
       status: intake.status,
       provider: intake.provider,
       bankId: intake.bankId,

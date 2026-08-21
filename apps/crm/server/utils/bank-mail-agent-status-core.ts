@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto'
 import type {
+  MailBankAgentReanalysis,
+  MailBankAgentReanalysisState,
+  MailBankAgentResult,
+  MailBankAgentResultClassification,
+  MailBankAgentResultCode,
   MailBankAgentState,
   MailBankAgentStatus,
+  MailBankAgentThreadLink,
+  MailBankAgentThreadLinkState,
   MailProviderId,
 } from '../../shared/types/mail.ts'
 
@@ -13,6 +20,79 @@ const sha256Pattern = /^[0-9a-f]{64}$/u
 const supportedStates = new Set<MailBankAgentState>([
   'processing',
   'review_required',
+  'completed',
+  'failed',
+])
+const supportedResultCodes = new Set<MailBankAgentResultCode>([
+  'proposal_created',
+  'no_match',
+  'needs_human_selection',
+  'not_bank_mail',
+  'security_rejected',
+  'processing_failed',
+])
+const supportedClassifications = new Set<MailBankAgentResultClassification>([
+  'strong_candidate',
+  'ambiguous_candidate',
+])
+const supportedEvidenceCodes = new Set([
+  'bank_application_reference',
+  'applicant_identity',
+  'expert_identity',
+  'bank_identity',
+  'case_context',
+  'application_status',
+  'attachment_metadata',
+])
+const supportedContradictionCodes = new Set([
+  'multiple_candidates',
+  'bank_mismatch',
+  'reference_mismatch',
+  'owner_mismatch',
+  'stale_application',
+  'weak_evidence',
+  'attachment_unavailable',
+  'prompt_injection_suspected',
+])
+const supportedReasonCodes = new Set([
+  'trusted_bank_identity',
+  'unknown_bank_identity',
+  'bank_identity_mismatch',
+  'authentication_failed',
+  'authentication_indeterminate',
+  'authentication_policy_invalid',
+  'dmarc_not_aligned',
+  'dkim_not_aligned',
+  'reply_to_mismatch',
+  ...supportedEvidenceCodes,
+  ...supportedContradictionCodes,
+  'no_candidate',
+  'no_matching_signal',
+  'not_bank_message',
+  'unsafe_attachment',
+  'processing_error',
+  'human_review_required',
+  'policy_requires_review',
+])
+const supportedThreadLinkStates = new Set<MailBankAgentThreadLinkState>([
+  'pending',
+  'linked',
+  'not_linked',
+  'conflict',
+])
+const supportedThreadLinkResolutionCodes = new Set([
+  'strong_proposal_linked',
+  'existing_same_case_link',
+  'thread_linked_to_other_context',
+  'no_strong_proposal',
+  'proposal_not_strong',
+  'proposal_not_unique',
+  'analysis_run_not_unique',
+  'proposal_state_invalid',
+  'trusted_envelope_invalid',
+])
+const supportedReanalysisStates = new Set<MailBankAgentReanalysisState>([
+  'processing',
   'completed',
   'failed',
 ])
@@ -136,8 +216,161 @@ export function mapBankMailAgentStatuses(
     for (const messageId of messageIds) {
       if (seen.has(messageId)) continue
       seen.add(messageId)
-      statuses.push({ messageId, state })
+      statuses.push({
+        messageId,
+        state,
+        result: bankMailAgentResult(row.result),
+        link: bankMailAgentThreadLink(row.link),
+        context: null,
+        reanalysis: bankMailAgentReanalysis(row.reanalysis),
+      })
     }
   }
   return statuses
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function controlledStringArray(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+  maximum: number,
+): string[] | null {
+  if (!Array.isArray(value) || value.length > maximum) return null
+  const normalized = value.map(item => typeof item === 'string' ? item : '')
+  if (
+    normalized.some(item => !allowed.has(item))
+    || new Set(normalized).size !== normalized.length
+  ) return null
+  return normalized
+}
+
+function isoTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 100) return null
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+}
+
+function nullableUuid(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === '') return null
+  const normalized = String(value).trim().toLowerCase()
+  return uuidPattern.test(normalized) ? normalized : undefined
+}
+
+function bankMailAgentResult(value: unknown): MailBankAgentResult | null {
+  const row = record(value)
+  if (!row) return null
+  const code = String(row.code ?? '') as MailBankAgentResultCode
+  const classificationValue = row.classification === null || row.classification === undefined
+    ? null
+    : String(row.classification) as MailBankAgentResultClassification
+  const evidenceCodes = controlledStringArray(row.evidenceCodes, supportedEvidenceCodes, 12)
+  const contradictionCodes = controlledStringArray(
+    row.contradictionCodes,
+    supportedContradictionCodes,
+    12,
+  )
+  const reasonCodes = controlledStringArray(row.reasonCodes, supportedReasonCodes, 24)
+  const completedAt = isoTimestamp(row.completedAt)
+  const caseId = nullableUuid(row.caseId)
+  const applicationId = nullableUuid(row.applicationId)
+  if (
+    !supportedResultCodes.has(code)
+    || (classificationValue !== null && !supportedClassifications.has(classificationValue))
+    || !evidenceCodes
+    || !contradictionCodes
+    || !reasonCodes
+    || !completedAt
+    || caseId === undefined
+    || applicationId === undefined
+  ) return null
+  if (
+    code === 'proposal_created'
+      ? !classificationValue || !caseId || !applicationId || evidenceCodes.length === 0
+      : classificationValue !== null || caseId !== null || applicationId !== null
+  ) return null
+  return {
+    code,
+    classification: classificationValue,
+    evidenceCodes,
+    contradictionCodes,
+    reasonCodes,
+    completedAt,
+    caseId,
+    applicationId,
+  }
+}
+
+function bankMailAgentThreadLink(value: unknown): MailBankAgentThreadLink | null {
+  const row = record(value)
+  if (!row) return null
+  const state = String(row.state ?? '') as MailBankAgentThreadLinkState
+  const resolutionCode = row.resolutionCode === null || row.resolutionCode === undefined
+    ? null
+    : String(row.resolutionCode)
+  const caseId = nullableUuid(row.caseId)
+  if (
+    !supportedThreadLinkStates.has(state)
+    || (resolutionCode !== null && !supportedThreadLinkResolutionCodes.has(resolutionCode))
+    || caseId === undefined
+    || (state === 'linked' && caseId === null)
+  ) return null
+  return { state, resolutionCode, caseId }
+}
+
+function bankMailAgentReanalysis(value: unknown): MailBankAgentReanalysis {
+  const row = record(value)
+  if (!row) return emptyBankMailAgentReanalysis()
+  const state = row.state === null || row.state === undefined
+    ? null
+    : String(row.state) as MailBankAgentReanalysisState
+  const attemptNo = Number(row.attemptNo ?? 0)
+  const requestedAt = row.requestedAt === null || row.requestedAt === undefined
+    ? null
+    : isoTimestamp(row.requestedAt)
+  const completedAt = row.completedAt === null || row.completedAt === undefined
+    ? null
+    : isoTimestamp(row.completedAt)
+  const canRerun = row.canRerun === true
+  const retryAfterSeconds = Number(row.retryAfterSeconds ?? 0)
+  const result = bankMailAgentResult(row.result)
+  if (
+    (state !== null && !supportedReanalysisStates.has(state))
+    || !Number.isSafeInteger(attemptNo)
+    || attemptNo < 0
+    || attemptNo > 1_000
+    || (state !== null && requestedAt === null)
+    || ((state === 'completed' || state === 'failed') && completedAt === null)
+    || (state === null && (attemptNo !== 0 || requestedAt !== null || completedAt !== null))
+    || !Number.isSafeInteger(retryAfterSeconds)
+    || retryAfterSeconds < 0
+    || retryAfterSeconds > 86_400
+    || (state === 'completed' && !result)
+    || (state !== 'completed' && result)
+  ) return emptyBankMailAgentReanalysis()
+  return {
+    state,
+    attemptNo,
+    requestedAt,
+    completedAt,
+    canRerun,
+    retryAfterSeconds,
+    result,
+  }
+}
+
+function emptyBankMailAgentReanalysis(): MailBankAgentReanalysis {
+  return {
+    state: null,
+    attemptNo: 0,
+    requestedAt: null,
+    completedAt: null,
+    canRerun: false,
+    retryAfterSeconds: 0,
+    result: null,
+  }
 }

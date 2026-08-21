@@ -1,6 +1,6 @@
 import { defineTool } from 'eve/tools'
 import { z } from 'zod'
-import { requireBankMailAgentCaller } from '../lib/caller.ts'
+import { requireInitialBankMailAgentCaller } from '../lib/caller.ts'
 import { createBankMailServiceDataApiClient } from '../lib/data-api.ts'
 import { callBankMailServiceRpc } from '../lib/rpc.ts'
 
@@ -53,7 +53,7 @@ export default defineTool({
     reasonCodes: z.array(reasonCodeSchema).min(1).max(12),
   }).strict(),
   async execute({ outcome, reasonCodes }, ctx) {
-    const caller = requireBankMailAgentCaller(ctx)
+    const caller = requireInitialBankMailAgentCaller(ctx)
     const normalizedReasonCodes = [...new Set(reasonCodes)].sort()
     await callBankMailServiceRpc(
       createBankMailServiceDataApiClient(),

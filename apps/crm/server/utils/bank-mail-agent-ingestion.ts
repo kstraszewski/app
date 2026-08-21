@@ -6,6 +6,7 @@ import type {
 } from '../../shared/types/mail.ts'
 import type { CrmSession } from './crm.ts'
 import { dispatchBankMailAgent } from './bank-mail-agent-dispatch.ts'
+import type { BankMailAgentDispatchInput } from './bank-mail-agent-dispatch-core.ts'
 import { bankMailProviderMessageIdentitySha256 } from './bank-mail-agent-status-core.ts'
 import type { MailConnectionRow } from './mail-connections.ts'
 import { mailContextThreadKeyHash } from './mail-context-core.ts'
@@ -16,13 +17,70 @@ import {
   mailAddressDomain,
 } from './bank-mail-agent-ingestion-core.ts'
 
-function configuredMockBankSenderDomain(event: H3Event): string {
+export function configuredMockBankSenderDomain(event: H3Event): string {
   const runtimeConfig = useRuntimeConfig(event) as {
     mockBank?: { email?: { from?: string } }
   }
   const configuredFrom = String(runtimeConfig.mockBank?.email?.from ?? '')
   const angleAddress = configuredFrom.match(/<([^<>]+)>/u)?.[1]
   return mailAddressDomain(angleAddress ?? configuredFrom)
+}
+
+export function gmailBankMailMessageDispatchInput(
+  event: H3Event,
+  input: {
+    session: CrmSession
+    connection: MailConnectionRow
+    thread: MailThreadDetail
+    message: MailMessageDetail
+  },
+): BankMailAgentDispatchInput | null {
+  if (input.connection.provider !== 'google') return null
+  const senderDomain = configuredMockBankSenderDomain(event)
+  if (
+    !senderDomain
+    || mailAddressDomain(input.message.from?.email) !== senderDomain
+    || senderDomain === mailAddressDomain(input.connection.account_email)
+    || !input.thread.messages.some(message => message.id === input.message.id)
+  ) return null
+
+  const referenceSecret = deriveMailReferenceSecret(event, {
+    organizationId: input.connection.organization_id,
+    ownerUserId: input.connection.owner_user_id,
+    connectionId: input.connection.id,
+  })
+  return {
+    organizationId: input.session.organizationId,
+    organizationSlug: input.session.organizationSlug,
+    connectionId: input.connection.id,
+    mailboxOwnerUserId: input.session.userId,
+    provider: 'google',
+    providerMessageIdSha256: bankMailProviderMessageIdentitySha256('google', input.message.id),
+    sourceSha256: canonicalBankMailSourceSha256(input.message),
+    senderDomain: mailAddressDomain(input.message.from?.email),
+    authenticationStatus: input.message.security.authentication === 'pass'
+      ? 'passed'
+      : input.message.security.authentication === 'fail'
+        ? 'failed'
+        : 'indeterminate',
+    dkimAligned: input.message.security.dkimAligned === true,
+    dmarcAligned: input.message.security.dmarcAligned === true,
+    replyToMismatch: input.message.security.replyToMismatch,
+    bankId: null,
+    threadLink: {
+      keySha256: mailContextThreadKeyHash('google', input.thread.id, referenceSecret),
+      reference: input.thread.id,
+    },
+    subject: input.message.subject,
+    bodyText: input.message.bodyText,
+    bodyTruncated: input.message.bodyTruncated,
+    attachments: input.message.attachments.map(attachment => ({
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      encrypted: bankMailAttachmentEncrypted(attachment.filename, attachment.mimeType),
+    })),
+  }
 }
 
 /**
@@ -51,46 +109,14 @@ export async function ingestGmailBankMailThread(
     ))
     .slice(-3)
   if (!inboundMessages.length) return
-  const referenceSecret = deriveMailReferenceSecret(event, {
-    organizationId: input.connection.organization_id,
-    ownerUserId: input.connection.owner_user_id,
-    connectionId: input.connection.id,
-  })
-  const threadLink = {
-    keySha256: mailContextThreadKeyHash('google', input.thread.id, referenceSecret),
-    reference: input.thread.id,
-  }
-
   for (const message of inboundMessages) {
-    await dispatchBankMailAgent(event, {
-      organizationId: input.session.organizationId,
-      organizationSlug: input.session.organizationSlug,
-      connectionId: input.connection.id,
-      mailboxOwnerUserId: input.session.userId,
-      provider: 'google',
-      providerMessageIdSha256: bankMailProviderMessageIdentitySha256('google', message.id),
-      sourceSha256: canonicalBankMailSourceSha256(message),
-      senderDomain: mailAddressDomain(message.from?.email),
-      authenticationStatus: message.security.authentication === 'pass'
-        ? 'passed'
-        : message.security.authentication === 'fail'
-          ? 'failed'
-          : 'indeterminate',
-      dkimAligned: message.security.dkimAligned === true,
-      dmarcAligned: message.security.dmarcAligned === true,
-      replyToMismatch: message.security.replyToMismatch,
-      bankId: null,
-      threadLink,
-      subject: message.subject,
-      bodyText: message.bodyText,
-      bodyTruncated: message.bodyTruncated,
-      attachments: message.attachments.map(attachment => ({
-        filename: attachment.filename,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-        encrypted: bankMailAttachmentEncrypted(attachment.filename, attachment.mimeType),
-      })),
+    const dispatchInput = gmailBankMailMessageDispatchInput(event, {
+      session: input.session,
+      connection: input.connection,
+      thread: input.thread,
+      message,
     })
+    if (dispatchInput) await dispatchBankMailAgent(event, dispatchInput)
   }
 }
 

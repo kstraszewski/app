@@ -12,12 +12,14 @@
   "scripts": {
     "build": "eve build",
     "dev": "eve dev --port 3014",
-    "eval": "cd evals/fixture && ../../node_modules/.bin/eve eval --strict --skip-report",
+    "eval": "pnpm run eval:initial && pnpm run eval:reanalysis",
+    "eval:initial": "cd evals/fixture && ../../node_modules/.bin/eve eval --strict --skip-report",
+    "eval:reanalysis": "cd evals/reanalysis-fixture && ../../node_modules/.bin/eve eval --strict --skip-report",
     "eval:list": "cd evals/fixture && ../../node_modules/.bin/eve eval --list",
     "eve:info": "eve info",
     "start": "eve start",
     "test": "node --test --experimental-strip-types test/*.test.ts",
-    "typecheck": "tsgo -p tsconfig.typecheck.json && tsgo -p evals/fixture/tsconfig.json"
+    "typecheck": "tsgo -p tsconfig.typecheck.json && tsgo -p evals/fixture/tsconfig.json && tsgo -p evals/reanalysis-fixture/tsconfig.json"
   },
   "dependencies": {
     "@openexpert/crm-agent-capabilities": "workspace:*",

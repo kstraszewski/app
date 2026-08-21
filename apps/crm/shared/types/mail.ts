@@ -240,13 +240,88 @@ export type MailBankAgentState =
   | 'completed'
   | 'failed'
 
+export type MailBankAgentResultCode =
+  | 'proposal_created'
+  | 'no_match'
+  | 'needs_human_selection'
+  | 'not_bank_mail'
+  | 'security_rejected'
+  | 'processing_failed'
+
+export type MailBankAgentResultClassification =
+  | 'strong_candidate'
+  | 'ambiguous_candidate'
+
+export interface MailBankAgentResult {
+  code: MailBankAgentResultCode
+  classification: MailBankAgentResultClassification | null
+  evidenceCodes: string[]
+  contradictionCodes: string[]
+  reasonCodes: string[]
+  completedAt: string
+  caseId: string | null
+  applicationId: string | null
+}
+
+export type MailBankAgentThreadLinkState =
+  | 'pending'
+  | 'linked'
+  | 'not_linked'
+  | 'conflict'
+
+export interface MailBankAgentThreadLink {
+  state: MailBankAgentThreadLinkState
+  resolutionCode: string | null
+  caseId: string | null
+}
+
+export interface MailBankAgentContext {
+  case: {
+    id: string
+    label: string
+  } | null
+  clients: Array<{
+    id: string
+    label: string
+    isPrimary: boolean
+  }>
+}
+
+export type MailBankAgentReanalysisState =
+  | 'processing'
+  | 'completed'
+  | 'failed'
+
+export interface MailBankAgentReanalysis {
+  state: MailBankAgentReanalysisState | null
+  attemptNo: number
+  requestedAt: string | null
+  completedAt: string | null
+  canRerun: boolean
+  retryAfterSeconds: number
+  result: MailBankAgentResult | null
+}
+
 export interface MailBankAgentStatus {
   messageId: string
   state: MailBankAgentState
+  result: MailBankAgentResult | null
+  link: MailBankAgentThreadLink | null
+  context: MailBankAgentContext | null
+  reanalysis: MailBankAgentReanalysis
 }
 
 export interface MailBankAgentStatusPayload {
   data: MailBankAgentStatus[]
+}
+
+export interface MailBankAgentReanalysisRequestPayload {
+  data: {
+    accepted: boolean
+    state: MailBankAgentReanalysisState
+    attemptNo: number
+    retryAfterSeconds: number
+  }
 }
 
 export interface MailSendPayload {

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type {
   MailAddress,
+  MailBankAgentReanalysisRequestPayload,
   MailBankAgentState,
+  MailBankAgentStatus,
   MailBankAgentStatusPayload,
   MailConnectionInfo,
   MailConnectionPayload,
@@ -175,7 +177,8 @@ const composerKey = ref(0)
 const composerConnectionId = ref('')
 const agentMailReplyRequestId = ref('')
 const agentMailReplyTarget = shallowRef<MailThreadDetail | null>(null)
-const bankMailAgentStatuses = shallowRef<Record<string, MailBankAgentState>>({})
+const bankMailAgentStatuses = shallowRef<Record<string, MailBankAgentStatus>>({})
+const bankMailAgentReanalysisPending = shallowRef<Record<string, true>>({})
 const bankMailAgentStatusResolvedScopeKey = ref('')
 let bankMailAgentStatusTimer: number | undefined
 let bankMailAgentStatusRequestSequence = 0
@@ -485,7 +488,7 @@ const bankMailAgentStatusScopeKey = computed(() => (
 ))
 const selectedThreadBankMailAgentProcessing = computed(() => (
   selectedThread.value?.messages.some(message => (
-    bankMailAgentStatuses.value[message.id] === 'processing'
+    bankMailAgentStatus(message.id)?.state === 'processing'
   )) ?? false
 ))
 const selectedThreadBankMailAgentStatusChecking = computed(() => (
@@ -508,7 +511,16 @@ const mailQuickActionsBlockDescription = computed(() => (
 ))
 
 function bankMailAgentState(messageId: string | undefined): MailBankAgentState | undefined {
+  const status = bankMailAgentStatus(messageId)
+  return status?.reanalysis.state === 'processing' ? 'processing' : status?.state
+}
+
+function bankMailAgentStatus(messageId: string | undefined): MailBankAgentStatus | undefined {
   return messageId ? bankMailAgentStatuses.value[messageId] : undefined
+}
+
+function bankMailAgentReanalysisIsPending(messageId: string): boolean {
+  return bankMailAgentReanalysisPending.value[messageId] === true
 }
 
 function bankMailAgentStatusVisible(messageId: string | undefined): boolean {
@@ -556,7 +568,7 @@ async function refreshBankMailAgentStatuses(): Promise<void> {
       || scopeKey !== bankMailAgentStatusScopeKey.value
     ) return
     bankMailAgentStatuses.value = Object.fromEntries(
-      response.data.map(status => [status.messageId, status.state]),
+      response.data.map(status => [status.messageId, status]),
     )
     bankMailAgentStatusResolvedScopeKey.value = scopeKey
   }
@@ -574,7 +586,10 @@ async function refreshBankMailAgentStatuses(): Promise<void> {
       && scopeKey === bankMailAgentStatusScopeKey.value
     ) {
       const hasActiveAnalysis = Object.values(bankMailAgentStatuses.value)
-        .some(state => state === 'processing')
+        .some(status => (
+          status.state === 'processing'
+          || status.reanalysis.state === 'processing'
+        ))
       scheduleBankMailAgentStatusRefresh(hasActiveAnalysis ? 2_500 : 15_000)
     }
   }
@@ -586,6 +601,59 @@ watch(bankMailAgentStatusScopeKey, () => {
   bankMailAgentStatusResolvedScopeKey.value = ''
   if (bankMailAgentStatusMounted) void refreshBankMailAgentStatuses()
 })
+
+async function reanalyzeBankMailMessage(messageId: string): Promise<void> {
+  if (
+    bankMailAgentReanalysisPending.value[messageId]
+    || !connectionId.value
+    || !selectedThreadId.value
+  ) return
+
+  bankMailAgentReanalysisPending.value = {
+    ...bankMailAgentReanalysisPending.value,
+    [messageId]: true,
+  }
+  try {
+    const response = await requestFetch<MailBankAgentReanalysisRequestPayload>(
+      orgApiPath('/mail/agent-reanalysis'),
+      {
+        method: 'POST',
+        body: {
+          connectionId: connectionId.value,
+          threadId: selectedThreadId.value,
+          messageId,
+        },
+      },
+    )
+    const stillProcessing = response.data.state === 'processing'
+    toast.add({
+      title: response.data.accepted
+        ? 'Eve analizuje wiadomość ponownie'
+        : stillProcessing
+          ? 'Ponowna analiza już trwa'
+          : 'Eve niedawno analizowała tę wiadomość',
+      description: response.data.retryAfterSeconds > 0 && !stillProcessing
+        ? `Kolejna analiza będzie dostępna za ${response.data.retryAfterSeconds} s. Istniejące powiązania pozostają bez zmian.`
+        : 'Poprzedni wynik i istniejące powiązania pozostają zapisane.',
+      color: response.data.state === 'failed' ? 'warning' : 'info',
+      icon: response.data.state === 'failed' ? 'i-lucide-triangle-alert' : 'i-lucide-sparkles',
+    })
+  }
+  catch (error) {
+    toast.add({
+      title: 'Nie udało się uruchomić ponownej analizy',
+      description: apiErrorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  }
+  finally {
+    await refreshBankMailAgentStatuses()
+    const next = { ...bankMailAgentReanalysisPending.value }
+    delete next[messageId]
+    bankMailAgentReanalysisPending.value = next
+  }
+}
 
 const providerRecipientSuggestions = computed<MailProviderRecipientSuggestion[]>(() => {
   const accountEmail = (composerConnection.value?.accountEmail || '').trim().toLowerCase()
@@ -874,6 +942,7 @@ function contextMatchReasonLabel(reason: MailContextMatchReason): string {
   if (reason === 'participant_email') return 'Dopasowano po adresie e-mail'
   if (reason === 'manual_link') return 'Przypięto ręcznie'
   if (reason === 'sent_from_context') return 'Wysłano z tego kontekstu'
+  if (reason === 'bank_mail_agent') return 'Powiązano przez Eve'
   return ''
 }
 
@@ -2236,6 +2305,14 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     icon="i-lucide-shield-alert"
                     title="Zweryfikuj nadawcę"
                     :description="securityWarningDescription(message.security)"
+                  />
+
+                  <MailEveAnalysisPanel
+                    v-if="bankMailAgentStatus(message.id)"
+                    :status="bankMailAgentStatus(message.id)!"
+                    :fallback-context="selectedContextThread?.linked ? contextDescriptor : null"
+                    :reanalysis-pending="bankMailAgentReanalysisIsPending(message.id)"
+                    @reanalyze="reanalyzeBankMailMessage"
                   />
 
                   <div class="mail-message__body">

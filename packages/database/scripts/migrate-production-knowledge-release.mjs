@@ -62,6 +62,7 @@ const migrationNames = [
   '0083_bank_mail_ingestion_rpc.sql',
   '0084_bank_mail_intake_strong_proposal.sql',
   '0085_bank_mail_thread_link_jobs.sql',
+  '0086_bank_mail_agent_reanalysis.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

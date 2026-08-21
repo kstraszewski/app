@@ -57,10 +57,154 @@ test('maps only controlled lifecycle states back to requested message IDs', () =
     { providerMessageIdSha256: 'c'.repeat(64), state: 'processing' },
     { providerMessageIdSha256: firstHash, state: 'internal-secret-state' },
   ]), [
-    { messageId: 'message-1', state: 'processing' },
-    { messageId: 'message-1-randomized-imap-reference', state: 'processing' },
-    { messageId: 'message-2', state: 'review_required' },
+    {
+      messageId: 'message-1',
+      state: 'processing',
+      result: null,
+      link: null,
+      context: null,
+      reanalysis: {
+        state: null,
+        attemptNo: 0,
+        requestedAt: null,
+        completedAt: null,
+        canRerun: false,
+        retryAfterSeconds: 0,
+        result: null,
+      },
+    },
+    {
+      messageId: 'message-1-randomized-imap-reference',
+      state: 'processing',
+      result: null,
+      link: null,
+      context: null,
+      reanalysis: {
+        state: null,
+        attemptNo: 0,
+        requestedAt: null,
+        completedAt: null,
+        canRerun: false,
+        retryAfterSeconds: 0,
+        result: null,
+      },
+    },
+    {
+      messageId: 'message-2',
+      state: 'review_required',
+      result: null,
+      link: null,
+      context: null,
+      reanalysis: {
+        state: null,
+        attemptNo: 0,
+        requestedAt: null,
+        completedAt: null,
+        canRerun: false,
+        retryAfterSeconds: 0,
+        result: null,
+      },
+    },
   ])
+})
+
+test('maps only controlled EVE results, links and advisory reanalysis fields', () => {
+  const hash = 'a'.repeat(64)
+  const completedAt = '2026-08-21T12:34:56.000Z'
+  assert.deepEqual(mapBankMailAgentStatuses([
+    { messageId: 'message-1', sha256: hash },
+  ], [{
+    providerMessageIdSha256: hash,
+    state: 'review_required',
+    result: {
+      code: 'proposal_created',
+      classification: 'strong_candidate',
+      evidenceCodes: ['bank_application_reference', 'bank_identity', 'applicant_identity'],
+      contradictionCodes: [],
+      reasonCodes: ['human_review_required', 'policy_requires_review'],
+      completedAt,
+      caseId: '11111111-1111-4111-8111-111111111111',
+      applicationId: '33333333-3333-4333-8333-333333333333',
+    },
+    link: {
+      state: 'linked',
+      resolutionCode: 'strong_proposal_linked',
+      caseId: '11111111-1111-4111-8111-111111111111',
+    },
+    reanalysis: {
+      state: 'completed',
+      attemptNo: 1,
+      requestedAt: '2026-08-21T12:35:00.000Z',
+      completedAt: '2026-08-21T12:35:12.000Z',
+      canRerun: false,
+      retryAfterSeconds: 48,
+      result: {
+        code: 'no_match',
+        classification: null,
+        evidenceCodes: [],
+        contradictionCodes: [],
+        reasonCodes: ['no_candidate'],
+        completedAt: '2026-08-21T12:35:12.000Z',
+        caseId: null,
+        applicationId: null,
+      },
+    },
+  }]), [{
+    messageId: 'message-1',
+    state: 'review_required',
+    result: {
+      code: 'proposal_created',
+      classification: 'strong_candidate',
+      evidenceCodes: ['bank_application_reference', 'bank_identity', 'applicant_identity'],
+      contradictionCodes: [],
+      reasonCodes: ['human_review_required', 'policy_requires_review'],
+      completedAt,
+      caseId: '11111111-1111-4111-8111-111111111111',
+      applicationId: '33333333-3333-4333-8333-333333333333',
+    },
+    link: {
+      state: 'linked',
+      resolutionCode: 'strong_proposal_linked',
+      caseId: '11111111-1111-4111-8111-111111111111',
+    },
+    context: null,
+    reanalysis: {
+      state: 'completed',
+      attemptNo: 1,
+      requestedAt: '2026-08-21T12:35:00.000Z',
+      completedAt: '2026-08-21T12:35:12.000Z',
+      canRerun: false,
+      retryAfterSeconds: 48,
+      result: {
+        code: 'no_match',
+        classification: null,
+        evidenceCodes: [],
+        contradictionCodes: [],
+        reasonCodes: ['no_candidate'],
+        completedAt: '2026-08-21T12:35:12.000Z',
+        caseId: null,
+        applicationId: null,
+      },
+    },
+  }])
+
+  const [unsafe] = mapBankMailAgentStatuses([
+    { messageId: 'message-1', sha256: hash },
+  ], [{
+    providerMessageIdSha256: hash,
+    state: 'review_required',
+    result: {
+      code: 'proposal_created',
+      classification: 'strong_candidate',
+      evidenceCodes: ['mail_body_excerpt'],
+      contradictionCodes: [],
+      reasonCodes: [],
+      completedAt,
+      caseId: '11111111-1111-4111-8111-111111111111',
+      applicationId: '33333333-3333-4333-8333-333333333333',
+    },
+  }])
+  assert.equal(unsafe?.result, null)
 })
 
 test('status RPC is mailbox-scoped and exposes no content-bearing columns', async () => {
@@ -102,4 +246,26 @@ test('mail workspace keeps manual reply available while blocking parallel quick 
     workspace,
     /function openReplyForThread[\s\S]{0,160}mailQuickActionsBlocked/u,
   )
+  const canonicalProcessingBlock = workspace.match(
+    /const selectedThreadBankMailAgentProcessing = computed\([\s\S]*?\n\)\)/u,
+  )?.[0] ?? ''
+  assert.match(canonicalProcessingBlock, /bankMailAgentStatus\(message\.id\)\?\.state === 'processing'/u)
+  assert.doesNotMatch(canonicalProcessingBlock, /reanalysis|Reanalysis/u)
+})
+
+test('mail message shows Eve answer, rerun action and linked case/client chips', async () => {
+  const [workspace, panel] = await Promise.all([
+    readFile(new URL('../app/components/mail/MailWorkspace.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../app/components/mail/MailEveAnalysisPanel.vue', import.meta.url), 'utf8'),
+  ])
+  assert.match(workspace, /<MailEveAnalysisPanel/u)
+  assert.match(workspace, /@reanalyze="reanalyzeBankMailMessage"/u)
+  assert.match(panel, />Odpowiedź Eve</u)
+  assert.match(panel, /Przeanalizuj ponownie/u)
+  assert.match(panel, />Powiązania</u)
+  assert.match(panel, /orgPath\(`\/cases\/\$\{context\.case\.id\}`\)/u)
+  assert.match(panel, /orgPath\(`\/clients\/\$\{client\.id\}`\)/u)
+  assert.match(panel, /reanalysisCaseConflict/u)
+  assert.match(panel, /Eve nie zmieniła istniejącego powiązania/u)
+  assert.match(panel, /linkedCase\?\.id === result\.caseId/u)
 })

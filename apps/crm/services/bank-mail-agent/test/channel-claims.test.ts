@@ -17,6 +17,41 @@ test('accepts a complete immutable bank-mail intake scope', () => {
   assert.deepEqual(parseBankMailInvocationClaims(validClaims), validClaims)
 })
 
+test('accepts reanalysis only when its request id equals the analysis run id', () => {
+  const reanalysisRequestId = validClaims.analysisRunId
+  assert.deepEqual(parseBankMailInvocationClaims({
+    ...validClaims,
+    serviceId: 'openexpert-crm-bank-mail-reanalysis',
+    preset: 'bank-mail-reanalysis',
+    reanalysisRequestId,
+  }), {
+    ...validClaims,
+    serviceId: 'openexpert-crm-bank-mail-reanalysis',
+    preset: 'bank-mail-reanalysis',
+    reanalysisRequestId,
+  })
+
+  assert.throws(
+    () => parseBankMailInvocationClaims({
+      ...validClaims,
+      serviceId: 'openexpert-crm-bank-mail-reanalysis',
+      preset: 'bank-mail-reanalysis',
+      reanalysisRequestId: '66666666-6666-4666-8666-666666666666',
+    }),
+    /reanalysis request/u,
+  )
+})
+
+test('rejects reanalysis scope smuggled into an initial invocation', () => {
+  assert.throws(
+    () => parseBankMailInvocationClaims({
+      ...validClaims,
+      reanalysisRequestId: validClaims.analysisRunId,
+    }),
+    /Unexpected.*reanalysis/u,
+  )
+})
+
 test('rejects a different preset', () => {
   assert.throws(
     () => parseBankMailInvocationClaims({ ...validClaims, preset: 'mail-reply' }),
@@ -28,6 +63,17 @@ test('rejects a backend token minted for another service', () => {
   assert.throws(
     () => parseBankMailInvocationClaims({ ...validClaims, serviceId: 'some-other-worker' }),
     /service principal/u,
+  )
+})
+
+test('rejects the initial service principal under the reanalysis preset', () => {
+  assert.throws(
+    () => parseBankMailInvocationClaims({
+      ...validClaims,
+      preset: 'bank-mail-reanalysis',
+      reanalysisRequestId: validClaims.analysisRunId,
+    }),
+    /reanalysis service principal/u,
   )
 })
 

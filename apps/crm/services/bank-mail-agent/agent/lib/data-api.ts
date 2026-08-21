@@ -8,7 +8,7 @@ import {
   type DataApiTokenSigner,
   type VerifyDataApiTokenOptions,
 } from '@openexpert/data-api/token'
-import type { BankMailSessionBindClaims } from './session-bind.ts'
+import type { BankMailScopedEveClaims } from './session-bind.ts'
 
 function firstEnvironmentValue(names: readonly string[]): string | undefined {
   for (const name of names) {
@@ -110,7 +110,7 @@ export function createBankMailServiceDataApiClient(): DataApiClient {
  * token and the generic service client.
  */
 export function createBankMailSessionBindDataApiClient(
-  claims: BankMailSessionBindClaims,
+  claims: BankMailScopedEveClaims,
 ): DataApiClient {
   const signer = getTokenSigner()
   return createAuthenticatedDataApiClient(

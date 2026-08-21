@@ -1,5 +1,8 @@
 import { getHeader } from 'h3'
-import type { MailBankAgentStatusPayload } from '../../../../../shared/types/mail.ts'
+import type {
+  MailBankAgentStatus,
+  MailBankAgentStatusPayload,
+} from '../../../../../shared/types/mail.ts'
 import {
   bankMailProviderMessageIdentitySha256,
   mapBankMailAgentStatuses,
@@ -14,6 +17,7 @@ import { readBoundedRequestBody } from '~~/server/utils/mail-multipart'
 import { requireUserMailConnection } from '~~/server/utils/mail-connections'
 import { openImapMessageReference } from '~~/server/utils/mail-imap-smtp'
 import { connectionReferenceSecret } from '~~/server/utils/mail-thread-page'
+import { resolveMailContextScope } from '~~/server/utils/mail-context'
 
 const MAX_REQUEST_BYTES = 220_000
 
@@ -73,5 +77,47 @@ export default defineEventHandler(async (event): Promise<MailBankAgentStatusPayl
     throw createError({ statusCode: 503, statusMessage: 'Stan analizy wiadomości jest chwilowo niedostępny.' })
   }
 
-  return { data: mapBankMailAgentStatuses(identities, data) }
+  const statuses = mapBankMailAgentStatuses(identities, data)
+  await enrichLinkedCaseContexts(session, statuses)
+  return { data: statuses }
 })
+
+async function enrichLinkedCaseContexts(
+  session: Awaited<ReturnType<typeof requireCrmSession>>,
+  statuses: MailBankAgentStatus[],
+): Promise<void> {
+  const caseIds = [...new Set(statuses
+    .map(status => status.link?.state === 'linked' ? status.link.caseId : null)
+    .filter((caseId): caseId is string => Boolean(caseId)))]
+  if (!caseIds.length) return
+
+  const descriptors = new Map<string, Awaited<ReturnType<typeof resolveMailContextScope>>['descriptor']>()
+  let cursor = 0
+  await Promise.all(Array.from({ length: Math.min(4, caseIds.length) }, async () => {
+    while (cursor < caseIds.length) {
+      const caseId = caseIds[cursor++]!
+      try {
+        const resolved = await resolveMailContextScope(session, { type: 'case', id: caseId })
+        descriptors.set(caseId, resolved.descriptor)
+      }
+      catch {
+        // The controlled analysis result remains useful even if a linked CRM
+        // entity was removed or is temporarily unavailable.
+      }
+    }
+  }))
+
+  for (const status of statuses) {
+    const caseId = status.link?.state === 'linked' ? status.link.caseId : null
+    const descriptor = caseId ? descriptors.get(caseId) : undefined
+    if (!descriptor) continue
+    status.context = {
+      case: { id: descriptor.id, label: descriptor.label },
+      clients: (descriptor.relatedClients ?? []).map(client => ({
+        id: client.id,
+        label: client.label,
+        isPrimary: client.isPrimary,
+      })),
+    }
+  }
+}

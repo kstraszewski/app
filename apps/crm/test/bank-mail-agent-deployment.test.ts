@@ -47,6 +47,11 @@ test('deploys bank-mail EVE as a private service of the CRM Nuxt project', async
     'services/bank-mail-agent/agent/hooks/bind-session.ts',
     crmRoot,
   ))
+  await access(new URL('server/utils/bank-mail-reanalysis-dispatch.ts', crmRoot))
+  await access(new URL(
+    'services/bank-mail-agent/agent/tools/record_reanalysis_result.ts',
+    crmRoot,
+  ))
 
   const publicTargets = (config.rewrites ?? [])
     .map(rewrite => rewrite.destination?.service)
@@ -64,8 +69,40 @@ test('self-binds a newly started EVE session before bank-mail analysis', async (
   assert.match(hook, /requireBankMailAgentCaller\(ctx\)/u)
   assert.match(hook, /ctx\.session\.id/u)
   assert.match(hook, /await callBankMailServiceRpc/u)
-  assert.match(hook, /bind_bank_mail_agent_run_session/u)
-  assert.doesNotMatch(hook, /session\.completed|turn\.completed/u)
+  assert.match(hook, /bankMailSessionStartedRequest/u)
+  assert.match(hook, /'turn\.completed'/u)
+  assert.match(hook, /'turn\.failed'/u)
+  assert.match(hook, /'session\.failed'/u)
+  assert.doesNotMatch(hook, /session\.completed/u)
+})
+
+test('keeps initial mutations separate from advisory-only reanalysis', async () => {
+  const [proposal, finalize, record, instructions] = await Promise.all([
+    readFile(new URL(
+      'services/bank-mail-agent/agent/tools/propose_case_match.ts',
+      crmRoot,
+    ), 'utf8'),
+    readFile(new URL(
+      'services/bank-mail-agent/agent/tools/finalize_intake.ts',
+      crmRoot,
+    ), 'utf8'),
+    readFile(new URL(
+      'services/bank-mail-agent/agent/tools/record_reanalysis_result.ts',
+      crmRoot,
+    ), 'utf8'),
+    readFile(new URL(
+      'services/bank-mail-agent/agent/instructions.md',
+      crmRoot,
+    ), 'utf8'),
+  ])
+
+  assert.match(proposal, /requireInitialBankMailAgentCaller/u)
+  assert.match(finalize, /requireInitialBankMailAgentCaller/u)
+  assert.match(record, /requireReanalysisBankMailAgentCaller/u)
+  assert.match(record, /canonicalMutation:\s*false/u)
+  assert.match(instructions, /invocationMode/u)
+  assert.match(instructions, /zakończony canonical intake jest oczekiwanym/u)
+  assert.match(instructions, /dokładnie raz `record_reanalysis_result`/u)
 })
 
 test('gives only the Nuxt web service a private binding to bank-mail EVE', async () => {

@@ -47,6 +47,12 @@ jest walidowany, a zakres inicjatora i bieżącego wywołania musi
 pozostać identyczny przez całą trwałą sesję. W produkcji nie ma anonymous,
 placeholder ani local-dev auth. Upload kanału jest wyłączony.
 
+Kontrolowana ponowna analiza używa osobnego, podpisanego presetu
+`bank-mail-reanalysis`, request ID będącego jednocześnie run ID oraz nowej sesji
+EVE. Może czytać ten sam zaufany intake, ale nie może wywołać canonical
+`propose_case_match` ani `finalize_intake`; zapisuje wyłącznie kontrolowany,
+doradczy wynik w osobnym ledgerze reanalysis.
+
 ## Narzędzia i uprawnienia
 
 - `load_trusted_intake_metadata` — zaufany, PII-free stan intake i ocena
@@ -61,6 +67,9 @@ placeholder ani local-dev auth. Upload kanału jest wyłączony.
   `review_required`; auto-attach jest niemożliwy.
 - `finalize_intake` — idempotentne zakończenie jako brak dopasowania,
   konieczność wyboru przez człowieka albo odrzucenie bezpieczeństwa.
+- `record_reanalysis_result` — osobny, idempotentny wynik doradczy dostępny
+  wyłącznie dla podpisanej sesji reanalysis; nie zmienia canonical intake,
+  propozycji, sprawy, wniosku, załącznika ani linku wątku.
 
 Domyślne narzędzia `bash`, `read_file`, `write_file`, `glob`, `grep`,
 `web_fetch`, `web_search`, `todo` i `agent` są wyłączone. Sandbox ma politykę
@@ -91,9 +100,10 @@ ten prywatny serwis. W produkcji `apps/crm/vercel.json` wstrzykuje do Nuxt URL
 bindingu jako `BANK_MAIL_AGENT_INTERNAL_URL`; tej zmiennej nie ustawia się
 ręcznie i agent nie ma publicznego rewrite'u.
 
-`eval` uruchamia trzy deterministyczne scenariusze EVE z `mockModel` i wyłącznie
-syntetycznymi narzędziami: prompt injection, wieloznaczne dopasowanie oraz
-jednoznaczny numer wniosku. Fixture jest osobnym targetem pod `evals/fixture`:
+`eval` uruchamia cztery deterministyczne scenariusze EVE z `mockModel` i wyłącznie
+syntetycznymi narzędziami: prompt injection, wieloznaczne dopasowanie,
+jednoznaczny numer wniosku oraz advisory-only reanalysis zakończonego intake.
+Fixture są osobnymi targetami pod `evals/fixture` i `evals/reanalysis-fixture`:
 nie omija uwierzytelnienia kanału produkcyjnego, nie łączy się z Data API i nie
 dotyka CRM. Sprawdza rzeczywisty protokół sesji EVE, kolejność wywołań i sufit
 akcji. Nie jest testem integracyjnym serwisowego JWT ani RPC — te granice nadal
@@ -105,8 +115,8 @@ Domyślne debugowanie jest celowo PII-free:
 
 1. `eve info` pokazuje faktycznie odkryty model, kanał, sandbox i zestaw tools.
 2. `pnpm --filter @openexpert/crm-bank-mail-agent eval` odtwarza syntetyczne,
-   deterministyczne ścieżki i zapisuje artefakty pod
-   `evals/fixture/.eve/evals/`.
+   deterministyczne ścieżki i zapisuje artefakty w odpowiednich katalogach
+   fixture pod `evals/`.
 3. `eve logs --events` pokazuje kolejność kroków i kody błędów bez potrzeby
    rejestrowania maila.
 4. Ledger bazy przechowuje idempotency key, wersję promptu/polityki, kody

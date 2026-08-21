@@ -21,24 +21,17 @@ import {
 } from './bank-mail-agent-ingestion-core.ts'
 
 async function loadBankSenderIdentities(backendData: any): Promise<BankSenderIdentity[]> {
-  const { data, error } = await backendData
-    .from('mortgage_bank_email_identities')
-    .select('bank_id, sender_domain, allow_subdomains')
-    .eq('is_active', true)
+  const { data, error } = await backendData.rpc('list_active_bank_email_identities')
   throwDbError(error)
   return (data ?? []) as BankSenderIdentity[]
 }
 
 async function strongProposalCaseId(backendData: any, intakeId: string): Promise<string | null> {
-  const { data, error } = await backendData
-    .from('mail_bank_agent_match_proposals')
-    .select('case_id')
-    .eq('intake_id', intakeId)
-    .eq('classification', 'strong_candidate')
-    .eq('review_status', 'review_required')
-    .maybeSingle()
+  const { data, error } = await backendData.rpc('get_strong_bank_mail_agent_proposal_case', {
+    p_intake_id: intakeId,
+  })
   throwDbError(error)
-  const caseId = String(data?.case_id ?? '')
+  const caseId = String(data ?? '')
   return /^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(caseId) ? caseId : null
 }
 

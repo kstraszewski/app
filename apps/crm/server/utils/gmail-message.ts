@@ -50,6 +50,7 @@ const THREAD_BODY_CHARACTER_LIMIT = 500_000
 const THREAD_HTML_CHARACTER_LIMIT = 1_000_000
 const MAX_THREAD_MESSAGES = 20
 const GMAIL_AUTHENTICATION_RESULTS_AUTHSERV_ID = 'mx.google.com'
+const MAIL_DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
 
 export function gmailThreadSummary(
   thread: GmailThreadResource,
@@ -169,12 +170,13 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
 }
 
 export function gmailMessageSecurity(message: GmailMessageResource): MailMessageSecurity {
-  const results = headerValues(message.payload?.headers, 'authentication-results')
+  const trustedResults = headerValues(message.payload?.headers, 'authentication-results')
     // Gmail's own authentication verdict is stamped with `mx.google.com` as
     // authserv-id. Other Authentication-Results fields are transit data or
     // sender-controlled input and must not produce a pass/fail badge.
     // https://support.google.com/mail/answer/180707
     .filter(value => authenticationResultsAuthservId(value) === GMAIL_AUTHENTICATION_RESULTS_AUTHSERV_ID)
+  const results = trustedResults
     .join(' ')
     .toLowerCase()
   const statusByMechanism = new Map<string, string>()
@@ -212,6 +214,10 @@ export function gmailMessageSecurity(message: GmailMessageResource): MailMessage
 
   return {
     authentication,
+    dkimAligned: Boolean(
+      fromDomain
+      && trustedResults.some(value => authenticationResultsHasAlignedDkimPass(value, fromDomain)),
+    ),
     dmarcAligned: dmarc === 'pass',
     replyToMismatch: Boolean(
       fromDomain
@@ -219,6 +225,29 @@ export function gmailMessageSecurity(message: GmailMessageResource): MailMessage
       && replyToDomains.some(domain => domain !== fromDomain),
     ),
   }
+}
+
+function authenticationResultsHasAlignedDkimPass(
+  value: string,
+  fromDomain: string,
+): boolean {
+  for (const clause of value.split(';').slice(1)) {
+    if (!/^\s*dkim=pass(?:\s|$)/iu.test(clause)) continue
+    for (const match of clause.matchAll(/\bheader\.(i|d)=("[^"]*"|[^\s;]+)/giu)) {
+      const kind = match[1]?.toLowerCase()
+      const rawValue = String(match[2] ?? '').replace(/^"|"$/gu, '')
+      if (kind === 'i' && !rawValue.includes('@')) continue
+      const identityDomain = kind === 'i'
+        ? rawValue.slice(rawValue.lastIndexOf('@') + 1)
+        : rawValue
+      const normalizedDomain = identityDomain.trim().toLowerCase().replace(/\.$/u, '')
+      if (
+        normalizedDomain === fromDomain
+        && MAIL_DOMAIN_PATTERN.test(normalizedDomain)
+      ) return true
+    }
+  }
+  return false
 }
 
 function authenticationResultsAuthservId(value: string): string | null {

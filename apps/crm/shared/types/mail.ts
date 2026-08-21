@@ -113,6 +113,8 @@ export type MailAuthenticationStatus = 'pass' | 'fail' | 'unknown'
 
 export interface MailMessageSecurity {
   authentication: MailAuthenticationStatus
+  /** True only for a trusted provider verdict with DKIM aligned to From. */
+  dkimAligned?: boolean
   /** True only when the provider reports an explicit DMARC pass. */
   dmarcAligned?: boolean
   replyToMismatch: boolean

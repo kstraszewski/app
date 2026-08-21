@@ -264,19 +264,24 @@ test('surfaces Gmail authentication failures and Reply-To domain mismatches', ()
 
   assert.deepEqual(gmailMessageSecurity(suspicious), {
     authentication: 'fail',
+    dkimAligned: false,
     dmarcAligned: false,
     replyToMismatch: true,
   })
   assert.deepEqual(gmailMessageSecurity(message('message-auth-pass', {
     payload: {
       mimeType: 'text/plain',
-      headers: [{
-        name: 'Authentication-Results',
-        value: 'mx.google.com; dkim=pass; dmarc=pass',
-      }],
+      headers: [
+        { name: 'From', value: 'OpenExpert Bank <dokumenty@openexpert.app>' },
+        {
+          name: 'Authentication-Results',
+          value: 'mx.google.com; dkim=pass header.i=@openexpert.app; dmarc=pass',
+        },
+      ],
     },
   })), {
     authentication: 'pass',
+    dkimAligned: true,
     dmarcAligned: true,
     replyToMismatch: false,
   })
@@ -298,6 +303,7 @@ test('ignores forged Authentication-Results that are not stamped by Gmail', () =
 
   assert.deepEqual(gmailMessageSecurity(forged), {
     authentication: 'unknown',
+    dkimAligned: false,
     dmarcAligned: false,
     replyToMismatch: false,
   })
@@ -315,6 +321,94 @@ test('ignores forged Authentication-Results that are not stamped by Gmail', () =
     },
   })
   assert.equal(gmailMessageSecurity(forgedPassBeforeTrustedFailure).authentication, 'fail')
+})
+
+test('requires an authoritative DKIM pass aligned exactly to the From domain', () => {
+  const security = (from: string, authenticationResults: string) => gmailMessageSecurity(
+    message('message-dkim-alignment', {
+      payload: {
+        mimeType: 'text/plain',
+        headers: [
+          { name: 'From', value: from },
+          { name: 'Authentication-Results', value: authenticationResults },
+        ],
+      },
+    }),
+  )
+
+  assert.deepEqual(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; spf=pass smtp.mailfrom=send.openexpert.app',
+    ),
+    {
+      authentication: 'pass',
+      dkimAligned: false,
+      dmarcAligned: false,
+      replyToMismatch: false,
+    },
+  )
+  assert.equal(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; dkim=pass header.i=@resend.dev',
+    ).dkimAligned,
+    false,
+  )
+  assert.equal(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; dkim=pass header.s=resend',
+    ).dkimAligned,
+    false,
+  )
+  assert.equal(
+    security(
+      'Spoofed Bank <dokumenty@lookalike.example>',
+      'mx.google.com; dkim=pass header.i=@openexpert.app',
+    ).dkimAligned,
+    false,
+  )
+  assert.equal(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; dkim=pass header.d=openexpert.app',
+    ).dkimAligned,
+    true,
+  )
+  assert.deepEqual(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; dkim=pass header.i=@openexpert.app header.s=resend; dkim=pass header.i=@amazonses.com header.s=224i4yxa5dv7c2xz3womw6peuasteono; spf=pass smtp.mailfrom=send.openexpert.app',
+    ),
+    {
+      authentication: 'pass',
+      dkimAligned: true,
+      dmarcAligned: false,
+      replyToMismatch: false,
+    },
+  )
+  assert.deepEqual(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'mx.google.com; spf=pass; dkim=pass header.i=@openexpert.app; dmarc=fail header.from=openexpert.app',
+    ),
+    {
+      // Aggregate authentication remains a DMARC failure. The controlled
+      // database policy consumes the separate aligned-DKIM signal instead.
+      authentication: 'fail',
+      dkimAligned: true,
+      dmarcAligned: false,
+      replyToMismatch: false,
+    },
+  )
+  assert.equal(
+    security(
+      'OpenExpert Bank <dokumenty@openexpert.app>',
+      'attacker.example; dkim=pass header.i=@openexpert.app',
+    ).dkimAligned,
+    false,
+  )
 })
 
 test('removes bidirectional override controls from displayed mail metadata', () => {

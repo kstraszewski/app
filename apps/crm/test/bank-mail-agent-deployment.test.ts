@@ -43,11 +43,29 @@ test('deploys bank-mail EVE as a private service of the CRM Nuxt project', async
     framework: 'eve',
   })
   await access(new URL('services/bank-mail-agent/agent/agent.ts', crmRoot))
+  await access(new URL(
+    'services/bank-mail-agent/agent/hooks/bind-session.ts',
+    crmRoot,
+  ))
 
   const publicTargets = (config.rewrites ?? [])
     .map(rewrite => rewrite.destination?.service)
     .filter(Boolean)
   assert.equal(publicTargets.includes('bank-mail-eve'), false)
+})
+
+test('self-binds a newly started EVE session before bank-mail analysis', async () => {
+  const hook = await readFile(new URL(
+    'services/bank-mail-agent/agent/hooks/bind-session.ts',
+    crmRoot,
+  ), 'utf8')
+
+  assert.match(hook, /'session\.started'/u)
+  assert.match(hook, /requireBankMailAgentCaller\(ctx\)/u)
+  assert.match(hook, /ctx\.session\.id/u)
+  assert.match(hook, /await callBankMailServiceRpc/u)
+  assert.match(hook, /bind_bank_mail_agent_run_session/u)
+  assert.doesNotMatch(hook, /session\.completed|turn\.completed/u)
 })
 
 test('gives only the Nuxt web service a private binding to bank-mail EVE', async () => {

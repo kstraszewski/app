@@ -16,6 +16,8 @@ export default defineTool({
       bankId: intake.bankId,
       identityVerdict: intake.identityVerdict,
       authenticationStatus: intake.authenticationStatus,
+      authenticationPolicy: intake.authenticationPolicy,
+      dkimAligned: intake.dkimAligned,
       dmarcAligned: intake.dmarcAligned,
       replyToMismatch: intake.replyToMismatch,
       reasonCodes: intake.reasonCodes,

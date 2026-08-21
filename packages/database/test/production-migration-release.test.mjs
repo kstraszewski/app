@@ -46,6 +46,10 @@ const releaseTail = [
   '0079_organization_member_invitations.sql',
   '0080_organization_creation_grant_gate.sql',
   '0081_application_billing_plans.sql',
+  '0082_openexpert_bank_mail_ingestion.sql',
+  '0083_bank_mail_ingestion_rpc.sql',
+  '0084_bank_mail_intake_strong_proposal.sql',
+  '0085_bank_mail_thread_link_jobs.sql',
 ]
 
 test('production migration dry-run includes the ordered release tail', () => {

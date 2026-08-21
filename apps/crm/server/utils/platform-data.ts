@@ -83,6 +83,19 @@ export function serverBackendDataClient(event: H3Event): OpenExpertDataClient {
 }
 
 /**
+ * Creates a short-lived backend client with an explicitly bounded service
+ * scope. Callers must validate every custom claim before reaching this helper;
+ * the resulting token is intended for one trusted database operation only.
+ */
+export function serverScopedBackendDataClient(
+  event: H3Event,
+  claims: Readonly<Record<string, unknown>>,
+): OpenExpertDataClient {
+  const token = serverDataTokenSigner(event).signBackend({ ...claims })
+  return clientWithStorage(event, () => token)
+}
+
+/**
  * Creates a server-only service client that retains the authenticated actor in
  * a signed dedicated claim. Use it for trusted writes guarded from direct user
  * Data API tokens; authorization must still be completed before constructing it.

@@ -5,11 +5,10 @@ import type {
   MailThreadSummary,
 } from '../../shared/types/mail.ts'
 import type { CrmSession } from './crm.ts'
-import { throwDbError } from './crm.ts'
 import { dispatchBankMailAgent } from './bank-mail-agent-dispatch.ts'
 import { bankMailProviderMessageIdentitySha256 } from './bank-mail-agent-status-core.ts'
 import type { MailConnectionRow } from './mail-connections.ts'
-import { upsertMailContextThreadLink } from './mail-context.ts'
+import { mailContextThreadKeyHash } from './mail-context-core.ts'
 import { deriveMailReferenceSecret } from './mail-crypto.ts'
 import {
   bankMailAttachmentEncrypted,
@@ -26,23 +25,11 @@ function configuredMockBankSenderDomain(event: H3Event): string {
   return mailAddressDomain(angleAddress ?? configuredFrom)
 }
 
-async function strongProposalCaseId(backendData: any, intakeId: string): Promise<string | null> {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const { data, error } = await backendData.rpc('get_bank_mail_agent_intake', {
-      p_intake_id: intakeId,
-    })
-    throwDbError(error)
-    const caseId = String(data?.strongProposalCaseId ?? '')
-    if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(caseId)) return caseId
-    if (attempt < 5) await new Promise(resolve => setTimeout(resolve, 1_500))
-  }
-  return null
-}
-
 /**
  * Trusted Gmail ingress for one provider-fetched thread. EVE may only propose
- * a case. A deterministic server-side ceiling links the mailbox thread (never
- * an attachment) when the proposal is strong, unique and contradiction-free.
+ * a case. The intake claim durably registers this thread before EVE starts;
+ * PostgreSQL later links only the mailbox thread (never an attachment) in the
+ * same transaction that accepts a strong, unique, contradiction-free proposal.
  */
 export async function ingestGmailBankMailThread(
   event: H3Event,
@@ -63,9 +50,19 @@ export async function ingestGmailBankMailThread(
       && senderDomain !== mailAddressDomain(input.connection.account_email)
     ))
     .slice(-3)
+  if (!inboundMessages.length) return
+  const referenceSecret = deriveMailReferenceSecret(event, {
+    organizationId: input.connection.organization_id,
+    ownerUserId: input.connection.owner_user_id,
+    connectionId: input.connection.id,
+  })
+  const threadLink = {
+    keySha256: mailContextThreadKeyHash('google', input.thread.id, referenceSecret),
+    reference: input.thread.id,
+  }
 
   for (const message of inboundMessages) {
-    const result = await dispatchBankMailAgent(event, {
+    await dispatchBankMailAgent(event, {
       organizationId: input.session.organizationId,
       organizationSlug: input.session.organizationSlug,
       connectionId: input.connection.id,
@@ -79,9 +76,11 @@ export async function ingestGmailBankMailThread(
         : message.security.authentication === 'fail'
           ? 'failed'
           : 'indeterminate',
+      dkimAligned: message.security.dkimAligned === true,
       dmarcAligned: message.security.dmarcAligned === true,
       replyToMismatch: message.security.replyToMismatch,
       bankId: null,
+      threadLink,
       subject: message.subject,
       bodyText: message.bodyText,
       bodyTruncated: message.bodyTruncated,
@@ -91,21 +90,6 @@ export async function ingestGmailBankMailThread(
         size: attachment.size,
         encrypted: bankMailAttachmentEncrypted(attachment.filename, attachment.mimeType),
       })),
-    })
-
-    const caseId = await strongProposalCaseId(input.backendData, result.intakeId)
-    if (!caseId) continue
-    await upsertMailContextThreadLink(input.backendData, input.session, {
-      connectionId: input.connection.id,
-      provider: input.connection.provider,
-      referenceSecret: deriveMailReferenceSecret(event, {
-        organizationId: input.connection.organization_id,
-        ownerUserId: input.connection.owner_user_id,
-        connectionId: input.connection.id,
-      }),
-      scope: { type: 'case', id: caseId },
-      threadReference: input.thread.id,
-      linkSource: 'bank_mail_agent',
     })
   }
 }

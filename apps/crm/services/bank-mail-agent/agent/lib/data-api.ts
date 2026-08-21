@@ -8,6 +8,7 @@ import {
   type DataApiTokenSigner,
   type VerifyDataApiTokenOptions,
 } from '@openexpert/data-api/token'
+import type { BankMailSessionBindClaims } from './session-bind.ts'
 
 function firstEnvironmentValue(names: readonly string[]): string | undefined {
   for (const name of names) {
@@ -101,6 +102,21 @@ function getTokenSigner(): DataApiTokenSigner {
 export function createBankMailServiceDataApiClient(): DataApiClient {
   const signer = getTokenSigner()
   return createAuthenticatedDataApiClient(dataApiUrl(), () => signer.signBackend())
+}
+
+/**
+ * One-operation service client used by the session-started durability hook.
+ * The signed scope is intentionally kept separate from both the EVE caller
+ * token and the generic service client.
+ */
+export function createBankMailSessionBindDataApiClient(
+  claims: BankMailSessionBindClaims,
+): DataApiClient {
+  const signer = getTokenSigner()
+  return createAuthenticatedDataApiClient(
+    dataApiUrl(),
+    () => signer.signBackend({ ...claims }),
+  )
 }
 
 /**

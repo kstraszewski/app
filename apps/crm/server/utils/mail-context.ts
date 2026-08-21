@@ -169,9 +169,10 @@ export async function upsertMailContextThreadLink(
     : await existingQuery.eq('case_id', input.scope.id).is('client_id', null).maybeSingle()
   throwDbError(existingError)
 
-  const linkSource = existing?.link_source === 'manual'
-    ? 'manual'
-    : input.linkSource
+  // Link provenance is the immutable origin of this scope. In particular, a
+  // later manual refresh must not erase the bank-agent audit trail (and an
+  // automatic refresh must not overwrite an earlier human/contextual origin).
+  const linkSource = existing?.link_source ?? input.linkSource
   const { error } = await backendData
     .from('mail_context_thread_links')
     .upsert({

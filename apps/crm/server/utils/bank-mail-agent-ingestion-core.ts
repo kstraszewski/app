@@ -50,7 +50,14 @@ export function canonicalBankMailSourceSha256(message: MailMessageDetail): strin
       mimeType: attachment.mimeType,
       size: attachment.size,
     })),
-    security: message.security,
+    // Keep this projection backward compatible for provider-message replay.
+    // DKIM alignment is a separately signed ingress claim and deliberately
+    // does not change the immutable source hash of an already-seen message.
+    security: {
+      authentication: message.security.authentication,
+      dmarcAligned: message.security.dmarcAligned,
+      replyToMismatch: message.security.replyToMismatch,
+    },
   })
   return createHash('sha256').update(canonical, 'utf8').digest('hex')
 }

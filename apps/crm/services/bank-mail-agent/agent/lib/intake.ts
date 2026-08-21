@@ -23,7 +23,12 @@ const attachmentInspectionSchema = z.object({
   updatedAt: z.string().min(1).max(100),
 })
 
-const trustedIntakeSchema = z.object({
+export const bankMailAuthenticationPolicySchema = z.enum([
+  'dmarc_aligned',
+  'openexpert_mock_dkim_aligned',
+])
+
+export const trustedIntakeSchema = z.object({
   intakeId: z.string().uuid(),
   status: code,
   provider: code,
@@ -31,6 +36,8 @@ const trustedIntakeSchema = z.object({
   bankEmailIdentityId: z.string().uuid().nullable(),
   identityVerdict: code,
   authenticationStatus: z.enum(['passed', 'failed', 'indeterminate']),
+  authenticationPolicy: bankMailAuthenticationPolicySchema.default('dmarc_aligned'),
+  dkimAligned: z.boolean().default(false),
   dmarcAligned: z.boolean(),
   replyToMismatch: z.boolean(),
   sourceSha256: sha256,
@@ -41,6 +48,28 @@ const trustedIntakeSchema = z.object({
 })
 
 export type TrustedBankMailIntake = z.infer<typeof trustedIntakeSchema>
+
+export function hasTrustedBankMailAuthentication(
+  intake: Pick<
+    TrustedBankMailIntake,
+    | 'identityVerdict'
+    | 'authenticationStatus'
+    | 'authenticationPolicy'
+    | 'dkimAligned'
+    | 'dmarcAligned'
+    | 'replyToMismatch'
+  >,
+): boolean {
+  if (intake.identityVerdict !== 'trusted_bank' || intake.replyToMismatch) {
+    return false
+  }
+
+  if (intake.authenticationPolicy === 'dmarc_aligned') {
+    return intake.authenticationStatus === 'passed' && intake.dmarcAligned
+  }
+
+  return intake.dkimAligned
+}
 
 export async function loadTrustedBankMailIntake(
   expectedIntakeId: string,

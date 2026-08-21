@@ -8,9 +8,11 @@ export default defineTool({
     return {
       status: 'processing',
       bankId: '33333333-3333-4333-8333-333333333333',
-      identityVerdict: 'verified',
-      authenticationStatus: 'passed',
-      dmarcAligned: true,
+      identityVerdict: 'trusted_bank',
+      authenticationStatus: 'failed',
+      authenticationPolicy: 'openexpert_mock_dkim_aligned',
+      dkimAligned: true,
+      dmarcAligned: false,
       replyToMismatch: false,
       finalized: false,
     }

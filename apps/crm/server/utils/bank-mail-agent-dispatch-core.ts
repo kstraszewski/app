@@ -12,6 +12,7 @@ import {
 
 export const BANK_MAIL_AGENT_SERVICE_ID = 'openexpert-crm-bank-mail-ingestion' as const
 export const BANK_MAIL_AGENT_PRESET = 'bank-mail-intake' as const
+export const BANK_MAIL_INGRESS_DATA_SOURCE = 'crm-bank-mail-ingress-v1' as const
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const sha256Pattern = /^[0-9a-f]{64}$/u
@@ -20,7 +21,7 @@ const senderDomainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9]
 const statePattern = /^[a-z0-9_:-]{1,100}$/u
 const eveSessionIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$/u
 
-type BankMailProvider = 'google' | 'microsoft' | 'imap'
+export type BankMailProvider = 'google' | 'microsoft' | 'imap'
 type AuthenticationStatus = 'passed' | 'failed' | 'indeterminate'
 
 export interface BankMailAgentDispatchInput extends BankMailAgentPromptInput {
@@ -39,9 +40,16 @@ export interface BankMailAgentDispatchInput extends BankMailAgentPromptInput {
   sourceSha256: string
   senderDomain: string
   authenticationStatus: AuthenticationStatus
+  dkimAligned: boolean
   dmarcAligned: boolean
   replyToMismatch: boolean
   bankId?: string | null
+  threadLink: {
+    /** Stable, secret-derived provider thread identity used for conflict checks. */
+    keySha256: string
+    /** Opaque provider reference needed to reopen the mailbox thread. */
+    reference: string
+  }
 }
 
 export interface BankMailInvocationClaims {
@@ -69,8 +77,28 @@ interface RpcResult {
   error: { code?: string, message?: string } | null
 }
 
+export interface BankMailIngressDataClaims {
+  serviceId: typeof BANK_MAIL_AGENT_SERVICE_ID
+  preset: typeof BANK_MAIL_AGENT_PRESET
+  organizationId: string
+  connectionId: string
+  mailboxOwnerUserId: string
+  provider: BankMailProvider
+  dkimAligned: boolean
+  threadKeySha256: string
+  threadReference: string
+}
+
+export interface BankMailAgentRpcContext {
+  bankMailIngress?: BankMailIngressDataClaims
+}
+
 export interface BankMailAgentDispatcherDependencies {
-  rpc(name: string, args: Record<string, unknown>): Promise<RpcResult>
+  rpc(
+    name: string,
+    args: Record<string, unknown>,
+    context?: BankMailAgentRpcContext,
+  ): Promise<RpcResult>
   signServiceToken(claims: BankMailInvocationClaims): string
   createSession(input: {
     serviceUrl: string
@@ -129,6 +157,21 @@ function requiredSha256(value: unknown, label: string): string {
   return normalized
 }
 
+function requiredThreadReference(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new TypeError('Invalid bank-mail thread reference.')
+  }
+  if (
+    value.length < 1
+    || value.length > 4_096
+    || value !== value.trim()
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+  ) {
+    throw new TypeError('Invalid bank-mail thread reference.')
+  }
+  return value
+}
+
 function controlledState(value: unknown, label: string): string {
   const normalized = text(value)
   if (!statePattern.test(normalized)) throw new TypeError(`Invalid ${label}.`)
@@ -162,7 +205,11 @@ function normalizeInput(input: BankMailAgentDispatchInput): BankMailAgentDispatc
   if (!senderDomainPattern.test(senderDomain)) {
     throw new TypeError('Invalid sender domain.')
   }
-  if (typeof input.dmarcAligned !== 'boolean' || typeof input.replyToMismatch !== 'boolean') {
+  if (
+    typeof input.dkimAligned !== 'boolean'
+    || typeof input.dmarcAligned !== 'boolean'
+    || typeof input.replyToMismatch !== 'boolean'
+  ) {
     throw new TypeError('Invalid mail authentication flags.')
   }
   if (typeof input.subject !== 'string' || typeof input.bodyText !== 'string') {
@@ -187,6 +234,10 @@ function normalizeInput(input: BankMailAgentDispatchInput): BankMailAgentDispatc
     senderDomain,
     authenticationStatus,
     bankId: nullableUuid(input.bankId, 'bank id'),
+    threadLink: {
+      keySha256: requiredSha256(input.threadLink?.keySha256, 'thread key SHA-256'),
+      reference: requiredThreadReference(input.threadLink?.reference),
+    },
   }
 }
 
@@ -227,8 +278,9 @@ async function rpc(
   dependencies: BankMailAgentDispatcherDependencies,
   name: string,
   args: Record<string, unknown>,
+  context?: BankMailAgentRpcContext,
 ): Promise<unknown> {
-  const result = await dependencies.rpc(name, args)
+  const result = await dependencies.rpc(name, args, context)
   if (result.error) {
     const rawCode = text(result.error.code)
     const code = statePattern.test(rawCode) ? rawCode : 'rpc_rejected'
@@ -287,6 +339,19 @@ export async function dispatchBankMailAgentWithDependencies(
       p_dmarc_aligned: input.dmarcAligned,
       p_reply_to_mismatch: input.replyToMismatch,
       p_bank_id: input.bankId ?? null,
+    },
+    {
+      bankMailIngress: {
+        serviceId: BANK_MAIL_AGENT_SERVICE_ID,
+        preset: BANK_MAIL_AGENT_PRESET,
+        organizationId: input.organizationId,
+        connectionId: input.connectionId,
+        mailboxOwnerUserId: input.mailboxOwnerUserId,
+        provider: input.provider,
+        dkimAligned: input.dkimAligned,
+        threadKeySha256: input.threadLink.keySha256,
+        threadReference: input.threadLink.reference,
+      },
     },
   ))
 

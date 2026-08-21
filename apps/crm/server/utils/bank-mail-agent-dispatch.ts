@@ -1,6 +1,7 @@
 import { Client } from 'eve/client'
 import type { H3Event } from 'h3'
 import {
+  BANK_MAIL_INGRESS_DATA_SOURCE,
   dispatchBankMailAgentWithDependencies,
   selectBankMailAgentServiceUrl,
   type BankMailAgentDispatchInput,
@@ -8,7 +9,10 @@ import {
   type BankMailAgentDispatchResult,
 } from './bank-mail-agent-dispatch-core'
 import { serverDataBackend } from './data-api'
-import { serverDataTokenSigner } from './platform-data'
+import {
+  serverDataTokenSigner,
+  serverScopedBackendDataClient,
+} from './platform-data'
 
 type RpcResult = Awaited<ReturnType<BankMailAgentDispatcherDependencies['rpc']>>
 
@@ -30,12 +34,27 @@ export async function dispatchBankMailAgent(
     ),
     input,
     {
-      rpc: (name, args) => (
-        backend.rpc as unknown as (
-          rpcName: string,
-          rpcArgs: Record<string, unknown>,
-        ) => Promise<RpcResult>
-      )(name, args),
+      rpc: (name, args, context) => {
+        const ingress = context?.bankMailIngress
+        if (name === 'claim_bank_mail_agent_intake' && !ingress) {
+          throw new Error('Bank-mail intake claim is missing its durable thread-link scope.')
+        }
+        if (ingress && name !== 'claim_bank_mail_agent_intake') {
+          throw new Error('Bank-mail ingress scope is restricted to the intake claim.')
+        }
+        const rpcBackend = ingress
+          ? serverScopedBackendDataClient(event, {
+              ...ingress,
+              source: BANK_MAIL_INGRESS_DATA_SOURCE,
+            })
+          : backend
+        return (
+          rpcBackend.rpc as unknown as (
+            rpcName: string,
+            rpcArgs: Record<string, unknown>,
+          ) => Promise<RpcResult>
+        )(name, args)
+      },
       signServiceToken: claims => signer.signBackend({ ...claims }),
       async createSession({ serviceUrl, bearerToken, prompt }) {
         const client = new Client({

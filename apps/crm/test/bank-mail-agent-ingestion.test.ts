@@ -23,7 +23,12 @@ function message(from: string): MailMessageDetail {
     hasRemoteImages: false,
     bodyTruncated: false,
     attachments: [{ id: 'attachment-1', filename: 'esis.zip', mimeType: 'application/zip', size: 1234 }],
-    security: { authentication: 'pass', dmarcAligned: true, replyToMismatch: false },
+    security: {
+      authentication: 'pass',
+      dkimAligned: true,
+      dmarcAligned: true,
+      replyToMismatch: false,
+    },
   }
 }
 
@@ -38,12 +43,28 @@ test('bank sender allowlist requires an exact domain unless subdomains are enabl
   assert.equal(matchingBankSenderIdentity([exact], message('dokumenty@openexpert.app.evil.test')), null)
 })
 
-test('canonical source hash is stable and changes with inspected content or DMARC', () => {
+test('canonical source hash is stable, replay-compatible across DKIM enrichment, and changes with DMARC', () => {
   const input = message('dokumenty@openexpert.app')
+  const legacySecurity = {
+    authentication: input.security.authentication,
+    dmarcAligned: input.security.dmarcAligned,
+    replyToMismatch: input.security.replyToMismatch,
+  }
   assert.equal(canonicalBankMailSourceSha256(input), canonicalBankMailSourceSha256({ ...input }))
+  assert.equal(
+    canonicalBankMailSourceSha256(input),
+    canonicalBankMailSourceSha256({ ...input, security: legacySecurity }),
+  )
   assert.notEqual(
     canonicalBankMailSourceSha256(input),
     canonicalBankMailSourceSha256({ ...input, bodyText: `${input.bodyText}!` }),
+  )
+  assert.equal(
+    canonicalBankMailSourceSha256(input),
+    canonicalBankMailSourceSha256({
+      ...input,
+      security: { ...input.security, dkimAligned: false },
+    }),
   )
   assert.notEqual(
     canonicalBankMailSourceSha256(input),

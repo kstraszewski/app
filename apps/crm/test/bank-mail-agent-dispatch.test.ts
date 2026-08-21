@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   BANK_MAIL_AGENT_PRESET,
@@ -20,6 +21,8 @@ const bankId = '66666666-6666-4666-8666-666666666666'
 const providerMessageIdSha256 = 'a'.repeat(64)
 const sourceSha256 = 'b'.repeat(64)
 const leaseToken = 'c'.repeat(64)
+const threadKeySha256 = 'd'.repeat(64)
+const threadReference = 'gmail_thread_safe_123'
 const sessionId = 'eve_session_safe_123'
 
 const input: BankMailAgentDispatchInput = {
@@ -32,9 +35,14 @@ const input: BankMailAgentDispatchInput = {
   sourceSha256,
   senderDomain: 'decyzje.bank.pl',
   authenticationStatus: 'passed',
+  dkimAligned: true,
   dmarcAligned: true,
   replyToMismatch: false,
   bankId,
+  threadLink: {
+    keySha256: threadKeySha256,
+    reference: threadReference,
+  },
   subject: 'Decyzja ABC/2026/1234 dla Jan Kowalski',
   bodyText: 'PESEL 90010112345, kontakt ekspert@bank.pl, wniosek ABC/2026/1234',
   bodyTruncated: false,
@@ -47,12 +55,16 @@ const input: BankMailAgentDispatchInput = {
 }
 
 test('claims once, sends only a sanitized prompt, signs exact scope and binds the EVE session', async () => {
-  const rpcCalls: Array<{ name: string, args: Record<string, unknown> }> = []
+  const rpcCalls: Array<{
+    name: string
+    args: Record<string, unknown>
+    context: Parameters<BankMailAgentDispatcherDependencies['rpc']>[2]
+  }> = []
   let signedClaims: Record<string, unknown> | undefined
   let createdInput: { serviceUrl: string, bearerToken: string, prompt: string } | undefined
   const dependencies: BankMailAgentDispatcherDependencies = {
-    async rpc(name, args) {
-      rpcCalls.push({ name, args })
+    async rpc(name, args, context) {
+      rpcCalls.push({ name, args, context })
       if (name === 'claim_bank_mail_agent_intake') {
         return {
           data: { intakeId, state: 'claimed', replayed: false },
@@ -119,6 +131,21 @@ test('claims once, sends only a sanitized prompt, signs exact scope and binds th
     p_reply_to_mismatch: false,
     p_bank_id: bankId,
   })
+  assert.deepEqual(rpcCalls[0]?.context, {
+    bankMailIngress: {
+      serviceId: BANK_MAIL_AGENT_SERVICE_ID,
+      preset: BANK_MAIL_AGENT_PRESET,
+      organizationId,
+      connectionId,
+      mailboxOwnerUserId: ownerUserId,
+      provider: 'google',
+      dkimAligned: true,
+      threadKeySha256,
+      threadReference,
+    },
+  })
+  assert.equal(rpcCalls[1]?.context, undefined)
+  assert.equal(rpcCalls[2]?.context, undefined)
   assert.deepEqual(signedClaims, {
     serviceId: BANK_MAIL_AGENT_SERVICE_ID,
     preset: BANK_MAIL_AGENT_PRESET,
@@ -133,7 +160,7 @@ test('claims once, sends only a sanitized prompt, signs exact scope and binds th
   assert.equal(createdInput?.bearerToken, 'signed-service-token')
   assert.doesNotMatch(
     createdInput?.prompt ?? '',
-    /90010112345|ekspert@bank\.pl|decyzje\.bank\.pl|aaaaaaaaaaaaaaaa/u,
+    /90010112345|ekspert@bank\.pl|decyzje\.bank\.pl|aaaaaaaaaaaaaaaa|gmail_thread_safe|dkimAligned/u,
   )
   assert.match(createdInput?.prompt ?? '', /ABC\/2026\/1234/u)
 
@@ -157,6 +184,8 @@ test('claims once, sends only a sanitized prompt, signs exact scope and binds th
   const databasePayloads = JSON.stringify(rpcCalls.map(call => call.args))
   assert.doesNotMatch(databasePayloads, /Jan Kowalski|90010112345|ekspert@bank\.pl/u)
   assert.doesNotMatch(JSON.stringify(signedClaims), new RegExp(leaseToken, 'u'))
+  assert.doesNotMatch(JSON.stringify(signedClaims), /gmail_thread_safe|dddddddddddddddd/u)
+  assert.equal(Object.hasOwn(signedClaims ?? {}, 'dkimAligned'), false)
 })
 
 test('replay returns the already-bound session without signing or creating another one', async () => {
@@ -208,7 +237,7 @@ test('security-rejected intake records a run decision but never receives an EVE 
   let sideEffects = 0
   const result = await dispatchBankMailAgentWithDependencies(
     'https://bank-mail-agent.example',
-    { ...input, authenticationStatus: 'failed', dmarcAligned: false },
+    { ...input, authenticationStatus: 'failed', dkimAligned: false, dmarcAligned: false },
     {
       async rpc(name) {
         calls.push(name)
@@ -248,6 +277,48 @@ test('security-rejected intake records a run decision but never receives an EVE 
   assert.equal(result.runId, null)
 })
 
+test('carries aligned DKIM independently from an aggregate DMARC failure', async () => {
+  let claimArgs: Record<string, unknown> | undefined
+  let claimContext: Parameters<BankMailAgentDispatcherDependencies['rpc']>[2]
+  await dispatchBankMailAgentWithDependencies(
+    'https://bank-mail-agent.example',
+    {
+      ...input,
+      authenticationStatus: 'failed',
+      dkimAligned: true,
+      dmarcAligned: false,
+    },
+    {
+      async rpc(name, args, context) {
+        if (name === 'claim_bank_mail_agent_intake') {
+          claimArgs = args
+          claimContext = context
+          return {
+            data: { intakeId, state: 'security_rejected', replayed: false },
+            error: null,
+          }
+        }
+        return {
+          data: {
+            runId: null,
+            state: 'security_rejected',
+            shouldDispatch: false,
+            sessionId: null,
+          },
+          error: null,
+        }
+      },
+      signServiceToken: () => 'must-not-be-created',
+      createSession: async () => ({ sessionId: 'must_not_exist' }),
+    },
+  )
+
+  assert.equal(claimArgs?.p_authentication_status, 'failed')
+  assert.equal(claimArgs?.p_dmarc_aligned, false)
+  assert.equal(Object.hasOwn(claimArgs ?? {}, 'p_dkim_aligned'), false)
+  assert.equal(claimContext?.bankMailIngress?.dkimAligned, true)
+})
+
 test('requires pre-hashed provider identity before any RPC call', async () => {
   let rpcCalls = 0
   await assert.rejects(
@@ -266,6 +337,77 @@ test('requires pre-hashed provider identity before any RPC call', async () => {
     /provider message id SHA-256/u,
   )
   assert.equal(rpcCalls, 0)
+})
+
+test('requires a bounded opaque thread reference and stable thread hash before any RPC call', async () => {
+  for (const threadLink of [
+    { keySha256: 'raw-thread-id', reference: threadReference },
+    { keySha256: threadKeySha256, reference: 'thread\nwith-control' },
+    { keySha256: threadKeySha256, reference: ' leading-space' },
+    { keySha256: threadKeySha256, reference: 'x'.repeat(4_097) },
+    { keySha256: threadKeySha256, reference: '' },
+  ]) {
+    let rpcCalls = 0
+    await assert.rejects(
+      dispatchBankMailAgentWithDependencies(
+        'https://bank-mail-agent.example',
+        { ...input, threadLink },
+        {
+          async rpc() {
+            rpcCalls += 1
+            return { data: null, error: null }
+          },
+          signServiceToken: () => 'unused',
+          createSession: async () => ({ sessionId }),
+        },
+      ),
+      /thread/u,
+    )
+    assert.equal(rpcCalls, 0)
+  }
+})
+
+test('preserves opaque provider thread references with non-control separators', async () => {
+  const opaqueReference = 'AQMk:thread/segment+value=='
+  let signedReference: string | undefined
+
+  await dispatchBankMailAgentWithDependencies(
+    'https://bank-mail-agent.example',
+    { ...input, threadLink: { ...input.threadLink, reference: opaqueReference } },
+    {
+      async rpc(name, _args, context) {
+        if (name === 'claim_bank_mail_agent_intake') {
+          signedReference = context?.bankMailIngress?.threadReference
+          return {
+            data: { intakeId, state: 'security_rejected', replayed: false },
+            error: null,
+          }
+        }
+        return {
+          data: {
+            runId: null,
+            state: 'security_rejected',
+            shouldDispatch: false,
+            sessionId: null,
+          },
+          error: null,
+        }
+      },
+      signServiceToken: () => 'must-not-be-created',
+      createSession: async () => ({ sessionId: 'must_not_exist' }),
+    },
+  )
+
+  assert.equal(signedReference, opaqueReference)
+})
+
+test('Gmail ingestion relies on the durable database job instead of timing-dependent polling', async () => {
+  const source = await readFile(
+    new URL('../server/utils/bank-mail-agent-ingestion.ts', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /threadLink/u)
+  assert.doesNotMatch(source, /get_bank_mail_agent_intake|setTimeout|upsertMailContextThreadLink/u)
 })
 
 test('only accepts HTTPS service roots, with loopback HTTP for local development', () => {

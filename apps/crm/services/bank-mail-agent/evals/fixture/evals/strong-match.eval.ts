@@ -1,7 +1,7 @@
 import { defineEval } from 'eve/evals'
 
 export default defineEval({
-  description: 'A unique bank reference follows the trusted-load, search, context, proposal sequence.',
+  description: 'The exact OpenExpert mock DKIM policy can continue despite aggregate authentication and DMARC failure.',
   tags: ['policy', 'deterministic'],
   async test(t) {
     await t.send(`
@@ -16,6 +16,17 @@ Synthetic mail: decyzja dla wniosku ABC-2026-0042 w Banku Syntetycznym.
       'get_case_match_context',
       'propose_case_match',
     ])
+    t.calledTool('load_trusted_intake_metadata', {
+      output: {
+        identityVerdict: 'trusted_bank',
+        authenticationStatus: 'failed',
+        authenticationPolicy: 'openexpert_mock_dkim_aligned',
+        dkimAligned: true,
+        dmarcAligned: false,
+        replyToMismatch: false,
+      },
+      count: 1,
+    })
     t.calledTool('search_case_candidates', {
       input: { query: 'ABC-2026-0042' },
       output: { candidateCount: 1 },

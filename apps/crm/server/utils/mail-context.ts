@@ -18,7 +18,7 @@ import {
   unrelatedMailContextClientIds,
 } from './mail-context-core.ts'
 
-export type MailContextLinkSource = 'manual' | 'sent_from_context'
+export type MailContextLinkSource = 'manual' | 'sent_from_context' | 'bank_mail_agent'
 
 export interface ResolvedMailContext {
   scope: MailContextScope

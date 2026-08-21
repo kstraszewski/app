@@ -9,9 +9,22 @@ export type TransactionalEmailRenderer = (
 
 function body(result: EmailRendererResult) { return typeof result === 'string' ? result : result.html }
 
+async function defaultTransactionalEmailRenderer(
+  component: string,
+  props: Record<string, unknown>,
+  options?: Parameters<TransactionalEmailRenderer>[2],
+): Promise<EmailRendererResult> {
+  // Nitro's auto-import transform does not reliably inject an identifier used
+  // as a default parameter in a server utility. Resolve the generated Nuxt
+  // import explicitly at call time so production and development use the same
+  // renderer while plain Node tests can still inject a lightweight renderer.
+  const { renderEmailComponent } = await import('#openexpert/email-renderer')
+  return renderEmailComponent(component, props, options)
+}
+
 export async function renderTransactionalEmail(
   props: TransactionalEmailProps,
-  renderer: TransactionalEmailRenderer = renderEmailComponent as TransactionalEmailRenderer,
+  renderer: TransactionalEmailRenderer = defaultTransactionalEmailRenderer,
 ) {
   const input = props as unknown as Record<string, unknown>
   const [html, text] = await Promise.all([

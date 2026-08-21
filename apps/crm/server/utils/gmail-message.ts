@@ -212,6 +212,7 @@ export function gmailMessageSecurity(message: GmailMessageResource): MailMessage
 
   return {
     authentication,
+    dmarcAligned: dmarc === 'pass',
     replyToMismatch: Boolean(
       fromDomain
       && replyToDomains.length

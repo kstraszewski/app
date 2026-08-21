@@ -264,6 +264,7 @@ test('surfaces Gmail authentication failures and Reply-To domain mismatches', ()
 
   assert.deepEqual(gmailMessageSecurity(suspicious), {
     authentication: 'fail',
+    dmarcAligned: false,
     replyToMismatch: true,
   })
   assert.deepEqual(gmailMessageSecurity(message('message-auth-pass', {
@@ -276,6 +277,7 @@ test('surfaces Gmail authentication failures and Reply-To domain mismatches', ()
     },
   })), {
     authentication: 'pass',
+    dmarcAligned: true,
     replyToMismatch: false,
   })
 })
@@ -296,6 +298,7 @@ test('ignores forged Authentication-Results that are not stamped by Gmail', () =
 
   assert.deepEqual(gmailMessageSecurity(forged), {
     authentication: 'unknown',
+    dmarcAligned: false,
     replyToMismatch: false,
   })
 

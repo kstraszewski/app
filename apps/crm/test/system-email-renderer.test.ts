@@ -63,3 +63,12 @@ test('shared CRM template has the email accessibility baseline', () => {
   assert.doesNotMatch(source, /v-html/u)
   for (const [table] of source.matchAll(/<table\b[^>]*>/gu)) assert.match(table, /role="presentation"/u)
 })
+
+test('production renderer is resolved through the generated Nuxt imports at call time', () => {
+  const source = readFileSync(
+    new URL('../server/utils/transactional-email-content.ts', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /await import\('#openexpert\/email-renderer'\)/u)
+  assert.doesNotMatch(source, /renderer:\s*TransactionalEmailRenderer\s*=\s*renderEmailComponent/u)
+})

@@ -113,6 +113,8 @@ export type MailAuthenticationStatus = 'pass' | 'fail' | 'unknown'
 
 export interface MailMessageSecurity {
   authentication: MailAuthenticationStatus
+  /** True only when the provider reports an explicit DMARC pass. */
+  dmarcAligned?: boolean
   replyToMismatch: boolean
 }
 
@@ -161,6 +163,7 @@ export interface MailContextScope {
 export type MailContextMatchReason =
   | 'manual_link'
   | 'sent_from_context'
+  | 'bank_mail_agent'
   | 'participant_email'
   | null
 

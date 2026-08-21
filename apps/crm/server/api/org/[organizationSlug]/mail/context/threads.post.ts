@@ -179,7 +179,11 @@ export default defineEventHandler(async (event): Promise<MailContextThreadListPa
         linked: Boolean(link),
         suggested: !link && item.matchedEmails.size > 0,
         matchReason: link
-          ? link.link_source === 'manual' ? 'manual_link' : 'sent_from_context'
+          ? link.link_source === 'manual'
+            ? 'manual_link'
+            : link.link_source === 'bank_mail_agent'
+              ? 'bank_mail_agent'
+              : 'sent_from_context'
           : item.matchedEmails.size ? 'participant_email' : null,
         matchedEmails: [...item.matchedEmails],
       }

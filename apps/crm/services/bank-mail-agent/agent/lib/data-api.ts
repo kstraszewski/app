@@ -48,15 +48,19 @@ export function getBankMailDataApiVerificationOptions(): Pick<
   'audience' | 'issuer' | 'publicJwk'
 > {
   const { audience, issuer } = jwtIdentity()
-  const publicJwk = requireEnvironmentValue(
-    ['DATA_API_JWT_PUBLIC_JWK', 'NUXT_DATA_API_JWT_PUBLIC_JWK'],
-    'The Data API JWT public JWK',
-  )
+  const configuredPublicJwk = firstEnvironmentValue([
+    'DATA_API_JWT_PUBLIC_JWK',
+    'NUXT_DATA_API_JWT_PUBLIC_JWK',
+  ])
+  const publicJwk = configuredPublicJwk
+    ? parseDataApiPublicJwk(configuredPublicJwk)
+    : getTokenSigner().jwks.keys[0]
+  if (!publicJwk) throw new Error('The Data API JWT public JWK could not be derived.')
 
   return {
     audience,
     issuer,
-    publicJwk: parseDataApiPublicJwk(publicJwk),
+    publicJwk,
   }
 }
 

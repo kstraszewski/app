@@ -17,6 +17,8 @@ import {
   handleMailProviderError,
 } from '~~/server/utils/mail-thread-page'
 import { getQuery } from 'h3'
+import { createHash } from 'node:crypto'
+import { ingestGmailBankMailThread } from '~~/server/utils/bank-mail-agent-ingestion'
 
 export default defineEventHandler(async (event): Promise<MailThreadDetailPayload> => {
   setPrivateMailResponseHeaders(event)
@@ -52,6 +54,21 @@ export default defineEventHandler(async (event): Promise<MailThreadDetailPayload
           )
     if (connection.status !== 'active') {
       await markMailConnectionStatus(backendData, connection, 'active', null, true)
+    }
+    if (connection.provider === 'google') {
+      try {
+        await ingestGmailBankMailThread(event, { backendData, session, connection, thread: data })
+      }
+      catch (error) {
+        // Inbox reading must remain available if the optional AI intake is
+        // temporarily unavailable. The intake ledger and runtime logs retain
+        // the failure boundary without exposing message content.
+        console.error('[bank-mail-agent] Gmail thread ingestion failed', {
+          connectionId: connection.id,
+          threadIdHash: createHash('sha256').update(data.id, 'utf8').digest('hex'),
+          error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
+        })
+      }
     }
     return { data }
   } catch (error) {

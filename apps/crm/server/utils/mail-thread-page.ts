@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import { scheduleOpenExpertBackgroundTask } from '@openexpert/auth/server'
 import type {
   MailFolderId,
   MailProviderId,
@@ -17,8 +18,9 @@ import {
   imapSmtpConnectionFailureReason,
   safeImapSmtpError,
 } from './mail-imap-errors.ts'
-import { fetchGmailThreadPage } from './mail-providers.ts'
+import { fetchGmailThread, fetchGmailThreadPage } from './mail-providers.ts'
 import { mailContextSearchQuery } from './mail-context-core.ts'
+import { ingestGmailBankMailThreadPage } from './bank-mail-agent-ingestion.ts'
 
 export async function loadMailThreadPage(
   event: H3Event,
@@ -47,6 +49,29 @@ export async function loadMailThreadPage(
     const result = await fetchProviderPage(event, backendData, connection, input)
     if (connection.status !== 'active') {
       await markMailConnectionStatus(backendData, connection, 'active', null, true)
+    }
+    if (
+      connection.provider === 'google'
+      && input.folder === 'INBOX'
+      && !input.pageToken
+    ) {
+      const task = ingestGmailBankMailThreadPage(event, {
+        backendData,
+        session,
+        connection,
+        summaries: result.data,
+        loadThread: async (threadId) => fetchGmailThread(
+          await activeMailAccessToken(event, backendData, connection),
+          connection.account_email,
+          threadId,
+        ),
+      }).catch((error) => {
+        console.error('[bank-mail-agent] Gmail page ingestion failed', {
+          connectionId: connection.id,
+          error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
+        })
+      })
+      scheduleOpenExpertBackgroundTask(task, event.waitUntil.bind(event))
     }
     return result
   }

@@ -48,6 +48,10 @@ const authPasskeyOrigin = authBaseUrl.replace(/\/$/u, '')
 const authPasskeyRpId = process.env.NUXT_AUTH_PASSKEY_RP_ID
   || new URL(authPasskeyOrigin).hostname
 const resendApiKey = process.env.NUXT_RESEND_API_KEY || ''
+const nuxtEmailRendererServerModule = fileURLToPath(new URL(
+  './runtime/server/utils/render.js',
+  import.meta.resolve('nuxt-email-renderer'),
+))
 const eveSharedDirectoryUrl = new URL('./node_modules/eve/dist/src/shared/', import.meta.url)
 const eveSharedAliases = Object.fromEntries(
   readdirSync(eveSharedDirectoryUrl, { withFileTypes: true })
@@ -72,6 +76,9 @@ if (mockBankOrganizationIds.some(value => !mockBankOrganizationIdPattern.test(va
 }
 
 export default defineNuxtConfig({
+  alias: {
+    '#openexpert/email-renderer': nuxtEmailRendererServerModule,
+  },
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },

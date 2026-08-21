@@ -219,6 +219,37 @@ async function ensureProductionMigrationRole(client) {
       console.log('~ ownership openexpert_owner')
     }
 
+    // 0084 was initially applied directly by the Neon database owner before
+    // it joined this release runner. Transfer that one cached RPC to the
+    // dedicated application owner while the connection still has its original
+    // role; the migration loop deliberately SET ROLEs before replacing it.
+    const strongProposalFunction =
+      'public.get_strong_bank_mail_agent_proposal_case(uuid)'
+    const strongProposalOwner = await client.query(`
+      SELECT pg_get_userbyid(procedure.proowner) AS owner
+      FROM pg_proc AS procedure
+      WHERE procedure.oid = to_regprocedure($1)
+    `, [strongProposalFunction])
+    if (
+      strongProposalOwner.rowCount === 1
+      && strongProposalOwner.rows[0]?.owner !== 'openexpert_owner'
+    ) {
+      if (
+        role.connection_role !== role.database_owner
+        || strongProposalOwner.rows[0]?.owner !== role.connection_role
+      ) {
+        throw new Error(
+          'Only the database/function owner may transfer the legacy bank-mail RPC',
+        )
+      }
+      const transferStatement = await client.query(
+        "SELECT format('ALTER FUNCTION %s OWNER TO openexpert_owner', to_regprocedure($1)) AS sql",
+        [strongProposalFunction],
+      )
+      await client.query(transferStatement.rows[0].sql)
+      console.log('~ ownership get_strong_bank_mail_agent_proposal_case')
+    }
+
     const ownerRole = await client.query(
       "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
     )

@@ -104,3 +104,22 @@ test('production migration assumes the application owner before locks and checks
     /if \(activeRole\.rows\[0\]\?\.migration_role !== 'openexpert_owner'\) \{[\s\S]+?throw new Error\('Production migration did not assume openexpert_owner'\)/u,
   )
 })
+
+test('production migration transfers the legacy bank-mail getter before assuming the app owner', async () => {
+  const source = await readFile(migrationScriptUrl, 'utf8')
+  const legacyFunctionIndex = source.indexOf(
+    'public.get_strong_bank_mail_agent_proposal_case(uuid)',
+  )
+  const transferIndex = source.indexOf(
+    "ALTER FUNCTION %s OWNER TO openexpert_owner",
+  )
+  const setRoleIndex = source.indexOf("await client.query('SET LOCAL ROLE openexpert_owner')")
+
+  assert.ok(legacyFunctionIndex >= 0)
+  assert.ok(transferIndex > legacyFunctionIndex)
+  assert.ok(setRoleIndex > transferIndex)
+  assert.match(
+    source,
+    /role\.connection_role !== role\.database_owner[\s\S]+?strongProposalOwner\.rows\[0\]\?\.owner !== role\.connection_role/u,
+  )
+})

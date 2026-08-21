@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {
   APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  applicationBillingGrossPricePln,
   buildApplicationRegistrationUrl,
   buildLoginUrl,
   normalizeApplicationSeatCount,
@@ -77,15 +79,28 @@ const mobileMenuOpen = ref(false)
 const runtimeConfig = useRuntimeConfig()
 const teamSeatCount = ref(3)
 const crmBaseUrl = String(runtimeConfig.public.openexpert.crmBaseUrl)
-const plnNumberFormatter = new Intl.NumberFormat('pl-PL', {
-  maximumFractionDigits: 0,
-})
+function formatPln(amount: number) {
+  const showGrosze = !Number.isInteger(amount)
+  return new Intl.NumberFormat('pl-PL', {
+    minimumFractionDigits: showGrosze ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
 
 const teamMonthlyTotal = computed(() => (
   teamSeatCount.value * APPLICATION_BILLING_PLANS.team.seatPricePln
 ))
+const teamMonthlyGrossTotal = computed(() => (
+  applicationBillingGrossPricePln(teamMonthlyTotal.value)
+))
 const teamMonthlyTotalLabel = computed(() => (
-  `${teamSeatCount.value} × ${APPLICATION_BILLING_PLANS.team.seatPricePln} = ${plnNumberFormatter.format(teamMonthlyTotal.value)} zł netto / mies. + VAT`
+  `${teamSeatCount.value} × ${APPLICATION_BILLING_PLANS.team.seatPricePln} = ${formatPln(teamMonthlyTotal.value)} zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT · ${formatPln(teamMonthlyGrossTotal.value)} zł brutto / mies.`
+))
+const individualGrossPriceLabel = formatPln(applicationBillingGrossPricePln(
+  APPLICATION_BILLING_PLANS.individual.seatPricePln,
+))
+const teamGrossSeatPriceLabel = formatPln(applicationBillingGrossPricePln(
+  APPLICATION_BILLING_PLANS.team.seatPricePln,
 ))
 const individualRegistrationUrl = computed(() => (
   buildApplicationRegistrationUrl(crmBaseUrl, 'individual', 1)
@@ -290,7 +305,10 @@ function closeMobileMenu() {
                 <h3 id="individual-plan-title">Indywidualny</h3>
                 <p class="pricing-card__price">
                   <strong>200 zł</strong>
-                  <span>netto + VAT / miesiąc</span>
+                  <span>
+                    netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT / miesiąc
+                    <small>{{ individualGrossPriceLabel }} zł brutto / miesiąc</small>
+                  </span>
                 </p>
                 <p class="pricing-card__description">Jedno konto z pełnym dostępem do OpenExpert. Dobre na start, kiedy prowadzisz pracę samodzielnie.</p>
               </div>
@@ -315,7 +333,10 @@ function closeMobileMenu() {
                 <h3 id="team-plan-title">Zespół</h3>
                 <p class="pricing-card__price">
                   <strong>150 zł</strong>
-                  <span>netto + VAT / osoba / miesiąc</span>
+                  <span>
+                    netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT / osoba / miesiąc
+                    <small>{{ teamGrossSeatPriceLabel }} zł brutto / osoba / miesiąc</small>
+                  </span>
                 </p>
                 <p class="pricing-card__description">Minimum 3 opłacone miejsca. Właściciel zajmuje pierwsze, a pozostałe możesz obsadzić od razu lub później.</p>
               </div>
@@ -378,7 +399,7 @@ function closeMobileMenu() {
             </article>
           </div>
 
-          <p class="pricing-legal">Ceny są kwotami netto; właściwy VAT zostanie doliczony w Stripe Checkout. Plany są odnawiane co miesiąc i opłacane kartą. Upgrade Indywidualny → Zespół zmienia plan na minimum 3 miejsca i może naliczyć proporcjonalną dopłatę za bieżący okres — zobaczysz ją przed potwierdzeniem.</p>
+          <p class="pricing-legal">Ceny są kwotami netto; doliczamy 23% VAT, a pełne kwoty brutto pokazujemy przy każdym planie i podsumowaniu. Plany są odnawiane co miesiąc i opłacane kartą. Upgrade Indywidualny → Zespół zmienia plan na minimum 3 miejsca i może naliczyć proporcjonalną dopłatę za bieżący okres — zobaczysz ją przed potwierdzeniem.</p>
         </div>
       </section>
 
@@ -1341,6 +1362,14 @@ function closeMobileMenu() {
   color: #666;
   font-size: 12.5px;
   line-height: 1.45;
+}
+
+.pricing-card__price span small {
+  display: block;
+  margin-top: 4px;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .pricing-card--featured .pricing-card__price span {

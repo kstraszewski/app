@@ -45,9 +45,9 @@ export default defineEventHandler(async (event) => {
       ...billingPlan,
       displayAmount: `${billingPlan.unitAmount / 100} zł`,
       displayInterval: billingPlanCode === 'individual'
-        ? 'miesiąc + VAT'
+        ? 'miesiąc'
         : billingPlanCode === 'team'
-          ? 'użytkownika / miesiąc + VAT'
+          ? 'użytkownika / miesiąc'
           : 'użytkownika / miesiąc (plan historyczny)',
     },
     demoMode: configuration.demoMode,

@@ -44,10 +44,24 @@ test('superadmin UI explains discount semantics and displays the assigned offer'
 
 test('public invitation shows an automatic grant before and after acceptance', () => {
   const page = source('../app/pages/organization-invitation.vue')
+  const subscriptionSummary = source('../app/components/OrganizationSubscriptionSummary.vue')
 
   assert.match(page, /const billingDiscount = computed\(\(\) => invitation\.value\?\.billingDiscount \?\? null\)/)
-  assert.match(page, /Rabat automatyczny: \{\{ billingDiscountLabel \}\}/)
+  assert.match(page, /<OrganizationSubscriptionSummary/)
+  assert.match(page, /:gross-monthly-total="initialMonthlyGrossTotal"/)
+  assert.match(subscriptionSummary, /grossMonthlyTotal/)
+  assert.match(subscriptionSummary, /Rabat automatyczny: \{\{ discountLabel \}\}/)
   assert.match(page, /Do zaproszenia przypisano \{\{ billingDiscountLabel \}\}/)
-  assert.match(page, /v-else>[\s\S]*Kod promocyjny możesz wpisać w checkout/)
+  assert.match(subscriptionSummary, /v-else>[\s\S]*Kod promocyjny możesz wpisać w checkout/)
   assert.match(page, /v-else>[\s\S]*Kupon promocyjny wpiszesz w Stripe/)
+})
+
+test('local subscription preview renders the production subscription component', () => {
+  const preview = source('../app/pages/dev/organization-invitation-subscription.vue')
+
+  assert.match(preview, /if \(!import\.meta\.dev\)/)
+  assert.match(preview, /<AuthShell/)
+  assert.match(preview, /<OrganizationSubscriptionSummary/)
+  assert.match(preview, /price-qualifier="netto \+ 23% VAT"/)
+  assert.match(preview, /gross-monthly-total="246 zł"/)
 })

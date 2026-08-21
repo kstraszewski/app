@@ -7,8 +7,17 @@ import type {
   OrganizationBillingPlanUpgradeResponse,
   OrganizationMemberBillingSummary,
 } from '#shared/types/organization-seat-billing'
-import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
-import { isBillingAccessGranted } from '~~/shared/organization-billing'
+import type {
+  ApplicationBillingPlanCode,
+  BillingAccessState,
+  OrganizationKind,
+} from '~~/shared/organization-billing'
+import {
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  addApplicationBillingVat,
+  applicationBillingGrossAmount,
+  isBillingAccessGranted,
+} from '~~/shared/organization-billing'
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -23,11 +32,12 @@ type BillingPayload = {
     billingAccessState: BillingAccessState
   }
   plan: {
-    code: string
+    code: ApplicationBillingPlanCode
     name: string
     currency: string
     unitAmount: number
     interval: string
+    taxBehavior: 'exclusive' | 'inclusive'
     displayAmount: string
     displayInterval: string
   }
@@ -117,6 +127,7 @@ const emptyBillingPayload = (): BillingPayload => ({
     currency: 'pln',
     unitAmount: 20_000,
     interval: 'month',
+    taxBehavior: 'inclusive',
     displayAmount: '200 zł',
     displayInterval: 'miesiąc',
   },
@@ -187,6 +198,10 @@ const statusPresentation = computed(() => {
       return { label: 'Wymaga płatności', color: 'warning' as const, icon: 'i-lucide-credit-card' }
   }
 })
+const planGrossAmount = computed(() => formatMoney(
+  applicationBillingGrossAmount(payload.value.plan.unitAmount, payload.value.plan.code),
+  payload.value.plan.currency,
+))
 const periodEndLabel = computed(() => payload.value.account?.currentPeriodEnd
   ? new Intl.DateTimeFormat('pl-PL', { dateStyle: 'long' })
       .format(new Date(payload.value.account.currentPeriodEnd))
@@ -364,7 +379,7 @@ async function confirmTeamUpgrade() {
         ? 'Plan Zespół jest aktywny'
         : 'Zmiana planu jest przetwarzana',
       description: result.status === 'succeeded'
-        ? 'Subskrypcja obejmuje teraz minimum 3 miejsca po 150 zł netto za osobę.'
+        ? `Subskrypcja obejmuje teraz minimum 3 miejsca po 150 zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT (${formatMoney(addApplicationBillingVat(15_000), 'pln')} brutto) za osobę.`
         : 'Stripe potwierdza płatność. Stan możesz odświeżyć za chwilę.',
       color: result.status === 'succeeded' ? 'success' : 'warning',
     })
@@ -556,7 +571,16 @@ onMounted(async () => {
 
           <div class="billing-plan__price">
             <strong>{{ payload.plan.displayAmount }}</strong>
-            <span>/ {{ payload.plan.displayInterval }}</span>
+            <div>
+              <span>/ {{ payload.plan.displayInterval }}</span>
+              <small v-if="payload.plan.taxBehavior === 'exclusive'">
+                netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT ·
+                {{ planGrossAmount }} brutto / {{ payload.plan.displayInterval }}
+              </small>
+              <small v-else>
+                brutto · w tym {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+              </small>
+            </div>
           </div>
 
           <ul>
@@ -926,7 +950,7 @@ onMounted(async () => {
   <UModal
     v-model:open="upgradeOpen"
     title="Przejdź na plan Zespół"
-    description="Plan zmieni się z 1 miejsca za 200 zł netto na minimum 3 miejsca po 150 zł netto za osobę."
+    :description="`Plan zmieni się z 1 miejsca za 200 zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT (246 zł brutto) na minimum 3 miejsca po 150 zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT (${formatMoney(addApplicationBillingVat(15_000), 'pln')} brutto) za osobę.`"
     :dismissible="!upgradeConfirming"
   >
     <template #body>
@@ -954,20 +978,26 @@ onMounted(async () => {
             <div>
               <small>Teraz</small>
               <strong>Indywidualny</strong>
-              <span>1 × 200 zł netto</span>
+              <span>1 × 200 zł netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT · 246 zł brutto</span>
             </div>
             <UIcon name="i-lucide-arrow-right" />
             <div>
               <small>Po zmianie</small>
               <strong>Zespół</strong>
-              <span>3 × 150 zł netto</span>
+              <span>3 × 150 zł netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT · 553,50 zł brutto / miesiąc</span>
             </div>
           </div>
 
           <dl class="plan-upgrade__totals">
             <div>
               <dt>Nowa cena katalogowa</dt>
-              <dd>{{ formatMoney(upgradeQuote.nextMonthlySubtotal, upgradeQuote.currency) }} netto / miesiąc + VAT</dd>
+              <dd>
+                {{ formatMoney(upgradeQuote.nextMonthlySubtotal, upgradeQuote.currency) }} netto
+                + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT / miesiąc
+                <small>
+                  {{ formatMoney(addApplicationBillingVat(upgradeQuote.nextMonthlySubtotal), upgradeQuote.currency) }} brutto / miesiąc
+                </small>
+              </dd>
             </div>
             <div v-if="upgradeQuote.discountAmount">
               <dt>Rabat na dopłatę</dt>
@@ -1072,6 +1102,14 @@ onMounted(async () => {
   text-align: right;
 }
 
+.plan-upgrade__totals dd small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .plan-upgrade__due {
   border-top: 1px solid var(--ui-border-accented);
   padding-top: 12px;
@@ -1155,6 +1193,11 @@ onMounted(async () => {
   margin: 34px 0 24px;
 }
 
+.billing-plan__price > div {
+  display: grid;
+  gap: 3px;
+}
+
 .billing-plan__price strong {
   font-size: clamp(36px, 5vw, 54px);
   font-weight: 650;
@@ -1162,9 +1205,15 @@ onMounted(async () => {
 }
 
 .billing-plan__price span,
+.billing-plan__price small,
 .billing-plan__notice,
 .billing-state p {
   color: var(--ui-text-muted);
+}
+
+.billing-plan__price small {
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .billing-plan ul {

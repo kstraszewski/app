@@ -17,6 +17,8 @@ export const APPLICATION_BILLING_PLAN_CODES = [
 ] as const
 export type ApplicationBillingPlanCode = typeof APPLICATION_BILLING_PLAN_CODES[number]
 
+export const APPLICATION_BILLING_VAT_RATE_PERCENT = 23
+
 export const PUBLIC_APPLICATION_BILLING_PLAN_CODES = ['individual', 'team'] as const
 export type PublicApplicationBillingPlanCode = typeof PUBLIC_APPLICATION_BILLING_PLAN_CODES[number]
 
@@ -92,6 +94,19 @@ export function applicationBillingPlanSeatCountIsValid(
   return Number.isSafeInteger(seatCount)
     && seatCount >= plan.minSeats
     && seatCount <= plan.maxSeats
+}
+
+export function addApplicationBillingVat(amountMinor: number): number {
+  return Math.round(amountMinor * (100 + APPLICATION_BILLING_VAT_RATE_PERCENT) / 100)
+}
+
+export function applicationBillingGrossAmount(
+  amountMinor: number,
+  planCode: ApplicationBillingPlanCode,
+): number {
+  return APPLICATION_BILLING_PLANS[planCode].taxBehavior === 'inclusive'
+    ? amountMinor
+    : addApplicationBillingVat(amountMinor)
 }
 
 // Compatibility alias for organizations that subscribed before the public

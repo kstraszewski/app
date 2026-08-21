@@ -3,10 +3,19 @@ import test from 'node:test'
 
 import {
   APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  applicationBillingGrossPricePln,
   buildApplicationRegistrationUrl,
   buildLoginUrl,
   normalizeApplicationSeatCount,
 } from '../app/utils/landing-registration.ts'
+
+test('shows the 23% VAT rate and gross public prices', () => {
+  assert.equal(APPLICATION_BILLING_VAT_RATE_PERCENT, 23)
+  assert.equal(applicationBillingGrossPricePln(200), 246)
+  assert.equal(applicationBillingGrossPricePln(150), 184.5)
+  assert.equal(applicationBillingGrossPricePln(450), 553.5)
+})
 
 test('normalizes individual and team seats to their plan limits', () => {
   assert.equal(normalizeApplicationSeatCount(0), 1)

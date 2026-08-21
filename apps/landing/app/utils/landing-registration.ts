@@ -17,6 +17,11 @@ export const APPLICATION_BILLING_PLANS = {
 
 export type ApplicationBillingPlanCode = keyof typeof APPLICATION_BILLING_PLANS
 export const APPLICATION_SEAT_MAX = 100
+export const APPLICATION_BILLING_VAT_RATE_PERCENT = 23
+
+export function applicationBillingGrossPricePln(netAmountPln: number): number {
+  return Math.round(netAmountPln * (100 + APPLICATION_BILLING_VAT_RATE_PERCENT)) / 100
+}
 
 export function normalizeApplicationSeatCount(
   value: unknown,

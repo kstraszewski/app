@@ -9,6 +9,8 @@ import type {
 import { invitationBillingDiscountLabel } from '#shared/organization-invitation-discount'
 import {
   APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  applicationBillingGrossAmount,
   isApplicationBillingPlanCode,
 } from '#shared/organization-billing'
 import { apiErrorMessage } from '~/utils/api-error'
@@ -100,12 +102,19 @@ const billingPlanLabel = computed(() => billingPlanCode.value === 'individual'
   : billingPlanCode.value === 'team'
     ? 'Zespół'
     : 'Miesięczny')
-const initialMonthlyTotal = computed(() => new Intl.NumberFormat('pl-PL', {
-  style: 'currency',
-  currency: 'PLN',
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-}).format(initialSeatCount.value * billingPlan.value.unitAmount / 100))
+const initialMonthlyAmountMinor = computed(() => (
+  initialSeatCount.value * billingPlan.value.unitAmount
+))
+const initialMonthlyTotal = computed(() => formatBillingAmount(initialMonthlyAmountMinor.value))
+const initialMonthlyGrossTotal = computed(() => billingPlan.value.taxBehavior === 'exclusive'
+  ? formatBillingAmount(applicationBillingGrossAmount(
+      initialMonthlyAmountMinor.value,
+      billingPlanCode.value,
+    ))
+  : '')
+const billingPriceQualifier = computed(() => billingPlan.value.taxBehavior === 'exclusive'
+  ? `netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT`
+  : `brutto (w tym ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT)`)
 const initialSeatAssignment = computed(() => initialSeatCount.value === 1
   ? 'Administrator zajmuje wybrane miejsce.'
   : `Administrator zajmuje pierwsze miejsce. Pozostałe ${initialSeatCount.value - 1} osoby możesz dodać po aktywacji.`)
@@ -123,6 +132,16 @@ const resumeLoginTarget = computed(() => ({
     redirect: invitationReturnPath.value,
   },
 }))
+
+function formatBillingAmount(amountMinor: number) {
+  const showGrosze = amountMinor % 100 !== 0
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: 'PLN',
+    minimumFractionDigits: showGrosze ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100)
+}
 
 const pageTitle = computed(() => {
   if (acceptedOrganization.value) {
@@ -349,28 +368,14 @@ async function acceptInvitation() {
         </div>
 
         <template v-if="acceptedOrganization.kind === 'application'">
-          <div class="organization-invitation__plan">
-            <div>
-              <span>APLIKACJA</span>
-              <strong>{{ initialMonthlyTotal }} <small>{{ billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} / miesiąc · plan {{ billingPlanLabel }}</small></strong>
-            </div>
-            <UBadge
-              color="primary"
-              variant="subtle"
-              :icon="billingDiscount ? 'i-lucide-ticket-percent' : 'i-lucide-repeat-2'"
-            >
-              {{ billingDiscount ? 'Oferta specjalna' : 'Subskrypcja' }}
-            </UBadge>
-            <ul>
-              <li><UIcon name="i-lucide-check" /> Bezpieczna płatność Stripe</li>
-              <li><UIcon name="i-lucide-check" /> {{ initialSeatAssignment }}</li>
-              <li v-if="billingDiscount">
-                <UIcon name="i-lucide-check" /> Rabat automatyczny: {{ billingDiscountLabel }}
-              </li>
-              <li v-else><UIcon name="i-lucide-check" /> Kod promocyjny możesz wpisać w checkout</li>
-              <li><UIcon name="i-lucide-check" /> Rozliczenie co miesiąc</li>
-            </ul>
-          </div>
+          <OrganizationSubscriptionSummary
+            :monthly-total="initialMonthlyTotal"
+            :plan-label="billingPlanLabel"
+            :price-qualifier="billingPriceQualifier"
+            :gross-monthly-total="initialMonthlyGrossTotal"
+            :seat-assignment="initialSeatAssignment"
+            :discount-label="billingDiscountLabel"
+          />
 
           <UAlert
             v-if="checkoutError"
@@ -431,7 +436,16 @@ async function acceptInvitation() {
         <div v-if="isApplication" class="organization-invitation__plan">
           <div>
             <span>PLAN {{ billingPlanLabel.toLocaleUpperCase('pl') }}</span>
-            <strong>{{ initialMonthlyTotal }} <small>{{ billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} / miesiąc · {{ initialSeatCount }} × {{ billingPlan.unitAmount / 100 }} zł</small></strong>
+            <strong>
+              {{ initialMonthlyTotal }}
+              <small>{{ billingPriceQualifier }} / miesiąc · {{ initialSeatCount }} × {{ billingPlan.unitAmount / 100 }} zł</small>
+              <small
+                v-if="initialMonthlyGrossTotal"
+                class="organization-invitation__plan-gross"
+              >
+                Pełna kwota: {{ initialMonthlyGrossTotal }} brutto / miesiąc
+              </small>
+            </strong>
           </div>
           <UBadge color="primary" variant="subtle" icon="i-lucide-ticket-percent">
             {{ billingDiscount ? 'Oferta przypisana' : 'Kupony w checkout' }}
@@ -723,6 +737,13 @@ async function acceptInvitation() {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: normal;
+}
+
+.organization-invitation__plan strong .organization-invitation__plan-gross {
+  display: block;
+  margin-top: 4px;
+  color: var(--ui-text-toned);
+  font-size: 10px;
 }
 
 .organization-invitation__plan p,

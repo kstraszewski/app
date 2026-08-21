@@ -12,6 +12,10 @@ import type {
 } from '#shared/types/organization-seat-billing'
 import type { OrganizationMember } from '~/types/organization'
 import type { OrganizationMembersPayload } from '~/types/scheduling'
+import {
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  applicationBillingGrossAmount,
+} from '#shared/organization-billing'
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ middleware: ['auth', 'organization'] })
@@ -603,6 +607,13 @@ function formatMoney(amount: number, currency: string) {
   }).format(amount / 100)
 }
 
+function billingGrossAmount(amount: number): number {
+  const planCode = directory.value.billing.billingPlanCode
+  return planCode
+    ? applicationBillingGrossAmount(amount, planCode)
+    : amount
+}
+
 function formatBillingDate(value: string | null | undefined) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('pl-PL', { dateStyle: 'long' }).format(new Date(value))
@@ -789,15 +800,27 @@ watch(inviteOpen, (open) => {
           <UCard>
             <span>Cena za użytkownika</span>
             <strong>{{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}</strong>
-            <small>{{ directory.billing.billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} miesięcznie za opłacone miejsce</small>
+            <small v-if="directory.billing.billingPlanCode === 'legacy_per_seat'">
+              brutto miesięcznie za opłacone miejsce · w tym {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+            </small>
+            <small v-else>
+              netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT ·
+              {{ formatMoney(billingGrossAmount(directory.billing.unitAmount), directory.billing.currency) }} brutto miesięcznie
+            </small>
           </UCard>
           <UCard>
             <span>Koszt miesięczny</span>
             <strong>{{ formatMoney(directory.billing.monthlyListAmount, directory.billing.currency) }}</strong>
-            <small>
+            <small v-if="directory.billing.billingPlanCode === 'legacy_per_seat'">
               {{ directory.billing.licensedSeats }} ×
               {{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}
-              {{ directory.billing.billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }}
+              brutto · w tym {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+            </small>
+            <small v-else>
+              {{ directory.billing.licensedSeats }} ×
+              {{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }} netto
+              + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT ·
+              {{ formatMoney(billingGrossAmount(directory.billing.monthlyListAmount), directory.billing.currency) }} brutto
             </small>
           </UCard>
           <UCard>
@@ -1112,11 +1135,25 @@ watch(inviteOpen, (open) => {
             <div>
               <span>Obecny koszt miesięczny</span>
               <strong>{{ formatMoney(inviteQuote.currentMonthlySubtotal, directory.billing.currency) }}</strong>
+              <small v-if="directory.billing.billingPlanCode === 'legacy_per_seat'">
+                brutto · w tym {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+              </small>
+              <small v-else>
+                netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT ·
+                {{ formatMoney(billingGrossAmount(inviteQuote.currentMonthlySubtotal), directory.billing.currency) }} brutto
+              </small>
             </div>
             <UIcon name="i-lucide-arrow-right" />
             <div>
               <span>Nowy koszt miesięczny</span>
               <strong>{{ formatMoney(inviteQuote.nextMonthlySubtotal, directory.billing.currency) }}</strong>
+              <small v-if="directory.billing.billingPlanCode === 'legacy_per_seat'">
+                brutto · w tym {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+              </small>
+              <small v-else>
+                netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT ·
+                {{ formatMoney(billingGrossAmount(inviteQuote.nextMonthlySubtotal), directory.billing.currency) }} brutto
+              </small>
             </div>
           </div>
 
@@ -1542,6 +1579,7 @@ watch(inviteOpen, (open) => {
 .seat-quote__seats span,
 .seat-quote__seats small,
 .seat-quote__monthly span,
+.seat-quote__monthly small,
 .seat-quote__charge small,
 .seat-change-result p {
   color: var(--ui-text-muted);

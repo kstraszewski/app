@@ -14,7 +14,11 @@ import type {
   BillingAccessState,
   OrganizationKind,
 } from '#shared/organization-billing'
-import { APPLICATION_BILLING_PLANS } from '#shared/organization-billing'
+import {
+  APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  addApplicationBillingVat,
+} from '#shared/organization-billing'
 import { invitationBillingDiscountLabel } from '#shared/organization-invitation-discount'
 import { apiErrorMessage } from '~/utils/api-error'
 
@@ -181,6 +185,24 @@ const inviteState = reactive<InviteSchema>({
   billingDiscountDurationMonths: 1,
 })
 
+const inviteMonthlySubtotalMinor = computed(() => (
+  inviteState.initialSeatCount * APPLICATION_BILLING_PLANS[inviteState.billingPlan].unitAmount
+))
+const inviteMonthlySubtotalLabel = computed(() => formatBillingAmount(inviteMonthlySubtotalMinor.value))
+const inviteMonthlyGrossLabel = computed(() => formatBillingAmount(
+  addApplicationBillingVat(inviteMonthlySubtotalMinor.value),
+))
+
+function formatBillingAmount(amountMinor: number) {
+  const showGrosze = amountMinor % 100 !== 0
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: 'PLN',
+    minimumFractionDigits: showGrosze ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100)
+}
+
 const kindItems = [
   { label: 'Wszystkie rodzaje', value: 'all' },
   { label: 'Pośrednicy', value: 'intermediary' },
@@ -200,8 +222,14 @@ const organizationKindItems = [
 ]
 
 const billingPlanItems: Array<{ label: string; value: PublicApplicationBillingPlanCode }> = [
-  { label: 'Indywidualny — 200 zł netto + VAT / mies.', value: 'individual' },
-  { label: 'Zespół — 150 zł netto + VAT / os. / mies.', value: 'team' },
+  {
+    label: `Indywidualny — 200 zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT (${formatBillingAmount(addApplicationBillingVat(APPLICATION_BILLING_PLANS.individual.unitAmount))} brutto) / mies.`,
+    value: 'individual',
+  },
+  {
+    label: `Zespół — 150 zł netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT (${formatBillingAmount(addApplicationBillingVat(APPLICATION_BILLING_PLANS.team.unitAmount))} brutto) / os. / mies.`,
+    value: 'team',
+  },
 ]
 
 const discountKindItems: Array<{
@@ -1172,7 +1200,7 @@ async function revokeInvitation() {
             color="primary"
             variant="subtle"
             icon="i-lucide-credit-card"
-            :title="`Plan ${inviteState.billingPlan === 'individual' ? 'Indywidualny' : 'Zespół'}: ${(inviteState.initialSeatCount * APPLICATION_BILLING_PLANS[inviteState.billingPlan].unitAmount) / 100} zł netto + VAT / miesiąc`"
+            :title="`Plan ${inviteState.billingPlan === 'individual' ? 'Indywidualny' : 'Zespół'}: ${inviteMonthlySubtotalLabel} netto + ${APPLICATION_BILLING_VAT_RATE_PERCENT}% VAT / miesiąc (${inviteMonthlyGrossLabel} brutto)`"
             description="Możesz przypisać ofertę do tego zaproszenia albo pozostawić administratorowi możliwość wpisania kodu promocyjnego w Stripe Checkout."
           />
 

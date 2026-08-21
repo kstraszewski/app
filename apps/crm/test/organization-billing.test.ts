@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
   APPLICATION_MONTHLY_PLAN,
+  addApplicationBillingVat,
+  applicationBillingGrossAmount,
   isBillingAccessGranted,
   isOrganizationKind,
   stripeSubscriptionAccessState,
@@ -37,6 +40,30 @@ test('application offers enforce individual and team prices while retaining the 
     interval: 'month',
     intervalCount: 1,
   })
+})
+
+test('application prices expose the Polish 23% VAT and gross totals', () => {
+  assert.equal(APPLICATION_BILLING_VAT_RATE_PERCENT, 23)
+  assert.equal(addApplicationBillingVat(20_000), 24_600)
+  assert.equal(addApplicationBillingVat(15_000), 18_450)
+  assert.equal(applicationBillingGrossAmount(45_000, 'team'), 55_350)
+  assert.equal(applicationBillingGrossAmount(20_000, 'legacy_per_seat'), 20_000)
+})
+
+test('subscription price surfaces show VAT rate and gross amounts', () => {
+  const registration = source('../app/pages/register.vue')
+  const invitation = source('../app/pages/organization-invitation.vue')
+  const organizations = source('../app/pages/org/[organizationSlug]/settings/organizations.vue')
+  const billing = source('../app/pages/org/[organizationSlug]/settings/billing.vue')
+  const users = source('../app/pages/org/[organizationSlug]/users/index.vue')
+
+  for (const surface of [registration, invitation, organizations, billing, users]) {
+    assert.match(surface, /APPLICATION_BILLING_VAT_RATE_PERCENT/)
+  }
+  assert.match(registration, /formattedMonthlyGrossTotal/)
+  assert.match(invitation, /initialMonthlyGrossTotal/)
+  assert.match(billing, /planGrossAmount/)
+  assert.match(users, /billingGrossAmount/)
 })
 
 test('only the two product organization kinds are accepted', () => {

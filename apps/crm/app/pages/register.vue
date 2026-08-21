@@ -3,6 +3,8 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 import {
   APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_VAT_RATE_PERCENT,
+  addApplicationBillingVat,
   isPublicApplicationBillingPlanCode,
   type PublicApplicationBillingPlanCode,
 } from '#shared/organization-billing'
@@ -111,12 +113,20 @@ watch(authenticatedUser, (user) => {
 
 const selectedPlan = computed(() => APPLICATION_BILLING_PLANS[state.billingPlan])
 const monthlyTotalMinor = computed(() => state.initialSeatCount * selectedPlan.value.unitAmount)
-const formattedMonthlyTotal = computed(() => new Intl.NumberFormat('pl-PL', {
-  style: 'currency',
-  currency: 'PLN',
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-}).format(monthlyTotalMinor.value / 100))
+const formattedMonthlyTotal = computed(() => formatBillingAmount(monthlyTotalMinor.value))
+const formattedMonthlyGrossTotal = computed(() => formatBillingAmount(
+  addApplicationBillingVat(monthlyTotalMinor.value),
+))
+
+function formatBillingAmount(amountMinor: number) {
+  const showGrosze = amountMinor % 100 !== 0
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: 'PLN',
+    minimumFractionDigits: showGrosze ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100)
+}
 const loginTarget = computed(() => ({
   path: '/login',
   query: {
@@ -336,7 +346,13 @@ function editRegistration() {
             @click="state.billingPlan = 'individual'"
           >
             <span>Indywidualny</span>
-            <strong>200 zł <small>+ VAT / mies.</small></strong>
+            <strong>
+              200 zł
+              <small>netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT / mies.</small>
+              <small class="registration-plan__gross">
+                {{ formatBillingAmount(addApplicationBillingVat(APPLICATION_BILLING_PLANS.individual.unitAmount)) }} brutto / mies.
+              </small>
+            </strong>
             <em>1 użytkownik</em>
           </button>
           <button
@@ -348,7 +364,13 @@ function editRegistration() {
             @click="state.billingPlan = 'team'"
           >
             <span>Zespół</span>
-            <strong>150 zł <small>+ VAT / os. / mies.</small></strong>
+            <strong>
+              150 zł
+              <small>netto + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT / os. / mies.</small>
+              <small class="registration-plan__gross">
+                {{ formatBillingAmount(addApplicationBillingVat(APPLICATION_BILLING_PLANS.team.unitAmount)) }} brutto / os. / mies.
+              </small>
+            </strong>
             <em>Od 3 użytkowników</em>
           </button>
         </div>
@@ -409,8 +431,17 @@ function editRegistration() {
 
       <div class="registration-price" aria-live="polite">
         <div>
-          <span>{{ state.initialSeatCount }} × {{ selectedPlan.unitAmount / 100 }} zł netto</span>
-          <strong>{{ formattedMonthlyTotal }}<small> netto / miesiąc + VAT</small></strong>
+          <span>
+            {{ state.initialSeatCount }} × {{ selectedPlan.unitAmount / 100 }} zł netto
+            + {{ APPLICATION_BILLING_VAT_RATE_PERCENT }}% VAT
+          </span>
+          <strong>
+            {{ formattedMonthlyTotal }}
+            <small>netto / miesiąc</small>
+            <span class="registration-price__gross">
+              {{ formattedMonthlyGrossTotal }} brutto / miesiąc
+            </span>
+          </strong>
         </div>
         <ul>
           <li><UIcon name="i-lucide-check" /> Płatność kartą w bezpiecznym Stripe Checkout</li>
@@ -495,6 +526,8 @@ function editRegistration() {
 }
 
 .registration-plan > strong {
+  display: grid;
+  gap: 2px;
   font-size: 17px;
 }
 
@@ -504,6 +537,11 @@ function editRegistration() {
   font-size: 11px;
   font-style: normal;
   font-weight: 500;
+}
+
+.registration-plan .registration-plan__gross {
+  color: var(--ui-text-toned);
+  font-weight: 650;
 }
 
 @media (max-width: 520px) {
@@ -550,6 +588,14 @@ function editRegistration() {
   color: var(--ui-text-muted);
   font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0;
+}
+
+.registration-price strong .registration-price__gross {
+  margin-top: 4px;
+  color: var(--ui-text-toned);
+  font-size: 11px;
+  font-weight: 650;
   letter-spacing: 0;
 }
 

@@ -8,6 +8,7 @@ import {
   checkoutSubscriptionId,
   markOrganizationInvitationDiscountApplied,
   organizationBillingAccount,
+  reconcileExpiredOrganizationPlanUpgrade,
   reconcileExpiredOrganizationSeatChange,
   requireStripeBillingBrowserRequest,
   retrieveAndApplyStripeSubscription,
@@ -80,6 +81,11 @@ export default defineEventHandler(async (event) => {
     result.subscription,
     result.organizationId,
   )
+  const recoveredPlanUpgrade = await reconcileExpiredOrganizationPlanUpgrade(
+    event,
+    result.subscription,
+    result.organizationId,
+  )
   const appliedCheckoutSessionId = checkoutSessionId
     || account?.stripe_checkout_session_id
     || null
@@ -96,5 +102,6 @@ export default defineEventHandler(async (event) => {
     billingAccessState: result.accessState,
     replayed: result.replayed,
     recoveredSeatChange,
+    recoveredPlanUpgrade,
   }
 })

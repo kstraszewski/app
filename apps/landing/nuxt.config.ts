@@ -295,11 +295,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'pl' },
-      title: 'OpenExpert — platforma pośrednictwa kredytowego',
+      title: 'OpenExpert — aplikacja do obsługi klientów i spraw',
       meta: [
         {
           name: 'description',
-          content: 'Uruchom lub rozwijaj pośrednictwo kredytowe pod własną marką, korzystając z jednego systemu i agentów AI.',
+          content: 'Prowadź klientów, sprawy, pocztę i rozliczenia w jednym systemie wspieranym przez agentów AI.',
         },
         { name: 'apple-mobile-web-app-title', content: 'OpenExpert' },
         { name: 'theme-color', content: '#030303' },

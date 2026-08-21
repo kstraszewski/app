@@ -4,7 +4,7 @@ import {
   requireOrganizationAdmin,
 } from '~~/server/utils/crm'
 import {
-  applicationMonthlyPrice,
+  applicationBillingPrice,
   checkoutSessionCouponId,
   checkoutSubscriptionId,
   ensureOrganizationInvitationCheckoutDiscount,
@@ -67,7 +67,8 @@ export default defineEventHandler(async (event) => {
     existing,
   )
   const expectedSeats = checkoutSeatTarget.seats
-  const price = await applicationMonthlyPrice(event)
+  const billingPlanCode = checkoutSeatTarget.billingPlanCode
+  const price = await applicationBillingPrice(event, billingPlanCode)
   let assignedDiscount = await ensureOrganizationInvitationCheckoutDiscount(
     event,
     session.organizationId,
@@ -94,6 +95,8 @@ export default defineEventHandler(async (event) => {
           || checkout.line_items?.data.length !== 1
           || checkout.line_items.data[0]?.quantity !== expectedSeats
           || checkoutLinePriceId !== price.id
+          || checkout.metadata?.billing_plan_code !== billingPlanCode
+          || checkout.metadata?.plan_code !== price.metadata.plan_code
           || (assignedDiscount
             && (
               checkoutSessionCouponId(checkout) !== assignedDiscount.couponId
@@ -179,6 +182,7 @@ export default defineEventHandler(async (event) => {
     payment_method_collection: 'always',
     payment_method_types: ['card'],
     billing_address_collection: 'required',
+    automatic_tax: { enabled: true },
     customer_update: {
       address: 'auto',
       name: 'auto',
@@ -188,8 +192,9 @@ export default defineEventHandler(async (event) => {
     metadata: {
       organization_id: session.organizationId,
       organization_slug: session.organizationSlug,
-      plan_code: 'application_monthly',
-      billing_model: 'per_seat_v1',
+      plan_code: billingPlanCode,
+      billing_plan_code: billingPlanCode,
+      billing_model: 'per_seat_v2',
       purchased_seat_count: String(expectedSeats),
       ...(assignedDiscount
         ? {
@@ -202,8 +207,9 @@ export default defineEventHandler(async (event) => {
       metadata: {
         organization_id: session.organizationId,
         organization_slug: session.organizationSlug,
-        plan_code: 'application_monthly',
-        billing_model: 'per_seat_v1',
+        plan_code: billingPlanCode,
+        billing_plan_code: billingPlanCode,
+        billing_model: 'per_seat_v2',
         purchased_seat_count: String(expectedSeats),
         ...(assignedDiscount
           ? {
@@ -230,6 +236,7 @@ export default defineEventHandler(async (event) => {
         ? `invite-${assignedDiscount.invitationId}-${assignedDiscount.fingerprint.slice(0, 12)}`
         : 'promotion-codes-v1',
       `seats-${expectedSeats}`,
+      `plan-${billingPlanCode}`,
       checkoutSeatTarget.invitationId
         ? `registration-${checkoutSeatTarget.invitationId}`
         : 'membership-capacity',
@@ -260,6 +267,7 @@ export default defineEventHandler(async (event) => {
     customerId,
     checkoutSessionId: checkout.id,
     priceId: price.id,
+    billingPlanCode,
     livemode: checkout.livemode,
   })
   if (assignedDiscount) {

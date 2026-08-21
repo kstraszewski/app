@@ -57,6 +57,7 @@ const migrationNames = [
   '0078_organization_initial_seat_capacity.sql',
   '0079_organization_member_invitations.sql',
   '0080_organization_creation_grant_gate.sql',
+  '0081_application_billing_plans.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

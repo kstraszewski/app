@@ -3,7 +3,7 @@ const journey = [
   {
     icon: 'lucide:route',
     title: 'Wybierz model',
-    description: 'Zacznij samodzielnie albo rozwijaj pośrednictwo jako firma',
+    description: 'Zacznij samodzielnie albo rozwijaj pracę jako zespół',
   },
   {
     icon: 'lucide:clipboard-check',
@@ -27,7 +27,7 @@ const journey = [
   <section id="jak-to-dziala" class="journey-section" aria-labelledby="journey-title">
     <div class="journey-inner">
       <div class="journey-heading">
-        <h2 id="journey-title">Od pomysłu do własnego pośrednictwa.</h2>
+        <h2 id="journey-title">Od pomysłu do uporządkowanej pracy.</h2>
         <p>OpenExpert porządkuje drogę wejścia i daje system do codziennej pracy. Dokładny zakres przygotowania zależy od modelu działania i oferowanych produktów.</p>
       </div>
 

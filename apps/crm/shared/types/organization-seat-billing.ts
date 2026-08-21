@@ -1,4 +1,5 @@
 import type { OrganizationMemberInvitation } from './organization-member-invitations'
+import type { ApplicationBillingPlanCode } from '../organization-billing'
 
 export type OrganizationSeatRole = 'expert' | 'admin'
 
@@ -23,6 +24,35 @@ export type OrganizationMemberBillingSummary = {
   renewalAt: string | null
   pendingChanges: OrganizationPendingSeatChange[]
   pendingInvitations: OrganizationMemberInvitation[]
+  billingPlanCode?: ApplicationBillingPlanCode | null
+  canUpgradeToTeam?: boolean
+}
+
+export type OrganizationBillingPlanUpgradeQuote = {
+  fromPlanCode: 'individual'
+  targetPlanCode: 'team'
+  currentSeats: 1
+  targetSeats: 3
+  targetUnitAmount: number
+  currentMonthlySubtotal: number
+  nextMonthlySubtotal: number
+  immediateAmount: number
+  subtotal: number
+  discountAmount: number
+  taxAmount: number
+  total: number
+  currency: 'pln'
+  renewalAt: string
+  prorationDate: number
+  expectedSeatRevision: number
+  fromStripePriceId: string
+  targetStripePriceId: string
+}
+
+export type OrganizationBillingPlanUpgradeResponse = {
+  status: 'succeeded' | 'requires_action' | 'processing'
+  planChangeId: string
+  paymentUrl?: string
 }
 
 export type OrganizationSeatQuote = {

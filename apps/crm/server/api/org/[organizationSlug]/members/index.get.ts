@@ -6,7 +6,10 @@ import {
   listOrganizationMemberInvitations,
 } from '~~/server/utils/organization-member-invitations'
 import { organizationBillingAccount } from '~~/server/utils/stripe-billing'
-import { APPLICATION_MONTHLY_PLAN } from '~~/shared/organization-billing'
+import {
+  APPLICATION_BILLING_PLANS,
+  isApplicationBillingPlanCode,
+} from '~~/shared/organization-billing'
 import type {
   OrganizationMemberBillingSummary,
   OrganizationSeatRole,
@@ -170,16 +173,27 @@ export default defineEventHandler(async (event) => {
     || invitation.status === 'expired'
   ))
   const reservedSeats = reservedMemberInvitationCount
+  const billingPlanCode = perSeat
+    && isApplicationBillingPlanCode(billingAccount?.billing_plan_code)
+      ? billingAccount.billing_plan_code
+      : perSeat
+        ? 'legacy_per_seat'
+        : null
+  const billingPlan = billingPlanCode
+    ? APPLICATION_BILLING_PLANS[billingPlanCode]
+    : null
   const billing: OrganizationMemberBillingSummary = {
     perSeat,
     canManageSeats: session.role === 'admin',
     licensedSeats,
     activeMembers: members.length,
     reservedSeats,
-    unitAmount: APPLICATION_MONTHLY_PLAN.unitAmount,
-    currency: APPLICATION_MONTHLY_PLAN.currency,
+    billingPlanCode,
+    canUpgradeToTeam: billingPlanCode === 'individual' && session.role === 'admin',
+    unitAmount: billingPlan?.unitAmount ?? 0,
+    currency: billingPlan?.currency ?? 'pln',
     monthlyListAmount: perSeat
-      ? licensedSeats * APPLICATION_MONTHLY_PLAN.unitAmount
+      ? licensedSeats * (billingPlan?.unitAmount ?? 0)
       : 0,
     renewalAt: perSeat ? billingAccount?.current_period_end ?? null : null,
     pendingChanges,

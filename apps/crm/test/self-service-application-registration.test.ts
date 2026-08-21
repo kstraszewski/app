@@ -36,12 +36,14 @@ test('public registration start is same-origin, rate-limited and enumeration res
   )
 })
 
-test('self-service registration creates only an application offer with one to one hundred seats', () => {
+test('self-service registration creates only a valid individual or team application offer', () => {
   const endpoint = source('../server/api/registration/start.post.ts')
   const invitations = source('../server/utils/organization-invitations.ts')
 
   assert.match(endpoint, /initialSeatCount < 1/)
   assert.match(endpoint, /initialSeatCount > 100/)
+  assert.match(endpoint, /isPublicApplicationBillingPlanCode\(billingPlan\)/)
+  assert.match(endpoint, /applicationBillingPlanSeatCountIsValid\(billingPlan, initialSeatCount\)/)
   assert.match(endpoint, /organizationKind: 'application'/)
   assert.match(endpoint, /onboardingSource: 'self_service'/)
   assert.match(endpoint, /billingDiscount: null/)
@@ -50,8 +52,10 @@ test('self-service registration creates only an application offer with one to on
 
   assert.match(invitations, /'onboarding_source'/)
   assert.match(invitations, /'initial_seat_count'/)
+  assert.match(invitations, /'billing_plan_code'/)
   assert.match(invitations, /onboarding_source: onboardingSource/)
   assert.match(invitations, /initial_seat_count: initialSeatCount/)
+  assert.match(invitations, /billing_plan_code: billingPlan/)
   assert.match(invitations, /onboardingSource === 'self_service'/)
   assert.match(invitations, /input\.billingDiscount != null/)
 })
@@ -106,19 +110,20 @@ test('registration and resume UI carry the selected seat count through the magic
 
   assert.match(register, /route\.query\.seats/)
   assert.match(register, /<UInputNumber/)
-  assert.match(register, /:min="1"/)
+  assert.match(register, /:min="state\.billingPlan === 'team' \? 3 : 1"/)
   assert.match(register, /:max="100"/)
   assert.match(register, /\/api\/registration\/start/)
   assert.match(register, /\/api\/registration\/status/)
   assert.match(register, /deliveryStatus === 'failed'/)
   assert.match(register, /Nie możemy teraz potwierdzić wysyłki/)
-  assert.match(register, /state\.initialSeatCount \* APPLICATION_MONTHLY_PLAN\.unitAmount/)
+  assert.match(register, /state\.initialSeatCount \* selectedPlan\.value\.unitAmount/)
+  assert.match(register, /billingPlan: event\.data\.billingPlan/)
   assert.doesNotMatch(register, /Wysłaliśmy instrukcję/)
   assert.match(register, /Samo wysłanie formularza nie obciąża karty/)
   assert.doesNotMatch(register, /signUp\.(email|phone)/)
 
   assert.match(invitation, /invitation\.value\?\.initialSeatCount/)
-  assert.match(invitation, /initialSeatCount\.value \* 200/)
+  assert.match(invitation, /initialSeatCount\.value \* billingPlan\.value\.unitAmount/)
   assert.match(invitation, /Administrator zajmuje pierwsze miejsce/)
   assert.match(invitation, /Pozostałe \$\{initialSeatCount\.value - 1\} osoby możesz dodać po aktywacji/)
   assert.match(login, /to="\/register"/)

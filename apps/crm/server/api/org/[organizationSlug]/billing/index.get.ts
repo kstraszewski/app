@@ -9,7 +9,10 @@ import {
   organizationBillingAccount,
   stripeBillingConfiguration,
 } from '~~/server/utils/stripe-billing'
-import { APPLICATION_MONTHLY_PLAN } from '~~/shared/organization-billing'
+import {
+  APPLICATION_BILLING_PLANS,
+  isApplicationBillingPlanCode,
+} from '~~/shared/organization-billing'
 
 export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
@@ -17,6 +20,10 @@ export default defineEventHandler(async (event) => {
   const account = await organizationBillingAccount(event, session.organizationId)
   const activeMembers = await organizationActiveMemberCount(event, session.organizationId)
   const configuration = stripeBillingConfiguration(event)
+  const billingPlanCode = isApplicationBillingPlanCode(account?.billing_plan_code)
+    ? account.billing_plan_code
+    : 'legacy_per_seat'
+  const billingPlan = APPLICATION_BILLING_PLANS[billingPlanCode]
 
   let canManage = true
   try {
@@ -35,9 +42,13 @@ export default defineEventHandler(async (event) => {
       billingAccessState: session.billingAccessState,
     },
     plan: {
-      ...APPLICATION_MONTHLY_PLAN,
-      displayAmount: '200 zł',
-      displayInterval: 'użytkownika / miesiąc',
+      ...billingPlan,
+      displayAmount: `${billingPlan.unitAmount / 100} zł`,
+      displayInterval: billingPlanCode === 'individual'
+        ? 'miesiąc + VAT'
+        : billingPlanCode === 'team'
+          ? 'użytkownika / miesiąc + VAT'
+          : 'użytkownika / miesiąc (plan historyczny)',
     },
     demoMode: configuration.demoMode,
     configured: isStripeBillingConfigured(event),
@@ -56,7 +67,10 @@ export default defineEventHandler(async (event) => {
           licensedSeats: Number(account.licensed_seat_count ?? activeMembers),
           activeMembers,
           monthlyListAmount: Number(account.licensed_seat_count ?? activeMembers)
-            * APPLICATION_MONTHLY_PLAN.unitAmount,
+            * billingPlan.unitAmount,
+          billingPlanCode,
+          canUpgradeToTeam: billingPlanCode === 'individual'
+            && ['active', 'trialing'].includes(String(account.stripe_subscription_status)),
           lastSyncedAt: account.last_synced_at,
         }
       : null,

@@ -101,7 +101,7 @@ function organizationTarget(organization: NonNullable<typeof contexts.value>['st
         <span>
           <small>{{ contexts?.hasStaff ? 'Kolejny obszar pracy' : 'Panel profesjonalisty' }}</small>
           <strong>Utwórz {{ contexts?.hasStaff ? 'kolejną ' : '' }}organizację</strong>
-          <em>Pośrednik bez opłaty albo Aplikacja w planie 200 zł / opłacone miejsce / miesiąc</em>
+          <em>Bezpłatna organizacja operacyjna; płatną aplikację założysz przez rejestrację planu</em>
         </span>
         <UIcon name="i-lucide-arrow-right" />
       </NuxtLink>

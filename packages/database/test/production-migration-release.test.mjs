@@ -45,6 +45,7 @@ const releaseTail = [
   '0078_organization_initial_seat_capacity.sql',
   '0079_organization_member_invitations.sql',
   '0080_organization_creation_grant_gate.sql',
+  '0081_application_billing_plans.sql',
 ]
 
 test('production migration dry-run includes the ordered release tail', () => {

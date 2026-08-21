@@ -5,6 +5,12 @@ import type {
   OrganizationOnboardingSource,
   SystemOrganizationInvitation,
 } from '../../shared/types/system-organizations'
+import {
+  applicationBillingPlanSeatCountIsValid,
+  isPublicApplicationBillingPlanCode,
+  type ApplicationBillingPlanCode,
+  type PublicApplicationBillingPlanCode,
+} from '../../shared/organization-billing'
 import { invitationBillingDiscountLabel } from '~~/shared/organization-invitation-discount'
 import {
   createOrganizationInvitationToken,
@@ -21,6 +27,7 @@ const INVITATION_SELECT = [
   'organization_name',
   'organization_kind',
   'onboarding_source',
+  'billing_plan_code',
   'initial_seat_count',
   'administrator_name',
   'discount_kind',
@@ -72,6 +79,7 @@ export interface OrganizationInvitationRow {
   organization_name: string
   organization_kind: OrganizationInvitationKind
   onboarding_source: OrganizationOnboardingSource
+  billing_plan_code: ApplicationBillingPlanCode | null
   initial_seat_count: number
   administrator_name: string | null
   discount_kind: 'percentage' | 'fixed_amount' | null
@@ -107,6 +115,7 @@ export interface OrganizationInvitationPreview {
   organizationName: string
   organizationKind: OrganizationInvitationKind
   onboardingSource: OrganizationOnboardingSource
+  billingPlan: ApplicationBillingPlanCode | null
   initialSeatCount: number
   status: OrganizationOnboardingInvitationStatus
   expiresAt: string
@@ -137,6 +146,7 @@ export interface CreateOrganizationInvitationInput {
   organizationName: string
   organizationKind: OrganizationInvitationKind
   onboardingSource?: OrganizationOnboardingSource
+  billingPlan?: PublicApplicationBillingPlanCode | null
   initialSeatCount?: number
   administratorName?: string | null
   billingDiscount?: OrganizationInvitationBillingDiscount | null
@@ -287,6 +297,7 @@ function previewFromRow(invitation: OrganizationInvitationRow): OrganizationInvi
     organizationName: invitation.organization_name,
     organizationKind: invitation.organization_kind,
     onboardingSource: invitation.onboarding_source,
+    billingPlan: invitation.billing_plan_code,
     initialSeatCount: Number(invitation.initial_seat_count),
     status: invitation.status,
     expiresAt: invitation.expires_at,
@@ -485,6 +496,7 @@ export async function sendOrganizationInvitationMagicLink(
           organizationName: invitation.organization_name,
           organizationKind: invitation.organization_kind,
           onboardingSource: invitation.onboarding_source,
+          billingPlan: invitation.billing_plan_code || undefined,
           initialSeatCount: Number(invitation.initial_seat_count),
           billingDiscountLabel: assignedBillingDiscount
             ? invitationBillingDiscountLabel(assignedBillingDiscount)
@@ -524,6 +536,9 @@ export async function prepareOrganizationInvitation(
 ): Promise<PreparedOrganizationInvitation> {
   const onboardingSource = input.onboardingSource || 'superadmin_invitation'
   const initialSeatCount = input.initialSeatCount ?? 1
+  const billingPlan = input.organizationKind === 'application'
+    ? input.billingPlan
+    : null
   if (
     !Number.isSafeInteger(initialSeatCount)
     || initialSeatCount < 1
@@ -533,6 +548,18 @@ export async function prepareOrganizationInvitation(
   }
   if (input.organizationKind === 'intermediary' && initialSeatCount !== 1) {
     throw new TypeError('Intermediary organizations support exactly one initial seat')
+  }
+  if (
+    input.organizationKind === 'application'
+    && (
+      !isPublicApplicationBillingPlanCode(billingPlan)
+      || !applicationBillingPlanSeatCountIsValid(billingPlan, initialSeatCount)
+    )
+  ) {
+    throw new TypeError('Application billing plan and initial seat count are inconsistent')
+  }
+  if (input.organizationKind === 'intermediary' && billingPlan !== null) {
+    throw new TypeError('Intermediary organizations cannot have an application billing plan')
   }
   if (
     onboardingSource === 'self_service'
@@ -556,6 +583,7 @@ export async function prepareOrganizationInvitation(
       organization_name: input.organizationName,
       organization_kind: input.organizationKind,
       onboarding_source: onboardingSource,
+      billing_plan_code: billingPlan,
       initial_seat_count: initialSeatCount,
       administrator_name: input.administratorName || null,
       ...billingDiscountInsert(input.billingDiscount),

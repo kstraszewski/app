@@ -13,8 +13,8 @@ const settingsAreas = computed(() => [
   ...(activeOrganization.value?.kind === 'application'
     ? [{
         title: 'Subskrypcja',
-        description: 'Plan Aplikacja, stan dostępu, płatności i panel klienta Stripe.',
-        details: '200 zł / opłacone miejsce / miesiąc · kupony · Stripe',
+        description: 'Plan Indywidualny lub Zespół, stan dostępu, płatności i panel klienta Stripe.',
+        details: '200 zł solo lub 150 zł/os. w zespole + VAT · kupony · Stripe',
         to: orgPath('/settings/billing'),
         icon: 'i-lucide-credit-card',
       }]

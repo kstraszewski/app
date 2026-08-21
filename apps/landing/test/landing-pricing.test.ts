@@ -2,32 +2,42 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  APPLICATION_SEAT_PRICE_PLN,
+  APPLICATION_BILLING_PLANS,
   buildApplicationRegistrationUrl,
   buildLoginUrl,
   normalizeApplicationSeatCount,
 } from '../app/utils/landing-registration.ts'
 
-test('normalizes paid seat counts to the supported 1-100 range', () => {
+test('normalizes individual and team seats to their plan limits', () => {
   assert.equal(normalizeApplicationSeatCount(0), 1)
-  assert.equal(normalizeApplicationSeatCount('12'), 12)
-  assert.equal(normalizeApplicationSeatCount(12.9), 12)
-  assert.equal(normalizeApplicationSeatCount(101), 100)
+  assert.equal(normalizeApplicationSeatCount('12'), 1)
+  assert.equal(normalizeApplicationSeatCount(1, 'team'), 3)
+  assert.equal(normalizeApplicationSeatCount(12.9, 'team'), 12)
+  assert.equal(normalizeApplicationSeatCount(101, 'team'), 100)
   assert.equal(normalizeApplicationSeatCount('not-a-number'), 1)
 })
 
-test('builds an application registration URL with only the pricing intent', () => {
-  const url = new URL(buildApplicationRegistrationUrl('https://crm.openexpert.app', 5))
+test('builds a team registration URL with only the pricing intent', () => {
+  const url = new URL(buildApplicationRegistrationUrl('https://crm.openexpert.app', 'team', 5))
 
   assert.equal(url.origin, 'https://crm.openexpert.app')
   assert.equal(url.pathname, '/register')
   assert.deepEqual([...url.searchParams.entries()], [
     ['kind', 'application'],
-    ['plan', 'application_monthly'],
+    ['plan', 'team'],
     ['seats', '5'],
     ['source', 'landing_pricing'],
   ])
-  assert.equal(Number(url.searchParams.get('seats')) * APPLICATION_SEAT_PRICE_PLN, 1000)
+  assert.equal(
+    Number(url.searchParams.get('seats')) * APPLICATION_BILLING_PLANS.team.seatPricePln,
+    750,
+  )
+})
+
+test('forces the individual registration intent to exactly one seat', () => {
+  const url = new URL(buildApplicationRegistrationUrl('https://crm.openexpert.app', 'individual', 10))
+  assert.equal(url.searchParams.get('plan'), 'individual')
+  assert.equal(url.searchParams.get('seats'), '1')
 })
 
 test('builds the login URL from the configured CRM origin', () => {

@@ -1,17 +1,37 @@
-export const APPLICATION_SEAT_PRICE_PLN = 200
-export const APPLICATION_SEAT_MIN = 1
+export const APPLICATION_BILLING_PLANS = {
+  individual: {
+    code: 'individual',
+    label: 'Indywidualny',
+    seatPricePln: 200,
+    minSeats: 1,
+    maxSeats: 1,
+  },
+  team: {
+    code: 'team',
+    label: 'Zespół',
+    seatPricePln: 150,
+    minSeats: 3,
+    maxSeats: 100,
+  },
+} as const
+
+export type ApplicationBillingPlanCode = keyof typeof APPLICATION_BILLING_PLANS
 export const APPLICATION_SEAT_MAX = 100
 
-export function normalizeApplicationSeatCount(value: unknown): number {
+export function normalizeApplicationSeatCount(
+  value: unknown,
+  plan: ApplicationBillingPlanCode = 'individual',
+): number {
+  const offer = APPLICATION_BILLING_PLANS[plan]
   const numericValue = typeof value === 'number'
     ? value
     : Number.parseInt(String(value), 10)
 
-  if (!Number.isFinite(numericValue)) return APPLICATION_SEAT_MIN
+  if (!Number.isFinite(numericValue)) return offer.minSeats
 
   return Math.min(
-    APPLICATION_SEAT_MAX,
-    Math.max(APPLICATION_SEAT_MIN, Math.trunc(numericValue)),
+    offer.maxSeats,
+    Math.max(offer.minSeats, Math.trunc(numericValue)),
   )
 }
 
@@ -33,12 +53,13 @@ export function buildLoginUrl(crmBaseUrl: string): string {
 
 export function buildApplicationRegistrationUrl(
   crmBaseUrl: string,
+  plan: ApplicationBillingPlanCode,
   seatCount: unknown,
 ): string {
   const url = registrationUrl(crmBaseUrl)
   url.searchParams.set('kind', 'application')
-  url.searchParams.set('plan', 'application_monthly')
-  url.searchParams.set('seats', String(normalizeApplicationSeatCount(seatCount)))
+  url.searchParams.set('plan', plan)
+  url.searchParams.set('seats', String(normalizeApplicationSeatCount(seatCount, plan)))
   url.searchParams.set('source', 'landing_pricing')
   return url.toString()
 }

@@ -3,14 +3,19 @@ import Stripe from 'stripe'
 import { isOpenExpertSameOriginJsonRequest } from '@openexpert/auth/server'
 import { createError, type H3Event } from 'h3'
 import {
-  APPLICATION_MONTHLY_PLAN,
+  APPLICATION_BILLING_PLANS,
+  APPLICATION_BILLING_PLAN_CODES,
   BILLING_ACCESS_STATES,
+  applicationBillingPlanSeatCountIsValid,
+  isApplicationBillingPlanCode,
   stripeSubscriptionAccessState,
+  type ApplicationBillingPlanCode,
   type BillingAccessState,
 } from '~~/shared/organization-billing'
 import type {
   OrganizationBillingHistory,
   OrganizationBillingInvoice,
+  OrganizationBillingPlanUpgradeQuote,
   OrganizationSeatQuote,
 } from '~~/shared/types/organization-seat-billing'
 import type { OrganizationInvitationBillingDiscount } from '~~/shared/types/system-organizations'
@@ -25,6 +30,8 @@ interface StripeBillingRuntimeConfig {
   secretKey?: string
   webhookSecret?: string
   applicationMonthlyPriceId?: string
+  applicationIndividualMonthlyPriceId?: string
+  applicationTeamMonthlyPriceId?: string
   customerPortalConfigurationId?: string
 }
 
@@ -38,6 +45,7 @@ export interface OrganizationBillingAccountRow {
   licensed_seat_count?: number | null
   seat_revision?: number | null
   stripe_subscription_status: string | null
+  billing_plan_code?: ApplicationBillingPlanCode | null
   livemode: boolean
   current_period_start: string | null
   current_period_end: string | null
@@ -50,9 +58,11 @@ export interface OrganizationBillingAccountRow {
 }
 
 export interface StripeSubscriptionSeatPlan {
+  billingPlanCode: ApplicationBillingPlanCode
   priceId: string
   subscriptionItemId: string
   quantity: number
+  unitAmount: number
   currentPeriodStart: string
   currentPeriodEnd: string
   currentPeriodStartTimestamp: number
@@ -72,6 +82,7 @@ interface OrganizationInvitationDiscountRow {
   id: string
   organization_id: string | null
   organization_kind: 'intermediary' | 'application'
+  billing_plan_code: ApplicationBillingPlanCode | null
   status: 'pending' | 'accepted' | 'completed' | 'expired' | 'revoked'
   discount_kind: 'percentage' | 'fixed_amount' | null
   discount_percent_off_bps: number | null
@@ -94,7 +105,11 @@ export interface OrganizationInvitationCheckoutDiscount {
   label: string
 }
 
-const PRICE_LOOKUP_KEY = 'openexpert_application_monthly_pln_inclusive_v2'
+const PRICE_LOOKUP_KEYS: Record<ApplicationBillingPlanCode, string> = {
+  individual: 'openexpert_application_individual_monthly_pln_exclusive_v1',
+  team: 'openexpert_application_team_monthly_pln_exclusive_v1',
+  legacy_per_seat: 'openexpert_application_monthly_pln_inclusive_v2',
+}
 const STALE_STRIPE_SUBSCRIPTION_STATUS = 'Stripe subscription is not current for billing account'
 const STRIPE_SEAT_QUANTITY_MISMATCH_STATUS = 'Stripe seat quantity does not match organization membership'
 const GRACE_PERIOD_DAYS = 7
@@ -102,12 +117,13 @@ export const MAX_LICENSED_SEATS = 1_000
 const STRIPE_API_VERSION = '2026-07-29.dahlia' as const
 
 let cachedStripe: { secretKey: string, client: Stripe } | undefined
-let cachedPrice: { secretKey: string, configuredPriceId: string, price: Stripe.Price } | undefined
+const cachedPrices = new Map<string, Stripe.Price>()
 
 const ORGANIZATION_INVITATION_DISCOUNT_SELECT = [
   'id',
   'organization_id',
   'organization_kind',
+  'billing_plan_code',
   'status',
   'discount_kind',
   'discount_percent_off_bps',
@@ -129,6 +145,10 @@ function normalizedConfig(event: H3Event) {
   const secretKey = String(raw?.secretKey || '').trim()
   const webhookSecret = String(raw?.webhookSecret || '').trim()
   const applicationMonthlyPriceId = String(raw?.applicationMonthlyPriceId || '').trim()
+  const applicationIndividualMonthlyPriceId = String(
+    raw?.applicationIndividualMonthlyPriceId || '',
+  ).trim()
+  const applicationTeamMonthlyPriceId = String(raw?.applicationTeamMonthlyPriceId || '').trim()
   const customerPortalConfigurationId = String(raw?.customerPortalConfigurationId || '').trim()
   const demoMode = raw?.demoMode !== false
   return {
@@ -136,6 +156,8 @@ function normalizedConfig(event: H3Event) {
     secretKey,
     webhookSecret,
     applicationMonthlyPriceId,
+    applicationIndividualMonthlyPriceId,
+    applicationTeamMonthlyPriceId,
     customerPortalConfigurationId,
     demoMode,
   }
@@ -179,7 +201,13 @@ export function isStripeBillingConfigured(event: H3Event): boolean {
     && (isTestSecretKey(config.secretKey) || isLiveSecretKey(config.secretKey))
     && (!config.demoMode || isTestSecretKey(config.secretKey))
     && (config.demoMode || Boolean(config.webhookSecret))
-    && (config.demoMode || Boolean(config.applicationMonthlyPriceId))
+    && (
+      config.demoMode
+      || (
+        Boolean(config.applicationIndividualMonthlyPriceId)
+        && Boolean(config.applicationTeamMonthlyPriceId)
+      )
+    )
 }
 
 export function requireStripeBillingBrowserRequest(event: H3Event): void {
@@ -236,55 +264,69 @@ export function stripeBillingClient(event: H3Event): Stripe {
   return client
 }
 
-function assertApplicationMonthlyPrice(
+function assertApplicationBillingPrice(
   price: Stripe.Price,
+  planCode: ApplicationBillingPlanCode,
   options: { requireActive: boolean } = { requireActive: true },
 ): Stripe.Price {
+  const plan = APPLICATION_BILLING_PLANS[planCode]
   const recurring = price.recurring
   if (
     (options.requireActive && !price.active)
-    || price.currency !== APPLICATION_MONTHLY_PLAN.currency
-    || price.unit_amount !== APPLICATION_MONTHLY_PLAN.unitAmount
-    || price.tax_behavior !== 'inclusive'
+    || price.currency !== plan.currency
+    || price.unit_amount !== plan.unitAmount
+    || price.tax_behavior !== plan.taxBehavior
     || price.type !== 'recurring'
     || price.billing_scheme !== 'per_unit'
     || price.custom_unit_amount !== null
     || price.tiers_mode !== null
     || price.transform_quantity !== null
-    || recurring?.interval !== APPLICATION_MONTHLY_PLAN.interval
-    || recurring.interval_count !== APPLICATION_MONTHLY_PLAN.intervalCount
+    || recurring?.interval !== plan.interval
+    || recurring.interval_count !== plan.intervalCount
     || recurring.usage_type !== 'licensed'
   ) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Configured Stripe Price must be a fixed 200 PLN monthly per-seat price',
+      statusMessage: `Configured Stripe Price does not match the ${plan.name} offer`,
     })
   }
   return price
 }
 
-export async function applicationMonthlyPrice(event: H3Event): Promise<Stripe.Price> {
+function configuredApplicationPriceId(
+  config: ReturnType<typeof normalizedConfig>,
+  planCode: ApplicationBillingPlanCode,
+): string {
+  if (planCode === 'individual') return config.applicationIndividualMonthlyPriceId
+  if (planCode === 'team') return config.applicationTeamMonthlyPriceId
+  return config.applicationMonthlyPriceId
+}
+
+export async function applicationBillingPrice(
+  event: H3Event,
+  planCode: ApplicationBillingPlanCode,
+): Promise<Stripe.Price> {
   const config = normalizedConfig(event)
   const stripe = stripeBillingClient(event)
-  if (
-    cachedPrice?.secretKey === config.secretKey
-    && cachedPrice.configuredPriceId === config.applicationMonthlyPriceId
-  ) return cachedPrice.price
+  const configuredPriceId = configuredApplicationPriceId(config, planCode)
+  const cacheKey = `${config.secretKey}\u0000${planCode}\u0000${configuredPriceId}`
+  const cached = cachedPrices.get(cacheKey)
+  if (cached) return cached
 
   let price: Stripe.Price | undefined
-  if (config.applicationMonthlyPriceId) {
-    const retrieved = await stripe.prices.retrieve(config.applicationMonthlyPriceId)
+  if (configuredPriceId) {
+    const retrieved = await stripe.prices.retrieve(configuredPriceId)
     if (!('deleted' in retrieved && retrieved.deleted)) price = retrieved as Stripe.Price
   }
   else if (config.demoMode) {
     const existing = await stripe.prices.list({
       active: true,
-      lookup_keys: [PRICE_LOOKUP_KEY],
+      lookup_keys: [PRICE_LOOKUP_KEYS[planCode]],
       limit: 10,
     })
     price = existing.data.find(candidate => {
       try {
-        assertApplicationMonthlyPrice(candidate)
+        assertApplicationBillingPrice(candidate, planCode)
         return true
       }
       catch {
@@ -293,38 +335,49 @@ export async function applicationMonthlyPrice(event: H3Event): Promise<Stripe.Pr
     })
 
     if (!price) {
+      const plan = APPLICATION_BILLING_PLANS[planCode]
       const product = await stripe.products.create({
-        name: 'OpenExpert — miejsce w Aplikacji',
-        description: 'Miesięczna licencja użytkownika organizacji typu Aplikacja.',
-        metadata: { plan_code: APPLICATION_MONTHLY_PLAN.code },
-      }, { idempotencyKey: 'openexpert-application-product-v1' })
+        name: `OpenExpert — ${plan.name}`,
+        description: planCode === 'individual'
+          ? 'Miesięczna licencja dla jednej osoby.'
+          : planCode === 'team'
+            ? 'Miesięczna licencja zespołowa, minimum trzy osoby.'
+            : 'Historyczna miesięczna licencja użytkownika.',
+        metadata: {
+          plan_code: plan.stripePlanCode,
+          billing_plan_code: plan.code,
+        },
+      }, { idempotencyKey: `openexpert-application-${planCode}-product-v1` })
       price = await stripe.prices.create({
         active: true,
-        currency: APPLICATION_MONTHLY_PLAN.currency,
-        unit_amount: APPLICATION_MONTHLY_PLAN.unitAmount,
-        tax_behavior: 'inclusive',
+        currency: plan.currency,
+        unit_amount: plan.unitAmount,
+        tax_behavior: plan.taxBehavior,
         product: product.id,
-        lookup_key: PRICE_LOOKUP_KEY,
+        lookup_key: PRICE_LOOKUP_KEYS[planCode],
         recurring: {
-          interval: APPLICATION_MONTHLY_PLAN.interval,
-          interval_count: APPLICATION_MONTHLY_PLAN.intervalCount,
+          interval: plan.interval,
+          interval_count: plan.intervalCount,
         },
-        metadata: { plan_code: APPLICATION_MONTHLY_PLAN.code },
-      }, { idempotencyKey: 'openexpert-application-monthly-price-inclusive-v2' })
+        metadata: {
+          plan_code: plan.stripePlanCode,
+          billing_plan_code: plan.code,
+        },
+      }, { idempotencyKey: `openexpert-application-${planCode}-monthly-price-v1` })
     }
   }
   else {
-    configurationError('Stripe monthly Price ID is not configured')
+    configurationError(`Stripe ${APPLICATION_BILLING_PLANS[planCode].name} Price ID is not configured`)
   }
 
   if (!price) configurationError('Stripe monthly Price could not be loaded')
-  const validated = assertApplicationMonthlyPrice(price)
-  cachedPrice = {
-    secretKey: config.secretKey,
-    configuredPriceId: config.applicationMonthlyPriceId,
-    price: validated,
-  }
+  const validated = assertApplicationBillingPrice(price, planCode)
+  cachedPrices.set(cacheKey, validated)
   return validated
+}
+
+export function applicationMonthlyPrice(event: H3Event): Promise<Stripe.Price> {
+  return applicationBillingPrice(event, 'legacy_per_seat')
 }
 
 function invitationDiscountCanonicalValue(discount: OrganizationInvitationBillingDiscount): string {
@@ -547,8 +600,8 @@ async function retrieveAndAssertOrganizationInvitationCheckout(
     || checkout.metadata?.organization_id !== input.organizationId
     || checkout.metadata?.organization_invitation_id !== input.invitation.id
     || checkout.metadata?.invitation_discount_fingerprint !== input.fingerprint
-    || checkout.metadata?.plan_code !== APPLICATION_MONTHLY_PLAN.code
-    || checkout.metadata?.billing_model !== 'per_seat_v1'
+    || checkout.metadata?.plan_code !== input.price.metadata.plan_code
+    || !['per_seat_v1', 'per_seat_v2'].includes(String(checkout.metadata?.billing_model))
     || checkoutCustomerId !== input.account.stripe_customer_id
     || checkout.livemode !== input.account.livemode
     || !lineItems
@@ -745,8 +798,8 @@ async function consumeOrganizationInvitationCheckoutDiscount(
     || subscription.metadata.organization_id !== input.organizationId
     || subscription.metadata.organization_invitation_id !== invitation.id
     || subscription.metadata.invitation_discount_fingerprint !== input.fingerprint
-    || subscription.metadata.plan_code !== APPLICATION_MONTHLY_PLAN.code
-    || subscription.metadata.billing_model !== 'per_seat_v1'
+    || subscription.metadata.plan_code !== input.price.metadata.plan_code
+    || !['per_seat_v1', 'per_seat_v2'].includes(String(subscription.metadata.billing_model))
     || plan.priceId !== input.price.id
   ) {
     throw createError({
@@ -906,7 +959,7 @@ export async function ensureOrganizationInvitationCheckoutDiscount(
       metadata: {
         organization_invitation_id: invitation.id,
         organization_id: organizationId,
-        plan_code: APPLICATION_MONTHLY_PLAN.code,
+        plan_code: APPLICATION_BILLING_PLANS[invitation.billing_plan_code || 'legacy_per_seat'].stripePlanCode,
         discount_fingerprint: fingerprint,
       },
     }, {
@@ -1080,7 +1133,10 @@ export async function markOrganizationInvitationDiscountApplied(
   }
   const fingerprint = organizationInvitationDiscountFingerprint(discount)
   const expectedCouponId = organizationInvitationStripeCouponId(invitation.id, discount)
-  const price = await applicationMonthlyPrice(event)
+  if (!isApplicationBillingPlanCode(invitation.billing_plan_code)) {
+    throw createError({ statusCode: 409, statusMessage: 'Invitation billing plan is invalid' })
+  }
+  const price = await applicationBillingPrice(event, invitation.billing_plan_code)
   invitation = await recoverOrganizationInvitationDiscountCheckoutBinding(event, {
     organizationId: input.organizationId,
     invitation,
@@ -1128,7 +1184,11 @@ export async function organizationCheckoutSeatTarget(
   organizationId: string,
   activeMembers: number,
   account?: OrganizationBillingAccountRow | null,
-): Promise<{ seats: number, invitationId: string | null }> {
+): Promise<{
+  seats: number
+  invitationId: string | null
+  billingPlanCode: ApplicationBillingPlanCode
+}> {
   if (
     !Number.isSafeInteger(activeMembers)
     || activeMembers < 1
@@ -1146,13 +1206,20 @@ export async function organizationCheckoutSeatTarget(
     ) {
       throw createError({ statusCode: 409, statusMessage: 'Organization paid seat capacity is invalid' })
     }
-    return { seats: licensedSeats, invitationId: null }
+    if (!isApplicationBillingPlanCode(account.billing_plan_code)) {
+      throw createError({ statusCode: 409, statusMessage: 'Organization billing plan is invalid' })
+    }
+    return {
+      seats: licensedSeats,
+      invitationId: null,
+      billingPlanCode: account.billing_plan_code,
+    }
   }
 
   const backend = serverDataBackend(event) as any
   const invitation = await backend
     .from('organization_onboarding_invitations')
-    .select('id, initial_seat_count')
+    .select('id, initial_seat_count, billing_plan_code')
     .eq('organization_id', organizationId)
     .eq('organization_kind', 'application')
     .in('status', ['accepted', 'completed'])
@@ -1171,20 +1238,28 @@ export async function organizationCheckoutSeatTarget(
         statusMessage: 'Multi-seat Checkout requires a registration seat offer',
       })
     }
-    return { seats: 1, invitationId: null }
+    return {
+      seats: 1,
+      invitationId: null,
+      billingPlanCode: 'legacy_per_seat',
+    }
   }
 
   const requestedSeats = Number(invitation.data.initial_seat_count)
+  const billingPlanCode = invitation.data.billing_plan_code
   if (
-    !Number.isSafeInteger(requestedSeats)
+    !isApplicationBillingPlanCode(billingPlanCode)
+    || !Number.isSafeInteger(requestedSeats)
     || requestedSeats < activeMembers
     || requestedSeats > MAX_LICENSED_SEATS
+    || !applicationBillingPlanSeatCountIsValid(billingPlanCode, requestedSeats)
   ) {
     throw createError({ statusCode: 409, statusMessage: 'Registration seat capacity is invalid' })
   }
   return {
     seats: requestedSeats,
     invitationId: String(invitation.data.id),
+    billingPlanCode,
   }
 }
 
@@ -1233,6 +1308,7 @@ export async function rememberCheckoutSession(
     customerId: string
     checkoutSessionId: string
     priceId: string
+    billingPlanCode: ApplicationBillingPlanCode
     livemode: boolean
   },
 ): Promise<void> {
@@ -1244,6 +1320,7 @@ export async function rememberCheckoutSession(
       stripe_customer_id: input.customerId,
       stripe_checkout_session_id: input.checkoutSessionId,
       stripe_price_id: input.priceId,
+      billing_plan_code: input.billingPlanCode,
       livemode: input.livemode,
     }, { onConflict: 'organization_id' })
   if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
@@ -1284,13 +1361,50 @@ export async function stripeSubscriptionSeatPlan(
     throw createError({ statusCode: 409, statusMessage: 'Stripe subscription quantity is invalid' })
   }
   const config = normalizedConfig(event)
-  const expectedPriceId = config.applicationMonthlyPriceId
-    || (await organizationBillingAccount(event, organizationId))?.stripe_price_id
-    || (await applicationMonthlyPrice(event)).id
+  const account = await organizationBillingAccount(event, organizationId)
+  const configuredPlanByPrice = (
+    [
+      ['individual', config.applicationIndividualMonthlyPriceId],
+      ['team', config.applicationTeamMonthlyPriceId],
+      ['legacy_per_seat', config.applicationMonthlyPriceId],
+    ] as const
+  ).find(([, priceId]) => priceId && priceId === item.price.id)?.[0]
+  const metadataPlan = item.price.metadata.billing_plan_code
+  const accountPlan = item.price.id === account?.stripe_price_id
+    ? account.billing_plan_code
+    : null
+  const structuralPlans = APPLICATION_BILLING_PLAN_CODES.filter(planCode => {
+    try {
+      assertApplicationBillingPrice(item.price, planCode, { requireActive: false })
+      return true
+    }
+    catch {
+      return false
+    }
+  })
+  const billingPlanCode = isApplicationBillingPlanCode(configuredPlanByPrice)
+    ? configuredPlanByPrice
+    : isApplicationBillingPlanCode(metadataPlan)
+      ? metadataPlan
+      : isApplicationBillingPlanCode(accountPlan)
+        ? accountPlan
+        : structuralPlans.length === 1
+          ? structuralPlans[0]
+          : null
+  if (!billingPlanCode) {
+    throw createError({ statusCode: 409, statusMessage: 'Stripe subscription billing plan is invalid' })
+  }
+  const configuredPriceId = configuredApplicationPriceId(config, billingPlanCode)
+  const expectedPriceId = configuredPriceId
+    || (billingPlanCode === 'legacy_per_seat' ? account?.stripe_price_id : '')
+    || (await applicationBillingPrice(event, billingPlanCode)).id
   if (item.price.id !== expectedPriceId || item.price.livemode !== subscription.livemode) {
     throw createError({ statusCode: 409, statusMessage: 'Stripe subscription Price does not match the application plan' })
   }
-  assertApplicationMonthlyPrice(item.price, { requireActive: false })
+  assertApplicationBillingPrice(item.price, billingPlanCode, { requireActive: false })
+  if (!applicationBillingPlanSeatCountIsValid(billingPlanCode, quantity as number)) {
+    throw createError({ statusCode: 409, statusMessage: 'Stripe subscription quantity does not match the billing plan' })
+  }
   const legacyPeriod = subscription as unknown as {
     current_period_start?: number
     current_period_end?: number
@@ -1305,9 +1419,11 @@ export async function stripeSubscriptionSeatPlan(
     throw createError({ statusCode: 409, statusMessage: 'Stripe subscription period is invalid' })
   }
   return {
+    billingPlanCode,
     priceId: item.price.id,
     subscriptionItemId: item.id,
     quantity: quantity as number,
+    unitAmount: APPLICATION_BILLING_PLANS[billingPlanCode].unitAmount,
     currentPeriodStart: timestamp(currentPeriodStart),
     currentPeriodEnd: timestamp(currentPeriodEnd),
     currentPeriodStartTimestamp: currentPeriodStart,
@@ -1644,6 +1760,154 @@ export async function failOpenOrganizationSeatChange(
   return true
 }
 
+export async function matchingOpenOrganizationPlanChangeId(
+  event: H3Event,
+  subscription: Stripe.Subscription,
+  organizationId: string,
+  invoice: Stripe.Invoice,
+): Promise<string | null> {
+  if (!isInvoiceForSubscriptionUpdate(invoice, subscription, { requireLatest: false })) return null
+  const backend = serverDataBackend(event) as any
+  const exactResult = await backend
+    .from('organization_billing_plan_changes')
+    .select('id, stripe_subscription_item_id, target_stripe_price_id, target_seat_count')
+    .eq('organization_id', organizationId)
+    .eq('stripe_subscription_id', subscription.id)
+    .eq('stripe_invoice_id', invoice.id)
+    .in('status', ['prepared', 'pending', 'succeeded', 'failed'])
+    .limit(1)
+    .maybeSingle()
+  if (exactResult.error) throw createError({ statusCode: 500, statusMessage: exactResult.error.message })
+  if (exactResult.data?.id) return String(exactResult.data.id)
+
+  const result = await backend
+    .from('organization_billing_plan_changes')
+    .select('id, status, stripe_invoice_id, stripe_subscription_id, stripe_subscription_item_id, target_stripe_price_id, target_seat_count')
+    .eq('organization_id', organizationId)
+    .eq('stripe_subscription_id', subscription.id)
+    .in('status', ['prepared', 'pending'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+  if (!result.data) return null
+  if (result.data.stripe_invoice_id) {
+    return result.data.stripe_invoice_id === invoice.id ? String(result.data.id) : null
+  }
+  const pendingItem = subscription.pending_update?.subscription_items?.length === 1
+    ? subscription.pending_update.subscription_items[0]
+    : undefined
+  const pendingPriceId = pendingItem
+    ? typeof pendingItem.price === 'string' ? pendingItem.price : pendingItem.price.id
+    : null
+  if (
+    !pendingItem
+    || pendingItem.id !== result.data.stripe_subscription_item_id
+    || pendingPriceId !== result.data.target_stripe_price_id
+    || pendingItem.quantity !== result.data.target_seat_count
+  ) return null
+  await markOrganizationPlanUpgrade(event, {
+    changeId: String(result.data.id),
+    status: 'pending',
+    invoiceId: invoice.id,
+    paymentUrl: actionableInvoicePaymentUrl(invoice),
+  })
+  return String(result.data.id)
+}
+
+export async function failOpenOrganizationPlanChange(
+  event: H3Event,
+  input: {
+    organizationId: string
+    subscriptionId: string
+    eventCreated: number
+    invoiceId?: string
+    errorCode: string
+    errorMessage: string
+  },
+): Promise<boolean> {
+  const backend = serverDataBackend(event) as any
+  let query = backend
+    .from('organization_billing_plan_changes')
+    .select('id, stripe_invoice_id, created_at')
+    .eq('organization_id', input.organizationId)
+    .eq('stripe_subscription_id', input.subscriptionId)
+    .in('status', ['prepared', 'pending'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+  // Stripe event.created is second precision. An old expiry event must never
+  // terminalize a new upgrade created after that event but delivered in the
+  // same wall-clock second.
+  query = query.lt('created_at', new Date(input.eventCreated * 1000).toISOString())
+  const result = await query.maybeSingle()
+  if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+  if (!result.data?.id) return false
+  if (input.invoiceId && result.data.stripe_invoice_id !== input.invoiceId) return false
+  await markOrganizationPlanUpgrade(event, {
+    changeId: String(result.data.id),
+    status: 'failed',
+    failureCode: input.errorCode,
+    failureMessage: input.errorMessage,
+  })
+  return true
+}
+
+export async function reconcileExpiredOrganizationPlanUpgrade(
+  event: H3Event,
+  subscription: Stripe.Subscription,
+  organizationId: string,
+): Promise<boolean> {
+  const backend = serverDataBackend(event) as any
+  const result = await backend
+    .from('organization_billing_plan_changes')
+    .select('id, status, updated_at, stripe_subscription_id, stripe_subscription_item_id, target_stripe_price_id, target_seat_count')
+    .eq('organization_id', organizationId)
+    .eq('stripe_subscription_id', subscription.id)
+    .in('status', ['prepared', 'pending'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+  if (!result.data?.id) return false
+
+  if (subscription.pending_update) {
+    const pendingItem = subscription.pending_update.subscription_items?.length === 1
+      ? subscription.pending_update.subscription_items[0]
+      : undefined
+    const pendingPriceId = pendingItem
+      ? typeof pendingItem.price === 'string' ? pendingItem.price : pendingItem.price.id
+      : null
+    if (
+      result.data.status === 'pending'
+      && pendingItem?.id === result.data.stripe_subscription_item_id
+      && pendingPriceId === result.data.target_stripe_price_id
+      && pendingItem?.quantity === result.data.target_seat_count
+    ) {
+      const invoice = await expandedLatestInvoice(event, subscription)
+      const correlatedInvoice = invoice
+        && isInvoiceForSubscriptionUpdate(invoice, subscription, { requireLatest: true })
+        ? invoice
+        : null
+      if (correlatedInvoice) {
+        await markOrganizationPlanUpgrade(event, {
+          changeId: String(result.data.id),
+          status: 'pending',
+          invoiceId: correlatedInvoice.id,
+          paymentUrl: actionableInvoicePaymentUrl(correlatedInvoice),
+        })
+      }
+    }
+    return false
+  }
+
+  const stale = await backend.rpc('fail_stale_organization_plan_upgrade_v1', {
+    p_change_id: String(result.data.id),
+    p_expected_updated_at: String(result.data.updated_at),
+  })
+  if (stale.error) throw createError({ statusCode: 500, statusMessage: stale.error.message })
+  return stale.data?.failed === true
+}
+
 export async function retrieveOrganizationStripeSubscription(
   event: H3Event,
   organizationId: string,
@@ -1767,7 +2031,6 @@ export async function createOrganizationSeatQuote(
     throw createError({ statusCode: 409, statusMessage: 'Requested seat quantity is invalid' })
   }
 
-  const unitAmount = APPLICATION_MONTHLY_PLAN.unitAmount
   if (!input.billingRequired) {
     return {
       targetUserId: input.targetUserId,
@@ -1803,6 +2066,14 @@ export async function createOrganizationSeatQuote(
   if (plan.quantity !== input.currentSeats) {
     throw createError({ statusCode: 409, statusMessage: 'Stripe seat quantity is out of sync' })
   }
+  const billingPlan = APPLICATION_BILLING_PLANS[plan.billingPlanCode]
+  if (plan.billingPlanCode === 'individual') {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Upgrade the Individual plan to Team before adding members',
+    })
+  }
+  const unitAmount = billingPlan.unitAmount
   const prorationDate = validateProrationDate(
     plan,
     input.prorationDate ?? Math.floor(Date.now() / 1000),
@@ -1833,9 +2104,9 @@ export async function createOrganizationSeatQuote(
     }),
   ])
   if (
-    prorationPreview.currency !== APPLICATION_MONTHLY_PLAN.currency
-    || currentRecurringPreview.currency !== APPLICATION_MONTHLY_PLAN.currency
-    || nextRecurringPreview.currency !== APPLICATION_MONTHLY_PLAN.currency
+    prorationPreview.currency !== billingPlan.currency
+    || currentRecurringPreview.currency !== billingPlan.currency
+    || nextRecurringPreview.currency !== billingPlan.currency
   ) {
     throw createError({ statusCode: 409, statusMessage: 'Stripe seat quote currency is invalid' })
   }
@@ -1864,6 +2135,322 @@ export async function createOrganizationSeatQuote(
     total: prorationPreview.total,
     renewalAt: plan.currentPeriodEnd,
     prorationDate,
+  }
+}
+
+export async function createOrganizationPlanUpgradeQuote(
+  event: H3Event,
+  organizationId: string,
+  prorationDateInput?: number,
+): Promise<OrganizationBillingPlanUpgradeQuote> {
+  const { account, subscription, plan } = await retrieveOrganizationStripeSubscription(
+    event,
+    organizationId,
+  )
+  if (
+    plan.billingPlanCode !== 'individual'
+    || plan.quantity !== 1
+    || account.billing_plan_code !== 'individual'
+    || Number(account.licensed_seat_count) !== 1
+    || !['active', 'trialing'].includes(subscription.status)
+    || subscription.cancel_at_period_end
+  ) {
+    throw createError({ statusCode: 409, statusMessage: 'Individual plan cannot be upgraded in its current state' })
+  }
+  if (subscription.pending_update) {
+    throw createError({ statusCode: 409, statusMessage: 'Another subscription payment is pending' })
+  }
+  const targetPrice = await applicationBillingPrice(event, 'team')
+  const prorationDate = validateProrationDate(
+    plan,
+    prorationDateInput ?? Math.floor(Date.now() / 1000),
+  )
+  const stripe = stripeBillingClient(event)
+  const [prorationPreview, currentRecurringPreview, nextRecurringPreview] = await Promise.all([
+    stripe.invoices.createPreview({
+      customer: account.stripe_customer_id || undefined,
+      subscription: subscription.id,
+      subscription_details: {
+        items: [{
+          id: plan.subscriptionItemId,
+          price: targetPrice.id,
+          quantity: APPLICATION_BILLING_PLANS.team.minSeats,
+        }],
+        proration_behavior: 'always_invoice',
+        proration_date: prorationDate,
+      },
+    }),
+    stripe.invoices.createPreview({
+      customer: account.stripe_customer_id || undefined,
+      subscription: subscription.id,
+      preview_mode: 'recurring',
+    }),
+    stripe.invoices.createPreview({
+      customer: account.stripe_customer_id || undefined,
+      subscription: subscription.id,
+      preview_mode: 'recurring',
+      subscription_details: {
+        items: [{
+          id: plan.subscriptionItemId,
+          price: targetPrice.id,
+          quantity: APPLICATION_BILLING_PLANS.team.minSeats,
+        }],
+      },
+    }),
+  ])
+  if (
+    prorationPreview.currency !== APPLICATION_BILLING_PLANS.team.currency
+    || currentRecurringPreview.currency !== APPLICATION_BILLING_PLANS.individual.currency
+    || nextRecurringPreview.currency !== APPLICATION_BILLING_PLANS.team.currency
+  ) {
+    throw createError({ statusCode: 409, statusMessage: 'Stripe plan upgrade quote currency is invalid' })
+  }
+  const immediate = prorationAmounts(await invoicePreviewLines(stripe, prorationPreview))
+  if (immediate.count === 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Stripe plan upgrade quote has no proration lines' })
+  }
+  const seatRevision = Number(account.seat_revision)
+  if (!Number.isSafeInteger(seatRevision) || seatRevision < 1) {
+    throw createError({ statusCode: 409, statusMessage: 'Organization seat revision is invalid' })
+  }
+  return {
+    fromPlanCode: 'individual',
+    targetPlanCode: 'team',
+    currentSeats: 1,
+    targetSeats: 3,
+    targetUnitAmount: APPLICATION_BILLING_PLANS.team.unitAmount,
+    currentMonthlySubtotal: APPLICATION_BILLING_PLANS.individual.unitAmount,
+    nextMonthlySubtotal: APPLICATION_BILLING_PLANS.team.unitAmount
+      * APPLICATION_BILLING_PLANS.team.minSeats,
+    immediateAmount: prorationPreview.amount_due,
+    subtotal: prorationPreview.subtotal,
+    discountAmount: sumAmounts(prorationPreview.total_discount_amounts),
+    taxAmount: sumAmounts(prorationPreview.total_taxes),
+    total: prorationPreview.total,
+    currency: 'pln',
+    renewalAt: plan.currentPeriodEnd,
+    prorationDate,
+    expectedSeatRevision: seatRevision,
+    fromStripePriceId: plan.priceId,
+    targetStripePriceId: targetPrice.id,
+  }
+}
+
+interface OrganizationPlanUpgradeClaim {
+  changeId: string
+  status: 'prepared' | 'pending' | 'succeeded' | 'failed'
+  attempts: number
+  updatedAt: string
+  stripeIdempotencyKey: string
+  invoiceId: string | null
+  paymentUrl: string | null
+  replayed: boolean
+}
+
+export async function beginOrganizationPlanUpgrade(
+  event: H3Event,
+  input: {
+    organizationId: string
+    actorUserId: string
+    clientIdempotencyKey: string
+    expectedSeatRevision: number
+    fromStripePriceId: string
+    targetStripePriceId: string
+    prorationDate: number
+  },
+): Promise<OrganizationPlanUpgradeClaim> {
+  const backend = serverDataBackend(event) as any
+  const result = await backend.rpc('begin_organization_plan_upgrade_v1', {
+    p_organization_id: input.organizationId,
+    p_actor_user_id: input.actorUserId,
+    p_client_idempotency_key: input.clientIdempotencyKey,
+    p_expected_seat_revision: input.expectedSeatRevision,
+    p_from_stripe_price_id: input.fromStripePriceId,
+    p_target_stripe_price_id: input.targetStripePriceId,
+    p_proration_date: input.prorationDate,
+  })
+  if (result.error) {
+    throw createError({
+      statusCode: result.error.code === '42501' ? 403 : result.error.code === '23514' ? 409 : 500,
+      statusMessage: result.error.message,
+    })
+  }
+  const payload = (result.data ?? {}) as Record<string, unknown>
+  const claim: OrganizationPlanUpgradeClaim = {
+    changeId: String(payload.changeId || ''),
+    status: String(payload.status || '') as OrganizationPlanUpgradeClaim['status'],
+    attempts: Number(payload.attempts),
+    updatedAt: String(payload.updatedAt || ''),
+    stripeIdempotencyKey: String(payload.stripeIdempotencyKey || ''),
+    invoiceId: typeof payload.stripeInvoiceId === 'string' ? payload.stripeInvoiceId : null,
+    paymentUrl: typeof payload.paymentUrl === 'string' ? payload.paymentUrl : null,
+    replayed: payload.replayed === true,
+  }
+  if (
+    !/^[0-9a-f-]{36}$/iu.test(claim.changeId)
+    || !['prepared', 'pending', 'succeeded', 'failed'].includes(claim.status)
+    || !Number.isSafeInteger(claim.attempts)
+    || !Number.isFinite(Date.parse(claim.updatedAt))
+    || !claim.stripeIdempotencyKey.startsWith('openexpert-plan-upgrade-')
+  ) {
+    throw createError({ statusCode: 500, statusMessage: 'Plan upgrade claim is invalid' })
+  }
+  return claim
+}
+
+export async function claimOrganizationPlanUpgradeMutation(
+  event: H3Event,
+  changeId: string,
+  expectedUpdatedAt: string,
+): Promise<{ claimed: boolean, status: OrganizationPlanUpgradeClaim['status'], updatedAt: string }> {
+  const backend = serverDataBackend(event) as any
+  const result = await backend.rpc('claim_organization_plan_upgrade_v1', {
+    p_change_id: changeId,
+    p_expected_updated_at: expectedUpdatedAt,
+  })
+  if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+  const payload = (result.data ?? {}) as Record<string, unknown>
+  const status = String(payload.status || '') as OrganizationPlanUpgradeClaim['status']
+  const updatedAt = String(payload.updatedAt || '')
+  if (!['prepared', 'pending', 'succeeded', 'failed'].includes(status) || !Number.isFinite(Date.parse(updatedAt))) {
+    throw createError({ statusCode: 500, statusMessage: 'Plan upgrade mutation claim is invalid' })
+  }
+  return { claimed: payload.claimed === true, status, updatedAt }
+}
+
+export async function markOrganizationPlanUpgrade(
+  event: H3Event,
+  input: {
+    changeId: string
+    status: 'pending' | 'failed'
+    invoiceId?: string | null
+    paymentUrl?: string | null
+    failureCode?: string | null
+    failureMessage?: string | null
+  },
+): Promise<void> {
+  const backend = serverDataBackend(event) as any
+  const result = await backend.rpc('mark_organization_plan_upgrade_v1', {
+    p_change_id: input.changeId,
+    p_status: input.status,
+    p_stripe_invoice_id: input.invoiceId || null,
+    p_payment_url: input.paymentUrl || null,
+    p_failure_code: input.failureCode || null,
+    p_failure_message: input.failureMessage?.slice(0, 500) || null,
+  })
+  if (result.error) throw createError({ statusCode: 500, statusMessage: result.error.message })
+}
+
+export async function updateOrganizationStripePlanToTeam(
+  event: H3Event,
+  input: {
+    organizationId: string
+    changeId: string
+    expectedUpdatedAt: string
+    prorationDate: number
+    stripeIdempotencyKey: string
+    allowExistingPending: boolean
+  },
+): Promise<StripeSeatUpdateResult> {
+  const { account, subscription, plan } = await retrieveOrganizationStripeSubscription(
+    event,
+    input.organizationId,
+  )
+  const targetPrice = await applicationBillingPrice(event, 'team')
+  const snapshotEventCreated = Number(account.last_stripe_event_created_at || 0)
+  if (
+    plan.billingPlanCode !== 'individual'
+    || plan.quantity !== 1
+    || account.billing_plan_code !== 'individual'
+    || !Number.isSafeInteger(snapshotEventCreated)
+    || snapshotEventCreated < 0
+  ) {
+    throw createError({ statusCode: 409, statusMessage: 'Individual plan changed; request a new quote' })
+  }
+  if (!['active', 'trialing'].includes(subscription.status) || subscription.cancel_at_period_end) {
+    throw createError({ statusCode: 409, statusMessage: 'Stripe subscription cannot be upgraded' })
+  }
+  if (subscription.pending_update) {
+    const pendingItem = subscription.pending_update.subscription_items?.length === 1
+      ? subscription.pending_update.subscription_items[0]
+      : undefined
+    const pendingPriceId = pendingItem
+      ? typeof pendingItem.price === 'string' ? pendingItem.price : pendingItem.price.id
+      : null
+    if (
+      !input.allowExistingPending
+      || !pendingItem
+      || pendingItem.id !== plan.subscriptionItemId
+      || pendingPriceId !== targetPrice.id
+      || pendingItem.quantity !== APPLICATION_BILLING_PLANS.team.minSeats
+    ) {
+      throw createError({ statusCode: 409, statusMessage: 'Another subscription payment is pending' })
+    }
+    const invoice = await expandedLatestInvoice(event, subscription)
+    const correlatedInvoice = invoice
+      && isInvoiceForSubscriptionUpdate(invoice, subscription, { requireLatest: true })
+      ? invoice
+      : null
+    return {
+      subscription,
+      plan,
+      invoiceId: correlatedInvoice?.id ?? null,
+      paymentUrl: correlatedInvoice ? actionableInvoicePaymentUrl(correlatedInvoice) : null,
+      pending: true,
+      snapshotEventCreated,
+    }
+  }
+
+  const prorationDate = validateProrationDate(plan, input.prorationDate)
+  const mutationClaim = await claimOrganizationPlanUpgradeMutation(
+    event,
+    input.changeId,
+    input.expectedUpdatedAt,
+  )
+  if (!mutationClaim.claimed) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Plan upgrade was updated by another request',
+      data: { planUpgradeClaimLost: true, planChangeStatus: mutationClaim.status },
+    })
+  }
+  const updated = await stripeBillingClient(event).subscriptions.update(subscription.id, {
+    items: [{
+      id: plan.subscriptionItemId,
+      price: targetPrice.id,
+      quantity: APPLICATION_BILLING_PLANS.team.minSeats,
+    }],
+    payment_behavior: 'pending_if_incomplete',
+    proration_behavior: 'always_invoice',
+    proration_date: prorationDate,
+    expand: ['items.data.price', 'latest_invoice'],
+  }, { idempotencyKey: input.stripeIdempotencyKey })
+
+  const updatedPlan = await stripeSubscriptionSeatPlan(event, updated, input.organizationId)
+  if (!updated.pending_update && (
+    updatedPlan.billingPlanCode !== 'team'
+    || updatedPlan.quantity !== APPLICATION_BILLING_PLANS.team.minSeats
+  )) {
+    throw createError({ statusCode: 502, statusMessage: 'Stripe did not apply the Team plan' })
+  }
+  if (updated.pending_update && (
+    updatedPlan.billingPlanCode !== 'individual'
+    || updatedPlan.quantity !== 1
+  )) {
+    throw createError({ statusCode: 502, statusMessage: 'Stripe pending plan upgrade is inconsistent' })
+  }
+  const invoice = updated.pending_update ? await expandedLatestInvoice(event, updated) : null
+  const correlatedInvoice = invoice
+    && isInvoiceForSubscriptionUpdate(invoice, updated, { requireLatest: true })
+    ? invoice
+    : null
+  return {
+    subscription: updated,
+    plan: updatedPlan,
+    invoiceId: correlatedInvoice?.id ?? null,
+    paymentUrl: correlatedInvoice ? actionableInvoicePaymentUrl(correlatedInvoice) : null,
+    pending: Boolean(updated.pending_update),
+    snapshotEventCreated,
   }
 }
 

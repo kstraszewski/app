@@ -1,6 +1,8 @@
 import type {
+  ApplicationBillingPlanCode,
   BillingAccessState,
   OrganizationKind,
+  PublicApplicationBillingPlanCode,
 } from '../organization-billing'
 
 export const ORGANIZATION_INVITATION_STATUSES = [
@@ -60,6 +62,7 @@ export interface SystemOrganizationInvitation {
   organizationName: string
   organizationKind: OrganizationKind
   onboardingSource: OrganizationOnboardingSource
+  billingPlan: ApplicationBillingPlanCode | null
   initialSeatCount: number
   billingDiscount: OrganizationInvitationBillingDiscount | null
   status: OrganizationInvitationStatus
@@ -96,6 +99,7 @@ export interface CreateOrganizationInvitationBody {
   organizationName: string
   organizationKind: OrganizationKind
   administratorName?: string
+  billingPlan?: PublicApplicationBillingPlanCode | null
   initialSeatCount?: number
   billingDiscount?: OrganizationInvitationBillingDiscount | null
 }
@@ -111,6 +115,7 @@ export interface PublicOrganizationInvitation {
   organizationName: string
   organizationKind: OrganizationKind
   onboardingSource: OrganizationOnboardingSource
+  billingPlan: ApplicationBillingPlanCode | null
   initialSeatCount: number
   billingDiscount: OrganizationInvitationBillingDiscount | null
   status: OrganizationInvitationStatus
@@ -145,6 +150,7 @@ export interface StartApplicationRegistrationBody {
   email: string
   administratorName: string
   organizationName: string
+  billingPlan: PublicApplicationBillingPlanCode
   initialSeatCount: number
 }
 

@@ -7,6 +7,10 @@ import type {
   PublicOrganizationInvitationResponse,
 } from '#shared/types/system-organizations'
 import { invitationBillingDiscountLabel } from '#shared/organization-invitation-discount'
+import {
+  APPLICATION_BILLING_PLANS,
+  isApplicationBillingPlanCode,
+} from '#shared/organization-billing'
 import { apiErrorMessage } from '~/utils/api-error'
 
 definePageMeta({ layout: false })
@@ -85,12 +89,23 @@ const initialSeatCount = computed(() => {
   const value = Number(invitation.value?.initialSeatCount)
   return Number.isSafeInteger(value) && value >= 1 && value <= 100 ? value : 1
 })
+const billingPlanCode = computed(() => (
+  isApplicationBillingPlanCode(invitation.value?.billingPlan)
+    ? invitation.value.billingPlan
+    : 'legacy_per_seat'
+))
+const billingPlan = computed(() => APPLICATION_BILLING_PLANS[billingPlanCode.value])
+const billingPlanLabel = computed(() => billingPlanCode.value === 'individual'
+  ? 'Indywidualny'
+  : billingPlanCode.value === 'team'
+    ? 'Zespół'
+    : 'Miesięczny')
 const initialMonthlyTotal = computed(() => new Intl.NumberFormat('pl-PL', {
   style: 'currency',
   currency: 'PLN',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
-}).format(initialSeatCount.value * 200))
+}).format(initialSeatCount.value * billingPlan.value.unitAmount / 100))
 const initialSeatAssignment = computed(() => initialSeatCount.value === 1
   ? 'Administrator zajmuje wybrane miejsce.'
   : `Administrator zajmuje pierwsze miejsce. Pozostałe ${initialSeatCount.value - 1} osoby możesz dodać po aktywacji.`)
@@ -337,7 +352,7 @@ async function acceptInvitation() {
           <div class="organization-invitation__plan">
             <div>
               <span>APLIKACJA</span>
-              <strong>{{ initialMonthlyTotal }} <small>/ miesiąc · {{ initialSeatCount }} × 200 zł</small></strong>
+              <strong>{{ initialMonthlyTotal }} <small>{{ billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} / miesiąc · plan {{ billingPlanLabel }}</small></strong>
             </div>
             <UBadge
               color="primary"
@@ -415,8 +430,8 @@ async function acceptInvitation() {
 
         <div v-if="isApplication" class="organization-invitation__plan">
           <div>
-            <span>PLAN MIESIĘCZNY</span>
-            <strong>{{ initialMonthlyTotal }} <small>/ miesiąc · {{ initialSeatCount }} × 200 zł</small></strong>
+            <span>PLAN {{ billingPlanLabel.toLocaleUpperCase('pl') }}</span>
+            <strong>{{ initialMonthlyTotal }} <small>{{ billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} / miesiąc · {{ initialSeatCount }} × {{ billingPlan.unitAmount / 100 }} zł</small></strong>
           </div>
           <UBadge color="primary" variant="subtle" icon="i-lucide-ticket-percent">
             {{ billingDiscount ? 'Oferta przypisana' : 'Kupony w checkout' }}

@@ -15,6 +15,10 @@ import {
   sendOrganizationInvitationMagicLink,
 } from '~~/server/utils/organization-invitations'
 import { serverOrganizationInvitationAuth } from '~~/server/utils/platform-auth'
+import {
+  applicationBillingPlanSeatCountIsValid,
+  isPublicApplicationBillingPlanCode,
+} from '~~/shared/organization-billing'
 import type {
   StartApplicationRegistrationBody,
   StartApplicationRegistrationResponse,
@@ -28,6 +32,7 @@ interface UntrustedRegistrationBody {
   email?: unknown
   administratorName?: unknown
   organizationName?: unknown
+  billingPlan?: unknown
   initialSeatCount?: unknown
 }
 
@@ -62,6 +67,7 @@ function registrationBody(value: UntrustedRegistrationBody): StartApplicationReg
   }
 
   const initialSeatCount = value.initialSeatCount
+  const billingPlan = value.billingPlan
   if (
     typeof initialSeatCount !== 'number'
     || !Number.isSafeInteger(initialSeatCount)
@@ -73,6 +79,15 @@ function registrationBody(value: UntrustedRegistrationBody): StartApplicationReg
       statusMessage: 'initialSeatCount must be between 1 and 100',
     })
   }
+  if (
+    !isPublicApplicationBillingPlanCode(billingPlan)
+    || !applicationBillingPlanSeatCountIsValid(billingPlan, initialSeatCount)
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'billingPlan and initialSeatCount are inconsistent',
+    })
+  }
 
   return {
     email,
@@ -82,6 +97,7 @@ function registrationBody(value: UntrustedRegistrationBody): StartApplicationReg
       200,
     ),
     organizationName: requiredString(value.organizationName, 'organizationName', 160),
+    billingPlan,
     initialSeatCount,
   }
 }
@@ -142,6 +158,7 @@ export default defineEventHandler(async (event): Promise<StartApplicationRegistr
       organizationName: body.organizationName,
       organizationKind: 'application',
       onboardingSource: 'self_service',
+      billingPlan: body.billingPlan,
       initialSeatCount: body.initialSeatCount,
       billingDiscount: null,
       invitedByUserId: null,

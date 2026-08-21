@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import {
-  APPLICATION_SEAT_PRICE_PLN,
+  APPLICATION_BILLING_PLANS,
   buildApplicationRegistrationUrl,
   buildLoginUrl,
   normalizeApplicationSeatCount,
 } from '~/utils/landing-registration'
 
 const { siteOrigin } = useLandingSeo({
-  title: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
-  description: 'OpenExpert dla pośredników kredytowych: CRM w Twojej marce, poczta zintegrowana z klientami i sprawami, rozliczenia oraz agenci AI.',
+  title: 'OpenExpert — aplikacja do obsługi klientów i spraw',
+  description: 'OpenExpert łączy CRM, pocztę, obsługę spraw, rozliczenia i agentów AI w jednej aplikacji dla osób i zespołów.',
   path: '/',
-  socialImageAlt: 'OpenExpert — platforma do budowy własnego pośrednictwa kredytowego',
+  socialImageAlt: 'OpenExpert — aplikacja do obsługi klientów i spraw',
 })
 
 const homeUrl = new URL('/', `${siteOrigin}/`).toString()
@@ -39,7 +39,7 @@ useHead({
           },
           email: 'hello@openexpert.app',
           sameAs: ['https://github.com/OpenExpertApp/OpenExpert'],
-          description: 'Platforma dla osób i firm uruchamiających lub rozwijających pośrednictwo kredytowe: CRM, OpenExpert Mail, obsługa spraw, rozliczenia i agenci AI.',
+          description: 'Aplikacja dla osób i zespołów: CRM, OpenExpert Mail, obsługa spraw, rozliczenia i agenci AI w jednym środowisku.',
         },
         {
           '@type': 'WebSite',
@@ -61,8 +61,8 @@ useHead({
           '@type': 'WebPage',
           '@id': homePageId,
           url: homeUrl,
-          name: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
-          description: 'Platforma do uruchomienia i rozwijania pośrednictwa kredytowego pod własną marką, ze zintegrowaną pocztą OpenExpert Mail.',
+          name: 'OpenExpert — aplikacja do obsługi klientów i spraw',
+          description: 'Jedna aplikacja do pracy z klientami, sprawami i pocztą OpenExpert Mail — dla osób indywidualnych i zespołów.',
           isPartOf: { '@id': websiteId },
           about: { '@id': organizationId },
           primaryImageOfPage: { '@id': primaryImageId },
@@ -75,20 +75,23 @@ useHead({
 
 const mobileMenuOpen = ref(false)
 const runtimeConfig = useRuntimeConfig()
-const applicationSeatCount = ref(1)
+const teamSeatCount = ref(3)
 const crmBaseUrl = String(runtimeConfig.public.openexpert.crmBaseUrl)
 const plnNumberFormatter = new Intl.NumberFormat('pl-PL', {
   maximumFractionDigits: 0,
 })
 
-const applicationMonthlyTotal = computed(() => (
-  applicationSeatCount.value * APPLICATION_SEAT_PRICE_PLN
+const teamMonthlyTotal = computed(() => (
+  teamSeatCount.value * APPLICATION_BILLING_PLANS.team.seatPricePln
 ))
-const applicationMonthlyTotalLabel = computed(() => (
-  `${applicationSeatCount.value} × ${APPLICATION_SEAT_PRICE_PLN} = ${plnNumberFormatter.format(applicationMonthlyTotal.value)} zł / mies.`
+const teamMonthlyTotalLabel = computed(() => (
+  `${teamSeatCount.value} × ${APPLICATION_BILLING_PLANS.team.seatPricePln} = ${plnNumberFormatter.format(teamMonthlyTotal.value)} zł netto / mies. + VAT`
 ))
-const applicationRegistrationUrl = computed(() => (
-  buildApplicationRegistrationUrl(crmBaseUrl, applicationSeatCount.value)
+const individualRegistrationUrl = computed(() => (
+  buildApplicationRegistrationUrl(crmBaseUrl, 'individual', 1)
+))
+const teamRegistrationUrl = computed(() => (
+  buildApplicationRegistrationUrl(crmBaseUrl, 'team', teamSeatCount.value)
 ))
 const loginUrl = buildLoginUrl(crmBaseUrl)
 
@@ -163,8 +166,8 @@ const expertPoints = [
 
 const joinSteps = [
   {
-    title: 'Wybierz liczbę miejsc',
-    description: 'Właściciel zajmuje pierwsze miejsce, a pozostałe osoby możesz dodać również później.',
+    title: 'Wybierz plan i miejsca',
+    description: 'Zacznij samodzielnie albo wybierz plan Zespół od 3 osób. Upgrade jest zawsze dostępny.',
   },
   {
     title: 'Załóż organizację',
@@ -176,20 +179,20 @@ const joinSteps = [
   },
 ]
 
-function setApplicationSeatCount(value: unknown) {
-  applicationSeatCount.value = normalizeApplicationSeatCount(value)
+function setTeamSeatCount(value: unknown) {
+  teamSeatCount.value = normalizeApplicationSeatCount(value, 'team')
 }
 
-function updateApplicationSeatCountFromInput(event: Event) {
+function updateTeamSeatCountFromInput(event: Event) {
   const input = event.target as HTMLInputElement
   if (input.value === '') return
-  setApplicationSeatCount(input.value)
+  setTeamSeatCount(input.value)
 }
 
-function commitApplicationSeatCount(event: Event) {
+function commitTeamSeatCount(event: Event) {
   const input = event.target as HTMLInputElement
-  setApplicationSeatCount(input.value)
-  input.value = String(applicationSeatCount.value)
+  setTeamSeatCount(input.value)
+  input.value = String(teamSeatCount.value)
 }
 
 function closeMobileMenu() {
@@ -251,10 +254,10 @@ function closeMobileMenu() {
       <section id="poczatek" class="hero" aria-labelledby="hero-title">
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">Platforma dla przyszłych i działających pośredników</p>
-            <h1 id="hero-title" aria-label="Zbuduj własne pośrednictwo z OpenExpert.">
-              <span aria-hidden="true">Zbuduj własne.</span>
-              <em aria-hidden="true">Pośrednictwo.</em>
+            <p class="eyebrow">Jedna aplikacja dla osób i zespołów</p>
+            <h1 id="hero-title" aria-label="Prowadź klientów i sprawy z OpenExpert.">
+              <span aria-hidden="true">Prowadź klientów.</span>
+              <em aria-hidden="true">Porządkuj sprawy.</em>
               <span aria-hidden="true">Z OpenExpert.</span>
             </h1>
             <p class="hero-lead">Zacznij samodzielnie albo rozwijaj całą firmę. OpenExpert daje Ci CRM w Twojej marce, uporządkowany proces obsługi, rozliczenia i agentów AI — od pierwszego kontaktu do zakończenia sprawy.</p>
@@ -275,82 +278,107 @@ function closeMobileMenu() {
         <div class="pricing-inner">
           <div class="pricing-heading">
             <p class="section-label">Prosty cennik na każdym etapie</p>
-            <h2 id="pricing-title">Wybierz liczbę miejsc.{{ ' ' }}<br><em>Płać tylko za zespół.</em></h2>
-            <p>Zacznij od jednego konta albo od razu uruchom całą organizację. Liczbę miejsc w aplikacji możesz zwiększyć również później.</p>
+            <h2 id="pricing-title">Zacznij samodzielnie.{{ ' ' }}<br><em>Rozwijaj się z zespołem.</em></h2>
+            <p>Oba plany obejmują pełną aplikację. Z planu Indywidualnego możesz w każdej chwili przejść na Zespół, a przed obciążeniem pokażemy dokładną dopłatę.</p>
           </div>
 
           <div class="pricing-grid">
-            <article class="pricing-card pricing-card--featured" aria-labelledby="application-plan-title">
-              <div class="pricing-card__badge">Plan miesięczny</div>
+            <article class="pricing-card" aria-labelledby="individual-plan-title">
+              <div class="pricing-card__badge">Dla 1 osoby</div>
               <div class="pricing-card__header">
-                <p class="pricing-card__eyebrow">Pełna aplikacja dla organizacji</p>
-                <h3 id="application-plan-title">Aplikacja</h3>
+                <p class="pricing-card__eyebrow">Pełny start bez zespołu</p>
+                <h3 id="individual-plan-title">Indywidualny</h3>
                 <p class="pricing-card__price">
                   <strong>200 zł</strong>
-                  <span>brutto / opłacone miejsce / miesiąc</span>
+                  <span>netto + VAT / miesiąc</span>
                 </p>
-                <p class="pricing-card__description">Kup dokładnie tyle miejsc, ile potrzebujesz. Właściciel zajmuje pierwsze miejsce, a pozostałe możesz obsadzić od razu lub później.</p>
+                <p class="pricing-card__description">Jedno konto z pełnym dostępem do OpenExpert. Dobre na start, kiedy prowadzisz pracę samodzielnie.</p>
+              </div>
+
+              <ul class="pricing-card__features" aria-label="W planie Indywidualny">
+                <li><Icon name="lucide:check" aria-hidden="true" /> Dokładnie 1 aktywny użytkownik</li>
+                <li><Icon name="lucide:check" aria-hidden="true" /> Wszystkie funkcje aplikacji</li>
+                <li><Icon name="lucide:check" aria-hidden="true" /> Upgrade do Zespołu w każdej chwili</li>
+                <li><Icon name="lucide:check" aria-hidden="true" /> Kod promocyjny podczas płatności</li>
+              </ul>
+
+              <a :href="individualRegistrationUrl" class="button pricing-card__cta">
+                Wybieram Indywidualny
+                <Icon name="lucide:arrow-right" aria-hidden="true" />
+              </a>
+            </article>
+
+            <article class="pricing-card pricing-card--featured" aria-labelledby="team-plan-title">
+              <div class="pricing-card__badge">Najlepszy dla firm</div>
+              <div class="pricing-card__header">
+                <p class="pricing-card__eyebrow">Niższa cena za każdą osobę</p>
+                <h3 id="team-plan-title">Zespół</h3>
+                <p class="pricing-card__price">
+                  <strong>150 zł</strong>
+                  <span>netto + VAT / osoba / miesiąc</span>
+                </p>
+                <p class="pricing-card__description">Minimum 3 opłacone miejsca. Właściciel zajmuje pierwsze, a pozostałe możesz obsadzić od razu lub później.</p>
               </div>
 
               <div class="pricing-seat-control">
-                <label for="application-seat-count">Liczba opłaconych miejsc</label>
+                <label for="team-seat-count">Liczba opłaconych miejsc</label>
                 <div class="pricing-seat-stepper">
                   <button
                     type="button"
-                    :disabled="applicationSeatCount <= 1"
+                    :disabled="teamSeatCount <= 3"
                     aria-label="Zmniejsz liczbę miejsc"
-                    @click="setApplicationSeatCount(applicationSeatCount - 1)"
+                    @click="setTeamSeatCount(teamSeatCount - 1)"
                   >
                     <Icon name="lucide:minus" aria-hidden="true" />
                   </button>
                   <input
-                    id="application-seat-count"
-                    :value="applicationSeatCount"
+                    id="team-seat-count"
+                    :value="teamSeatCount"
                     type="number"
-                    name="applicationSeats"
+                    name="teamSeats"
                     inputmode="numeric"
-                    min="1"
+                    min="3"
                     max="100"
                     step="1"
-                    aria-describedby="application-seat-note application-price-summary"
-                    @input="updateApplicationSeatCountFromInput"
-                    @change="commitApplicationSeatCount"
-                    @blur="commitApplicationSeatCount"
+                    aria-describedby="team-seat-note team-price-summary"
+                    @input="updateTeamSeatCountFromInput"
+                    @change="commitTeamSeatCount"
+                    @blur="commitTeamSeatCount"
                   >
                   <button
                     type="button"
-                    :disabled="applicationSeatCount >= 100"
+                    :disabled="teamSeatCount >= 100"
                     aria-label="Zwiększ liczbę miejsc"
-                    @click="setApplicationSeatCount(applicationSeatCount + 1)"
+                    @click="setTeamSeatCount(teamSeatCount + 1)"
                   >
                     <Icon name="lucide:plus" aria-hidden="true" />
                   </button>
                 </div>
-                <p id="application-seat-note" class="pricing-seat-control__note">Od 1 do 100 miejsc. Właściciel organizacji zajmuje 1 miejsce.</p>
+                <p id="team-seat-note" class="pricing-seat-control__note">Od 3 do 100 miejsc. Właściciel organizacji zajmuje 1 miejsce.</p>
                 <p
-                  id="application-price-summary"
+                  id="team-price-summary"
                   class="pricing-seat-control__summary"
                   aria-live="polite"
                   aria-atomic="true"
                 >
-                  {{ applicationMonthlyTotalLabel }}
+                  {{ teamMonthlyTotalLabel }}
                 </p>
               </div>
 
-              <ul class="pricing-card__features" aria-label="W planie Aplikacja">
+              <ul class="pricing-card__features" aria-label="W planie Zespół">
                 <li><Icon name="lucide:check" aria-hidden="true" /> Pełny dostęp dla całej organizacji</li>
                 <li><Icon name="lucide:check" aria-hidden="true" /> Niewykorzystane miejsca możesz obsadzić później</li>
                 <li><Icon name="lucide:check" aria-hidden="true" /> Kod promocyjny podasz podczas płatności</li>
               </ul>
 
-              <a :href="applicationRegistrationUrl" class="button pricing-card__cta">
-                Przejdź do rejestracji
+              <a :href="teamRegistrationUrl" class="button pricing-card__cta">
+                Wybieram Zespół
                 <Icon name="lucide:arrow-right" aria-hidden="true" />
               </a>
             </article>
           </div>
 
-          <p class="pricing-legal">Plan Aplikacja jest odnawiany co miesiąc i opłacany kartą. Kwota zawiera VAT. Zmiana liczby miejsc po uruchomieniu organizacji może zmienić wysokość kolejnego obciążenia.</p>
+          <p class="pricing-legal">Ceny są kwotami netto; właściwy VAT zostanie doliczony w Stripe Checkout. Plany są odnawiane co miesiąc i opłacane kartą. Upgrade Indywidualny → Zespół zmienia plan na minimum 3 miejsca i może naliczyć proporcjonalną dopłatę za bieżący okres — zobaczysz ją przed potwierdzeniem.</p>
         </div>
       </section>
 
@@ -472,8 +500,8 @@ function closeMobileMenu() {
             </ol>
 
             <div class="join-registration" aria-label="Przejdź do rejestracji organizacji">
-              <a :href="applicationRegistrationUrl" class="button button--light">
-                Aplikacja — {{ applicationSeatCount }} {{ applicationSeatCount === 1 ? 'miejsce' : 'miejsc' }}
+              <a :href="teamRegistrationUrl" class="button button--light">
+                Zespół — {{ teamSeatCount }} miejsca
                 <Icon name="lucide:arrow-right" aria-hidden="true" />
               </a>
             </div>
@@ -488,7 +516,7 @@ function closeMobileMenu() {
           <img src="/assets/logo-dark.svg" alt="" width="24" height="24">
           <span>OpenExpert</span>
         </a>
-        <p>© 2026 OpenExpert. Twoja marka. Twoje pośrednictwo. Jeden system.</p>
+        <p>© 2026 OpenExpert. Twoja marka. Twój zespół. Jeden system.</p>
         <nav aria-label="Linki w stopce">
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
@@ -1230,8 +1258,7 @@ function closeMobileMenu() {
 
 .pricing-grid {
   display: grid;
-  grid-template-columns: minmax(0, 760px);
-  justify-content: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -1239,7 +1266,7 @@ function closeMobileMenu() {
   position: relative;
   display: flex;
   min-width: 0;
-  min-height: 620px;
+  min-height: 660px;
   border: 1px solid #c7c7c2;
   border-radius: 6px;
   background: #f7f7f5;

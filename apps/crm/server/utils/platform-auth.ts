@@ -156,12 +156,13 @@ function emailContent(
           && initialSeatCount <= 100
           ? initialSeatCount
           : 1
+        const billingPlan = metadata.billingPlan === 'team' ? 'Zespół' : 'Indywidualny'
         const seatLabel = seatCount === 1 ? '1 użytkownika' : `${seatCount} użytkowników`
         return {
           subject: 'Dokończ rejestrację organizacji w OpenExpert',
           text: [
             `Otrzymaliśmy prośbę o utworzenie konta administratora${organizationText}.`,
-            `Wybrany pakiet początkowy obejmuje ${seatLabel}.`,
+            `Wybrany pakiet ${billingPlan} obejmuje ${seatLabel}.`,
             '',
             'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i przejść do płatności:',
             url,
@@ -169,7 +170,7 @@ function emailContent(
             'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
             'Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.',
           ].join('\n'),
-          html: `<p>Otrzymaliśmy prośbę o utworzenie konta administratora${organizationHtml}.</p><p>Wybrany pakiet początkowy obejmuje <strong>${seatLabel}</strong>.</p><p><a href="${safeUrl}">Potwierdź email i kontynuuj</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.</p>`,
+          html: `<p>Otrzymaliśmy prośbę o utworzenie konta administratora${organizationHtml}.</p><p>Wybrany pakiet <strong>${billingPlan}</strong> obejmuje <strong>${seatLabel}</strong>.</p><p><a href="${safeUrl}">Potwierdź email i kontynuuj</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.</p>`,
         }
       }
       return {

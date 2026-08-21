@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
+  APPLICATION_BILLING_PLANS,
   APPLICATION_MONTHLY_PLAN,
   isBillingAccessGranted,
   isOrganizationKind,
@@ -12,10 +13,25 @@ function source(relativePath: string): string {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
 }
 
-test('application monthly plan is fixed at 200 PLN per paid seat per month', () => {
+test('application offers enforce individual and team prices while retaining the legacy plan', () => {
+  assert.deepEqual(APPLICATION_BILLING_PLANS.individual, {
+    code: 'individual',
+    stripePlanCode: 'application_individual_monthly',
+    name: 'Indywidualny',
+    currency: 'pln',
+    unitAmount: 20_000,
+    interval: 'month',
+    intervalCount: 1,
+    minSeats: 1,
+    maxSeats: 1,
+    taxBehavior: 'exclusive',
+  })
+  assert.equal(APPLICATION_BILLING_PLANS.team.unitAmount, 15_000)
+  assert.equal(APPLICATION_BILLING_PLANS.team.minSeats, 3)
+  assert.equal(APPLICATION_BILLING_PLANS.team.taxBehavior, 'exclusive')
   assert.deepEqual(APPLICATION_MONTHLY_PLAN, {
     code: 'application_monthly',
-    name: 'Aplikacja',
+    name: 'Aplikacja (plan historyczny)',
     currency: 'pln',
     unitAmount: 20_000,
     interval: 'month',
@@ -56,7 +72,9 @@ test('Checkout creates the durable purchased seat capacity and never trusts a cl
   assert.match(checkout, /`seats-\$\{expectedSeats\}`/)
   assert.doesNotMatch(checkout, /readBody/)
   assert.match(checkout, /payment_method_collection: 'always'/)
-  assert.match(checkout, /billing_model: 'per_seat_v1'/)
+  assert.match(checkout, /billing_model: 'per_seat_v2'/)
+  assert.match(checkout, /automatic_tax: \{ enabled: true \}/)
+  assert.match(checkout, /billing_plan_code: billingPlanCode/)
   assert.match(checkout, /checkoutLinePriceId !== price\.id/)
   assert.match(checkout, /checkout\.sessions\.expire/)
   assert.doesNotMatch(checkout, /'canceled', 'incomplete_expired', 'unpaid'/)
@@ -132,7 +150,9 @@ test('seat updates use exact Stripe proration, pending updates and DB idempotenc
   assert.match(billing, /snapshotEventCreated: number/)
   assert.match(billing, /snapshotEventCreated = Number\(account\.last_stripe_event_created_at/)
   assert.match(billing, /immediateAmount: prorationPreview\.amount_due/)
-  assert.match(billing, /price\.tax_behavior !== 'inclusive'/)
+  assert.match(billing, /price\.tax_behavior !== plan\.taxBehavior/)
+  assert.match(billing, /openexpert_application_individual_monthly_pln_exclusive_v1/)
+  assert.match(billing, /openexpert_application_team_monthly_pln_exclusive_v1/)
   assert.match(billing, /openexpert_application_monthly_pln_inclusive_v2/)
   assert.match(billing, /storedSubscriptionId !== subscription\.id/)
   assert.match(billing, /checkoutSessionId === storedCheckoutSessionId/)
@@ -237,6 +257,45 @@ test('seat updates use exact Stripe proration, pending updates and DB idempotenc
     invoiceCorrelationSmoke,
     /canonical seat mismatch[\s\S]*newer_subscription_event_value \+ 2[\s\S]*'failed'[\s\S]*organization_invoice_newer_failure_reopened_existing_block[\s\S]*newer_subscription_event_value \+ 3[\s\S]*'resolved'[\s\S]*organization_invoice_newer_resolve_reopened_existing_block[\s\S]*organization_invoice_existing_block_canonical_unlock_failed/,
   )
+})
+
+test('individual upgrades to a three-seat team only after a canonical prorated confirmation', () => {
+  const billing = source('../server/utils/stripe-billing.ts')
+  const quote = source('../server/api/org/[organizationSlug]/billing/upgrade/quote.post.ts')
+  const confirm = source('../server/api/org/[organizationSlug]/billing/upgrade.post.ts')
+  const webhook = source('../server/api/stripe/webhook.post.ts')
+  const migration = source('../../../packages/database/postgres/migrations/0081_application_billing_plans.sql')
+  const billingPage = source('../app/pages/org/[organizationSlug]/settings/billing.vue')
+  const usersPage = source('../app/pages/org/[organizationSlug]/users/index.vue')
+
+  assert.match(quote, /requireOrganizationAdmin\(session\)/)
+  assert.match(quote, /createOrganizationPlanUpgradeQuote/)
+  assert.match(confirm, /const canonicalQuote = await createOrganizationPlanUpgradeQuote/)
+  assert.match(confirm, /canonicalQuote\.expectedSeatRevision !== expectedSeatRevision/)
+  assert.match(confirm, /canonicalQuote\.targetStripePriceId !== targetStripePriceId/)
+  assert.match(billing, /plan\.billingPlanCode !== 'individual'/)
+  assert.match(billing, /price: targetPrice\.id/)
+  assert.match(billing, /quantity: APPLICATION_BILLING_PLANS\.team\.minSeats/)
+  assert.match(billing, /payment_behavior: 'pending_if_incomplete'/)
+  assert.match(billing, /claimOrganizationPlanUpgradeMutation/)
+  assert.match(billing, /fail_stale_organization_plan_upgrade_v1/)
+  assert.match(webhook, /matchingOpenOrganizationPlanChangeId/)
+  assert.match(webhook, /failOpenOrganizationPlanChange/)
+
+  assert.match(migration, /billing_plan_code = 'individual' AND initial_seat_count = 1/)
+  assert.match(migration, /billing_plan_code = 'team' AND initial_seat_count BETWEEN 3 AND 1000/)
+  assert.match(migration, /from_plan_code = 'individual'/)
+  assert.match(migration, /target_plan_code = 'team'/)
+  assert.match(migration, /expected_seat_count = 1/)
+  assert.match(migration, /target_seat_count = 3/)
+  assert.match(migration, /organization_billing_plan_changes_open_unique/)
+  assert.match(migration, /private\.apply_organization_seat_snapshot_generation_v1/)
+  assert.match(migration, /TO openexpert_service/)
+
+  assert.match(billingPage, /Przejdź na plan Zespół/)
+  assert.match(billingPage, /Potwierdź upgrade i obciążenie/)
+  assert.match(usersPage, /individualUpgradeRequired/)
+  assert.match(usersPage, /przejdź na plan Zespół/i)
 })
 
 test('billing and canonical seats are persisted atomically behind one service-only RPC', () => {

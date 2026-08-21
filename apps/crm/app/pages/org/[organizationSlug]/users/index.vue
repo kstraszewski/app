@@ -76,6 +76,8 @@ const inviteForm = reactive<InviteForm>({
 const emptyBilling = (): OrganizationMemberBillingSummary => ({
   perSeat: false,
   canManageSeats: false,
+  billingPlanCode: null,
+  canUpgradeToTeam: false,
   licensedSeats: 0,
   activeMembers: 0,
   reservedSeats: 0,
@@ -110,6 +112,11 @@ const canManageUsers = computed(() => (
   directory.value.canAssignOthers
   && (!directory.value.billing.perSeat || directory.value.billing.canManageSeats)
 ))
+const individualUpgradeRequired = computed(() => (
+  directory.value.billing.perSeat
+  && directory.value.billing.billingPlanCode === 'individual'
+))
+const canInviteUsers = computed(() => canManageUsers.value && !individualUpgradeRequired.value)
 const seatManagementRestricted = computed(() => (
   canViewUsers.value
   && directory.value.billing.perSeat
@@ -359,7 +366,7 @@ function resetInviteFlow() {
 }
 
 function openInvite() {
-  if (!canManageUsers.value) return
+  if (!canInviteUsers.value) return
 
   inviteForm.invitedName = ''
   inviteForm.email = ''
@@ -641,7 +648,7 @@ watch(inviteOpen, (open) => {
 
     <template #actions>
       <UButton
-        v-if="canManageUsers"
+        v-if="canInviteUsers"
         icon="i-lucide-user-plus"
         @click="openInvite"
       >
@@ -679,6 +686,21 @@ watch(inviteOpen, (open) => {
       />
 
       <template v-else>
+        <UAlert
+          v-if="individualUpgradeRequired"
+          color="primary"
+          variant="subtle"
+          icon="i-lucide-users-round"
+          title="Plan Indywidualny obejmuje 1 użytkownika"
+          description="Aby zaprosić kolejne osoby, przejdź na plan Zespół. Zobaczysz dokładną proporcjonalną dopłatę przed obciążeniem karty."
+        >
+          <template #actions>
+            <UButton :to="orgPath('/settings/billing')" trailing-icon="i-lucide-arrow-right">
+              Przejdź na plan Zespół
+            </UButton>
+          </template>
+        </UAlert>
+
         <UAlert
           v-if="seatManagementRestricted"
           color="warning"
@@ -767,7 +789,7 @@ watch(inviteOpen, (open) => {
           <UCard>
             <span>Cena za użytkownika</span>
             <strong>{{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}</strong>
-            <small>miesięcznie za opłacone miejsce</small>
+            <small>{{ directory.billing.billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }} miesięcznie za opłacone miejsce</small>
           </UCard>
           <UCard>
             <span>Koszt miesięczny</span>
@@ -775,6 +797,7 @@ watch(inviteOpen, (open) => {
             <small>
               {{ directory.billing.licensedSeats }} ×
               {{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}
+              {{ directory.billing.billingPlanCode === 'legacy_per_seat' ? 'brutto' : 'netto + VAT' }}
             </small>
           </UCard>
           <UCard>
@@ -945,7 +968,7 @@ watch(inviteOpen, (open) => {
                 Wyczyść filtry
               </UButton>
               <UButton
-                v-if="!users.length && canManageUsers"
+                v-if="!users.length && canInviteUsers"
                 icon="i-lucide-user-plus"
                 @click="openInvite"
               >

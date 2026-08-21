@@ -90,7 +90,7 @@ const opportunities = [
       </article>
 
       <div class="analytics-copy">
-        <p class="analytics-label">Rozwój Twojego pośrednictwa</p>
+        <p class="analytics-label">Rozwój Twojej organizacji</p>
         <h2 id="analytics-title">Wiesz, gdzie jest szansa —{{ ' ' }}<br><em>i co zrobić dalej.</em></h2>
         <p class="analytics-lead">Od pierwszych klientów budujesz pipeline, który da się świadomie rozwijać. OpenExpert porządkuje sprawy według potencjału, wyjaśnia ocenę i sugeruje kolejny ruch.</p>
 

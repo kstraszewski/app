@@ -3,6 +3,8 @@ import type { TableColumn } from '@nuxt/ui'
 import type {
   OrganizationBillingHistory,
   OrganizationBillingInvoice,
+  OrganizationBillingPlanUpgradeQuote,
+  OrganizationBillingPlanUpgradeResponse,
   OrganizationMemberBillingSummary,
 } from '#shared/types/organization-seat-billing'
 import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
@@ -42,6 +44,11 @@ type BillingPayload = {
     graceUntil: string | null
     hasCustomer: boolean
     hasSubscription: boolean
+    licensedSeats: number
+    activeMembers: number
+    monthlyListAmount: number
+    billingPlanCode: 'individual' | 'team' | 'legacy_per_seat'
+    canUpgradeToTeam: boolean
     lastSyncedAt: string | null
   }
 }
@@ -65,6 +72,12 @@ const checkoutLoading = ref(false)
 const portalLoading = ref(false)
 const synchronizeLoading = ref(false)
 const reconciliationError = ref('')
+const upgradeOpen = ref(false)
+const upgradeLoading = ref(false)
+const upgradeConfirming = ref(false)
+const upgradeError = ref('')
+const upgradeQuote = ref<OrganizationBillingPlanUpgradeQuote | null>(null)
+const upgradeIdempotencyKey = ref('')
 
 const emptyMemberBilling = (): OrganizationMemberBillingSummary => ({
   perSeat: false,
@@ -99,8 +112,8 @@ const emptyBillingPayload = (): BillingPayload => ({
     billingAccessState: 'subscription_required',
   },
   plan: {
-    code: 'application_monthly',
-    name: 'Aplikacja',
+    code: 'legacy_per_seat',
+    name: 'Plan historyczny',
     currency: 'pln',
     unitAmount: 20_000,
     interval: 'month',
@@ -296,6 +309,74 @@ async function openPortal() {
   }
 }
 
+async function openTeamUpgrade() {
+  const startingNewUpgrade = !upgradeOpen.value
+  upgradeOpen.value = true
+  if (startingNewUpgrade || !upgradeIdempotencyKey.value) {
+    upgradeIdempotencyKey.value = crypto.randomUUID()
+  }
+  upgradeLoading.value = true
+  upgradeError.value = ''
+  upgradeQuote.value = null
+  try {
+    upgradeQuote.value = await $fetch<OrganizationBillingPlanUpgradeQuote>(
+      orgApiPath('/billing/upgrade/quote'),
+      { method: 'POST', body: {} },
+    )
+  }
+  catch (caught) {
+    upgradeError.value = apiErrorMessage(caught)
+  }
+  finally {
+    upgradeLoading.value = false
+  }
+}
+
+async function confirmTeamUpgrade() {
+  if (!upgradeQuote.value || upgradeConfirming.value) return
+  upgradeConfirming.value = true
+  upgradeError.value = ''
+  try {
+    const quote = upgradeQuote.value
+    const result = await $fetch<OrganizationBillingPlanUpgradeResponse>(
+      orgApiPath('/billing/upgrade'),
+      {
+        method: 'POST',
+        body: {
+          idempotencyKey: upgradeIdempotencyKey.value,
+          expectedSeatRevision: quote.expectedSeatRevision,
+          prorationDate: quote.prorationDate,
+          fromStripePriceId: quote.fromStripePriceId,
+          targetStripePriceId: quote.targetStripePriceId,
+        },
+      },
+    )
+
+    if (result.paymentUrl) {
+      await navigateTo(result.paymentUrl, { external: true })
+      return
+    }
+
+    await Promise.all([refresh(), refreshMembers(), refreshHistory()])
+    upgradeOpen.value = false
+    toast.add({
+      title: result.status === 'succeeded'
+        ? 'Plan Zespół jest aktywny'
+        : 'Zmiana planu jest przetwarzana',
+      description: result.status === 'succeeded'
+        ? 'Subskrypcja obejmuje teraz minimum 3 miejsca po 150 zł netto za osobę.'
+        : 'Stripe potwierdza płatność. Stan możesz odświeżyć za chwilę.',
+      color: result.status === 'succeeded' ? 'success' : 'warning',
+    })
+  }
+  catch (caught) {
+    upgradeError.value = apiErrorMessage(caught)
+  }
+  finally {
+    upgradeConfirming.value = false
+  }
+}
+
 async function synchronize(sessionId?: string): Promise<boolean> {
   synchronizeLoading.value = true
   reconciliationError.value = ''
@@ -365,7 +446,7 @@ onMounted(async () => {
     class="billing-page"
     title="Subskrypcja"
     eyebrow="Ustawienia organizacji"
-    description="Zarządzaj subskrypcją 200 zł miesięcznie za każde opłacone miejsce, metodą płatności i fakturami."
+    description="Zarządzaj planem, liczbą miejsc, metodą płatności i fakturami Stripe."
     :tabs="tabs"
   >
     <UAlert
@@ -475,12 +556,14 @@ onMounted(async () => {
 
           <div class="billing-plan__price">
             <strong>{{ payload.plan.displayAmount }}</strong>
-            <span>/ opłacone miejsce / {{ payload.plan.displayInterval }}</span>
+            <span>/ {{ payload.plan.displayInterval }}</span>
           </div>
 
           <ul>
-            <li><UIcon name="i-lucide-check" /> Każdy aktywny użytkownik to jedno płatne miejsce</li>
-            <li><UIcon name="i-lucide-check" /> Dodanie osoby rozlicza dopłatę za bieżący okres</li>
+            <li v-if="payload.plan.code === 'individual'"><UIcon name="i-lucide-check" /> Dokładnie 1 aktywny użytkownik</li>
+            <li v-else><UIcon name="i-lucide-check" /> Każdy aktywny użytkownik to jedno płatne miejsce</li>
+            <li v-if="payload.plan.code === 'individual'"><UIcon name="i-lucide-check" /> Upgrade do planu Zespół jest zawsze dostępny</li>
+            <li v-else><UIcon name="i-lucide-check" /> Dodanie osoby rozlicza dopłatę za bieżący okres</li>
             <li><UIcon name="i-lucide-check" /> Płatność i faktury obsługiwane przez Stripe</li>
             <li><UIcon name="i-lucide-check" /> Opcjonalne kupony i kody promocyjne</li>
           </ul>
@@ -516,6 +599,14 @@ onMounted(async () => {
               @click="startCheckout"
             >
               {{ payload.demoMode ? 'Przejdź do płatności testowej' : 'Przejdź do płatności' }}
+            </UButton>
+            <UButton
+              v-if="payload.account?.canUpgradeToTeam"
+              size="lg"
+              icon="i-lucide-users-round"
+              @click="openTeamUpgrade"
+            >
+              Przejdź na plan Zespół
             </UButton>
             <UButton
               v-if="payload.account?.hasCustomer"
@@ -831,6 +922,94 @@ onMounted(async () => {
       </template>
     </template>
   </CrmShell>
+
+  <UModal
+    v-model:open="upgradeOpen"
+    title="Przejdź na plan Zespół"
+    description="Plan zmieni się z 1 miejsca za 200 zł netto na minimum 3 miejsca po 150 zł netto za osobę."
+    :dismissible="!upgradeConfirming"
+  >
+    <template #body>
+      <div class="plan-upgrade">
+        <USkeleton v-if="upgradeLoading" class="h-56 w-full" />
+
+        <UAlert
+          v-else-if="upgradeError"
+          role="alert"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          title="Nie udało się przygotować zmiany planu"
+          :description="upgradeError"
+        >
+          <template #actions>
+            <UButton color="error" variant="soft" icon="i-lucide-refresh-cw" @click="openTeamUpgrade">
+              Spróbuj ponownie
+            </UButton>
+          </template>
+        </UAlert>
+
+        <template v-else-if="upgradeQuote">
+          <div class="plan-upgrade__comparison">
+            <div>
+              <small>Teraz</small>
+              <strong>Indywidualny</strong>
+              <span>1 × 200 zł netto</span>
+            </div>
+            <UIcon name="i-lucide-arrow-right" />
+            <div>
+              <small>Po zmianie</small>
+              <strong>Zespół</strong>
+              <span>3 × 150 zł netto</span>
+            </div>
+          </div>
+
+          <dl class="plan-upgrade__totals">
+            <div>
+              <dt>Nowa cena katalogowa</dt>
+              <dd>{{ formatMoney(upgradeQuote.nextMonthlySubtotal, upgradeQuote.currency) }} netto / miesiąc + VAT</dd>
+            </div>
+            <div v-if="upgradeQuote.discountAmount">
+              <dt>Rabat na dopłatę</dt>
+              <dd>−{{ formatMoney(upgradeQuote.discountAmount, upgradeQuote.currency) }}</dd>
+            </div>
+            <div v-if="upgradeQuote.taxAmount">
+              <dt>VAT naliczony teraz</dt>
+              <dd>{{ formatMoney(upgradeQuote.taxAmount, upgradeQuote.currency) }}</dd>
+            </div>
+            <div class="plan-upgrade__due">
+              <dt>Do obciążenia teraz</dt>
+              <dd>{{ formatMoney(upgradeQuote.immediateAmount, upgradeQuote.currency) }}</dd>
+            </div>
+          </dl>
+
+          <UAlert
+            color="info"
+            variant="subtle"
+            icon="i-lucide-calendar-clock"
+            title="Dopłata jest proporcjonalna"
+            :description="`Stripe obliczył kwotę za pozostałą część okresu. Następne odnowienie: ${formatDate(upgradeQuote.renewalAt, 'long')}.`"
+          />
+        </template>
+      </div>
+    </template>
+
+    <template #footer>
+      <div class="plan-upgrade__actions">
+        <UButton color="neutral" variant="ghost" :disabled="upgradeConfirming" @click="upgradeOpen = false">
+          Anuluj
+        </UButton>
+        <UButton
+          icon="i-lucide-credit-card"
+          :loading="upgradeConfirming"
+          :disabled="!upgradeQuote || upgradeLoading"
+          @click="confirmTeamUpgrade"
+        >
+          Potwierdź upgrade i obciążenie
+        </UButton>
+      </div>
+    </template>
+  </UModal>
 </template>
 
 <style scoped>
@@ -845,6 +1024,83 @@ onMounted(async () => {
 .billing-page :deep(.crm-page__content) {
   display: grid;
   gap: 18px;
+}
+
+.plan-upgrade {
+  display: grid;
+  gap: 18px;
+}
+
+.plan-upgrade__comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.plan-upgrade__comparison > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--ui-border-accented);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.plan-upgrade__comparison small,
+.plan-upgrade__comparison span,
+.plan-upgrade__totals dt {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.plan-upgrade__totals {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.plan-upgrade__totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plan-upgrade__totals dd {
+  margin: 0;
+  color: var(--ui-text-highlighted);
+  font-weight: 650;
+  text-align: right;
+}
+
+.plan-upgrade__due {
+  border-top: 1px solid var(--ui-border-accented);
+  padding-top: 12px;
+}
+
+.plan-upgrade__due dd {
+  font-size: 18px;
+}
+
+.plan-upgrade__actions {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 520px) {
+  .plan-upgrade__comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-upgrade__comparison > :deep(svg) {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+
+  .plan-upgrade__actions {
+    flex-direction: column-reverse;
+  }
 }
 
 .billing-grid {

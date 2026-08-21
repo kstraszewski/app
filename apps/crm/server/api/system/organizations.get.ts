@@ -13,7 +13,9 @@ import type {
   SystemOrganizationsResponse,
 } from '~~/shared/types/system-organizations'
 import {
+  isApplicationBillingPlanCode,
   isBillingAccessGranted,
+  type ApplicationBillingPlanCode,
   type BillingAccessState,
   type OrganizationKind,
 } from '~~/shared/organization-billing'
@@ -47,6 +49,7 @@ type InvitationRow = {
   organization_kind: OrganizationKind
   onboarding_source: SystemOrganizationInvitation['onboardingSource']
   initial_seat_count: number
+  billing_plan_code: ApplicationBillingPlanCode | null
   administrator_name: string | null
   discount_kind: 'percentage' | 'fixed_amount' | null
   discount_percent_off_bps: number | null
@@ -92,6 +95,7 @@ export default defineEventHandler(async (event): Promise<SystemOrganizationsResp
         'organization_kind',
         'onboarding_source',
         'initial_seat_count',
+        'billing_plan_code',
         'administrator_name',
         'discount_kind',
         'discount_percent_off_bps',
@@ -175,6 +179,9 @@ export default defineEventHandler(async (event): Promise<SystemOrganizationsResp
         organizationKind: invitation.organization_kind,
         onboardingSource: invitation.onboarding_source,
         initialSeatCount: Number(invitation.initial_seat_count),
+        billingPlan: isApplicationBillingPlanCode(invitation.billing_plan_code)
+          ? invitation.billing_plan_code
+          : null,
         billingDiscount: organizationInvitationBillingDiscountFromRow(invitation),
         status,
         expiresAt: invitation.expires_at,

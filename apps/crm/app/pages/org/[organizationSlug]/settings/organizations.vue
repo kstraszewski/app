@@ -10,9 +10,11 @@ import type {
   SystemOrganizationsResponse,
 } from '#shared/types/system-organizations'
 import type {
+  PublicApplicationBillingPlanCode,
   BillingAccessState,
   OrganizationKind,
 } from '#shared/organization-billing'
+import { APPLICATION_BILLING_PLANS } from '#shared/organization-billing'
 import { invitationBillingDiscountLabel } from '#shared/organization-invitation-discount'
 import { apiErrorMessage } from '~/utils/api-error'
 
@@ -68,6 +70,7 @@ const inviteSchema = z.object({
   administratorName: z.string().trim().max(160, 'Imię i nazwisko może mieć maksymalnie 160 znaków.'),
   organizationName: z.string().trim().min(2, 'Nazwa musi mieć co najmniej 2 znaki.').max(160),
   organizationKind: z.enum(['intermediary', 'application']),
+  billingPlan: z.enum(['individual', 'team']),
   initialSeatCount: z.number().int().min(1).max(100),
   billingDiscountKind: z.enum(['none', 'percentage', 'fixed_amount', 'free_period']),
   billingDiscountPercent: z.number().finite().nullish(),
@@ -80,6 +83,20 @@ const inviteSchema = z.object({
       code: 'custom',
       path: ['initialSeatCount'],
       message: 'Organizacja pośrednika rozpoczyna od jednego użytkownika.',
+    })
+  }
+  if (data.organizationKind === 'application' && data.billingPlan === 'individual' && data.initialSeatCount !== 1) {
+    context.addIssue({
+      code: 'custom',
+      path: ['initialSeatCount'],
+      message: 'Plan Indywidualny obejmuje dokładnie 1 użytkownika.',
+    })
+  }
+  if (data.organizationKind === 'application' && data.billingPlan === 'team' && data.initialSeatCount < 3) {
+    context.addIssue({
+      code: 'custom',
+      path: ['initialSeatCount'],
+      message: 'Plan Zespół wymaga co najmniej 3 użytkowników.',
     })
   }
   if (data.organizationKind !== 'application' || data.billingDiscountKind === 'none') return
@@ -155,6 +172,7 @@ const inviteState = reactive<InviteSchema>({
   administratorName: '',
   organizationName: '',
   organizationKind: 'intermediary',
+  billingPlan: 'individual',
   initialSeatCount: 1,
   billingDiscountKind: 'none',
   billingDiscountPercent: 10,
@@ -179,6 +197,11 @@ const accessItems = [
 const organizationKindItems = [
   { label: 'Pośrednik', value: 'intermediary' },
   { label: 'Aplikacja', value: 'application' },
+]
+
+const billingPlanItems: Array<{ label: string; value: PublicApplicationBillingPlanCode }> = [
+  { label: 'Indywidualny — 200 zł netto + VAT / mies.', value: 'individual' },
+  { label: 'Zespół — 150 zł netto + VAT / os. / mies.', value: 'team' },
 ]
 
 const discountKindItems: Array<{
@@ -321,7 +344,7 @@ const statCards = computed(() => [
   {
     label: 'Aplikacje',
     value: effectiveStats.value.applicationOrganizations,
-    description: 'Plan 200 zł / opłacone miejsce / miesiąc',
+    description: 'Indywidualny 200 zł lub Zespół 150 zł/os. + VAT',
     icon: 'i-lucide-panels-top-left',
     tone: 'primary',
   },
@@ -475,6 +498,13 @@ watch(() => inviteState.organizationKind, (kind) => {
   }
 })
 
+watch(() => inviteState.billingPlan, (plan) => {
+  if (inviteState.organizationKind !== 'application') return
+  inviteState.initialSeatCount = plan === 'individual'
+    ? 1
+    : Math.max(3, inviteState.initialSeatCount)
+})
+
 function openInvite() {
   resetInviteForm()
   inviteOpen.value = true
@@ -485,6 +515,7 @@ function resetInviteForm() {
   inviteState.administratorName = ''
   inviteState.organizationName = ''
   inviteState.organizationKind = 'intermediary'
+  inviteState.billingPlan = 'individual'
   inviteState.initialSeatCount = 1
   resetInviteDiscount()
   createdInvitation.value = null
@@ -499,6 +530,9 @@ async function createInvitation(event: FormSubmitEvent<InviteSchema>) {
       email: event.data.email.trim().toLocaleLowerCase('pl'),
       organizationName: event.data.organizationName.trim(),
       organizationKind: event.data.organizationKind,
+      ...(event.data.organizationKind === 'application'
+        ? { billingPlan: event.data.billingPlan }
+        : {}),
       initialSeatCount: event.data.initialSeatCount,
       ...(event.data.administratorName.trim()
         ? { administratorName: event.data.administratorName.trim() }
@@ -916,7 +950,8 @@ async function revokeInvitation() {
             <template #offer-cell="{ row }">
               <div class="invitation-offer">
                 <strong v-if="row.original.organizationKind === 'application'">
-                  {{ row.original.initialSeatCount }} opłaconych miejsc
+                  {{ row.original.billingPlan === 'individual' ? 'Indywidualny' : row.original.billingPlan === 'team' ? 'Zespół' : 'Plan starszy' }}
+                  · {{ row.original.initialSeatCount }} {{ row.original.initialSeatCount === 1 ? 'miejsce' : 'miejsca' }}
                 </strong>
                 <template v-if="row.original.billingDiscount">
                   <UBadge color="primary" variant="subtle" icon="i-lucide-ticket-percent">
@@ -1087,6 +1122,21 @@ async function revokeInvitation() {
           </UFormField>
 
           <UFormField
+            v-if="inviteState.organizationKind === 'application'"
+            name="billingPlan"
+            label="Pakiet"
+            description="Plan Indywidualny można później zmienić na Zespół z dokładnym wyliczeniem dopłaty."
+            required
+          >
+            <USelect
+              v-model="inviteState.billingPlan"
+              :items="billingPlanItems"
+              value-key="value"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField
             name="organizationKind"
             label="Rodzaj organizacji"
             description="Rodzaj określa przebieg onboardingu i wymagania rozliczeniowe."
@@ -1109,10 +1159,11 @@ async function revokeInvitation() {
           >
             <UInputNumber
               v-model="inviteState.initialSeatCount"
-              :min="1"
+              :min="inviteState.billingPlan === 'team' ? 3 : 1"
               :max="100"
               :step="1"
               class="w-full"
+              :disabled="inviteState.billingPlan === 'individual'"
             />
           </UFormField>
 
@@ -1121,7 +1172,7 @@ async function revokeInvitation() {
             color="primary"
             variant="subtle"
             icon="i-lucide-credit-card"
-            :title="`Subskrypcja ${inviteState.initialSeatCount * 200} zł / miesiąc`"
+            :title="`Plan ${inviteState.billingPlan === 'individual' ? 'Indywidualny' : 'Zespół'}: ${(inviteState.initialSeatCount * APPLICATION_BILLING_PLANS[inviteState.billingPlan].unitAmount) / 100} zł netto + VAT / miesiąc`"
             description="Możesz przypisać ofertę do tego zaproszenia albo pozostawić administratorowi możliwość wpisania kodu promocyjnego w Stripe Checkout."
           />
 

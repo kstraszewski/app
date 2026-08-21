@@ -15,6 +15,11 @@ import {
   type OrganizationInvitationKind,
 } from '~~/server/utils/organization-invitations'
 import { serverAuth } from '~~/server/utils/platform-auth'
+import {
+  applicationBillingPlanSeatCountIsValid,
+  isPublicApplicationBillingPlanCode,
+  type PublicApplicationBillingPlanCode,
+} from '~~/shared/organization-billing'
 import type { OrganizationInvitationBillingDiscount } from '~~/shared/types/system-organizations'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
@@ -48,6 +53,22 @@ function initialSeatCount(value: unknown, organizationKind: OrganizationInvitati
       statusCode: 400,
       statusMessage: 'initialSeatCount is invalid',
     })
+  }
+  return value
+}
+
+function billingPlan(
+  value: unknown,
+  organizationKind: OrganizationInvitationKind,
+): PublicApplicationBillingPlanCode | null {
+  if (organizationKind === 'intermediary') {
+    if (value != null) {
+      throw createError({ statusCode: 400, statusMessage: 'billingPlan is only available for application organizations' })
+    }
+    return null
+  }
+  if (!isPublicApplicationBillingPlanCode(value)) {
+    throw createError({ statusCode: 400, statusMessage: 'billingPlan is invalid' })
   }
   return value
 }
@@ -179,16 +200,30 @@ export default defineEventHandler(async (event) => {
     body.billingDiscount,
     organizationKind as OrganizationInvitationKind,
   )
+  const parsedBillingPlan = billingPlan(
+    body.billingPlan,
+    organizationKind as OrganizationInvitationKind,
+  )
   const parsedInitialSeatCount = initialSeatCount(
     body.initialSeatCount,
     organizationKind as OrganizationInvitationKind,
   )
+  if (
+    parsedBillingPlan
+    && !applicationBillingPlanSeatCountIsValid(parsedBillingPlan, parsedInitialSeatCount)
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'billingPlan and initialSeatCount are inconsistent',
+    })
+  }
 
   const issued = await createOrganizationInvitation(event, {
     email,
     organizationName,
     organizationKind: organizationKind as OrganizationInvitationKind,
     onboardingSource: 'superadmin_invitation',
+    billingPlan: parsedBillingPlan,
     initialSeatCount: parsedInitialSeatCount,
     administratorName,
     billingDiscount: parsedBillingDiscount,

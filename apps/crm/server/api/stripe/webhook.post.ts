@@ -12,12 +12,15 @@ import {
   bindExpiredOrganizationSeatChangeInvoice,
   checkoutSubscriptionId,
   failOpenOrganizationSeatChange,
+  failOpenOrganizationPlanChange,
   failOrganizationMemberSeatChange,
   invoiceSubscriptionId,
   isInvoiceForSubscriptionUpdate,
   isStripeSeatQuantityMismatchError,
   isStaleStripeSubscriptionSnapshotError,
   matchingOpenOrganizationSeatChangeId,
+  matchingOpenOrganizationPlanChangeId,
+  markOrganizationPlanUpgrade,
   markOrganizationInvitationDiscountApplied,
   retrieveAndApplyCurrentStripeSubscription,
   retrieveAndApplyStripeSubscription,
@@ -133,6 +136,7 @@ async function matchingSeatChangeForTerminalInvoice(
   eventCreated: number,
 ): Promise<
   | { kind: 'seat_change', changeId: string }
+  | { kind: 'plan_change', changeId: string }
   | { kind: 'uncorrelated_subscription_update' }
   | { kind: 'renewal' }
 > {
@@ -147,6 +151,13 @@ async function matchingSeatChangeForTerminalInvoice(
     invoice,
   )
   if (existingMatch) return { kind: 'seat_change', changeId: existingMatch }
+  const planChangeMatch = await matchingOpenOrganizationPlanChangeId(
+    event,
+    subscription,
+    organizationId,
+    invoice,
+  )
+  if (planChangeMatch) return { kind: 'plan_change', changeId: planChangeMatch }
   if (subscription.pending_update) return { kind: 'uncorrelated_subscription_update' }
 
   // Webhook delivery is unordered. If the terminal Invoice event arrives
@@ -249,6 +260,13 @@ async function processEvent(event: Parameters<typeof serverDataBackend>[0], stri
             errorMessage: 'Stripe pending subscription update expired before payment completed',
           })
         }
+        await failOpenOrganizationPlanChange(event, {
+          organizationId: context.organizationId,
+          subscriptionId: subscription.id,
+          eventCreated: stripeEvent.created,
+          errorCode: 'stripe_pending_update_expired',
+          errorMessage: 'Stripe pending plan upgrade expired before payment completed',
+        })
       }
       await reapplyCanonicalSubscriptionAfterTerminalInvoice(event, {
         organizationId: context.organizationId,
@@ -290,8 +308,16 @@ async function processEvent(event: Parameters<typeof serverDataBackend>[0], stri
     }
     case 'invoice.payment_action_required':
     case 'invoice.payment_failed': {
-      const subscriptionId = invoiceSubscriptionId(stripeEvent.data.object as Stripe.Invoice)
+      const invoice = stripeEvent.data.object as Stripe.Invoice
+      const subscriptionId = invoiceSubscriptionId(invoice)
       if (!subscriptionId) return false
+      const context = await retrieveCurrentStripeInvoiceSubscriptionContext(event, invoice)
+      await matchingOpenOrganizationPlanChangeId(
+        event,
+        context.subscription,
+        context.organizationId,
+        invoice,
+      )
       await retrieveAndApplyStripeSubscription(event, subscriptionId, stripeEvent.created)
       return true
     }
@@ -315,6 +341,14 @@ async function processEvent(event: Parameters<typeof serverDataBackend>[0], stri
           eventCreated: stripeEvent.created,
           state: 'failed',
           failureKind: 'invoice_finalization_failed',
+        })
+      }
+      else if (invoiceClassification.kind === 'plan_change') {
+        await markOrganizationPlanUpgrade(event, {
+          changeId: invoiceClassification.changeId,
+          status: 'failed',
+          failureCode: 'stripe_invoice_finalization_failed',
+          failureMessage: 'Stripe could not finalize the plan upgrade invoice',
         })
       }
       await reapplyCanonicalSubscriptionAfterTerminalInvoice(event, {
@@ -348,6 +382,18 @@ async function processEvent(event: Parameters<typeof serverDataBackend>[0], stri
             ? 'Stripe seat invoice was voided'
             : 'Stripe seat invoice was marked uncollectible',
         )
+      }
+      else if (invoiceClassification.kind === 'plan_change') {
+        await markOrganizationPlanUpgrade(event, {
+          changeId: invoiceClassification.changeId,
+          status: 'failed',
+          failureCode: stripeEvent.type === 'invoice.voided'
+            ? 'stripe_invoice_voided'
+            : 'stripe_invoice_uncollectible',
+          failureMessage: stripeEvent.type === 'invoice.voided'
+            ? 'Stripe plan upgrade invoice was voided'
+            : 'Stripe plan upgrade invoice was marked uncollectible',
+        })
       }
       else if (invoiceClassification.kind === 'renewal') {
         await applyOrganizationInvoiceBillingState(event, {

@@ -6442,6 +6442,7 @@ export type Database = {
       }
       organization_billing_accounts: {
         Row: {
+          billing_plan_code: string | null
           cancel_at_period_end: boolean
           created_at: string
           current_period_end: string | null
@@ -6462,6 +6463,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          billing_plan_code?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
@@ -6482,6 +6484,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          billing_plan_code?: string | null
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
@@ -6506,6 +6509,95 @@ export type Database = {
             foreignKeyName: "organization_billing_accounts_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_billing_plan_changes: {
+        Row: {
+          actor_user_id: string
+          attempts: number
+          base_seat_revision: number
+          client_idempotency_key: string
+          completed_at: string | null
+          created_at: string
+          expected_seat_count: number
+          failure_code: string | null
+          failure_message: string | null
+          from_plan_code: string
+          from_stripe_price_id: string
+          id: string
+          organization_id: string
+          payment_url: string | null
+          proration_date: number
+          status: string
+          stripe_idempotency_key: string
+          stripe_invoice_id: string | null
+          stripe_subscription_id: string
+          stripe_subscription_item_id: string
+          target_plan_code: string
+          target_seat_count: number
+          target_stripe_price_id: string
+          updated_at: string
+        }
+        Insert: {
+          actor_user_id: string
+          attempts?: number
+          base_seat_revision: number
+          client_idempotency_key: string
+          completed_at?: string | null
+          created_at?: string
+          expected_seat_count: number
+          failure_code?: string | null
+          failure_message?: string | null
+          from_plan_code: string
+          from_stripe_price_id: string
+          id?: string
+          organization_id: string
+          payment_url?: string | null
+          proration_date: number
+          status?: string
+          stripe_idempotency_key: string
+          stripe_invoice_id?: string | null
+          stripe_subscription_id: string
+          stripe_subscription_item_id: string
+          target_plan_code: string
+          target_seat_count: number
+          target_stripe_price_id: string
+          updated_at?: string
+        }
+        Update: {
+          actor_user_id?: string
+          attempts?: number
+          base_seat_revision?: number
+          client_idempotency_key?: string
+          completed_at?: string | null
+          created_at?: string
+          expected_seat_count?: number
+          failure_code?: string | null
+          failure_message?: string | null
+          from_plan_code?: string
+          from_stripe_price_id?: string
+          id?: string
+          organization_id?: string
+          payment_url?: string | null
+          proration_date?: number
+          status?: string
+          stripe_idempotency_key?: string
+          stripe_invoice_id?: string | null
+          stripe_subscription_id?: string
+          stripe_subscription_item_id?: string
+          target_plan_code?: string
+          target_seat_count?: number
+          target_stripe_price_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_billing_plan_changes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -6892,6 +6984,7 @@ export type Database = {
           accepted_at: string | null
           accepted_by_user_id: string | null
           administrator_name: string | null
+          billing_plan_code: string | null
           completed_at: string | null
           created_at: string
           delivery_attempts: number
@@ -6928,6 +7021,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_by_user_id?: string | null
           administrator_name?: string | null
+          billing_plan_code?: string | null
           completed_at?: string | null
           created_at?: string
           delivery_attempts?: number
@@ -6964,6 +7058,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_by_user_id?: string | null
           administrator_name?: string | null
+          billing_plan_code?: string | null
           completed_at?: string | null
           created_at?: string
           delivery_attempts?: number
@@ -7766,6 +7861,18 @@ export type Database = {
         }
         Returns: Json
       }
+      begin_organization_plan_upgrade_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_client_idempotency_key: string
+          p_expected_seat_revision: number
+          p_from_stripe_price_id: string
+          p_organization_id: string
+          p_proration_date: number
+          p_target_stripe_price_id: string
+        }
+        Returns: Json
+      }
       begin_organization_member_seat_change_v1: {
         Args: {
           p_actor_user_id: string
@@ -7775,6 +7882,13 @@ export type Database = {
           p_proration_date: string
           p_target_email: string
           p_target_role: string
+        }
+        Returns: Json
+      }
+      claim_organization_plan_upgrade_v1: {
+        Args: {
+          p_change_id: string
+          p_expected_updated_at: string
         }
         Returns: Json
       }
@@ -7879,6 +7993,13 @@ export type Database = {
           p_failure_message?: string | null
           p_seat_change_id: string
           p_stale_before: string
+        }
+        Returns: Json
+      }
+      fail_stale_organization_plan_upgrade_v1: {
+        Args: {
+          p_change_id: string
+          p_expected_updated_at: string
         }
         Returns: Json
       }
@@ -8268,6 +8389,17 @@ export type Database = {
       }
       get_organization_billing_access_v1: {
         Args: { p_organization_id: string }
+        Returns: Json
+      }
+      mark_organization_plan_upgrade_v1: {
+        Args: {
+          p_change_id: string
+          p_failure_code?: string | null
+          p_failure_message?: string | null
+          p_payment_url?: string | null
+          p_status: string
+          p_stripe_invoice_id?: string | null
+        }
         Returns: Json
       }
       get_organization_user_admin_access: {

@@ -235,6 +235,10 @@ export default defineNuxtConfig({
         || process.env.STRIPE_SECRET_KEY
         || '',
       webhookSecret: process.env.NUXT_STRIPE_WEBHOOK_SECRET || '',
+      applicationIndividualMonthlyPriceId:
+        process.env.NUXT_STRIPE_APPLICATION_INDIVIDUAL_MONTHLY_PRICE_ID || '',
+      applicationTeamMonthlyPriceId:
+        process.env.NUXT_STRIPE_APPLICATION_TEAM_MONTHLY_PRICE_ID || '',
       applicationMonthlyPriceId: process.env.NUXT_STRIPE_APPLICATION_MONTHLY_PRICE_ID || '',
       customerPortalConfigurationId: process.env.NUXT_STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID || '',
     },

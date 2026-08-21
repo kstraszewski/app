@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
-import { APPLICATION_MONTHLY_PLAN } from '#shared/organization-billing'
+import {
+  APPLICATION_BILLING_PLANS,
+  isPublicApplicationBillingPlanCode,
+  type PublicApplicationBillingPlanCode,
+} from '#shared/organization-billing'
 import type {
   ApplicationRegistrationDeliveryStatus,
   ApplicationRegistrationDeliveryStatusResponse,
@@ -28,14 +32,22 @@ function firstQueryValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function requestedSeatCount(): number {
+function requestedBillingPlan(): PublicApplicationBillingPlanCode {
+  const requested = firstQueryValue(route.query.plan)
+  if (isPublicApplicationBillingPlanCode(requested)) return requested
+  return Number(firstQueryValue(route.query.seats)) >= 3 ? 'team' : 'individual'
+}
+
+function requestedSeatCount(plan: PublicApplicationBillingPlanCode): number {
   const raw = firstQueryValue(route.query.seats)
     || firstQueryValue(route.query.initialSeatCount)
   const value = Number(raw)
-  return Number.isSafeInteger(value) && value >= 1 && value <= 100 ? value : 1
+  if (plan === 'individual') return 1
+  return Number.isSafeInteger(value) && value >= 3 && value <= 100 ? value : 3
 }
 
 const registrationSchema = z.object({
+  billingPlan: z.enum(['individual', 'team']),
   administratorName: z.string().trim()
     .min(1, 'Podaj imię i nazwisko administratora.')
     .max(200, 'Imię i nazwisko może mieć maksymalnie 200 znaków.'),
@@ -49,14 +61,31 @@ const registrationSchema = z.object({
     .int('Liczba użytkowników musi być całkowita.')
     .min(1, 'Wybierz co najmniej jednego użytkownika.')
     .max(100, 'W rejestracji możesz wybrać maksymalnie 100 użytkowników.'),
+}).superRefine((value, context) => {
+  if (value.billingPlan === 'individual' && value.initialSeatCount !== 1) {
+    context.addIssue({
+      code: 'custom',
+      path: ['initialSeatCount'],
+      message: 'Plan Indywidualny obejmuje dokładnie jednego użytkownika.',
+    })
+  }
+  if (value.billingPlan === 'team' && value.initialSeatCount < 3) {
+    context.addIssue({
+      code: 'custom',
+      path: ['initialSeatCount'],
+      message: 'Plan Zespół wymaga co najmniej 3 użytkowników.',
+    })
+  }
 })
 type RegistrationSchema = z.output<typeof registrationSchema>
 
+const initialBillingPlan = requestedBillingPlan()
 const state = reactive<RegistrationSchema>({
+  billingPlan: initialBillingPlan,
   administratorName: authenticatedUser.value?.name || '',
   email: authenticatedUser.value?.email || firstQueryValue(route.query.email),
   organizationName: '',
-  initialSeatCount: requestedSeatCount(),
+  initialSeatCount: requestedSeatCount(initialBillingPlan),
 })
 const submitting = ref(false)
 const error = ref('')
@@ -80,9 +109,8 @@ watch(authenticatedUser, (user) => {
   if (!state.administratorName) state.administratorName = user.name
 }, { immediate: true })
 
-const monthlyTotalMinor = computed(() => (
-  state.initialSeatCount * APPLICATION_MONTHLY_PLAN.unitAmount
-))
+const selectedPlan = computed(() => APPLICATION_BILLING_PLANS[state.billingPlan])
+const monthlyTotalMinor = computed(() => state.initialSeatCount * selectedPlan.value.unitAmount)
 const formattedMonthlyTotal = computed(() => new Intl.NumberFormat('pl-PL', {
   style: 'currency',
   currency: 'PLN',
@@ -93,7 +121,7 @@ const loginTarget = computed(() => ({
   path: '/login',
   query: {
     email: state.email || undefined,
-    redirect: `/register?seats=${state.initialSeatCount}`,
+    redirect: `/register?plan=${state.billingPlan}&seats=${state.initialSeatCount}`,
   },
 }))
 const submittedTitle = computed(() => {
@@ -113,6 +141,12 @@ const submittedDescription = computed(() => {
     return 'Rozpocznij rejestrację ponownie, aby otrzymać nowy link.'
   }
   return 'Trwa bezpieczne przygotowanie linku rejestracyjnego.'
+})
+
+watch(() => state.billingPlan, (plan) => {
+  state.initialSeatCount = plan === 'individual'
+    ? 1
+    : Math.max(3, state.initialSeatCount)
 })
 
 function maskEmail(value: string): string {
@@ -160,6 +194,7 @@ async function startRegistration(event: FormSubmitEvent<RegistrationSchema>) {
   submitting.value = true
   error.value = ''
   const body: StartApplicationRegistrationBody = {
+    billingPlan: event.data.billingPlan,
     administratorName: event.data.administratorName,
     email: event.data.email.trim().toLowerCase(),
     organizationName: event.data.organizationName,
@@ -194,12 +229,12 @@ function editRegistration() {
 
 <template>
   <AuthShell
-    badge="Aplikacja dla zespołu"
+    :badge="state.billingPlan === 'individual' ? 'Plan Indywidualny' : 'Plan Zespół'"
     icon="i-lucide-building-2"
     :title="submittedRequest ? submittedTitle : 'Załóż organizację'"
     :description="submittedRequest
       ? submittedDescription
-      : 'Wybierz liczbę użytkowników, potwierdź email i opłać subskrypcję w Stripe.'"
+      : 'Wybierz plan, potwierdź email i opłać subskrypcję w Stripe.'"
   >
     <div v-if="submittedRequest" class="registration-resume" aria-live="polite">
       <UAlert
@@ -257,7 +292,7 @@ function editRegistration() {
         </li>
         <li>
           <span>3</span>
-          <div><strong>Opłać {{ submittedRequest.initialSeatCount }} miejsc</strong><small>Checkout Stripe uruchomi organizację po płatności.</small></div>
+          <div><strong>Opłać plan {{ submittedRequest.billingPlan === 'individual' ? 'Indywidualny' : 'Zespół' }}</strong><small>Checkout Stripe doliczy właściwy VAT i uruchomi organizację po płatności.</small></div>
         </li>
       </ol>
 
@@ -289,6 +324,35 @@ function editRegistration() {
         title="Użyjemy Twojego obecnego konta"
         :description="`Nowa organizacja zostanie przypisana do ${authenticatedUser.email}.`"
       />
+
+      <UFormField name="billingPlan" label="Pakiet" required>
+        <div class="registration-plan-grid">
+          <button
+            type="button"
+            class="registration-plan"
+            :class="{ 'registration-plan--selected': state.billingPlan === 'individual' }"
+            :aria-pressed="state.billingPlan === 'individual'"
+            :disabled="submitting"
+            @click="state.billingPlan = 'individual'"
+          >
+            <span>Indywidualny</span>
+            <strong>200 zł <small>+ VAT / mies.</small></strong>
+            <em>1 użytkownik</em>
+          </button>
+          <button
+            type="button"
+            class="registration-plan"
+            :class="{ 'registration-plan--selected': state.billingPlan === 'team' }"
+            :aria-pressed="state.billingPlan === 'team'"
+            :disabled="submitting"
+            @click="state.billingPlan = 'team'"
+          >
+            <span>Zespół</span>
+            <strong>150 zł <small>+ VAT / os. / mies.</small></strong>
+            <em>Od 3 użytkowników</em>
+          </button>
+        </div>
+      </UFormField>
 
       <UFormField name="administratorName" label="Imię i nazwisko administratora" required>
         <UInput
@@ -328,28 +392,31 @@ function editRegistration() {
       <UFormField
         name="initialSeatCount"
         label="Liczba użytkowników na start"
-        description="Administrator zajmuje pierwsze miejsce. Pozostałe osoby zaprosisz po aktywacji."
+        :description="state.billingPlan === 'individual'
+          ? 'Plan Indywidualny obejmuje dokładnie administratora. W każdej chwili możesz przejść na plan Zespół.'
+          : 'Plan Zespół wymaga minimum 3 miejsc. Administrator zajmuje pierwsze.'"
         required
       >
         <UInputNumber
           v-model="state.initialSeatCount"
-          :min="1"
+          :min="state.billingPlan === 'team' ? 3 : 1"
           :max="100"
           :step="1"
           class="w-full"
-          :disabled="submitting"
+          :disabled="submitting || state.billingPlan === 'individual'"
         />
       </UFormField>
 
       <div class="registration-price" aria-live="polite">
         <div>
-          <span>{{ state.initialSeatCount }} × 200 zł</span>
-          <strong>{{ formattedMonthlyTotal }}<small> / miesiąc</small></strong>
+          <span>{{ state.initialSeatCount }} × {{ selectedPlan.unitAmount / 100 }} zł netto</span>
+          <strong>{{ formattedMonthlyTotal }}<small> netto / miesiąc + VAT</small></strong>
         </div>
         <ul>
           <li><UIcon name="i-lucide-check" /> Płatność kartą w bezpiecznym Stripe Checkout</li>
           <li><UIcon name="i-lucide-check" /> Opcjonalny kod promocyjny wpiszesz przy płatności</li>
-          <li><UIcon name="i-lucide-check" /> Dopiero miejsca ponad zakupiony limit zwiększą subskrypcję</li>
+          <li v-if="state.billingPlan === 'individual'"><UIcon name="i-lucide-check" /> Upgrade do planu Zespół jest dostępny w każdej chwili</li>
+          <li v-else><UIcon name="i-lucide-check" /> Dopiero miejsca ponad zakupiony limit zwiększą subskrypcję</li>
         </ul>
       </div>
 
@@ -389,6 +456,60 @@ function editRegistration() {
 .registration-resume {
   display: grid;
   gap: 18px;
+}
+
+.registration-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.registration-plan {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--ui-border-accented);
+  border-radius: 14px;
+  background: var(--ui-bg);
+  padding: 14px;
+  color: var(--ui-text-highlighted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.registration-plan:hover:not(:disabled),
+.registration-plan--selected {
+  border-color: var(--ui-primary);
+  background: var(--ui-bg-muted);
+  box-shadow: 0 0 0 1px var(--ui-primary);
+}
+
+.registration-plan:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.registration-plan > span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.registration-plan > strong {
+  font-size: 17px;
+}
+
+.registration-plan small,
+.registration-plan em {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@media (max-width: 520px) {
+  .registration-plan-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .registration-price {

@@ -19,7 +19,7 @@ interface AuthEmailRendererOptions {
 
 type AuthEmailRendererResult = string | {
   html: string
-  subject: string
+  subject?: string
 }
 
 export type AuthEmailRenderer = (
@@ -27,6 +27,18 @@ export type AuthEmailRenderer = (
   props: Record<string, unknown>,
   options?: AuthEmailRendererOptions,
 ) => Promise<AuthEmailRendererResult>
+
+async function defaultAuthEmailRenderer(
+  componentName: string,
+  props: Record<string, unknown>,
+  options?: AuthEmailRendererOptions,
+): Promise<AuthEmailRendererResult> {
+  // Nitro does not reliably inject a nuxt-email-renderer auto-import into a
+  // server utility. Resolve the generated server module explicitly so the
+  // production bundle cannot reference an undefined global identifier.
+  const { renderEmailComponent } = await import('#openexpert/email-renderer')
+  return renderEmailComponent(componentName, props, options)
+}
 
 function template(
   url: string,
@@ -202,7 +214,7 @@ export async function emailContent(
   renderer?: AuthEmailRenderer,
 ) {
   const definition = authEmailDefinition(kind, url, metadata)
-  const render = renderer ?? (renderEmailComponent as AuthEmailRenderer)
+  const render = renderer ?? defaultAuthEmailRenderer
   const props = definition.props as unknown as Record<string, unknown>
   const [htmlResult, textResult] = await Promise.all([
     render('AuthTransactionalEmail', props, { pretty: false }),

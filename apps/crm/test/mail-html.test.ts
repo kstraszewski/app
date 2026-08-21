@@ -45,6 +45,24 @@ test('preserves common email layout and safe inline styles', () => {
   assert.doesNotMatch(html, /&amp;zwnj;/u)
 })
 
+test('preserves safe inherited body styles on a wrapper', () => {
+  const result = sanitizeMailHtml(`<!doctype html>
+    <html lang="pl" dir="ltr">
+      <head><title>Oferta</title></head>
+      <body lang="pl" dir="ltr" style="margin:0;background:#f5f5f4;color:#1c1917;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">
+        <h1>Formularz informacyjny ESIS jest gotowy</h1>
+      </body>
+    </html>`)
+
+  const html = result.html || ''
+  assert.match(
+    html,
+    /^\s*<div lang="pl" dir="ltr" style="margin:0;background:#f5f5f4;color:#1c1917;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">/u,
+  )
+  assert.match(html, /<h1>Formularz informacyjny ESIS jest gotowy<\/h1>\s*<\/div>\s*$/u)
+  assert.doesNotMatch(html, /<!doctype|<html|<head|<title|<body/iu)
+})
+
 test('drops unsafe CSS declarations while retaining safe declarations', () => {
   const result = sanitizeMailHtml(`
     <div style="color:#123; background-image:url(https://tracker.example/pixel); width:expression(alert(1)); font-family:Arial; border:1px solid #ddd">

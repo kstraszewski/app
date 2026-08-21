@@ -13,6 +13,10 @@ const TEMPLATE_SOURCE = readFileSync(
   new URL('../app/emails/AuthTransactionalEmail.vue', import.meta.url),
   'utf8',
 )
+const RENDERER_SOURCE = readFileSync(
+  new URL('../server/utils/auth-email-content.ts', import.meta.url),
+  'utf8',
+)
 
 test('self-service registration definition contains the plan summary and focused action', () => {
   const definition = authEmailDefinition('magic-link', TEST_URL, {
@@ -106,6 +110,15 @@ test('renderer subject drift is rejected before sending', async () => {
   await assert.rejects(
     emailContent('email-verification', TEST_URL, undefined, renderer),
     /subject does not match/u,
+  )
+})
+
+test('production auth renderer is resolved explicitly instead of relying on a Nitro auto-import', () => {
+  assert.match(RENDERER_SOURCE, /await import\('#openexpert\/email-renderer'\)/u)
+  assert.match(RENDERER_SOURCE, /renderer \?\? defaultAuthEmailRenderer/u)
+  assert.doesNotMatch(
+    RENDERER_SOURCE,
+    /renderer \?\? \(renderEmailComponent as AuthEmailRenderer\)/u,
   )
 })
 

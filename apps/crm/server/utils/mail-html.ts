@@ -28,6 +28,7 @@ const ALLOWED_TAGS = [
   'bdo',
   'big',
   'blockquote',
+  'body',
   'br',
   'caption',
   'center',
@@ -384,6 +385,7 @@ function sanitizePass(
       'svg',
       'template',
       'textarea',
+      'title',
       'xmp',
     ],
     transformTags: {
@@ -443,7 +445,11 @@ function sanitizePass(
           }
         }
 
-        return { tagName, attribs }
+        // sanitize-html removes the document envelope around fragments. Keep
+        // the safe body presentation on an inert wrapper so inherited email
+        // styles (especially font-family, color and text sizing) still reach
+        // the message, just as they do in regular mail clients.
+        return { tagName: tagName === 'body' ? 'div' : tagName, attribs }
       },
     },
   })

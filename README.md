@@ -185,22 +185,22 @@ przez SMTP do Mailpit. Produkcyjnie ustaw:
 
 ```text
 NUXT_RESEND_API_KEY=re_...
-NUXT_AUTH_EMAIL_FROM=OpenExpert <security@auth.openexpert.app>
+NUXT_AUTH_EMAIL_FROM=OpenExpert <security@openexpert.app>
 NUXT_AUTH_EMAIL_REPLY_TO=hello@openexpert.app
-NUXT_RESEND_FROM=OpenExpert <hello@updates.openexpert.app>
+NUXT_RESEND_FROM=OpenExpert <hello@openexpert.app>
 NUXT_RESEND_REPLY_TO=hello@openexpert.app
 NUXT_MOCK_BANK_ENABLED=true
 NUXT_MOCK_BANK_ORGANIZATION_IDS=<uuid-organizacji-demo>
-NUXT_MOCK_BANK_EMAIL_FROM=OpenExpert Bank <dokumenty@bank.openexpert.app>
+NUXT_MOCK_BANK_EMAIL_FROM=OpenExpert Bank <dokumenty@openexpert.app>
 NUXT_MOCK_BANK_EMAIL_REPLY_TO=demo@openexpert.app
 ```
 
-Zweryfikuj w Resend osobne subdomeny nadawcze dla auth, komunikacji
-produktowej i symulatora banku. Dla każdej z nich skonfiguruj SPF, DKIM i DMARC
-oraz wyłącz śledzenie kliknięć i otwarć dla wiadomości uwierzytelniających.
-Wszystkie serwisy korzystają z jednego serwerowego `NUXT_RESEND_API_KEY`, ale
-mają osobne `From` i `Reply-To`; adres `Reply-To` musi wskazywać rzeczywiście
-monitorowaną skrzynkę.
+Zweryfikuj w Resend domenę `openexpert.app` i skonfiguruj dla niej SPF, DKIM
+oraz DMARC. Wiadomości uwierzytelniające, komunikacja produktowa i symulator
+banku używają osobnych nazw skrzynek w tej samej domenie; dla wiadomości
+uwierzytelniających wyłącz śledzenie kliknięć i otwarć. Wszystkie serwisy
+korzystają z jednego serwerowego `NUXT_RESEND_API_KEY`, a adres `Reply-To` musi
+wskazywać rzeczywiście monitorowaną skrzynkę.
 
 Symulator OpenExpert Banku jest domyślnie włączony lokalnie i wyłączony w
 produkcji. Produkcyjne uruchomienie wymaga jednocześnie

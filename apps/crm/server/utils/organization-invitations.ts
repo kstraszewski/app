@@ -149,6 +149,12 @@ export interface IssuedOrganizationInvitation {
   delivery: OrganizationInvitationDelivery
 }
 
+export interface PreparedOrganizationInvitation {
+  invitation: OrganizationInvitationRow
+  inviteUrl: string
+  token: string
+}
+
 function invitationConfiguration(event: H3Event) {
   const config = useRuntimeConfig(event)
     .organizationInvitations as OrganizationInvitationRuntimeConfig
@@ -512,10 +518,10 @@ export async function sendOrganizationInvitationMagicLink(
   }
 }
 
-export async function createOrganizationInvitation(
+export async function prepareOrganizationInvitation(
   event: H3Event,
   input: CreateOrganizationInvitationInput,
-): Promise<IssuedOrganizationInvitation> {
+): Promise<PreparedOrganizationInvitation> {
   const onboardingSource = input.onboardingSource || 'superadmin_invitation'
   const initialSeatCount = input.initialSeatCount ?? 1
   if (
@@ -561,11 +567,27 @@ export async function createOrganizationInvitation(
     .single()
   databaseError(insertResult.error, 'create')
   const invitation = row(insertResult.data)
-  const delivery = await sendOrganizationInvitationMagicLink(event, invitation, token)
+  return {
+    invitation,
+    inviteUrl: organizationInvitationUrl(event, token),
+    token,
+  }
+}
+
+export async function createOrganizationInvitation(
+  event: H3Event,
+  input: CreateOrganizationInvitationInput,
+): Promise<IssuedOrganizationInvitation> {
+  const prepared = await prepareOrganizationInvitation(event, input)
+  const delivery = await sendOrganizationInvitationMagicLink(
+    event,
+    prepared.invitation,
+    prepared.token,
+  )
 
   return {
     invitation: {
-      ...organizationInvitationSummary(invitation),
+      ...organizationInvitationSummary(prepared.invitation),
       sentAt: delivery.sentAt,
       deliveryAttempts: delivery.attempts,
       deliveryFailed: delivery.status === 'failed',
@@ -573,7 +595,7 @@ export async function createOrganizationInvitation(
         ? 'Invitation delivery failed'
         : null,
     },
-    inviteUrl: organizationInvitationUrl(event, token),
+    inviteUrl: prepared.inviteUrl,
     delivery,
   }
 }

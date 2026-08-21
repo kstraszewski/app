@@ -150,6 +150,17 @@ export interface StartApplicationRegistrationBody {
 
 export interface StartApplicationRegistrationResponse {
   accepted: true
+  statusToken: string
+}
+
+export type ApplicationRegistrationDeliveryStatus =
+  | 'queued'
+  | 'sent'
+  | 'failed'
+  | 'expired'
+
+export interface ApplicationRegistrationDeliveryStatusResponse {
+  status: ApplicationRegistrationDeliveryStatus
 }
 
 export interface OrganizationInvitationDelivery {

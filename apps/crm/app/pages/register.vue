@@ -3,6 +3,8 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import * as z from 'zod'
 import { APPLICATION_MONTHLY_PLAN } from '#shared/organization-billing'
 import type {
+  ApplicationRegistrationDeliveryStatus,
+  ApplicationRegistrationDeliveryStatusResponse,
   StartApplicationRegistrationBody,
   StartApplicationRegistrationResponse,
 } from '#shared/types/system-organizations'
@@ -59,6 +61,18 @@ const state = reactive<RegistrationSchema>({
 const submitting = ref(false)
 const error = ref('')
 const submittedRequest = ref<StartApplicationRegistrationBody | null>(null)
+const deliveryStatus = ref<ApplicationRegistrationDeliveryStatus | null>(null)
+const deliveryStatusUncertain = ref(false)
+let deliveryPollTimer: ReturnType<typeof setTimeout> | undefined
+let deliveryPollGeneration = 0
+
+function stopDeliveryPolling() {
+  deliveryPollGeneration += 1
+  if (deliveryPollTimer) clearTimeout(deliveryPollTimer)
+  deliveryPollTimer = undefined
+}
+
+onBeforeUnmount(stopDeliveryPolling)
 
 watch(authenticatedUser, (user) => {
   if (!user || submittedRequest.value) return
@@ -82,11 +96,63 @@ const loginTarget = computed(() => ({
     redirect: `/register?seats=${state.initialSeatCount}`,
   },
 }))
+const submittedTitle = computed(() => {
+  if (deliveryStatus.value === 'sent') return 'Sprawdź swoją skrzynkę'
+  if (deliveryStatus.value === 'failed') return 'Nie udało się wysłać wiadomości'
+  if (deliveryStatus.value === 'expired') return 'Prośba rejestracyjna wygasła'
+  return 'Przygotowujemy wiadomość'
+})
+const submittedDescription = computed(() => {
+  if (deliveryStatus.value === 'sent') {
+    return 'Wiadomość z instrukcją potwierdzenia adresu została przyjęta do wysyłki.'
+  }
+  if (deliveryStatus.value === 'failed') {
+    return 'Nie obciążyliśmy karty. Popraw dane lub spróbuj ponownie.'
+  }
+  if (deliveryStatus.value === 'expired') {
+    return 'Rozpocznij rejestrację ponownie, aby otrzymać nowy link.'
+  }
+  return 'Trwa bezpieczne przygotowanie linku rejestracyjnego.'
+})
 
 function maskEmail(value: string): string {
   const [local = '', domain = ''] = value.split('@')
   if (!local || !domain) return value
   return `${local.slice(0, Math.min(2, local.length))}${'•'.repeat(Math.max(3, local.length - 2))}@${domain}`
+}
+
+async function pollDeliveryStatus(token: string, generation: number, attempt = 0) {
+  if (generation !== deliveryPollGeneration) return
+  try {
+    const response = await $fetch<ApplicationRegistrationDeliveryStatusResponse>(
+      '/api/registration/status',
+      { method: 'POST', body: { token } },
+    )
+    if (generation !== deliveryPollGeneration) return
+    deliveryStatus.value = response.status
+    deliveryStatusUncertain.value = false
+    if (response.status !== 'queued') return
+  }
+  catch {
+    if (generation !== deliveryPollGeneration) return
+    if (attempt >= 2) deliveryStatusUncertain.value = true
+  }
+
+  if (attempt >= 20) {
+    deliveryStatusUncertain.value = true
+    return
+  }
+  deliveryPollTimer = setTimeout(() => {
+    void pollDeliveryStatus(token, generation, attempt + 1)
+  }, attempt < 4 ? 1_000 : 2_000)
+}
+
+function startDeliveryPolling(token: string) {
+  stopDeliveryPolling()
+  deliveryStatus.value = 'queued'
+  deliveryStatusUncertain.value = false
+  const generation = deliveryPollGeneration
+  void pollDeliveryStatus(token, generation)
 }
 
 async function startRegistration(event: FormSubmitEvent<RegistrationSchema>) {
@@ -101,11 +167,13 @@ async function startRegistration(event: FormSubmitEvent<RegistrationSchema>) {
   }
 
   try {
-    await $fetch<StartApplicationRegistrationResponse>('/api/registration/start', {
+    const response = await $fetch<StartApplicationRegistrationResponse>('/api/registration/start', {
       method: 'POST',
       body,
     })
+    if (!response.statusToken) throw new Error('Registration status token is missing')
     submittedRequest.value = body
+    startDeliveryPolling(response.statusToken)
   }
   catch (caught: unknown) {
     error.value = apiErrorMessage(caught) || 'Nie udało się rozpocząć rejestracji. Spróbuj ponownie.'
@@ -116,7 +184,10 @@ async function startRegistration(event: FormSubmitEvent<RegistrationSchema>) {
 }
 
 function editRegistration() {
+  stopDeliveryPolling()
   submittedRequest.value = null
+  deliveryStatus.value = null
+  deliveryStatusUncertain.value = false
   error.value = ''
 }
 </script>
@@ -125,18 +196,54 @@ function editRegistration() {
   <AuthShell
     badge="Aplikacja dla zespołu"
     icon="i-lucide-building-2"
-    :title="submittedRequest ? 'Sprawdź swoją skrzynkę' : 'Załóż organizację'"
+    :title="submittedRequest ? submittedTitle : 'Załóż organizację'"
     :description="submittedRequest
-      ? 'Wysłaliśmy instrukcję potwierdzenia adresu i dokończenia onboardingu.'
+      ? submittedDescription
       : 'Wybierz liczbę użytkowników, potwierdź email i opłać subskrypcję w Stripe.'"
   >
     <div v-if="submittedRequest" class="registration-resume" aria-live="polite">
       <UAlert
+        v-if="deliveryStatus === 'sent'"
         color="success"
         variant="subtle"
         icon="i-lucide-mail-check"
-        title="Link rejestracyjny został zlecony"
-        :description="`Jeśli dane są poprawne, wiadomość trafi na ${maskEmail(submittedRequest.email)}.`"
+        title="Wiadomość została wysłana"
+        :description="`Link rejestracyjny został przekazany na ${maskEmail(submittedRequest.email)}.`"
+      />
+      <UAlert
+        v-else-if="deliveryStatus === 'failed'"
+        role="alert"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-mail-x"
+        title="Wysyłka nie powiodła się"
+        description="Nie obciążyliśmy karty. Sprawdź adres email i wyślij formularz ponownie."
+      />
+      <UAlert
+        v-else-if="deliveryStatus === 'expired'"
+        role="alert"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-clock-alert"
+        title="Link nie jest już dostępny"
+        description="Rozpocznij rejestrację ponownie, aby otrzymać nową wiadomość."
+      />
+      <UAlert
+        v-else
+        color="info"
+        variant="subtle"
+        icon="i-lucide-loader-circle"
+        title="Wysyłka wiadomości trwa"
+        :description="`Przygotowujemy bezpieczny link dla ${maskEmail(submittedRequest.email)}.`"
+      />
+      <UAlert
+        v-if="deliveryStatusUncertain && deliveryStatus === 'queued'"
+        role="status"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-wifi-off"
+        title="Nie możemy teraz potwierdzić wysyłki"
+        description="Sprawdź skrzynkę i spam. Jeśli wiadomość nie dotrze, wróć do formularza i spróbuj ponownie."
       />
 
       <ol class="registration-steps">
@@ -161,7 +268,9 @@ function editRegistration() {
         icon="i-lucide-pencil"
         @click="editRegistration"
       >
-        Zmień dane lub wyślij ponownie
+        {{ deliveryStatus === 'failed' || deliveryStatus === 'expired'
+          ? 'Popraw dane i spróbuj ponownie'
+          : 'Zmień dane lub wyślij ponownie' }}
       </UButton>
     </div>
 

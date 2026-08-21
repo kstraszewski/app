@@ -8,6 +8,7 @@ function source(relativePath: string): string {
 
 test('public registration start is same-origin, rate-limited and enumeration resistant', () => {
   const endpoint = source('../server/api/registration/start.post.ts')
+  const statusEndpoint = source('../server/api/registration/status.post.ts')
 
   assert.match(endpoint, /isOpenExpertSameOriginJsonRequest/)
   assert.match(endpoint, /scope: 'crm:self-service-registration'/)
@@ -17,8 +18,17 @@ test('public registration start is same-origin, rate-limited and enumeration res
   assert.match(endpoint, /pairMax: 3/)
   assert.match(endpoint, /scheduleOpenExpertBackgroundTask/)
   assert.match(endpoint, /RESPONSE_FLOOR_MS = 600/)
-  assert.match(endpoint, /return \{ accepted: true \}/)
+  assert.match(endpoint, /prepareOrganizationInvitation/)
+  assert.match(endpoint, /createRegistrationDeliveryStatusToken/)
+  assert.match(endpoint, /return \{ accepted: true, statusToken \}/)
   assert.doesNotMatch(endpoint, /inviteUrl/)
+  assert.match(statusEndpoint, /verifyRegistrationDeliveryStatusToken/)
+  assert.match(statusEndpoint, /isOpenExpertSameOriginJsonRequest/)
+  assert.match(statusEndpoint, /readBody<unknown>/)
+  assert.match(statusEndpoint, /Cache-Control', 'private, no-store'/)
+  assert.match(statusEndpoint, /last_delivery_error/)
+  assert.match(statusEndpoint, /status: 'failed'/)
+  assert.doesNotMatch(statusEndpoint, /email_normalized/)
   assert.ok(
     endpoint.indexOf('consumeOpenExpertAuthRateLimit({')
       < endpoint.indexOf('const body = registrationBody(rawBody)'),
@@ -51,6 +61,8 @@ test('purpose-specific invitation email distinguishes requested registration fro
   const handler = source('../server/api/organization-auth/[...all].ts')
 
   assert.match(auth, /metadata\.onboardingSource === 'self_service'/)
+  assert.match(auth, /options\.organizationInvitationOnly && !sender\.isConfigured/)
+  assert.match(auth, /Registration email is temporarily unavailable/)
   assert.match(auth, /Dokończ rejestrację organizacji w OpenExpert/)
   assert.match(auth, /Jeśli nie rozpoczynałeś rejestracji/)
   assert.match(auth, /initialSeatCount >= 1/)
@@ -97,8 +109,11 @@ test('registration and resume UI carry the selected seat count through the magic
   assert.match(register, /:min="1"/)
   assert.match(register, /:max="100"/)
   assert.match(register, /\/api\/registration\/start/)
+  assert.match(register, /\/api\/registration\/status/)
+  assert.match(register, /deliveryStatus === 'failed'/)
+  assert.match(register, /Nie możemy teraz potwierdzić wysyłki/)
   assert.match(register, /state\.initialSeatCount \* APPLICATION_MONTHLY_PLAN\.unitAmount/)
-  assert.match(register, /Jeśli dane są poprawne/)
+  assert.doesNotMatch(register, /Wysłaliśmy instrukcję/)
   assert.match(register, /Samo wysłanie formularza nie obciąża karty/)
   assert.doesNotMatch(register, /signUp\.(email|phone)/)
 

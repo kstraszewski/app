@@ -9,7 +9,11 @@ import {
   readBody,
   setHeader,
 } from 'h3'
-import { createOrganizationInvitation } from '~~/server/utils/organization-invitations'
+import { createRegistrationDeliveryStatusToken } from '~~/server/lib/registration-delivery-status-token'
+import {
+  prepareOrganizationInvitation,
+  sendOrganizationInvitationMagicLink,
+} from '~~/server/utils/organization-invitations'
 import { serverOrganizationInvitationAuth } from '~~/server/utils/platform-auth'
 import type {
   StartApplicationRegistrationBody,
@@ -132,7 +136,7 @@ export default defineEventHandler(async (event): Promise<StartApplicationRegistr
     const rawBody = untrustedBody(bodyValue)
     const body = registrationBody(rawBody)
 
-    const creationTask = createOrganizationInvitation(event, {
+    const prepared = await prepareOrganizationInvitation(event, {
       email: body.email,
       administratorName: body.administratorName,
       organizationName: body.organizationName,
@@ -141,14 +145,30 @@ export default defineEventHandler(async (event): Promise<StartApplicationRegistr
       initialSeatCount: body.initialSeatCount,
       billingDiscount: null,
       invitedByUserId: null,
-    }).then(() => undefined).catch((error) => {
-      console.error('[self-service-registration] registration start failed', {
+    })
+    const statusToken = createRegistrationDeliveryStatusToken({
+      invitationId: prepared.invitation.id,
+      expiresAt: prepared.invitation.expires_at,
+    }, runtime.config.secret)
+    const deliveryTask = sendOrganizationInvitationMagicLink(
+      event,
+      prepared.invitation,
+      prepared.token,
+    ).then((delivery) => {
+      console.info('[self-service-registration] invitation delivery completed', {
+        invitationId: prepared.invitation.id,
+        status: delivery.status,
+        attempts: delivery.attempts,
+      })
+    }).catch((error) => {
+      console.error('[self-service-registration] invitation delivery task failed', {
+        invitationId: prepared.invitation.id,
         name: error instanceof Error ? error.name : 'UnknownError',
       })
     })
-    scheduleOpenExpertBackgroundTask(creationTask, event.waitUntil.bind(event))
+    scheduleOpenExpertBackgroundTask(deliveryTask, event.waitUntil.bind(event))
 
-    return { accepted: true }
+    return { accepted: true, statusToken }
   }
   finally {
     await waitForResponseFloor(startedAt)

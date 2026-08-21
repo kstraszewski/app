@@ -9,7 +9,7 @@ import {
   createTransactionalEmailSender,
   EmailDeliveryError,
 } from '@openexpert/email'
-import { getRequestHeaders, type H3Event } from 'h3'
+import { createError, getRequestHeaders, type H3Event } from 'h3'
 import {
   resolveAuthSmsConfig,
   sendAuthSms,
@@ -265,6 +265,13 @@ function createPlatformAuthRuntime(
       password: email.smtp.password || undefined,
     },
   })
+  if (options.organizationInvitationOnly && !sender.isConfigured) {
+    console.error('[organization-invitations] email transport is not configured')
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Registration email is temporarily unavailable',
+    })
+  }
   const runtime = createOpenExpertAuth({
     config: {
       baseURL: options.baseUrl,

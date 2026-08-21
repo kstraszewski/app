@@ -390,6 +390,29 @@ export async function fetchGmailBankThreadMessageResources(
   return messages
 }
 
+/**
+ * Reloads one already-resolved bank-mail message through Gmail's message
+ * endpoint. Gmail may expose a different opaque attachment locator in a
+ * thread projection, so security-sensitive attachment work must pin the
+ * locator from this same projection used by the later download guard.
+ */
+export async function fetchGmailBankMessageResource(
+  accessToken: string,
+  messageId: string,
+): Promise<GmailMessageResource> {
+  const normalizedMessageId = opaqueGmailResourceId(messageId, 'Gmail message ID')
+  const message = await providerJson<GmailMessageResource>(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(normalizedMessageId)}?format=full`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+    'Gmail bank-document message',
+    MAX_GMAIL_ATTACHMENT_RESPONSE_BYTES,
+  )
+  if (String(message.id ?? '') !== normalizedMessageId) {
+    throw createError({ statusCode: 502, statusMessage: 'Gmail message identity changed' })
+  }
+  return message
+}
+
 function opaqueGmailResourceId(value: unknown, label: string): string {
   const normalized = typeof value === 'string' ? value.trim() : ''
   if (
@@ -463,15 +486,7 @@ export async function fetchGmailNamedAttachment(
   ) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid expected Gmail attachment' })
   }
-  const message = await providerJson<GmailMessageResource>(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(normalizedMessageId)}?format=full`,
-    { headers: { authorization: `Bearer ${accessToken}` } },
-    'Gmail message attachment metadata',
-    MAX_GMAIL_ATTACHMENT_RESPONSE_BYTES,
-  )
-  if (String(message.id ?? '') !== normalizedMessageId) {
-    throw createError({ statusCode: 502, statusMessage: 'Gmail message identity changed' })
-  }
+  const message = await fetchGmailBankMessageResource(accessToken, normalizedMessageId)
   const candidates = gmailMessageAttachmentSources(message).filter(source => (
     source.filename === expected.filename
     && source.mimeType.toLowerCase() === expected.mimeType.toLowerCase()

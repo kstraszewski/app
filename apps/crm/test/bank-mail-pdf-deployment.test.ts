@@ -64,6 +64,8 @@ test('signs each database phase with its exact dedicated source', () => {
   assert.match(adapter, /p_failure_code: failureClaims\.failureCode,\s*p_retryable: failureClaims\.retryable,\s*p_retry_after_seconds: failureClaims\.retryAfterSeconds/gu)
   assert.match(adapter, /attachmentId: source\.attachment\.attachmentId,\s*inlineData: source\.attachment\.inlineData/gu)
   assert.match(adapter, /loadOpenExpertMockBankObject/u)
+  assert.match(adapter, /fetchGmailBankMessageResource/u)
+  assert.match(adapter, /bankMailProviderMessageIdentitySha256\('google'/u)
   assert.match(core, /openExpertMockBankFullPayloadSha256\(\{\s*manifestBytes,\s*archiveBytes,\s*\}\) !== job\.payloadSha256/u)
   assert.ok(core.indexOf('openExpertMockBankFullPayloadSha256({') < core.indexOf('dependencies.proveSource({'))
   assert.doesNotMatch(adapter, /extraClaims:\s*\{[^}]*pesel|extraClaims:\s*\{[^}]*credential/gu)

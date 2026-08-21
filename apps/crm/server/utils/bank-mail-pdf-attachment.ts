@@ -29,9 +29,11 @@ import {
   type MailConnectionRow,
 } from './mail-connections.ts'
 import {
+  fetchGmailBankMessageResource,
   fetchGmailBankThreadMessageResources,
   fetchGmailNamedAttachment,
 } from './mail-providers.ts'
+import { bankMailProviderMessageIdentitySha256 } from './bank-mail-agent-status-core.ts'
 import { extractBoundedPdfText } from './bounded-pdf-text.ts'
 import {
   extractOpenExpertMockBankEncryptedArchive,
@@ -223,12 +225,24 @@ function processorDependencies(
     },
     async loadMessages(job) {
       try {
-        return await fetchGmailBankThreadMessageResources(
-          await accessToken(job),
+        const token = await accessToken(job)
+        const messages = await fetchGmailBankThreadMessageResources(
+          token,
           job.threadReference,
         )
+        const matching = messages.filter(message => (
+          bankMailProviderMessageIdentitySha256('google', String(message.id ?? ''))
+            === job.providerMessageIdSha256
+        ))
+        if (matching.length !== 1) return messages
+        const exact = await fetchGmailBankMessageResource(token, String(matching[0]!.id ?? ''))
+        if (exact.threadId !== job.threadReference) {
+          throw new BankMailPdfProcessingError('source_content_changed', false)
+        }
+        return messages.map(message => message.id === exact.id ? exact : message)
       }
       catch (error) {
+        if (error instanceof BankMailPdfProcessingError) throw error
         throw gmailFailure(error)
       }
     },

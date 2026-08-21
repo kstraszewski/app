@@ -1,4 +1,5 @@
 import { createError, setHeader } from 'h3'
+import Stripe from 'stripe'
 import {
   requireCrmSession,
   requireOrganizationAdmin,
@@ -36,6 +37,19 @@ function subscriptionCanBeReplaced(
   // second discounted generation.
   return status === 'incomplete_expired'
     || (!retryingAssignedInvitationDiscount && status === 'canceled')
+}
+
+function checkoutConfigurationError(error: unknown): never {
+  if (
+    error instanceof Stripe.errors.StripeInvalidRequestError
+    && /head office address|automatic tax/iu.test(error.message)
+  ) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Stripe Tax must be configured before live Checkout can be used',
+    })
+  }
+  throw error
 }
 
 export default defineEventHandler(async (event) => {
@@ -171,39 +185,28 @@ export default defineEventHandler(async (event) => {
 
   const customerId = await ensureOrganizationStripeCustomer(event, session)
   const integrationSuffix = session.organizationId.replace(/-/gu, '').slice(-8).padStart(8, '0')
-  const checkout = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    customer: customerId,
-    client_reference_id: session.organizationId,
-    line_items: [{ price: price.id, quantity: expectedSeats }],
-    ...(assignedDiscount
-      ? { discounts: [{ coupon: assignedDiscount.couponId }] }
-      : { allow_promotion_codes: true }),
-    payment_method_collection: 'always',
-    payment_method_types: ['card'],
-    billing_address_collection: 'required',
-    automatic_tax: { enabled: true },
-    customer_update: {
-      address: 'auto',
-      name: 'auto',
-    },
-    integration_identifier: `openexpert_${integrationSuffix}`,
-    locale: 'pl',
-    metadata: {
-      organization_id: session.organizationId,
-      organization_slug: session.organizationSlug,
-      plan_code: billingPlanCode,
-      billing_plan_code: billingPlanCode,
-      billing_model: 'per_seat_v2',
-      purchased_seat_count: String(expectedSeats),
+  let checkout: Stripe.Checkout.Session
+  try {
+    checkout = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      client_reference_id: session.organizationId,
+      line_items: [{ price: price.id, quantity: expectedSeats }],
       ...(assignedDiscount
-        ? {
-            organization_invitation_id: assignedDiscount.invitationId,
-            invitation_discount_fingerprint: assignedDiscount.fingerprint,
-          }
-        : {}),
-    },
-    subscription_data: {
+        ? { discounts: [{ coupon: assignedDiscount.couponId }] }
+        : { allow_promotion_codes: true }),
+      payment_method_collection: 'always',
+      payment_method_types: ['card'],
+      billing_address_collection: 'required',
+      // Production demo intentionally uses Stripe test mode without requiring
+      // legal company data. Live Checkout remains fail-closed on Stripe Tax.
+      automatic_tax: { enabled: !config.demoMode },
+      customer_update: {
+        address: 'auto',
+        name: 'auto',
+      },
+      integration_identifier: `openexpert_${integrationSuffix}`,
+      locale: 'pl',
       metadata: {
         organization_id: session.organizationId,
         organization_slug: session.organizationSlug,
@@ -218,15 +221,30 @@ export default defineEventHandler(async (event) => {
             }
           : {}),
       },
-    },
-    success_url: billingUrl(
-      config.baseUrl,
-      session.organizationSlug,
-      'checkout=success&session_id={CHECKOUT_SESSION_ID}',
-    ),
-    cancel_url: billingUrl(config.baseUrl, session.organizationSlug, 'checkout=cancelled'),
-  }, {
-    idempotencyKey: [
+      subscription_data: {
+        metadata: {
+          organization_id: session.organizationId,
+          organization_slug: session.organizationSlug,
+          plan_code: billingPlanCode,
+          billing_plan_code: billingPlanCode,
+          billing_model: 'per_seat_v2',
+          purchased_seat_count: String(expectedSeats),
+          ...(assignedDiscount
+            ? {
+                organization_invitation_id: assignedDiscount.invitationId,
+                invitation_discount_fingerprint: assignedDiscount.fingerprint,
+              }
+            : {}),
+        },
+      },
+      success_url: billingUrl(
+        config.baseUrl,
+        session.organizationSlug,
+        'checkout=success&session_id={CHECKOUT_SESSION_ID}',
+      ),
+      cancel_url: billingUrl(config.baseUrl, session.organizationSlug, 'checkout=cancelled'),
+    }, {
+      idempotencyKey: [
       'openexpert-checkout',
       session.organizationId,
       existing?.stripe_checkout_session_id
@@ -240,8 +258,12 @@ export default defineEventHandler(async (event) => {
       checkoutSeatTarget.invitationId
         ? `registration-${checkoutSeatTarget.invitationId}`
         : 'membership-capacity',
-    ].join('-'),
-  })
+      ].join('-'),
+    })
+  }
+  catch (error) {
+    checkoutConfigurationError(error)
+  }
 
   if (assignedDiscount) {
     const verifiedCheckout = await stripe.checkout.sessions.retrieve(checkout.id, {

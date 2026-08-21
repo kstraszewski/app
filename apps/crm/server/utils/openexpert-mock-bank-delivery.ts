@@ -367,6 +367,11 @@ async function assertArchiveMatchesManifest(input: {
   manifest: OpenExpertMockBankPersistedPayloadManifest
   pesel: string
 }): Promise<void> {
+  let stage:
+    | 'archive_extract'
+    | 'archive_entry'
+    | 'pdf_text_extract'
+    | 'pdf_semantic_match' = 'archive_extract'
   try {
     const extracted = await extractOpenExpertMockBankEncryptedArchive({
       bytes: input.archiveBytes,
@@ -374,14 +379,17 @@ async function assertArchiveMatchesManifest(input: {
       applicationNumber: input.manifest.identity.applicationNumber,
       pesel: input.pesel,
     })
+    stage = 'archive_entry'
     if (extracted.fileName !== input.manifest.document.pdfFileName) {
       throw new TypeError('archive entry mismatch')
     }
     if (input.manifest.identity.kind !== 'esis') return
+    stage = 'pdf_text_extract'
     const inspected = await extractBoundedPdfText({
       bytes: extracted.bytes,
       maxBytes: MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES,
     })
+    stage = 'pdf_semantic_match'
     if (!openExpertMockBankEsisTextMatchesDocument({
       text: inspected.text,
       pageCount: inspected.pageCount,
@@ -394,7 +402,16 @@ async function assertArchiveMatchesManifest(input: {
       throw new TypeError('archive document mismatch')
     }
   }
-  catch { uncommittedPayloadInvalid() }
+  catch (error) {
+    // The document and credential are deliberately absent from telemetry.
+    // This bounded stage code distinguishes packaging/runtime failures from
+    // semantic mismatches without exposing mail content, names, terms or PESEL.
+    console.error('[openexpert-mock-bank] uncommitted payload validation failed', {
+      stage,
+      error: error instanceof Error ? error.name : 'unknown',
+    })
+    uncommittedPayloadInvalid()
+  }
 }
 
 interface OpenExpertMockBankDeliveryDependencies {

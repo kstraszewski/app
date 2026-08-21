@@ -15,24 +15,28 @@ import {
   bankMailAttachmentEncrypted,
   canonicalBankMailSourceSha256,
   mailAddressDomain,
-  matchingBankSenderIdentity,
-  matchingBankSenderIdentityForEmail,
-  type BankSenderIdentity,
 } from './bank-mail-agent-ingestion-core.ts'
 
-async function loadBankSenderIdentities(backendData: any): Promise<BankSenderIdentity[]> {
-  const { data, error } = await backendData.rpc('list_active_bank_email_identities')
-  throwDbError(error)
-  return (data ?? []) as BankSenderIdentity[]
+function configuredMockBankSenderDomain(event: H3Event): string {
+  const runtimeConfig = useRuntimeConfig(event) as {
+    mockBank?: { email?: { from?: string } }
+  }
+  const configuredFrom = String(runtimeConfig.mockBank?.email?.from ?? '')
+  const angleAddress = configuredFrom.match(/<([^<>]+)>/u)?.[1]
+  return mailAddressDomain(angleAddress ?? configuredFrom)
 }
 
 async function strongProposalCaseId(backendData: any, intakeId: string): Promise<string | null> {
-  const { data, error } = await backendData.rpc('get_strong_bank_mail_agent_proposal_case', {
-    p_intake_id: intakeId,
-  })
-  throwDbError(error)
-  const caseId = String(data ?? '')
-  return /^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(caseId) ? caseId : null
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const { data, error } = await backendData.rpc('get_bank_mail_agent_intake', {
+      p_intake_id: intakeId,
+    })
+    throwDbError(error)
+    const caseId = String(data?.strongProposalCaseId ?? '')
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(caseId)) return caseId
+    if (attempt < 5) await new Promise(resolve => setTimeout(resolve, 1_500))
+  }
+  return null
 }
 
 /**
@@ -50,17 +54,17 @@ export async function ingestGmailBankMailThread(
   },
 ): Promise<void> {
   if (input.connection.provider !== 'google') return
-  const identities = await loadBankSenderIdentities(input.backendData)
-  if (!identities.length) return
+  const senderDomain = configuredMockBankSenderDomain(event)
+  if (!senderDomain) return
 
   const inboundMessages = input.thread.messages
-    .map(message => ({ message, identity: matchingBankSenderIdentity(identities, message) }))
-    .filter((item): item is { message: MailMessageDetail, identity: BankSenderIdentity } => (
-      Boolean(item.identity) && mailAddressDomain(item.message.from?.email) !== mailAddressDomain(input.connection.account_email)
+    .filter((message: MailMessageDetail) => (
+      mailAddressDomain(message.from?.email) === senderDomain
+      && senderDomain !== mailAddressDomain(input.connection.account_email)
     ))
     .slice(-3)
 
-  for (const { message, identity } of inboundMessages) {
+  for (const message of inboundMessages) {
     const result = await dispatchBankMailAgent(event, {
       organizationId: input.session.organizationId,
       organizationSlug: input.session.organizationSlug,
@@ -77,7 +81,7 @@ export async function ingestGmailBankMailThread(
           : 'indeterminate',
       dmarcAligned: message.security.dmarcAligned === true,
       replyToMismatch: message.security.replyToMismatch,
-      bankId: identity.bank_id,
+      bankId: null,
       subject: message.subject,
       bodyText: message.bodyText,
       bodyTruncated: message.bodyTruncated,
@@ -117,11 +121,11 @@ export async function ingestGmailBankMailThreadPage(
   },
 ): Promise<void> {
   if (input.connection.provider !== 'google') return
-  const identities = await loadBankSenderIdentities(input.backendData)
-  if (!identities.length) return
+  const senderDomain = configuredMockBankSenderDomain(event)
+  if (!senderDomain) return
   const candidateIds = input.summaries
     .filter(summary => summary.participants.some(participant => (
-      Boolean(matchingBankSenderIdentityForEmail(identities, participant.email))
+      mailAddressDomain(participant.email) === senderDomain
     )))
     .map(summary => summary.id)
     .slice(0, 3)

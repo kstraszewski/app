@@ -74,6 +74,8 @@ test('Checkout creates the durable purchased seat capacity and never trusts a cl
   assert.match(checkout, /payment_method_collection: 'always'/)
   assert.match(checkout, /billing_model: 'per_seat_v2'/)
   assert.match(checkout, /automatic_tax: \{ enabled: !config\.demoMode \}/)
+  assert.match(checkout, /manual-tax-sandbox-v1/)
+  assert.match(checkout, /automatic-tax-live-v1/)
   assert.match(checkout, /Stripe Tax must be configured before live Checkout can be used/)
   assert.match(checkout, /billing_plan_code: billingPlanCode/)
   assert.match(checkout, /checkoutLinePriceId !== price\.id/)

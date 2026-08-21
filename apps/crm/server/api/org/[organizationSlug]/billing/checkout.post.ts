@@ -245,19 +245,20 @@ export default defineEventHandler(async (event) => {
       cancel_url: billingUrl(config.baseUrl, session.organizationSlug, 'checkout=cancelled'),
     }, {
       idempotencyKey: [
-      'openexpert-checkout',
-      session.organizationId,
-      existing?.stripe_checkout_session_id
-        ? `after-${existing.stripe_checkout_session_id}`
-        : 'initial',
-      assignedDiscount
-        ? `invite-${assignedDiscount.invitationId}-${assignedDiscount.fingerprint.slice(0, 12)}`
-        : 'promotion-codes-v1',
-      `seats-${expectedSeats}`,
-      `plan-${billingPlanCode}`,
-      checkoutSeatTarget.invitationId
-        ? `registration-${checkoutSeatTarget.invitationId}`
-        : 'membership-capacity',
+        'openexpert-checkout',
+        session.organizationId,
+        existing?.stripe_checkout_session_id
+          ? `after-${existing.stripe_checkout_session_id}`
+          : 'initial',
+        assignedDiscount
+          ? `invite-${assignedDiscount.invitationId}-${assignedDiscount.fingerprint.slice(0, 12)}`
+          : 'promotion-codes-v1',
+        `seats-${expectedSeats}`,
+        `plan-${billingPlanCode}`,
+        config.demoMode ? 'manual-tax-sandbox-v1' : 'automatic-tax-live-v1',
+        checkoutSeatTarget.invitationId
+          ? `registration-${checkoutSeatTarget.invitationId}`
+          : 'membership-capacity',
       ].join('-'),
     })
   }

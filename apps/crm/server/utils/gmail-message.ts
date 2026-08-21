@@ -458,9 +458,13 @@ export function gmailMessageAttachmentSources(
       ?.trim()
       .toLowerCase()
     if (filename) {
+      // Gmail may return both fields for a small attachment in some full
+      // message projections. The attachment resource is canonical when it is
+      // present; inline data is only a fallback for parts without one.
+      const attachmentId = candidate.body?.attachmentId || null
       result.push({
-        attachmentId: candidate.body?.attachmentId || null,
-        inlineData: candidate.body?.data || null,
+        attachmentId,
+        inlineData: attachmentId ? null : candidate.body?.data || null,
         filename: stripUnsafeMailDisplayControls(filename).trim() || 'załącznik',
         mimeType: mimeType || 'application/octet-stream',
         size: Math.max(0, Number(candidate.body?.size) || 0),

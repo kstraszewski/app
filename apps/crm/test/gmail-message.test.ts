@@ -133,6 +133,30 @@ test('prefers plain text and returns attachment metadata', () => {
   }])
 })
 
+test('prefers the Gmail attachment resource when a part also contains inline data', () => {
+  const sources = gmailMessageAttachmentSources(message('dual-locator', {
+    payload: {
+      mimeType: 'multipart/mixed',
+      parts: [{
+        filename: 'document.zip',
+        mimeType: 'application/zip',
+        body: {
+          attachmentId: 'opaque-resource-id',
+          data: 'UEsDBA',
+          size: 123,
+        },
+      }],
+    },
+  }))
+  assert.deepEqual(sources, [{
+    attachmentId: 'opaque-resource-id',
+    inlineData: null,
+    filename: 'document.zip',
+    mimeType: 'application/zip',
+    size: 123,
+  }])
+})
+
 test('walks Gmail MIME iteratively with strict depth, part and attachment bounds', () => {
   let nested: GmailMessagePart = {
     mimeType: 'text/plain',

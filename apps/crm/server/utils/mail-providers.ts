@@ -502,12 +502,10 @@ export async function fetchGmailNamedAttachment(
   if (Boolean(candidate.attachmentId) === Boolean(candidate.inlineData)) {
     throw createError({ statusCode: 422, statusMessage: 'Gmail attachment locator is inconsistent' })
   }
-  if (
-    candidate.attachmentId !== expected.attachmentId
-    || candidate.inlineData !== expected.inlineData
-  ) {
-    throw createError({ statusCode: 412, statusMessage: 'Gmail attachment locator changed' })
-  }
+  // Gmail's locator is opaque and can change across otherwise identical
+  // projections. The exact message identity plus one filename/MIME/size
+  // candidate scopes this read; the caller verifies the downloaded bytes
+  // against the immutable sent-artifact SHA-256 before any unlock or import.
   if (candidate.inlineData) {
     try {
       return decodeGmailAttachmentResponse(

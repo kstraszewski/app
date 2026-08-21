@@ -4,7 +4,6 @@ import {
   assertSafeStoragePath,
   assertSafeStoragePrefix,
   createInMemoryStorageProvider,
-  createMinioStorageProvider,
   createStorageClient,
   createStorageBucketAdapter,
   createVercelBlobStorageProvider,
@@ -416,20 +415,14 @@ test('supports sized streaming uploads and overwrite control', async () => {
   assert.equal(overwritten.contentType, 'text/plain')
 })
 
-test('validates external provider topology without loading either network SDK', () => {
+test('validates Vercel Blob topology without loading the network SDK', () => {
   const vercel = createVercelBlobStorageProvider({
     stores: {
       public: { storeId: 'store_public' },
       private: { storeId: 'store_private' },
     },
   })
-  const minio = createMinioStorageProvider({
-    accessKeyId: 'openexpert',
-    secretAccessKey: 'local-secret',
-  })
-
   assert.equal(vercel.kind, 'vercel-blob')
-  assert.equal(minio.kind, 's3')
 
   assert.throws(
     () => createVercelBlobStorageProvider({
@@ -437,16 +430,6 @@ test('validates external provider topology without loading either network SDK', 
         public: { storeId: 'store_same' },
         private: { storeId: 'store_same' },
       },
-    }),
-    StorageConfigurationError,
-  )
-
-  assert.throws(
-    () => createMinioStorageProvider({
-      accessKeyId: 'openexpert',
-      secretAccessKey: 'local-secret',
-      publicBucket: 'same-bucket',
-      privateBucket: 'same-bucket',
     }),
     StorageConfigurationError,
   )
@@ -459,47 +442,6 @@ test('normalizes binary views for the Vercel Blob upload contract', () => {
   assert.ok(normalized instanceof ArrayBuffer)
   assert.deepEqual([...new Uint8Array(normalized)], [1, 2, 3])
   assert.equal(normalizeVercelBlobPutBody('plain text'), 'plain text')
-})
-
-test('creates a constrained browser PUT URL for S3-compatible storage', async () => {
-  const storage = createStorageClient(createMinioStorageProvider({
-    accessKeyId: 'openexpert',
-    secretAccessKey: 'local-secret',
-  }))
-  const startedAt = Date.now()
-  const upload = await storage.createSignedUploadUrl({
-    namespace: 'crm-message-attachments',
-    path: 'organization/case/conversation/attachment.pdf',
-    contentType: 'application/pdf; charset=binary',
-    size: 123,
-    expiresInSeconds: 300,
-  })
-
-  const url = new URL(upload.url)
-  assert.equal(upload.method, 'PUT')
-  assert.equal(
-    url.pathname,
-    '/openexpert-private/crm-message-attachments/organization/case/conversation/attachment.pdf',
-  )
-  assert.equal(url.searchParams.get('X-Amz-Expires'), '300')
-  assert.deepEqual(
-    new Set(url.searchParams.get('X-Amz-SignedHeaders')?.split(';')),
-    new Set([
-      'cache-control',
-      'content-length',
-      'content-type',
-      'host',
-      'if-none-match',
-    ]),
-  )
-  assert.equal(url.searchParams.has('x-amz-checksum-crc32'), false)
-  assert.deepEqual(upload.headers, {
-    'cache-control': 'private, max-age=60',
-    'content-type': 'application/pdf',
-    'if-none-match': '*',
-  })
-  assert.ok(upload.expiresAt.getTime() >= startedAt + 300_000)
-  assert.ok(upload.expiresAt.getTime() <= Date.now() + 300_000)
 })
 
 test('offers a provider-neutral from(bucket) adapter with data/error results', async () => {

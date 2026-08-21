@@ -34,7 +34,6 @@ const magicLinkSent = ref(false)
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
 
 const registered = computed(() => route.query.registered === '1')
-const registrationClosed = computed(() => route.query.registration === 'closed')
 const passwordChanged = computed(() => route.query.passwordChanged === '1')
 const intendedDestination = computed(() => safeRedirect(route.query.redirect))
 const social = computed(() => runtimeConfig.public.openexpert.social)
@@ -274,15 +273,6 @@ async function signInWithPasskey() {
         icon="i-lucide-badge-check"
         title="Email potwierdzony"
         description="Twoje konto jest gotowe. Możesz się zalogować."
-      />
-
-      <UAlert
-        v-if="registrationClosed"
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-user-lock"
-        title="Rejestracja jest wyłączona"
-        description="Dostęp do OpenExpert przyznaje administrator."
       />
 
       <UAlert
@@ -532,7 +522,8 @@ async function signInWithPasskey() {
     </div>
 
     <template #footer>
-      Dostęp jest przyznawany przez administratora OpenExpert.
+      Nie masz konta?
+      <NuxtLink to="/register">Załóż organizację aplikacyjną</NuxtLink>
     </template>
   </AuthShell>
 </template>
@@ -682,5 +673,12 @@ async function signInWithPasskey() {
 .social-login-grid {
   display: grid;
   gap: 10px;
+}
+
+:deep(.auth-footer a) {
+  margin-left: 4px;
+  color: var(--ui-text-highlighted);
+  font-weight: 600;
+  text-decoration: none;
 }
 </style>

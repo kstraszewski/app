@@ -126,6 +126,11 @@ export interface OpenExpertAuthConfig {
   resetPasswordExpiresIn?: number
   magicLinkExpiresIn?: number
   magicLinkDisableSignUp?: boolean
+  /**
+   * Separates single-use magic-link tokens issued by different auth surfaces
+   * that share the same Better Auth verification table.
+   */
+  magicLinkTokenNamespace?: string
   jwtExpiresIn?: number
   jwksRotationInterval?: number
   jwksGracePeriod?: number

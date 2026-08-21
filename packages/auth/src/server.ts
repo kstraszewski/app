@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { passkey } from '@better-auth/passkey'
 import {
   betterAuth,
@@ -31,6 +32,13 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]*$/
 const HEADER_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+const MAGIC_LINK_NAMESPACE_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,63}$/
+
+export function hashOpenExpertMagicLinkToken(namespace: string, token: string): string {
+  return createHash('sha256')
+    .update(`openexpert:${namespace}\0${token}`)
+    .digest('hex')
+}
 
 export {
   createOpenExpertBetterAuthRateLimitStorage,
@@ -114,6 +122,10 @@ function normalizeConfig(config: OpenExpertAuthConfig) {
   ) {
     throw new TypeError('Session fresh age must be between 60 and 3600 seconds')
   }
+  const magicLinkTokenNamespace = config.magicLinkTokenNamespace ?? 'primary'
+  if (!MAGIC_LINK_NAMESPACE_PATTERN.test(magicLinkTokenNamespace)) {
+    throw new TypeError('Magic-link token namespace is invalid')
+  }
 
   return {
     ...config,
@@ -135,6 +147,7 @@ function normalizeConfig(config: OpenExpertAuthConfig) {
     resetPasswordExpiresIn: config.resetPasswordExpiresIn ?? 60 * 60,
     magicLinkExpiresIn: config.magicLinkExpiresIn ?? 60 * 60,
     magicLinkDisableSignUp: config.magicLinkDisableSignUp ?? false,
+    magicLinkTokenNamespace,
     jwtExpiresIn: config.jwtExpiresIn ?? 60 * 60,
     jwksRotationInterval: config.jwksRotationInterval ?? 60 * 60 * 24 * 30,
     jwksGracePeriod: config.jwksGracePeriod ?? 60 * 60 * 24 * 30,
@@ -435,7 +448,13 @@ export function createOpenExpertAuth(options: CreateOpenExpertAuthOptions) {
       magicLink({
         expiresIn: config.magicLinkExpiresIn,
         disableSignUp: config.magicLinkDisableSignUp,
-        storeToken: 'hashed',
+        storeToken: {
+          type: 'custom-hasher',
+          hash: async token => hashOpenExpertMagicLinkToken(
+            config.magicLinkTokenNamespace,
+            token,
+          ),
+        },
         sendMagicLink: ({ email, url, token, metadata }, context) =>
           send({
             kind: 'magic-link',

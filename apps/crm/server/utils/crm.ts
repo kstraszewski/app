@@ -1,7 +1,13 @@
-import { serverDataClient, serverDataUser } from '~~/server/utils/data-api'
+import { serverDataBackend, serverDataClient, serverDataUser } from '~~/server/utils/data-api'
 import { useRuntimeConfig } from '#imports'
 import { createError, getRouterParam, type H3Event } from 'h3'
 import { expandManagedTeamIds, type TeamScopeEdge } from './team-scope'
+import {
+  BILLING_ACCESS_STATES,
+  isBillingAccessGranted,
+  type BillingAccessState,
+  type OrganizationKind,
+} from '~~/shared/organization-billing'
 
 type CrmDataClient = any
 
@@ -23,7 +29,13 @@ export interface CrmSession extends AuthenticatedSession {
   organizationId: string
   organizationName: string
   organizationSlug: string
+  organizationKind: OrganizationKind
+  billingAccessState: BillingAccessState
   role: string
+}
+
+export interface RequireCrmSessionOptions {
+  allowUnsubscribed?: boolean
 }
 
 export interface TeamAdminScope {
@@ -98,6 +110,7 @@ export async function requireAuthenticatedSession(event: H3Event): Promise<Authe
 export async function requireCrmSession(
   event: H3Event,
   requestedOrganizationSlug?: string,
+  options: RequireCrmSessionOptions = {},
 ): Promise<CrmSession> {
   const authenticated = await requireAuthenticatedSession(event)
   const organizationSlug = requestedOrganizationSlug ?? getRequiredParam(event, 'organizationSlug')
@@ -108,7 +121,7 @@ export async function requireCrmSession(
 
   const { data: organization, error: organizationError } = await authenticated.dataApi
     .from('organizations')
-    .select('id, name, slug')
+    .select('id, name, slug, kind, billing_access_state')
     .eq('slug', organizationSlug)
     .maybeSingle()
 
@@ -127,11 +140,45 @@ export async function requireCrmSession(
     throw createError({ statusCode: 404, statusMessage: 'Organization not found' })
   }
 
+  const organizationKind = String(organization.kind || 'intermediary') as OrganizationKind
+  let billingAccessState = String(
+    organization.billing_access_state || 'not_required',
+  ) as BillingAccessState
+  if (organizationKind === 'application') {
+    const backend = serverDataBackend(event) as CrmDataClient
+    const accessResult = await (backend as any).rpc('get_organization_billing_access_v1', {
+      p_organization_id: organization.id,
+    })
+    throwDbError(accessResult.error)
+    const projectedState = String(accessResult.data?.billingAccessState || '')
+    if (!(BILLING_ACCESS_STATES as readonly string[]).includes(projectedState)) {
+      throw createError({ statusCode: 500, statusMessage: 'Billing access projection is invalid' })
+    }
+    billingAccessState = projectedState as BillingAccessState
+  }
+  if (
+    organizationKind === 'application'
+    && !options.allowUnsubscribed
+    && !isBillingAccessGranted(billingAccessState)
+  ) {
+    throw createError({
+      statusCode: 402,
+      statusMessage: 'Application subscription required',
+      data: {
+        code: 'SUBSCRIPTION_REQUIRED',
+        organizationSlug: String(organization.slug),
+        billingAccessState,
+      },
+    })
+  }
+
   return {
     ...authenticated,
     organizationId: String(organization.id),
     organizationName: String(organization.name),
     organizationSlug: String(organization.slug),
+    organizationKind,
+    billingAccessState,
     role: String(membership.role ?? 'expert'),
   }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CrmMeetingListResponse } from '~/types/crm-meeting'
 import { canAccessCrmOmnisearch } from '~~/shared/types/omnisearch'
+import { isBillingAccessGranted } from '~~/shared/organization-billing'
 import {
   CRM_CALCULATOR_PATHS,
   createOrganizationAdministrationNavigationItems,
@@ -55,21 +56,37 @@ const organizationItems = computed(() => organizations.value.data.map((organizat
   label: organization.name,
   value: organization.slug,
 })))
+const activeOrganization = computed(() => (
+  organizations.value.data.find(organization => organization.slug === organizationSlug.value)
+))
+const billingRestricted = computed(() => (
+  activeOrganization.value?.kind === 'application'
+  && !isBillingAccessGranted(activeOrganization.value.billingAccessState)
+))
 const selectedOrganizationSlug = computed({
   get: () => organizationSlug.value,
   set: (slug: string) => {
-    if (slug && slug !== organizationSlug.value) navigateTo(`/org/${encodeURIComponent(slug)}/dashboard`)
+    if (!slug || slug === organizationSlug.value) return
+    const organization = organizations.value.data.find(item => item.slug === slug)
+    const target = organization?.kind === 'application'
+      && !isBillingAccessGranted(organization.billingAccessState)
+      ? 'settings/billing'
+      : 'dashboard'
+    navigateTo(`/org/${encodeURIComponent(slug)}/${target}`)
   },
 })
 const selectedOrganizationLabel = computed(() => (
   organizationItems.value.find(organization => organization.value === selectedOrganizationSlug.value)?.label
   ?? 'Aktywna organizacja'
 ))
-const activeOrganization = computed(() => (
-  organizations.value.data.find(organization => organization.slug === organizationSlug.value)
-))
 const omnisearchOpen = ref(false)
-const canUseOmnisearch = computed(() => canAccessCrmOmnisearch(activeOrganization.value?.role))
+const canUseOmnisearch = computed(() => (
+  !billingRestricted.value && canAccessCrmOmnisearch(activeOrganization.value?.role)
+))
+const brandPath = computed(() => billingRestricted.value
+  ? `${organizationBase.value}/settings/billing`
+  : `${organizationBase.value}/dashboard`)
+const accountDestination = computed(() => billingRestricted.value ? '/account' : accountSettingsPath.value)
 watch(canUseOmnisearch, (canUse) => {
   if (!canUse) omnisearchOpen.value = false
 })
@@ -96,6 +113,13 @@ const canViewFacilities = computed(() => (
 const isSuperAdmin = computed(() => organizations.value.access.superAdmin)
 const canUseExperiments = computed(() => (
   activeOrganization.value?.capabilities?.canUseExperiments === true
+))
+const visibleOrganizationSettingsTabDefinitions = computed(() => (
+  organizationSettingsTabDefinitions.filter(tab => (
+    activeOrganization.value?.kind === 'application'
+      ? tab.key !== 'intermediary'
+      : tab.key !== 'billing'
+  ))
 ))
 const sidebarToggleLabel = computed(() => {
   if (mobileViewport.value) return mobileNavigationOpen.value ? 'Zamknij nawigację' : 'Otwórz nawigację'
@@ -186,7 +210,7 @@ onMounted(() => {
   updateViewport()
   viewportMedia.addEventListener('change', updateViewport)
   window.addEventListener('keydown', handleShellKeydown)
-  void restoreActiveMeeting()
+  if (!billingRestricted.value) void restoreActiveMeeting()
 })
 
 onBeforeUnmount(() => {
@@ -195,19 +219,28 @@ onBeforeUnmount(() => {
   setBodyScrollLock(false)
 })
 
-watch(organizationSlug, () => {
+watch([organizationSlug, billingRestricted], ([, restricted]) => {
+  if (restricted) {
+    restoredMeetingOrganization.value = ''
+    if (meetingPrototype.value.active) endMeeting()
+    return
+  }
   void restoreActiveMeeting()
 })
 
 async function restoreActiveMeeting() {
   const slug = organizationSlug.value
-  if (!slug || restoredMeetingOrganization.value === slug) return
+  if (billingRestricted.value || !slug || restoredMeetingOrganization.value === slug) return
   restoredMeetingOrganization.value = slug
 
   try {
     const payload = await $fetch<CrmMeetingListResponse>(
       `/api/org/${encodeURIComponent(slug)}/crm/meetings`,
     )
+    if (billingRestricted.value || organizationSlug.value !== slug) {
+      if (restoredMeetingOrganization.value === slug) restoredMeetingOrganization.value = ''
+      return
+    }
     const activeMeeting = payload.data
       .filter(meeting => meeting.status === 'live')
       .sort((left, right) => (
@@ -276,6 +309,28 @@ function isNavigationActive(item: NavigationItem) {
 }
 
 const navGroups = computed<NavigationGroup[]>(() => {
+  if (billingRestricted.value) {
+    const restrictedGroups: NavigationGroup[] = [{
+      key: 'billing',
+      label: 'Dostęp do aplikacji',
+      hideLabel: true,
+      items: [{
+        label: 'Subskrypcja',
+        to: `${organizationBase.value}/settings/billing`,
+        icon: 'i-lucide-credit-card',
+      }],
+    }]
+    if (isSuperAdmin.value) {
+      restrictedGroups.push({
+        key: 'system-admin',
+        label: 'Administracja systemu',
+        items: createSystemAdministrationNavigationItems(organizationSlug.value)
+          .filter(item => item.to.endsWith('/settings/organizations')),
+      })
+    }
+    return restrictedGroups
+  }
+
   const groups: NavigationGroup[] = [{
     key: 'overview',
     label: 'Główne',
@@ -403,7 +458,7 @@ const omnisearchPages = computed(() => {
   })))
 
   if (isOrganizationAdmin.value) {
-    pages.push(...organizationSettingsTabDefinitions
+    pages.push(...visibleOrganizationSettingsTabDefinitions.value
       .filter(tab => tab.key !== 'overview')
       .map(tab => ({
         id: `page:organization-settings:${tab.key}`,
@@ -465,7 +520,7 @@ async function signOut() {
     >
       <div class="crm-nav__head">
         <NuxtLink
-          :to="organizationBase ? `${organizationBase}/dashboard` : '/'"
+          :to="organizationBase ? brandPath : '/'"
           class="crm-brand"
           :aria-label="organizationDesign.branding.productName"
           :title="sidebarCollapsed ? organizationDesign.branding.productName : undefined"
@@ -492,7 +547,7 @@ async function signOut() {
           />
 
           <NotificationsCrmNotificationCenter
-            v-if="organizationSlug"
+            v-if="organizationSlug && !billingRestricted"
             :organization-slug="organizationSlug"
           />
 
@@ -592,7 +647,7 @@ async function signOut() {
 
       <div class="crm-nav__footer">
         <UButton
-          v-if="meetingPrototype.active"
+          v-if="meetingPrototype.active && !billingRestricted"
           class="crm-nav__meeting"
           :class="{ 'crm-nav__meeting--active': route.path === meetingPath || route.path.startsWith(`${meetingPath}/`) }"
           color="neutral"
@@ -612,9 +667,9 @@ async function signOut() {
         <NuxtLink
           v-if="user?.email"
           class="crm-nav__account"
-          :class="{ 'crm-nav__account--active': route.path.startsWith(accountSettingsPath) }"
-          :to="accountSettingsPath"
-          :aria-current="route.path.startsWith(accountSettingsPath) ? 'page' : undefined"
+          :class="{ 'crm-nav__account--active': !billingRestricted && route.path.startsWith(accountSettingsPath) }"
+          :to="accountDestination"
+          :aria-current="!billingRestricted && route.path.startsWith(accountSettingsPath) ? 'page' : undefined"
           :title="user.email"
           @click="closeMobileNavigation"
         >
@@ -693,13 +748,13 @@ async function signOut() {
     </section>
 
     <CrmEveAssistant
-      v-if="!props.assistantPage && !hasEmbeddedEve"
+      v-if="!billingRestricted && !props.assistantPage && !hasEmbeddedEve"
       :key="organizationSlug"
       :inert="mobileNavigationOpen || undefined"
       :aria-hidden="mobileNavigationOpen ? 'true' : undefined"
     />
 
-    <CrmMeetingPrototype />
+    <CrmMeetingPrototype v-if="!billingRestricted" />
     <CrmOmnisearch
       v-if="canUseOmnisearch"
       v-model:open="omnisearchOpen"

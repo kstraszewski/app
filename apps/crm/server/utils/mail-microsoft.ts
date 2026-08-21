@@ -1149,6 +1149,7 @@ function microsoftThreadSummary(
       conversationId: cleanOptionalProviderIdentifier(latest.conversationId),
       anchorMessageId: cleanProviderIdentifier(latest.id, 'Microsoft message ID'),
     }, referenceSecret),
+    latestMessageId: cleanProviderIdentifier(latest.id, 'Microsoft message ID'),
     messageCount: messages.length,
     participants,
     participantsLabel: participantLabel(participants),

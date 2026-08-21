@@ -311,6 +311,7 @@ test('lists folders, groups a page by conversationId, and returns a sealed next 
   )
   assert.equal(page.data.length, 2)
   assert.equal(page.data[0]?.messageCount, 2)
+  assert.equal(page.data[0]?.latestMessageId, 'message-2')
   assert.equal(page.data[0]?.starred, true)
   assert.equal(page.data[0]?.hasAttachments, true)
   assert.deepEqual(

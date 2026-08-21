@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isBillingAccessGranted } from '~~/shared/organization-billing'
+
 definePageMeta({ middleware: 'auth' })
 useHead({ title: 'Wybierz organizację — OpenExpert CRM' })
 
@@ -6,7 +8,20 @@ const route = useRoute()
 const { data, pending, error, refresh } = await useOrganizations()
 
 if (data.value.data.length === 1) {
-  await navigateTo(`/org/${encodeURIComponent(data.value.data[0]!.slug)}/dashboard`, { replace: true })
+  const organization = data.value.data[0]!
+  const target = organization.kind === 'application'
+    && !isBillingAccessGranted(organization.billingAccessState)
+    ? 'settings/billing'
+    : 'dashboard'
+  await navigateTo(`/org/${encodeURIComponent(organization.slug)}/${target}`, { replace: true })
+}
+
+function organizationTarget(organization: typeof data.value.data[number]) {
+  const target = organization.kind === 'application'
+    && !isBillingAccessGranted(organization.billingAccessState)
+    ? 'settings/billing'
+    : 'dashboard'
+  return `/org/${encodeURIComponent(organization.slug)}/${target}`
 }
 </script>
 
@@ -51,7 +66,7 @@ if (data.value.data.length === 1) {
         <NuxtLink
           v-for="organization in data.data"
           :key="organization.id"
-          :to="`/org/${encodeURIComponent(organization.slug)}/dashboard`"
+          :to="organizationTarget(organization)"
           class="organization-card oe-hover-lift"
         >
           <div class="organization-card__icon"><UIcon name="i-lucide-building-2" /></div>
@@ -59,9 +74,18 @@ if (data.value.data.length === 1) {
             <strong>{{ organization.name }}</strong>
             <span>/org/{{ organization.slug }}</span>
           </div>
-          <UBadge :color="organization.role === 'admin' ? 'primary' : 'neutral'" variant="subtle">
-            {{ organization.role }}
-          </UBadge>
+          <div class="organization-card__badges">
+            <UBadge
+              v-if="organization.kind === 'application' && !isBillingAccessGranted(organization.billingAccessState)"
+              color="warning"
+              variant="subtle"
+            >
+              Wymaga subskrypcji
+            </UBadge>
+            <UBadge :color="organization.role === 'admin' ? 'primary' : 'neutral'" variant="subtle">
+              {{ organization.role }}
+            </UBadge>
+          </div>
           <UIcon name="i-lucide-arrow-right" />
         </NuxtLink>
       </div>
@@ -70,7 +94,10 @@ if (data.value.data.length === 1) {
         <div class="organization-picker__empty">
           <UIcon name="i-lucide-building" />
           <h2>Brak organizacji</h2>
-          <p>Poproś administratora o dodanie konta do organizacji.</p>
+          <p>Utwórz własną organizację albo przyjmij zaproszenie od jej administratora.</p>
+          <UButton to="/onboarding" icon="i-lucide-building-2">
+            Utwórz organizację
+          </UButton>
         </div>
       </UCard>
     </section>
@@ -145,6 +172,13 @@ if (data.value.data.length === 1) {
   font-size: 20px;
 }
 
+.organization-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .organization-card strong,
 .organization-card span {
   display: block;
@@ -158,8 +192,16 @@ if (data.value.data.length === 1) {
 }
 
 .organization-picker__empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
   padding: 40px;
   text-align: center;
+}
+
+.organization-picker__empty h2,
+.organization-picker__empty p {
+  margin: 0;
 }
 
 .organization-picker__empty > .icon {

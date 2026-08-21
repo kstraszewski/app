@@ -3,11 +3,15 @@ import {
   intermediarySettingsReadiness,
   normalizeIntermediarySettings,
 } from '#shared/intermediary-settings'
+import { createError } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
 import { resolveIntermediaryLenders } from '~~/server/utils/intermediary-lenders'
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
+  if (session.organizationKind !== 'intermediary') {
+    throw createError({ statusCode: 404, statusMessage: 'Intermediary settings are not available' })
+  }
   const [{ data, error }, lenders] = await Promise.all([
     session.dataApi
       .from('organization_intermediary_settings')

@@ -24,6 +24,9 @@ function contentDisposition(fileName: string, download: boolean): string {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
+  if (session.organizationKind !== 'intermediary') {
+    throw createError({ statusCode: 404, statusMessage: 'Intermediary documents are not available' })
+  }
   requireOrganizationAdmin(session)
   const kind = intermediaryDocumentKind(getRequiredParam(event, 'kind'))
   if (!kind) throw createError({ statusCode: 404, statusMessage: 'Nieznany rodzaj dokumentu.' })

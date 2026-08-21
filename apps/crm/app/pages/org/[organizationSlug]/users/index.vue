@@ -1,5 +1,15 @@
 <script setup lang="ts">
 import type { FormError, FormSubmitEvent, TableColumn } from '@nuxt/ui'
+import type {
+  OrganizationMemberInvitation,
+  OrganizationMemberInvitationIssueResponse,
+} from '#shared/types/organization-member-invitations'
+import type {
+  OrganizationMemberBillingSummary,
+  OrganizationPendingSeatChange,
+  OrganizationSeatChangeResponse,
+  OrganizationSeatQuote,
+} from '#shared/types/organization-seat-billing'
 import type { OrganizationMember } from '~/types/organization'
 import type { OrganizationMembersPayload } from '~/types/scheduling'
 import { apiErrorMessage } from '~/utils/api-error'
@@ -30,9 +40,16 @@ interface EnrichedMember extends OrganizationMember {
 }
 
 interface InviteForm {
+  invitedName: string
   email: string
   role: 'expert' | 'admin'
 }
+
+type MembersPayload = OrganizationMembersPayload & {
+  billing: OrganizationMemberBillingSummary
+}
+
+type InviteStep = 'details' | 'quote' | 'result'
 
 const { orgApiPath, orgPath } = useOrganizationContext()
 const toast = useToast()
@@ -42,16 +59,40 @@ const statusFilter = ref<DirectoryFilter<UserStatus>>('all')
 const adminRoleFilter = ref<DirectoryFilter<AdminRoleKey>>('all')
 const inviteOpen = ref(false)
 const inviting = ref(false)
+const quoteLoading = ref(false)
+const reconcileLoading = ref(false)
+const memberInvitationActionId = ref('')
+const inviteStep = ref<InviteStep>('details')
+const inviteQuote = ref<OrganizationSeatQuote | null>(null)
+const seatChange = ref<OrganizationSeatChangeResponse | null>(null)
+const quoteError = ref('')
+const idempotencyKey = ref('')
 const inviteForm = reactive<InviteForm>({
+  invitedName: '',
   email: '',
   role: 'expert',
 })
 
-const emptyDirectory = (): OrganizationMembersPayload => ({
+const emptyBilling = (): OrganizationMemberBillingSummary => ({
+  perSeat: false,
+  canManageSeats: false,
+  licensedSeats: 0,
+  activeMembers: 0,
+  reservedSeats: 0,
+  unitAmount: 0,
+  currency: 'pln',
+  monthlyListAmount: 0,
+  renewalAt: null,
+  pendingChanges: [],
+  pendingInvitations: [],
+})
+
+const emptyDirectory = (): MembersPayload => ({
   currentUserId: '',
   role: 'expert',
   canAssignOthers: false,
   members: [],
+  billing: emptyBilling(),
 })
 
 const {
@@ -59,14 +100,64 @@ const {
   status,
   error,
   refresh,
-} = await useFetch<OrganizationMembersPayload>(
+} = await useFetch<MembersPayload>(
   () => orgApiPath('/members'),
   { default: emptyDirectory },
 )
 
-const canManageUsers = computed(() =>
-  directory.value.canAssignOthers,
-)
+const canViewUsers = computed(() => directory.value.canAssignOthers)
+const canManageUsers = computed(() => (
+  directory.value.canAssignOthers
+  && (!directory.value.billing.perSeat || directory.value.billing.canManageSeats)
+))
+const seatManagementRestricted = computed(() => (
+  canViewUsers.value
+  && directory.value.billing.perSeat
+  && !directory.value.billing.canManageSeats
+))
+const pendingSeatChanges = computed(() => directory.value.billing.pendingChanges)
+const pendingMemberInvitations = computed(() => directory.value.billing.pendingInvitations)
+const availablePaidSeats = computed(() => Math.max(
+  0,
+  directory.value.billing.licensedSeats
+  - directory.value.billing.activeMembers
+  - directory.value.billing.reservedSeats,
+))
+const inviteIntoPaidCapacity = computed(() => (
+  directory.value.billing.perSeat && availablePaidSeats.value > 0
+))
+const capacityHeldByInvitations = computed(() => (
+  directory.value.billing.perSeat
+  && directory.value.billing.reservedSeats > 0
+  && directory.value.billing.activeMembers < directory.value.billing.licensedSeats
+  && availablePaidSeats.value === 0
+))
+const inviteModalTitle = computed(() => {
+  if (inviteStep.value === 'quote') {
+    return inviteQuote.value?.billingRequired
+      ? 'Potwierdź koszt użytkownika'
+      : 'Potwierdź wykorzystanie miejsca'
+  }
+  if (inviteStep.value === 'result') return 'Zmiana liczby użytkowników'
+  return inviteIntoPaidCapacity.value ? 'Zaproś użytkownika' : 'Dodaj użytkownika'
+})
+const inviteModalDescription = computed(() => {
+  if (inviteStep.value === 'quote') {
+    return inviteQuote.value?.billingRequired
+      ? 'Sprawdź dopłatę za bieżący okres i nowy miesięczny koszt przed obciążeniem zapisanej karty.'
+      : 'Ta osoba zajmie jedno z opłaconych miejsc. Karta nie zostanie ponownie obciążona.'
+  }
+  if (inviteStep.value === 'result') {
+    return 'Płatne miejsce zostanie aktywowane po potwierdzeniu płatności.'
+  }
+  if (inviteIntoPaidCapacity.value) {
+    return 'Wyślij bezpieczne zaproszenie email. Opłacone miejsce zostanie zarezerwowane bez obciążania karty.'
+  }
+  if (capacityHeldByInvitations.value) {
+    return 'Wszystkie wolne opłacone miejsca są już zarezerwowane przez oczekujące zaproszenia.'
+  }
+  return 'Wskaż istniejące, zweryfikowane konto. Dodanie kolejnego miejsca zwiększy subskrypcję.'
+})
 
 const accessProfiles: Record<AdminRoleKey, {
   label: string
@@ -254,10 +345,39 @@ function resetFilters() {
   adminRoleFilter.value = 'all'
 }
 
+function newIdempotencyKey() {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `seat-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function resetInviteFlow() {
+  inviteStep.value = 'details'
+  inviteQuote.value = null
+  seatChange.value = null
+  quoteError.value = ''
+  idempotencyKey.value = newIdempotencyKey()
+}
+
 function openInvite() {
+  if (!canManageUsers.value) return
+
+  inviteForm.invitedName = ''
   inviteForm.email = ''
   inviteForm.role = 'expert'
+  resetInviteFlow()
   inviteOpen.value = true
+}
+
+function closeInvite() {
+  inviteOpen.value = false
+}
+
+function editInviteDetails() {
+  inviteStep.value = 'details'
+  inviteQuote.value = null
+  seatChange.value = null
+  quoteError.value = ''
+  idempotencyKey.value = newIdempotencyKey()
 }
 
 function validateInvite(state: Partial<InviteForm>): FormError[] {
@@ -271,26 +391,105 @@ function validateInvite(state: Partial<InviteForm>): FormError[] {
   return inviteErrors
 }
 
-async function inviteUser(event: FormSubmitEvent<InviteForm>) {
-  inviting.value = true
+async function requestInviteQuote(event: FormSubmitEvent<InviteForm>) {
+  quoteLoading.value = true
+  quoteError.value = ''
+  inviteQuote.value = null
+
   try {
-    await $fetch(orgApiPath('/members'), {
+    inviteForm.invitedName = event.data.invitedName?.trim() ?? ''
+    inviteForm.email = event.data.email.trim().toLocaleLowerCase('pl')
+    inviteForm.role = event.data.role
+    if (inviteIntoPaidCapacity.value) {
+      const result = await $fetch<OrganizationMemberInvitationIssueResponse>(
+        orgApiPath('/member-invitations'),
+        {
+          method: 'POST',
+          body: {
+            invitedName: inviteForm.invitedName || undefined,
+            email: inviteForm.email,
+            role: inviteForm.role,
+          },
+        },
+      )
+      await refresh()
+      inviteOpen.value = false
+      toast.add({
+        title: result.delivery.status === 'sent'
+          ? 'Zaproszenie zostało wysłane'
+          : 'Miejsce zarezerwowano, ale email nie został wysłany',
+        description: result.delivery.status === 'sent'
+          ? `${inviteForm.email} otrzyma bezpieczny link. Karta nie została obciążona.`
+          : 'Ponów wysyłkę z listy oczekujących zaproszeń albo zwolnij miejsce.',
+        color: result.delivery.status === 'sent' ? 'success' : 'warning',
+        icon: result.delivery.status === 'sent' ? 'i-lucide-mail-check' : 'i-lucide-mail-warning',
+      })
+      return
+    }
+    inviteQuote.value = await $fetch<OrganizationSeatQuote>(orgApiPath('/members/quote'), {
       method: 'POST',
       body: {
-        email: event.data.email.trim().toLocaleLowerCase('pl'),
-        role: event.data.role,
+        email: inviteForm.email,
+        role: inviteForm.role,
       },
     })
-    inviteOpen.value = false
-    toast.add({
-      title: 'Użytkownik został dodany',
-      description: event.data.role === 'admin'
-        ? 'Otrzymał ogólną rolę administratora organizacji. Dostęp do zgód nadaj osobno.'
-        : 'Nie otrzymał dostępu do modułów administracyjnych.',
-      color: 'success',
-      icon: 'i-lucide-user-round-check',
-    })
+    idempotencyKey.value = newIdempotencyKey()
+    inviteStep.value = 'quote'
+  }
+  catch (caught: unknown) {
+    quoteError.value = apiErrorMessage(caught)
     await refresh()
+  }
+  finally {
+    quoteLoading.value = false
+  }
+}
+
+async function confirmInvite() {
+  if (!inviteQuote.value) return
+
+  inviting.value = true
+  try {
+    const result = await $fetch<OrganizationSeatChangeResponse>(orgApiPath('/members'), {
+      method: 'POST',
+      body: {
+        email: inviteForm.email,
+        role: inviteForm.role,
+        idempotencyKey: idempotencyKey.value,
+        quotedBillingRequired: inviteQuote.value.billingRequired,
+        expectedActiveMembers: inviteQuote.value.expectedActiveMembers,
+        expectedReservedSeats: inviteQuote.value.expectedReservedSeats,
+        expectedOccupiedSeats: inviteQuote.value.expectedOccupiedSeats,
+        expectedCurrentSeats: inviteQuote.value.currentSeats,
+        prorationDate: inviteQuote.value.prorationDate,
+      },
+    })
+
+    seatChange.value = result
+    await refresh()
+
+    if (result.status === 'succeeded') {
+      inviteOpen.value = false
+      toast.add({
+        title: 'Użytkownik został dodany',
+        description: inviteForm.role === 'admin'
+          ? 'Płatne miejsce jest aktywne. Użytkownik otrzymał ogólną rolę administratora organizacji.'
+          : 'Płatne miejsce jest aktywne. Użytkownik nie otrzymał dostępu administracyjnego.',
+        color: 'success',
+        icon: 'i-lucide-user-round-check',
+      })
+      return
+    }
+
+    inviteStep.value = 'result'
+    toast.add({
+      title: result.status === 'requires_action'
+        ? 'Płatność wymaga potwierdzenia'
+        : 'Płatność jest przetwarzana',
+      description: 'Użytkownik otrzyma dostęp dopiero po potwierdzeniu płatności.',
+      color: result.status === 'requires_action' ? 'warning' : 'info',
+      icon: result.status === 'requires_action' ? 'i-lucide-credit-card' : 'i-lucide-loader-circle',
+    })
   } catch (caught: unknown) {
     toast.add({
       title: 'Nie udało się dodać użytkownika',
@@ -302,6 +501,127 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
     inviting.value = false
   }
 }
+
+async function resendMemberInvitation(invitation: OrganizationMemberInvitation) {
+  memberInvitationActionId.value = invitation.id
+  try {
+    const result = await $fetch<OrganizationMemberInvitationIssueResponse>(
+      orgApiPath(`/member-invitations/${encodeURIComponent(invitation.id)}/resend`),
+      { method: 'POST', body: {} },
+    )
+    await refresh()
+    toast.add({
+      title: result.delivery.status === 'sent' ? 'Zaproszenie wysłane ponownie' : 'Wysyłka nie powiodła się',
+      description: result.delivery.status === 'sent'
+        ? `Nowy link trafił na ${invitation.email}.`
+        : 'Opłacone miejsce nadal jest zarezerwowane. Możesz ponowić próbę lub unieważnić zaproszenie.',
+      color: result.delivery.status === 'sent' ? 'success' : 'warning',
+    })
+  }
+  catch (error: unknown) {
+    toast.add({ title: 'Nie udało się ponowić zaproszenia', description: apiErrorMessage(error), color: 'error' })
+  }
+  finally {
+    memberInvitationActionId.value = ''
+  }
+}
+
+async function revokeMemberInvitation(invitation: OrganizationMemberInvitation) {
+  memberInvitationActionId.value = invitation.id
+  try {
+    await $fetch(orgApiPath(`/member-invitations/${encodeURIComponent(invitation.id)}/revoke`), {
+      method: 'POST',
+      body: {},
+    })
+    await refresh()
+    toast.add({
+      title: 'Zaproszenie unieważnione',
+      description: 'Zarezerwowane opłacone miejsce jest ponownie dostępne.',
+      color: 'success',
+    })
+  }
+  catch (error: unknown) {
+    toast.add({ title: 'Nie udało się unieważnić zaproszenia', description: apiErrorMessage(error), color: 'error' })
+  }
+  finally {
+    memberInvitationActionId.value = ''
+  }
+}
+
+function memberInvitationDescription(invitation: OrganizationMemberInvitation) {
+  if (invitation.status === 'expired') return 'Link wygasł i miejsce jest wolne. Możesz wysłać nowy link, jeśli miejsce nadal jest dostępne.'
+  if (invitation.deliveryFailed) return 'Miejsce jest zarezerwowane, ale wiadomość nie została dostarczona. Ponów wysyłkę lub zwolnij miejsce.'
+  return `Miejsce jest zarezerwowane do ${formatBillingDate(invitation.expiresAt)}. Przyjęcie linku nie obciąży karty.`
+}
+
+async function reconcilePendingPayment(change: OrganizationPendingSeatChange) {
+  if (reconcileLoading.value) return
+
+  reconcileLoading.value = true
+  try {
+    await $fetch(orgApiPath('/billing/reconcile'), {
+      method: 'POST',
+      body: {},
+    })
+    await refresh()
+
+    const stillPending = directory.value.billing.pendingChanges.some(item => item.id === change.id)
+    toast.add({
+      title: stillPending ? 'Płatność nadal czeka na potwierdzenie' : 'Płatność została potwierdzona',
+      description: stillPending
+        ? 'Stripe nie potwierdził jeszcze obciążenia. Spróbuj ponownie za chwilę.'
+        : `Dostęp użytkownika ${change.email} został zaktualizowany.`,
+      color: stillPending ? 'warning' : 'success',
+      icon: stillPending ? 'i-lucide-clock-3' : 'i-lucide-circle-check',
+    })
+  }
+  catch (caught: unknown) {
+    toast.add({
+      title: 'Nie udało się sprawdzić płatności',
+      description: apiErrorMessage(caught),
+      color: 'error',
+      icon: 'i-lucide-circle-alert',
+    })
+  }
+  finally {
+    reconcileLoading.value = false
+  }
+}
+
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: 2,
+  }).format(amount / 100)
+}
+
+function formatBillingDate(value: string | null | undefined) {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('pl-PL', { dateStyle: 'long' }).format(new Date(value))
+}
+
+function pendingSeatPresentation(change: OrganizationPendingSeatChange) {
+  if (change.status === 'requires_action') {
+    return {
+      color: 'warning' as const,
+      icon: 'i-lucide-credit-card',
+      title: `Dokończ płatność za użytkownika ${change.email}`,
+      description: 'Dodatkowe miejsce i dostęp użytkownika czekają na potwierdzenie płatności.',
+    }
+  }
+
+  return {
+    color: 'info' as const,
+    icon: 'i-lucide-loader-circle',
+    title: `Dodanie użytkownika ${change.email} jest przetwarzane`,
+    description: 'Dostęp zostanie aktywowany automatycznie po zaksięgowaniu płatności.',
+  }
+}
+
+watch(inviteOpen, (open) => {
+  if (!open && !inviting.value) resetInviteFlow()
+})
 </script>
 
 <template>
@@ -311,7 +631,7 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
     description="Rejestr osób, ich ról administracyjnych i miejsca w strukturze organizacji. Uprawnienia eksperckie są zarządzane osobno w module akredytacji."
   >
     <template #meta>
-      <div v-if="canManageUsers" class="users-page__meta">
+      <div v-if="canViewUsers" class="users-page__meta">
         <UBadge color="neutral" variant="outline" icon="i-lucide-building-2">
           Cała organizacja
         </UBadge>
@@ -350,7 +670,7 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
       />
 
       <UAlert
-        v-else-if="!canManageUsers"
+        v-else-if="!canViewUsers"
         color="warning"
         variant="subtle"
         icon="i-lucide-shield-alert"
@@ -359,6 +679,113 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
       />
 
       <template v-else>
+        <UAlert
+          v-if="seatManagementRestricted"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-credit-card"
+          title="Dodawanie użytkowników wymaga dostępu do rozliczeń"
+          description="Jako administrator dostępów możesz przeglądać użytkowników i role, ale tylko administrator organizacji może zwiększyć liczbę płatnych miejsc i obciążyć kartę."
+        />
+
+        <UAlert
+          v-for="change in pendingSeatChanges"
+          :key="change.id"
+          :color="pendingSeatPresentation(change).color"
+          variant="subtle"
+          :icon="pendingSeatPresentation(change).icon"
+          :title="pendingSeatPresentation(change).title"
+          :description="pendingSeatPresentation(change).description"
+        >
+          <template v-if="canManageUsers" #actions>
+            <UButton
+              v-if="change.paymentUrl"
+              :to="change.paymentUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              color="neutral"
+              variant="outline"
+              trailing-icon="i-lucide-external-link"
+            >
+              Dokończ płatność
+            </UButton>
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-refresh-cw"
+              :loading="reconcileLoading"
+              @click="reconcilePendingPayment(change)"
+            >
+              Sprawdź płatność
+            </UButton>
+          </template>
+        </UAlert>
+
+        <UAlert
+          v-for="invitation in pendingMemberInvitations"
+          :key="invitation.id"
+          :color="invitation.deliveryFailed || invitation.status === 'expired' ? 'warning' : 'info'"
+          variant="subtle"
+          :icon="invitation.deliveryFailed ? 'i-lucide-mail-warning' : 'i-lucide-mail-clock'"
+          :title="invitation.status === 'expired'
+            ? `Zaproszenie dla ${invitation.email} wygasło`
+            : `Oczekuje zaproszenie dla ${invitation.email}`"
+          :description="memberInvitationDescription(invitation)"
+        >
+          <template v-if="canManageUsers" #actions>
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-send"
+              :loading="memberInvitationActionId === invitation.id"
+              @click="resendMemberInvitation(invitation)"
+            >
+              Wyślij ponownie
+            </UButton>
+            <UButton
+              color="error"
+              variant="soft"
+              icon="i-lucide-x"
+              :loading="memberInvitationActionId === invitation.id"
+              @click="revokeMemberInvitation(invitation)"
+            >
+              Zwolnij miejsce
+            </UButton>
+          </template>
+        </UAlert>
+
+        <div v-if="directory.billing.perSeat" class="users-billing-summary">
+          <UCard>
+            <span>Aktywni użytkownicy</span>
+            <strong>{{ directory.billing.activeMembers }}</strong>
+            <small>
+              {{ directory.billing.licensedSeats }} opłaconych ·
+              {{ directory.billing.reservedSeats }} zarezerwowanych ·
+              {{ availablePaidSeats }} wolnych
+            </small>
+          </UCard>
+          <UCard>
+            <span>Cena za użytkownika</span>
+            <strong>{{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}</strong>
+            <small>miesięcznie za opłacone miejsce</small>
+          </UCard>
+          <UCard>
+            <span>Koszt miesięczny</span>
+            <strong>{{ formatMoney(directory.billing.monthlyListAmount, directory.billing.currency) }}</strong>
+            <small>
+              {{ directory.billing.licensedSeats }} ×
+              {{ formatMoney(directory.billing.unitAmount, directory.billing.currency) }}
+            </small>
+          </UCard>
+          <UCard>
+            <span>Następne odnowienie</span>
+            <strong class="users-billing-summary__date">
+              {{ formatBillingDate(directory.billing.renewalAt) }}
+            </strong>
+            <small>zgodnie z okresem rozliczeniowym</small>
+          </UCard>
+        </div>
+
         <UCard class="users-registry">
           <template #header>
             <div class="users-toolbar">
@@ -517,7 +944,11 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
               >
                 Wyczyść filtry
               </UButton>
-              <UButton v-if="!users.length" icon="i-lucide-user-plus" @click="inviteOpen = true">
+              <UButton
+                v-if="!users.length && canManageUsers"
+                icon="i-lucide-user-plus"
+                @click="openInvite"
+              >
                 Dodaj użytkownika
               </UButton>
             </template>
@@ -528,22 +959,57 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
 
     <UModal
       v-model:open="inviteOpen"
-      title="Dodaj użytkownika"
-      description="Dodaj osobę do organizacji i zdecyduj, czy od razu otrzyma ogólną rolę administratora."
+      :title="inviteModalTitle"
+      :description="inviteModalDescription"
       :ui="{ content: 'sm:max-w-xl', footer: 'justify-end' }"
     >
       <template #body>
         <UForm
+          v-if="inviteStep === 'details'"
           id="user-invite-form"
           :state="inviteForm"
           :validate="validateInvite"
           class="user-invite-form"
-          @submit="inviteUser"
+          @submit="requestInviteQuote"
         >
+          <div class="invite-progress">
+            <UBadge color="primary" variant="subtle">
+              {{ inviteIntoPaidCapacity ? 'Zaproszenie bez płatności' : 'Krok 1 z 2' }}
+            </UBadge>
+            <span>{{ inviteIntoPaidCapacity ? 'Nowe lub istniejące konto' : 'Istniejące konto' }}</span>
+          </div>
+
+          <UAlert
+            v-if="capacityHeldByInvitations"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-users-round"
+            title="Brak wolnego miejsca do dodania"
+            description="Oczekujące zaproszenia zajmują wszystkie wolne opłacone miejsca. Poczekaj na ich przyjęcie albo unieważnij jedno z nich nad listą użytkowników."
+          />
+
+          <UFormField
+            v-if="inviteIntoPaidCapacity"
+            name="invitedName"
+            label="Imię i nazwisko"
+            description="Opcjonalnie — pomoże rozpoznać osobę na liście oczekujących."
+          >
+            <UInput
+              v-model="inviteForm.invitedName"
+              class="w-full"
+              maxlength="200"
+              placeholder="Anna Kowalska"
+              icon="i-lucide-user-round"
+              autofocus
+            />
+          </UFormField>
+
           <UFormField
             name="email"
             label="Adres email"
-            description="Użytkownik musi posiadać konto powiązane z tym adresem."
+            :description="inviteIntoPaidCapacity
+              ? 'Osoba może założyć konto bezpośrednio z bezpiecznego linku.'
+              : 'Użytkownik musi już posiadać zweryfikowane konto powiązane z tym adresem.'"
             required
           >
             <UInput
@@ -552,7 +1018,7 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
               type="email"
               placeholder="imie.nazwisko@firma.pl"
               icon="i-lucide-mail"
-              autofocus
+              :autofocus="!inviteIntoPaidCapacity"
             />
           </UFormField>
 
@@ -577,20 +1043,179 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
             title="Szeroki dostęp administracyjny"
             description="Ta osoba będzie mogła zarządzać użytkownikami, rolami, strukturą organizacji i konfiguracją CRM. Edycja oraz publikacja zgód wymagają osobnej roli lub wyjątku."
           />
+
+          <UAlert
+            v-if="quoteError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="inviteIntoPaidCapacity ? 'Nie udało się wysłać zaproszenia' : 'Nie udało się wyliczyć kosztu'"
+            :description="quoteError"
+          />
         </UForm>
+
+        <div v-else-if="inviteStep === 'quote' && inviteQuote" class="seat-quote">
+          <div class="invite-progress">
+            <UBadge color="primary" variant="subtle">Krok 2 z 2</UBadge>
+            <span>Podsumowanie i płatność</span>
+          </div>
+
+          <div class="seat-quote__identity">
+            <span class="seat-quote__identity-icon"><UIcon name="i-lucide-user-plus" /></span>
+            <div>
+              <strong>{{ inviteForm.email }}</strong>
+              <span>{{ inviteForm.role === 'admin' ? 'Administrator organizacji' : 'Bez dostępu administracyjnego' }}</span>
+            </div>
+          </div>
+
+          <div
+            class="seat-quote__seats"
+            :aria-label="inviteQuote.billingRequired ? 'Zmiana liczby płatnych miejsc' : 'Zmiana liczby członków'"
+          >
+            <div>
+              <span>Teraz</span>
+              <strong>{{ inviteQuote.currentSeats }}</strong>
+              <small>miejsc</small>
+            </div>
+            <UIcon name="i-lucide-arrow-right" />
+            <div class="seat-quote__seats-next">
+              <span>Po dodaniu</span>
+              <strong>{{ inviteQuote.nextSeats }}</strong>
+              <small>miejsc</small>
+            </div>
+          </div>
+
+          <div v-if="inviteQuote.billingRequired" class="seat-quote__monthly">
+            <div>
+              <span>Obecny koszt miesięczny</span>
+              <strong>{{ formatMoney(inviteQuote.currentMonthlySubtotal, directory.billing.currency) }}</strong>
+            </div>
+            <UIcon name="i-lucide-arrow-right" />
+            <div>
+              <span>Nowy koszt miesięczny</span>
+              <strong>{{ formatMoney(inviteQuote.nextMonthlySubtotal, directory.billing.currency) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="inviteQuote.billingRequired" class="seat-quote__charge">
+            <div class="seat-quote__charge-heading">
+              <div>
+                <span>Do zapłaty dzisiaj</span>
+                <small>
+                  Dopłata za bieżący okres:
+                  {{ formatMoney(inviteQuote.immediateAmount, directory.billing.currency) }}
+                </small>
+              </div>
+              <strong>{{ formatMoney(inviteQuote.immediateAmount, directory.billing.currency) }}</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Wartość netto</dt>
+                <dd>{{ formatMoney(inviteQuote.subtotal, directory.billing.currency) }}</dd>
+              </div>
+              <div v-if="inviteQuote.discountAmount">
+                <dt>Rabat</dt>
+                <dd>−{{ formatMoney(inviteQuote.discountAmount, directory.billing.currency) }}</dd>
+              </div>
+              <div v-if="inviteQuote.taxAmount">
+                <dt>Podatek</dt>
+                <dd>{{ formatMoney(inviteQuote.taxAmount, directory.billing.currency) }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <UAlert
+            v-else
+            color="success"
+            variant="subtle"
+            icon="i-lucide-circle-check"
+            title="Wolne opłacone miejsce"
+            description="Użytkownik zajmie jedno z miejsc kupionych wcześniej. Dodanie nie wymaga płatności kartą."
+          />
+
+          <p v-if="inviteQuote.billingRequired" class="seat-quote__renewal">
+            <UIcon name="i-lucide-calendar-clock" />
+            Nowa miesięczna kwota będzie obowiązywać przy odnowieniu
+            <strong>{{ formatBillingDate(inviteQuote.renewalAt) }}</strong>.
+          </p>
+        </div>
+
+        <div v-else-if="inviteStep === 'result' && seatChange" class="seat-change-result">
+          <UAlert
+            v-if="seatChange.status === 'requires_action'"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-credit-card"
+            title="Potwierdź płatność, aby aktywować miejsce"
+            description="Bank wymaga dodatkowego potwierdzenia płatności. Użytkownik nie ma jeszcze dostępu do organizacji."
+          >
+            <template v-if="seatChange.paymentUrl" #actions>
+              <UButton
+                :to="seatChange.paymentUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                trailing-icon="i-lucide-external-link"
+              >
+                Dokończ płatność
+              </UButton>
+            </template>
+          </UAlert>
+
+          <UAlert
+            v-else
+            color="info"
+            variant="subtle"
+            icon="i-lucide-loader-circle"
+            title="Płatność jest przetwarzana"
+            description="Nie dodawaj użytkownika ponownie. Dostęp zostanie aktywowany automatycznie po potwierdzeniu płatności."
+          />
+
+          <p>
+            Status tej zmiany pozostanie widoczny nad listą użytkowników. Możesz bezpiecznie zamknąć to okno.
+          </p>
+        </div>
       </template>
 
-      <template #footer="{ close }">
-        <UButton color="neutral" variant="ghost" @click="close">
-          Anuluj
+      <template #footer>
+        <UButton color="neutral" variant="ghost" @click="closeInvite">
+          {{ inviteStep === 'result' ? 'Zamknij' : 'Anuluj' }}
         </UButton>
         <UButton
+          v-if="inviteStep === 'details'"
           type="submit"
           form="user-invite-form"
-          icon="i-lucide-send"
-          :loading="inviting"
+          trailing-icon="i-lucide-arrow-right"
+          :loading="quoteLoading"
+          :disabled="capacityHeldByInvitations"
         >
-          Dodaj użytkownika
+          {{ inviteIntoPaidCapacity ? 'Wyślij zaproszenie' : 'Sprawdź koszt' }}
+        </UButton>
+        <template v-else-if="inviteStep === 'quote' && inviteQuote">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-arrow-left"
+            :disabled="inviting"
+            @click="editInviteDetails"
+          >
+            Wróć
+          </UButton>
+          <UButton
+            :icon="inviteQuote.billingRequired ? 'i-lucide-credit-card' : 'i-lucide-user-plus'"
+            :loading="inviting"
+            @click="confirmInvite"
+          >
+            {{ inviteQuote.billingRequired ? 'Dodaj i obciąż kartę' : 'Dodaj użytkownika' }}
+          </UButton>
+        </template>
+        <UButton
+          v-else-if="inviteStep === 'result' && seatChange?.paymentUrl"
+          :to="seatChange.paymentUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          trailing-icon="i-lucide-external-link"
+        >
+          Dokończ płatność
         </UButton>
       </template>
     </UModal>
@@ -614,6 +1239,48 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
 
 .users-registry {
   overflow: hidden;
+}
+
+.users-billing-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.users-billing-summary :deep(.card) {
+  height: 100%;
+}
+
+.users-billing-summary :deep(.card > div) {
+  display: grid;
+  gap: 5px;
+}
+
+.users-billing-summary span,
+.users-billing-summary small {
+  color: var(--ui-text-muted);
+}
+
+.users-billing-summary span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.users-billing-summary strong {
+  color: var(--ui-text-highlighted);
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.users-billing-summary strong.users-billing-summary__date {
+  font-size: 17px;
+}
+
+.users-billing-summary small {
+  font-size: 11px;
 }
 
 .users-toolbar {
@@ -800,7 +1467,202 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
   gap: 14px;
 }
 
+.invite-progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.seat-quote,
+.seat-change-result {
+  display: grid;
+  gap: 16px;
+}
+
+.seat-quote__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-bg-muted);
+}
+
+.seat-quote__identity-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-bg));
+}
+
+.seat-quote__identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.seat-quote__identity strong {
+  overflow: hidden;
+  color: var(--ui-text-highlighted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat-quote__identity div span,
+.seat-quote__seats span,
+.seat-quote__seats small,
+.seat-quote__monthly span,
+.seat-quote__charge small,
+.seat-change-result p {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.seat-quote__seats {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+}
+
+.seat-quote__seats > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 13px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+
+.seat-quote__seats > .seat-quote__seats-next {
+  border-color: color-mix(in srgb, var(--ui-primary) 40%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-primary) 7%, var(--ui-bg));
+}
+
+.seat-quote__seats strong {
+  justify-self: end;
+  color: var(--ui-text-highlighted);
+  font-size: 24px;
+}
+
+.seat-quote__seats > :deep(svg),
+.seat-quote__monthly > :deep(svg) {
+  color: var(--ui-text-muted);
+}
+
+.seat-quote__monthly {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.seat-quote__monthly > div {
+  display: grid;
+  gap: 3px;
+}
+
+.seat-quote__monthly > div:last-child {
+  text-align: right;
+}
+
+.seat-quote__monthly strong {
+  color: var(--ui-text-highlighted);
+  font-size: 16px;
+}
+
+.seat-quote__charge {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 35%, var(--ui-border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-bg));
+}
+
+.seat-quote__charge-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.seat-quote__charge-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.seat-quote__charge-heading span {
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.seat-quote__charge-heading strong {
+  color: var(--ui-text-highlighted);
+  font-size: 24px;
+  white-space: nowrap;
+}
+
+.seat-quote__charge dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.seat-quote__charge dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.seat-quote__charge dd {
+  margin: 0;
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.seat-quote__renewal {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.seat-quote__renewal :deep(svg) {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.seat-quote__renewal strong {
+  color: var(--ui-text);
+}
+
+.seat-change-result p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 @media (max-width: 820px) {
+  .users-billing-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .users-toolbar__filters {
     grid-template-columns: 1fr 1fr 40px;
   }
@@ -811,6 +1673,10 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
 }
 
 @media (max-width: 620px) {
+  .users-billing-summary {
+    grid-template-columns: 1fr;
+  }
+
   .users-toolbar__filters {
     grid-template-columns: 1fr 40px;
   }
@@ -818,6 +1684,21 @@ async function inviteUser(event: FormSubmitEvent<InviteForm>) {
   .users-toolbar__filters > :nth-child(2),
   .users-toolbar__filters > :nth-child(3) {
     grid-column: 1 / -1;
+  }
+
+  .seat-quote__seats,
+  .seat-quote__monthly {
+    grid-template-columns: 1fr;
+  }
+
+  .seat-quote__seats > :deep(svg),
+  .seat-quote__monthly > :deep(svg) {
+    justify-self: center;
+    rotate: 90deg;
+  }
+
+  .seat-quote__monthly > div:last-child {
+    text-align: left;
   }
 }
 </style>

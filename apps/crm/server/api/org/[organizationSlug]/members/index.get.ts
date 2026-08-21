@@ -1,4 +1,16 @@
+import { setHeader } from 'h3'
 import { requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { serverDataBackend } from '~~/server/utils/data-api'
+import {
+  countLiveOrganizationMemberInvitations,
+  listOrganizationMemberInvitations,
+} from '~~/server/utils/organization-member-invitations'
+import { organizationBillingAccount } from '~~/server/utils/stripe-billing'
+import { APPLICATION_MONTHLY_PLAN } from '~~/shared/organization-billing'
+import type {
+  OrganizationMemberBillingSummary,
+  OrganizationSeatRole,
+} from '~~/shared/types/organization-seat-billing'
 
 type MemberRow = {
   user_id: string
@@ -8,13 +20,19 @@ type MemberRow = {
 }
 
 export default defineEventHandler(async (event) => {
+  setHeader(event, 'Cache-Control', 'private, no-store')
   const session = await requireCrmSession(event)
+  const backend = serverDataBackend(event) as any
   const role: 'expert' | 'admin' = session.role === 'admin' ? 'admin' : 'expert'
   const [
     membershipsResult,
     administrativeRolesResult,
     teamMembershipsResult,
     facilityMembershipsResult,
+    billingAccount,
+    pendingSeatChangesResult,
+    memberInvitations,
+    reservedMemberInvitationCount,
   ] = await Promise.all([
     session.dataApi
       .from('organization_memberships')
@@ -32,12 +50,26 @@ export default defineEventHandler(async (event) => {
       .from('facility_memberships')
       .select('user_id, facility:facilities!facility_memberships_facility_fkey!inner(name)')
       .eq('organization_id', session.organizationId),
+    organizationBillingAccount(event, session.organizationId),
+    backend
+      .from('organization_billing_seat_changes')
+      .select('id, target_email_normalized, target_role, status, payment_url, created_at')
+      .eq('organization_id', session.organizationId)
+      .in('status', ['prepared', 'pending'])
+      .order('created_at', { ascending: true }),
+    session.organizationKind === 'application' && session.role === 'admin'
+      ? listOrganizationMemberInvitations(event, session.organizationId)
+      : Promise.resolve([]),
+    session.organizationKind === 'application'
+      ? countLiveOrganizationMemberInvitations(event, session.organizationId)
+      : Promise.resolve(0),
   ])
 
   throwDbError(membershipsResult.error)
   throwDbError(administrativeRolesResult.error)
   throwDbError(teamMembershipsResult.error)
   throwDbError(facilityMembershipsResult.error)
+  throwDbError(pendingSeatChangesResult.error)
 
   const administrativeRolesByUserId = new Map<string, string[]>()
   for (const assignment of administrativeRolesResult.data ?? []) {
@@ -113,11 +145,53 @@ export default defineEventHandler(async (event) => {
       || currentUserAdministrativeRoles.includes('consents_admin'),
   }
 
+  const perSeat = session.organizationKind === 'application'
+  const storedLicensedSeats = Number(billingAccount?.licensed_seat_count)
+  const licensedSeats = perSeat
+    && Number.isSafeInteger(storedLicensedSeats)
+    && storedLicensedSeats >= 1
+      ? storedLicensedSeats
+      : members.length
+  const pendingChanges = (pendingSeatChangesResult.data ?? []).map((change: any) => {
+    const paymentUrl = session.role === 'admin' && typeof change.payment_url === 'string'
+      ? change.payment_url
+      : undefined
+    return {
+      id: String(change.id),
+      email: String(change.target_email_normalized || ''),
+      role: (change.target_role === 'admin' ? 'admin' : 'expert') as OrganizationSeatRole,
+      status: String(change.status),
+      paymentUrl,
+      createdAt: String(change.created_at),
+    }
+  })
+  const pendingInvitations = memberInvitations.filter(invitation => (
+    invitation.status === 'pending'
+    || invitation.status === 'expired'
+  ))
+  const reservedSeats = reservedMemberInvitationCount
+  const billing: OrganizationMemberBillingSummary = {
+    perSeat,
+    canManageSeats: session.role === 'admin',
+    licensedSeats,
+    activeMembers: members.length,
+    reservedSeats,
+    unitAmount: APPLICATION_MONTHLY_PLAN.unitAmount,
+    currency: APPLICATION_MONTHLY_PLAN.currency,
+    monthlyListAmount: perSeat
+      ? licensedSeats * APPLICATION_MONTHLY_PLAN.unitAmount
+      : 0,
+    renewalAt: perSeat ? billingAccount?.current_period_end ?? null : null,
+    pendingChanges,
+    pendingInvitations,
+  }
+
   return {
     currentUserId: session.userId,
     role,
     canAssignOthers,
     capabilities,
     members,
+    billing,
   }
 })

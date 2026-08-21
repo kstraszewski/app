@@ -7,7 +7,9 @@ import {
 } from 'eve/channels/auth'
 import { verifyDataApiToken } from '@openexpert/data-api/token'
 import { CRM_AGENT_INVOCATION_CLAIMS } from '../../shared/types/agent-invocation'
+import { authoritativeAgentBillingAccessGranted } from '../lib/billing-access'
 import {
+  createAgentServiceClient,
   createAgentUserDataApiClient,
   getAgentDataApiVerificationOptions,
 } from '../lib/data-api'
@@ -141,13 +143,12 @@ function dataApiCrmSession(): AuthFn<Request> {
     const dataApi = createAgentUserDataApiClient(accessToken)
     const { data: organization, error: organizationError } = await dataApi
       .from('organizations')
-      .select('id, slug')
+      .select('id, slug, kind')
       .eq('slug', organizationSlug)
       .maybeSingle()
     if (organizationError || !organization) {
       throw new ForbiddenError({ message: 'Organizacja jest niedostępna.' })
     }
-
     const { data: membership, error: membershipError } = await dataApi
       .from('organization_memberships')
       .select('role')
@@ -156,6 +157,27 @@ function dataApiCrmSession(): AuthFn<Request> {
       .maybeSingle()
     if (membershipError || !membership) {
       throw new ForbiddenError({ message: 'Nie masz dostępu do tej organizacji.' })
+    }
+
+    let billingAccessGranted = false
+    try {
+      const serviceDataApi = createAgentServiceClient()
+      const { data: accessProjection, error: accessProjectionError } = await serviceDataApi.rpc(
+        'get_organization_billing_access_v1',
+        { p_organization_id: organization.id },
+      )
+      if (accessProjectionError) throw accessProjectionError
+      billingAccessGranted = authoritativeAgentBillingAccessGranted(
+        organization.kind,
+        String(organization.id),
+        accessProjection,
+      )
+    }
+    catch {
+      throw new ForbiddenError({ message: 'Nie można zweryfikować dostępu do subskrypcji.' })
+    }
+    if (!billingAccessGranted) {
+      throw new ForbiddenError({ message: 'Ta organizacja wymaga aktywnej subskrypcji.' })
     }
 
     const { data: experimentsRole, error: experimentsRoleError } = await dataApi

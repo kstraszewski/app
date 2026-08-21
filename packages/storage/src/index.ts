@@ -50,14 +50,6 @@ export type {
   InMemoryStorageProviderOptions,
 } from './providers/in-memory.ts'
 export {
-  createMinioStorageProvider,
-  createS3StorageProvider,
-} from './providers/s3.ts'
-export type {
-  MinioStorageProviderOptions,
-  S3StorageProviderOptions,
-} from './providers/s3.ts'
-export {
   createVercelBlobStorageProvider,
 } from './providers/vercel-blob.ts'
 export type {

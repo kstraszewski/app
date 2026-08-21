@@ -6440,6 +6440,210 @@ export type Database = {
           },
         ]
       }
+      organization_billing_accounts: {
+        Row: {
+          cancel_at_period_end: boolean
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          grace_until: string | null
+          last_stripe_event_created_at: number
+          last_synced_at: string | null
+          licensed_seat_count: number
+          livemode: boolean
+          organization_id: string
+          seat_revision: number
+          stripe_checkout_session_id: string | null
+          stripe_customer_id: string | null
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          stripe_subscription_item_id: string | null
+          stripe_subscription_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          grace_until?: string | null
+          last_stripe_event_created_at?: number
+          last_synced_at?: string | null
+          licensed_seat_count?: number
+          livemode?: boolean
+          organization_id: string
+          seat_revision?: number
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_item_id?: string | null
+          stripe_subscription_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          grace_until?: string | null
+          last_stripe_event_created_at?: number
+          last_synced_at?: string | null
+          licensed_seat_count?: number
+          livemode?: boolean
+          organization_id?: string
+          seat_revision?: number
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_item_id?: string | null
+          stripe_subscription_status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_billing_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_billing_invoice_states: {
+        Row: {
+          created_at: string
+          event_created: number
+          failure_kind: string | null
+          grace_until: string | null
+          organization_id: string
+          state: string
+          stripe_invoice_id: string
+          stripe_subscription_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_created: number
+          failure_kind?: string | null
+          grace_until?: string | null
+          organization_id: string
+          state: string
+          stripe_invoice_id: string
+          stripe_subscription_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_created?: number
+          failure_kind?: string | null
+          grace_until?: string | null
+          organization_id?: string
+          state?: string
+          stripe_invoice_id?: string
+          stripe_subscription_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_billing_invoice_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_billing_seat_changes: {
+        Row: {
+          actor_user_id: string
+          attempts: number
+          base_seat_revision: number
+          completed_at: string | null
+          created_at: string
+          expected_seat_count: number
+          failure_code: string | null
+          failure_message: string | null
+          id: string
+          idempotency_key: string
+          organization_id: string
+          payment_url: string | null
+          proration_date: string
+          request_fingerprint: string
+          status: string
+          stripe_idempotency_key: string
+          stripe_invoice_id: string | null
+          stripe_subscription_id: string
+          stripe_subscription_item_id: string
+          target_email_normalized: string
+          target_role: string
+          target_seat_count: number
+          target_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          actor_user_id: string
+          attempts?: number
+          base_seat_revision: number
+          completed_at?: string | null
+          created_at?: string
+          expected_seat_count: number
+          failure_code?: string | null
+          failure_message?: string | null
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          payment_url?: string | null
+          proration_date: string
+          request_fingerprint: string
+          status?: string
+          stripe_idempotency_key: string
+          stripe_invoice_id?: string | null
+          stripe_subscription_id: string
+          stripe_subscription_item_id: string
+          target_email_normalized: string
+          target_role: string
+          target_seat_count: number
+          target_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          actor_user_id?: string
+          attempts?: number
+          base_seat_revision?: number
+          completed_at?: string | null
+          created_at?: string
+          expected_seat_count?: number
+          failure_code?: string | null
+          failure_message?: string | null
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          payment_url?: string | null
+          proration_date?: string
+          request_fingerprint?: string
+          status?: string
+          stripe_idempotency_key?: string
+          stripe_invoice_id?: string | null
+          stripe_subscription_id?: string
+          stripe_subscription_item_id?: string
+          target_email_normalized?: string
+          target_role?: string
+          target_seat_count?: number
+          target_user_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_billing_seat_changes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_design_settings: {
         Row: {
           created_at: string
@@ -6573,6 +6777,77 @@ export type Database = {
           },
         ]
       }
+      organization_member_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by_user_id: string | null
+          created_at: string
+          delivery_attempts: number
+          email_normalized: string
+          expires_at: string
+          id: string
+          invited_by_user_id: string
+          invited_name: string | null
+          last_delivery_error: string | null
+          organization_id: string
+          revision: number
+          revoked_at: string | null
+          role: string
+          sent_at: string | null
+          status: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          created_at?: string
+          delivery_attempts?: number
+          email_normalized: string
+          expires_at: string
+          id?: string
+          invited_by_user_id: string
+          invited_name?: string | null
+          last_delivery_error?: string | null
+          organization_id: string
+          revision?: number
+          revoked_at?: string | null
+          role?: string
+          sent_at?: string | null
+          status?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          created_at?: string
+          delivery_attempts?: number
+          email_normalized?: string
+          expires_at?: string
+          id?: string
+          invited_by_user_id?: string
+          invited_name?: string | null
+          last_delivery_error?: string | null
+          organization_id?: string
+          revision?: number
+          revoked_at?: string | null
+          role?: string
+          sent_at?: string | null
+          status?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_member_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_memberships: {
         Row: {
           created_at: string
@@ -6608,6 +6883,125 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_onboarding_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by_user_id: string | null
+          administrator_name: string | null
+          completed_at: string | null
+          created_at: string
+          delivery_attempts: number
+          discount_amount_off_minor: number | null
+          discount_applied_at: string | null
+          discount_currency: string | null
+          discount_duration: string | null
+          discount_duration_months: number | null
+          discount_kind: string | null
+          discount_livemode: boolean | null
+          discount_percent_off_bps: number | null
+          discount_status: string | null
+          discount_stripe_checkout_session_id: string | null
+          discount_stripe_coupon_id: string | null
+          discount_stripe_subscription_id: string | null
+          email_normalized: string
+          expires_at: string
+          id: string
+          initial_seat_count: number
+          invited_by_user_id: string | null
+          last_delivery_error: string | null
+          onboarding_source: string
+          organization_id: string | null
+          organization_kind: string
+          organization_name: string
+          revision: number
+          revoked_at: string | null
+          sent_at: string | null
+          status: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          administrator_name?: string | null
+          completed_at?: string | null
+          created_at?: string
+          delivery_attempts?: number
+          discount_amount_off_minor?: number | null
+          discount_applied_at?: string | null
+          discount_currency?: string | null
+          discount_duration?: string | null
+          discount_duration_months?: number | null
+          discount_kind?: string | null
+          discount_livemode?: boolean | null
+          discount_percent_off_bps?: number | null
+          discount_status?: string | null
+          discount_stripe_checkout_session_id?: string | null
+          discount_stripe_coupon_id?: string | null
+          discount_stripe_subscription_id?: string | null
+          email_normalized: string
+          expires_at: string
+          id?: string
+          initial_seat_count?: number
+          invited_by_user_id?: string | null
+          last_delivery_error?: string | null
+          onboarding_source?: string
+          organization_id?: string | null
+          organization_kind: string
+          organization_name: string
+          revision?: number
+          revoked_at?: string | null
+          sent_at?: string | null
+          status?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          administrator_name?: string | null
+          completed_at?: string | null
+          created_at?: string
+          delivery_attempts?: number
+          discount_amount_off_minor?: number | null
+          discount_applied_at?: string | null
+          discount_currency?: string | null
+          discount_duration?: string | null
+          discount_duration_months?: number | null
+          discount_kind?: string | null
+          discount_livemode?: boolean | null
+          discount_percent_off_bps?: number | null
+          discount_status?: string | null
+          discount_stripe_checkout_session_id?: string | null
+          discount_stripe_coupon_id?: string | null
+          discount_stripe_subscription_id?: string | null
+          email_normalized?: string
+          expires_at?: string
+          id?: string
+          initial_seat_count?: number
+          invited_by_user_id?: string | null
+          last_delivery_error?: string | null
+          onboarding_source?: string
+          organization_id?: string | null
+          organization_kind?: string
+          organization_name?: string
+          revision?: number
+          revoked_at?: string | null
+          sent_at?: string | null
+          status?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_onboarding_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -6923,20 +7317,26 @@ export type Database = {
       }
       organizations: {
         Row: {
+          billing_access_state: string
           created_at: string
           id: string
+          kind: string
           name: string
           slug: string
         }
         Insert: {
+          billing_access_state?: string
           created_at?: string
           id?: string
+          kind?: string
           name: string
           slug: string
         }
         Update: {
+          billing_access_state?: string
           created_at?: string
           id?: string
+          kind?: string
           name?: string
           slug?: string
         }
@@ -6983,6 +7383,51 @@ export type Database = {
           display_name?: string | null
           id?: string
           locale?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stripe_webhook_events: {
+        Row: {
+          api_version: string | null
+          attempts: number
+          event_created_at: number
+          event_type: string
+          last_error: string | null
+          livemode: boolean
+          processed_at: string | null
+          received_at: string
+          status: string
+          stripe_event_id: string
+          stripe_object_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          api_version?: string | null
+          attempts?: number
+          event_created_at: number
+          event_type: string
+          last_error?: string | null
+          livemode: boolean
+          processed_at?: string | null
+          received_at?: string
+          status?: string
+          stripe_event_id: string
+          stripe_object_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          api_version?: string | null
+          attempts?: number
+          event_created_at?: number
+          event_type?: string
+          last_error?: string | null
+          livemode?: boolean
+          processed_at?: string | null
+          received_at?: string
+          status?: string
+          stripe_event_id?: string
+          stripe_object_id?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -7227,6 +7672,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_organization_onboarding_invitation: {
+        Args: {
+          p_actor_user_id: string
+          p_full_name?: string | null
+          p_token_hash: string
+        }
+        Returns: Json
+      }
+      accept_organization_member_invitation_v1: {
+        Args: { p_actor_user_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      create_intermediary_organization_for_existing_identity_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_full_name?: string | null
+          p_organization_name: string
+        }
+        Returns: Json
+      }
       add_organization_member_by_email: {
         Args: { email: string; organization_id: string; role?: string }
         Returns: {
@@ -7242,6 +7707,15 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      add_organization_member_within_capacity_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_organization_id: string
+          p_target_email: string
+          p_target_role?: string
+        }
+        Returns: Json
       }
       add_team_edge: {
         Args: {
@@ -7261,6 +7735,67 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      apply_organization_billing_and_seat_snapshot_v1: {
+        Args: {
+          p_cancel_at_period_end: boolean
+          p_current_period_end: string | null
+          p_current_period_start: string | null
+          p_event_created: number
+          p_grace_until: string | null
+          p_livemode: boolean
+          p_organization_id: string
+          p_quantity: number
+          p_stripe_checkout_session_id: string | null
+          p_stripe_customer_id: string
+          p_stripe_price_id: string
+          p_stripe_subscription_id: string
+          p_stripe_subscription_item_id: string
+          p_subscription_status: string
+        }
+        Returns: Json
+      }
+      apply_organization_invoice_billing_state_v1: {
+        Args: {
+          p_event_created: number
+          p_failure_kind?: string | null
+          p_organization_id: string
+          p_state: string
+          p_stripe_invoice_id: string
+          p_stripe_subscription_id: string
+        }
+        Returns: Json
+      }
+      begin_organization_member_seat_change_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_expected_seat_count: number
+          p_idempotency_key: string
+          p_organization_id: string
+          p_proration_date: string
+          p_target_email: string
+          p_target_role: string
+        }
+        Returns: Json
+      }
+      claim_organization_member_seat_stripe_update_v1: {
+        Args: {
+          p_expected_updated_at: string
+          p_seat_change_id: string
+        }
+        Returns: Json
+      }
+      create_organization_member_invitation_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_email: string
+          p_expires_at: string
+          p_invited_name: string | null
+          p_organization_id: string
+          p_role: string
+          p_token_hash: string
+        }
+        Returns: Json
       }
       claim_crm_mock_bank_payload_cleanup_jobs: {
         Args: { p_limit?: number }
@@ -7287,6 +7822,37 @@ export type Database = {
         }
         Returns: Json
       }
+      record_organization_member_invitation_delivery_v1: {
+        Args: {
+          p_error: string | null
+          p_expected_revision: number
+          p_invitation_id: string
+          p_sent_at: string | null
+        }
+        Returns: Json
+      }
+      resend_organization_member_invitation_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_expires_at: string
+          p_invitation_id: string
+          p_organization_id: string
+          p_token_hash: string
+        }
+        Returns: Json
+      }
+      resolve_organization_member_seat_target_v1: {
+        Args: { p_organization_id: string; p_target_email: string }
+        Returns: Json
+      }
+      revoke_organization_member_invitation_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_invitation_id: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
       finalize_crm_mock_bank_dispatch: {
         Args: {
           p_dispatch_id: string
@@ -7305,6 +7871,27 @@ export type Database = {
           p_succeeded: boolean
         }
         Returns: undefined
+      }
+      fail_stale_organization_member_seat_change_v1: {
+        Args: {
+          p_expected_updated_at: string
+          p_failure_code: string
+          p_failure_message?: string | null
+          p_seat_change_id: string
+          p_stale_before: string
+        }
+        Returns: Json
+      }
+      mark_organization_member_seat_change_v1: {
+        Args: {
+          p_failure_code?: string | null
+          p_failure_message?: string | null
+          p_payment_url?: string | null
+          p_seat_change_id: string
+          p_status: string
+          p_stripe_invoice_id?: string | null
+        }
+        Returns: Json
       }
       reserve_crm_mock_bank_dispatch: {
         Args: {
@@ -7564,6 +8151,14 @@ export type Database = {
         Args: { full_name?: string; organization_name: string }
         Returns: Json
       }
+      create_organization_with_admin_v2: {
+        Args: {
+          full_name?: string | null
+          organization_kind?: string
+          organization_name: string
+        }
+        Returns: Json
+      }
       create_staff_appointment:
         | {
             Args: {
@@ -7670,6 +8265,10 @@ export type Database = {
           expert_user_id: string
           starts_at: string
         }[]
+      }
+      get_organization_billing_access_v1: {
+        Args: { p_organization_id: string }
+        Returns: Json
       }
       get_organization_user_admin_access: {
         Args: { p_organization_id: string; p_user_id: string }

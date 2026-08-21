@@ -5,6 +5,11 @@ export const CRM_CALCULATOR_PATHS = {
 
 const CRM_SYSTEM_ADMINISTRATION_NAVIGATION_DEFINITIONS = [
   {
+    label: 'Organizacje',
+    path: '/settings/organizations',
+    icon: 'i-lucide-building-2',
+  },
+  {
     label: 'Instytucje',
     path: '/settings/institutions',
     icon: 'i-lucide-landmark',
@@ -38,6 +43,7 @@ const CRM_ORGANIZATION_ADMINISTRATION_NAVIGATION_DEFINITIONS = [
     icon: 'i-lucide-settings-2',
     activePaths: [
       '/settings/organization',
+      '/settings/billing',
       '/settings/capacity',
       '/settings/intermediary',
       '/settings/design',

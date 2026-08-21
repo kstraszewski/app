@@ -6,7 +6,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./memory": "./src/providers/in-memory.ts",
-    "./minio": "./src/providers/s3.ts",
     "./vercel-blob": "./src/providers/vercel-blob.ts"
   },
   "scripts": {
@@ -14,8 +13,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1094.0",
-    "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@vercel/blob": "^2.6.1"
   },
   "devDependencies": {

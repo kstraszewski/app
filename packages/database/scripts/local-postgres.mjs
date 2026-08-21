@@ -93,10 +93,6 @@ const defaults = {
   OPENEXPERT_LIVEKIT_RTC_UDP_PORT: '7882',
   OPENEXPERT_MAILPIT_SMTP_PORT: '55325',
   OPENEXPERT_MAILPIT_UI_PORT: '55324',
-  OPENEXPERT_MINIO_API_PORT: '55326',
-  OPENEXPERT_MINIO_CONSOLE_PORT: '55327',
-  OPENEXPERT_MINIO_ROOT_PASSWORD: 'openexpert-minio-local-secret',
-  OPENEXPERT_MINIO_ROOT_USER: 'openexpert',
   OPENEXPERT_POSTGRES_DB: 'openexpert',
   OPENEXPERT_POSTGRES_PASSWORD: 'openexpert-postgres-local',
   OPENEXPERT_POSTGRES_PORT: '55322',
@@ -110,14 +106,8 @@ const defaults = {
   NUXT_CEIDG_GLOBAL_MINUTE_LIMIT: '120',
   NUXT_LIVEKIT_API_KEY: 'devkey',
   NUXT_LIVEKIT_API_SECRET: 'secret',
-  NUXT_MINIO_ACCESS_KEY_ID: 'openexpert',
-  NUXT_MINIO_PRIVATE_BUCKET: 'openexpert-private',
-  NUXT_MINIO_PUBLIC_BUCKET: 'openexpert-public',
-  NUXT_MINIO_REGION: 'us-east-1',
-  NUXT_MINIO_SECRET_ACCESS_KEY: 'openexpert-minio-local-secret',
   NUXT_PUBLIC_DATA_API_URL: 'http://127.0.0.1:55321',
   NUXT_PUBLIC_LIVEKIT_URL: 'ws://127.0.0.1:7880',
-  NUXT_STORAGE_PROVIDER: 'minio',
   NUXT_SMTP_HOST: '127.0.0.1',
   NUXT_SMTP_PORT: '55325',
 }
@@ -207,17 +197,9 @@ function syncApplicationEnvFiles(values) {
     NUXT_DATA_API_JWT_KEY_ID: values.NUXT_DATA_API_JWT_KEY_ID,
     NUXT_DATA_API_JWT_PRIVATE_KEY: values.NUXT_DATA_API_JWT_PRIVATE_KEY,
     NUXT_DATA_API_JWT_PUBLIC_JWK: values.NUXT_DATA_API_JWT_PUBLIC_JWK,
-    NUXT_MINIO_ACCESS_KEY_ID: values.NUXT_MINIO_ACCESS_KEY_ID,
-    NUXT_MINIO_ENDPOINT: values.NUXT_MINIO_ENDPOINT,
-    NUXT_MINIO_PRIVATE_BUCKET: values.NUXT_MINIO_PRIVATE_BUCKET,
-    NUXT_MINIO_PUBLIC_BASE_URL: values.NUXT_MINIO_PUBLIC_BASE_URL,
-    NUXT_MINIO_PUBLIC_BUCKET: values.NUXT_MINIO_PUBLIC_BUCKET,
-    NUXT_MINIO_REGION: values.NUXT_MINIO_REGION,
-    NUXT_MINIO_SECRET_ACCESS_KEY: values.NUXT_MINIO_SECRET_ACCESS_KEY,
     NUXT_PUBLIC_DATA_API_URL: values.NUXT_PUBLIC_DATA_API_URL,
     NUXT_SMTP_HOST: values.NUXT_SMTP_HOST,
     NUXT_SMTP_PORT: values.NUXT_SMTP_PORT,
-    NUXT_STORAGE_PROVIDER: values.NUXT_STORAGE_PROVIDER,
   }
 
   replaceManagedEnvBlock(resolve(repositoryRoot, 'apps/crm/.env'), {
@@ -359,10 +341,6 @@ function ensureLocalEnv() {
   })
   values.NUXT_PUBLIC_DATA_API_URL = `http://127.0.0.1:${values.OPENEXPERT_POSTGREST_PORT}`
   values.NUXT_PUBLIC_LIVEKIT_URL = `ws://127.0.0.1:${values.OPENEXPERT_LIVEKIT_HTTP_PORT}`
-  values.NUXT_MINIO_ENDPOINT = `http://127.0.0.1:${values.OPENEXPERT_MINIO_API_PORT}`
-  values.NUXT_MINIO_PUBLIC_BASE_URL = `${values.NUXT_MINIO_ENDPOINT}/${values.NUXT_MINIO_PUBLIC_BUCKET}`
-  values.NUXT_MINIO_ACCESS_KEY_ID = values.OPENEXPERT_MINIO_ROOT_USER
-  values.NUXT_MINIO_SECRET_ACCESS_KEY = values.OPENEXPERT_MINIO_ROOT_PASSWORD
   values.NUXT_SMTP_PORT = values.OPENEXPERT_MAILPIT_SMTP_PORT
   const authDatabaseUrl = 'postgresql://openexpert_auth:'
     + `${encodeURIComponent(values.OPENEXPERT_AUTH_PASSWORD)}`
@@ -983,12 +961,30 @@ async function ensureLocalDemoAccount(context) {
   let profile = await readWorkforceProfile(userClient, account.userId)
 
   if (!profile) {
-    assertDataApiResult(
-      await userClient.rpc('create_organization_with_admin', {
-        organization_name: account.organizationName,
-        full_name: account.fullName,
-      }),
-      'Creating the local organization through authenticated onboarding',
+    // Local bootstrap is an owner-controlled provisioning operation, not a
+    // user-facing organization-creation grant. The public legacy RPC is
+    // intentionally unavailable to authenticated users.
+    psql(
+      context,
+      `
+BEGIN;
+SET LOCAL ROLE openexpert_owner;
+SELECT private.create_organization_for_identity(
+  :'seed_user_id'::uuid,
+  :'seed_organization_name',
+  :'seed_full_name',
+  'intermediary'
+);
+COMMIT;
+`,
+      [
+        '--set',
+        `seed_user_id=${account.userId}`,
+        '--set',
+        `seed_organization_name=${account.organizationName}`,
+        '--set',
+        `seed_full_name=${account.fullName}`,
+      ],
     )
     profile = await readWorkforceProfile(userClient, account.userId)
   }
@@ -1777,8 +1773,6 @@ async function startStack({ profiles, seed, smoke }) {
     '--detach',
     'postgres',
     'mailpit',
-    'minio',
-    'minio-init',
   ])
   await waitForPostgres(context)
   applyMigrations(context)
@@ -1800,9 +1794,6 @@ async function startStack({ profiles, seed, smoke }) {
   console.log(
     `Mailpit: http://127.0.0.1:${context.values.OPENEXPERT_MAILPIT_UI_PORT}`,
   )
-  console.log(
-    `MinIO console: http://127.0.0.1:${context.values.OPENEXPERT_MINIO_CONSOLE_PORT}`,
-  )
   if (!seed) {
     console.log(
       'Demo workspace: run db:local:seed-demo to create or repair it.',
@@ -1814,7 +1805,6 @@ async function confirmReset(skipConfirmation) {
   console.warn(
     `DESTRUCTIVE: this deletes only Docker volume ${postgresVolume}.`,
   )
-  console.warn('MinIO data is preserved.')
   if (skipConfirmation) return
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('Reset requires an interactive terminal or explicit --yes')

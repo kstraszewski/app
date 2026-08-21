@@ -1,5 +1,6 @@
 import { setHeader } from 'h3'
 import { requireAuthIdentity, throwDbError } from '~~/server/utils/crm'
+import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
 
 type MembershipRow = {
   role: string | null
@@ -7,10 +8,14 @@ type MembershipRow = {
     id: string
     name: string
     slug: string
+    kind: OrganizationKind
+    billing_access_state: BillingAccessState
   } | Array<{
     id: string
     name: string
     slug: string
+    kind: OrganizationKind
+    billing_access_state: BillingAccessState
   }> | null
 }
 
@@ -25,7 +30,7 @@ export default defineEventHandler(async (event) => {
       .maybeSingle(),
     identity.dataApi
       .from('organization_memberships')
-      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
+      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug, kind, billing_access_state)')
       .eq('user_id', identity.userId),
     identity.dataApi
       .from('client_account_links')
@@ -51,6 +56,8 @@ export default defineEventHandler(async (event) => {
         id: String(organization.id),
         name: String(organization.name),
         slug: String(organization.slug),
+        kind: organization.kind,
+        billingAccessState: organization.billing_access_state,
         role: String(membership.role ?? 'expert'),
         isDefault: String(organization.id) === defaultOrganizationId,
       }]

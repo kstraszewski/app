@@ -55,6 +55,12 @@ interface PlatformAuthPasskeyConfig {
   origin: string
 }
 
+interface OrganizationInvitationAuthConfig {
+  enabled?: boolean
+  baseUrl?: string
+  basePath?: string
+}
+
 export interface PlatformAuthClaims {
   id: string
   sub: string
@@ -72,6 +78,9 @@ let cachedRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
 let cachedClientPortalRuntime:
+  | { fingerprint: string, runtime: OpenExpertAuthRuntime }
+  | undefined
+let cachedOrganizationInvitationRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
 
@@ -98,6 +107,86 @@ function emailContent(
     }
   }
   if (kind === 'magic-link') {
+    if (metadata?.organizationMemberInvitation === true) {
+      const organizationName = String(metadata.organizationName || '').trim().slice(0, 160)
+      const safeOrganizationName = escapeHtml(organizationName)
+      const role = metadata.role === 'admin' ? 'administratora' : 'użytkownika'
+      const organizationText = organizationName
+        ? ` do organizacji „${organizationName}”`
+        : ' do organizacji'
+      const organizationHtml = safeOrganizationName
+        ? ` do organizacji <strong>${safeOrganizationName}</strong>`
+        : ' do organizacji'
+      return {
+        subject: `Zaproszenie ${role} do OpenExpert`,
+        text: [
+          `Otrzymujesz zaproszenie${organizationText}.`,
+          '',
+          'To miejsce jest już opłacone — przyjęcie zaproszenia nie uruchomi żadnej płatności.',
+          'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i dołączyć:',
+          url,
+          '',
+          'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
+          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
+        ].join('\n'),
+        html: `<p>Otrzymujesz zaproszenie${organizationHtml}.</p><p>To miejsce jest już opłacone — przyjęcie zaproszenia nie uruchomi żadnej płatności.</p><p><a href="${safeUrl}">Dołącz do organizacji</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
+      }
+    }
+    if (metadata?.organizationInvitation === true) {
+      const organizationName = String(metadata.organizationName || '').trim().slice(0, 160)
+      const safeOrganizationName = escapeHtml(organizationName)
+      const organizationText = organizationName
+        ? ` dla organizacji „${organizationName}”`
+        : ''
+      const organizationHtml = safeOrganizationName
+        ? ` dla organizacji <strong>${safeOrganizationName}</strong>`
+        : ''
+      const billingDiscountLabel = String(metadata.billingDiscountLabel || '').trim().slice(0, 160)
+      const safeBillingDiscountLabel = escapeHtml(billingDiscountLabel)
+      const billingDiscountText = billingDiscountLabel
+        ? `\nPrzypisana oferta: ${billingDiscountLabel}. Rabat zostanie zastosowany automatycznie w Stripe Checkout.\n`
+        : ''
+      const billingDiscountHtml = safeBillingDiscountLabel
+        ? `<p><strong>Przypisana oferta:</strong> ${safeBillingDiscountLabel}. Rabat zostanie zastosowany automatycznie w Stripe Checkout.</p>`
+        : ''
+      if (metadata.onboardingSource === 'self_service') {
+        const initialSeatCount = Number(metadata.initialSeatCount)
+        const seatCount = Number.isSafeInteger(initialSeatCount)
+          && initialSeatCount >= 1
+          && initialSeatCount <= 100
+          ? initialSeatCount
+          : 1
+        const seatLabel = seatCount === 1 ? '1 użytkownika' : `${seatCount} użytkowników`
+        return {
+          subject: 'Dokończ rejestrację organizacji w OpenExpert',
+          text: [
+            `Otrzymaliśmy prośbę o utworzenie konta administratora${organizationText}.`,
+            `Wybrany pakiet początkowy obejmuje ${seatLabel}.`,
+            '',
+            'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i przejść do płatności:',
+            url,
+            '',
+            'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
+            'Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.',
+          ].join('\n'),
+          html: `<p>Otrzymaliśmy prośbę o utworzenie konta administratora${organizationHtml}.</p><p>Wybrany pakiet początkowy obejmuje <strong>${seatLabel}</strong>.</p><p><a href="${safeUrl}">Potwierdź email i kontynuuj</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.</p>`,
+        }
+      }
+      return {
+        subject: 'Aktywuj organizację w OpenExpert',
+        text: [
+          `Otrzymujesz zaproszenie do utworzenia konta administratora${organizationText}.`,
+          billingDiscountText,
+          '',
+          'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i kontynuować:',
+          url,
+          '',
+          'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
+          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
+        ].join('\n'),
+        html: `<p>Otrzymujesz zaproszenie do utworzenia konta administratora${organizationHtml}.</p>${billingDiscountHtml}<p><a href="${safeUrl}">Aktywuj organizację</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
+      }
+    }
     if (metadata?.clientPortalInvitation === true) {
       return {
         subject: 'Aktywuj bezpieczny panel klienta OpenExpert',
@@ -153,10 +242,13 @@ function createPlatformAuthRuntime(
   email: PlatformAuthEmailConfig,
   options: {
     baseUrl: string
+    basePath?: string
     cookiePrefix?: string
     cookieDomain?: string
     trustedOrigins?: string[]
     portalOnly?: boolean
+    organizationInvitationOnly?: boolean
+    magicLinkTokenNamespace: string
     phone?: AuthSmsRuntimeConfig
     passkey?: PlatformAuthPasskeyConfig
   },
@@ -176,7 +268,7 @@ function createPlatformAuthRuntime(
   const runtime = createOpenExpertAuth({
     config: {
       baseURL: options.baseUrl,
-      basePath: auth.basePath,
+      basePath: options.basePath || auth.basePath,
       secret: auth.secret,
       databaseURL: auth.databaseUrl,
       databaseSchema: auth.databaseSchema,
@@ -187,8 +279,13 @@ function createPlatformAuthRuntime(
       sessionFreshAge: auth.sessionFreshAge,
       cookiePrefix: options.cookiePrefix || auth.cookiePrefix,
       cookieDomain: options.cookieDomain || undefined,
-      disableSignUp: options.portalOnly ? true : auth.disableSignUp,
-      magicLinkDisableSignUp: options.portalOnly ? false : auth.magicLinkDisableSignUp,
+      disableSignUp: options.portalOnly || options.organizationInvitationOnly
+        ? true
+        : auth.disableSignUp,
+      magicLinkDisableSignUp: options.portalOnly || options.organizationInvitationOnly
+        ? false
+        : auth.magicLinkDisableSignUp,
+      magicLinkTokenNamespace: options.magicLinkTokenNamespace,
       trustedOrigins: [...new Set([
         auth.baseUrl,
         options.baseUrl,
@@ -286,6 +383,7 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
 
   const runtime = createPlatformAuthRuntime(auth, email, {
     baseUrl: auth.baseUrl,
+    magicLinkTokenNamespace: 'crm-primary',
     cookieDomain: auth.cookieDomain || undefined,
     ...(phoneConfig.enabled ? { phone } : {}),
     ...(passkey.enabled ? { passkey } : {}),
@@ -317,11 +415,48 @@ export function serverClientPortalAuth(event: H3Event): OpenExpertAuthRuntime {
   const runtime = createPlatformAuthRuntime(auth, email, {
     baseUrl,
     cookiePrefix,
+    magicLinkTokenNamespace: 'client-portal',
     cookieDomain: undefined,
     trustedOrigins: [baseUrl],
     portalOnly: true,
   })
   cachedClientPortalRuntime = { fingerprint, runtime }
+  return runtime
+}
+
+/**
+ * Verifies purpose-specific organization invitation magic links. The runtime
+ * shares the CRM session cookie, secret and identity schema, but its handler is
+ * mounted under a separate GET-only base path. Password sign-up stays disabled;
+ * possession of a server-issued magic link is the only way to create an
+ * identity through this runtime.
+ */
+export function serverOrganizationInvitationAuth(event: H3Event): OpenExpertAuthRuntime {
+  const runtimeConfig = useRuntimeConfig(event)
+  const auth = runtimeConfig.auth as PlatformAuthRuntimeConfig
+  const email = runtimeConfig.authEmail as PlatformAuthEmailConfig
+  const invitations = runtimeConfig.organizationInvitations as OrganizationInvitationAuthConfig
+  const enabled = invitations?.enabled === true
+  const baseUrl = String(invitations?.baseUrl || auth.baseUrl).replace(/\/+$/u, '')
+  const basePath = String(invitations?.basePath || '/api/organization-auth').trim()
+  if (!enabled || !baseUrl || basePath !== '/api/organization-auth') {
+    throw new Error('Organization invitation auth configuration is invalid')
+  }
+
+  const fingerprint = JSON.stringify({ auth, email, baseUrl, basePath })
+  if (cachedOrganizationInvitationRuntime?.fingerprint === fingerprint) {
+    return cachedOrganizationInvitationRuntime.runtime
+  }
+
+  const runtime = createPlatformAuthRuntime(auth, email, {
+    baseUrl,
+    basePath,
+    magicLinkTokenNamespace: 'crm-organization-invitation',
+    cookieDomain: auth.cookieDomain || undefined,
+    trustedOrigins: [baseUrl],
+    organizationInvitationOnly: true,
+  })
+  cachedOrganizationInvitationRuntime = { fingerprint, runtime }
   return runtime
 }
 

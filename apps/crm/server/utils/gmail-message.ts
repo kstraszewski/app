@@ -62,6 +62,7 @@ export function gmailThreadSummary(
 
   return {
     id: String(thread.id ?? ''),
+    latestMessageId: String(latest?.id ?? '') || undefined,
     messageCount: messages.length,
     participants,
     participantsLabel: participantLabel(participants),

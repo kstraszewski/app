@@ -1,7 +1,8 @@
 # Local PostgreSQL stack
 
 This is the primary OpenExpert development stack: PostgreSQL 17 + pgvector,
-Better Auth, the native PostgREST Data API, MinIO, and Mailpit.
+Better Auth, the native PostgREST Data API, and Mailpit. Object storage remains
+on the same public and private Vercel Blob stores used by deployments.
 
 ## Start in one command
 
@@ -14,8 +15,16 @@ Prerequisites:
 From the repository root:
 
 ```sh
+pnpm storage:env:pull
 pnpm --filter @openexpert/database db:local:setup
 ```
+
+The first command pulls the linked Vercel Development environment, keeps only the
+shared public/private Blob store IDs and short-lived OIDC credential in the
+git-ignored root `.env.blob.local`, and discards the temporary full env file.
+Root development scripts load that filtered file for all Nuxt applications,
+while database setup only manages local database, auth, and mail values in the
+app-specific `.env` files. Refresh it when the OIDC credential expires.
 
 The stack uses the established local API, database, and Mailpit ports. Stop
 anything already bound to those ports, or override the `OPENEXPERT_*_PORT`
@@ -28,7 +37,7 @@ The command:
 3. safely replaces a marked, generated block in `apps/crm/.env`,
    `apps/landing/.env`, and `apps/meetings/.env`, preserving all user-managed
    AI/OAuth values outside the block;
-4. starts PostgreSQL 17 + pgvector, Mailpit, and MinIO;
+4. starts PostgreSQL 17 + pgvector and Mailpit;
 5. applies checksum-tracked SQL migrations;
 6. starts PostgREST with the public JWKS;
 7. creates the verified Better Auth development account and its organization;
@@ -52,8 +61,6 @@ PEM in `NUXT_DATA_API_JWT_PRIVATE_KEY`; PostgREST receives only
 | PostgreSQL | `127.0.0.1:55322` |
 | Mailpit UI | `http://127.0.0.1:55324` |
 | Mailpit SMTP | `127.0.0.1:55325` |
-| MinIO API | `http://127.0.0.1:55326` |
-| MinIO console | `http://127.0.0.1:55327` |
 
 All published ports bind to loopback. Override them and the local-only
 passwords in `.env.local-stack`; the full documented set is in
@@ -77,9 +84,10 @@ pnpm --filter @openexpert/database db:local:reset
 ```
 
 It requires typing `openexpert-local-postgres-data`. CI may use `--yes`.
-Before deletion the script validates both Docker Compose labels, removes only
-that exact PostgreSQL volume, and preserves MinIO data. It never uses
-`docker compose down --volumes`, globs, or an unresolved variable.
+Before deletion the script validates both Docker Compose labels and removes
+only that exact PostgreSQL volume. It never uses `docker compose down
+--volumes`, globs, or an unresolved variable; Vercel Blob is outside this
+local lifecycle.
 
 Schema migrations not yet recorded locally are applied in filename order.
 Their SHA-256 checksums are stored in
@@ -114,9 +122,10 @@ day. These are ordinary database records loaded by the client portal API.
 
 The account is stored in Better Auth's `identity.users` and `identity.accounts`
 tables, with verified email and a bcrypt credential. Organization onboarding
-still goes through `create_organization_with_admin` with an authenticated
-end-user Data API JWT, so the same RPC and RLS boundary as the application is
-exercised. Re-run `db:local:seed-demo` to create or repair the account and
+for this deterministic local fixture is an owner-only provisioning operation.
+Public application tenants are created only from durable registration or
+superadmin invitations; authenticated users cannot invoke the legacy creation
+RPCs. Re-run `db:local:seed-demo` to create or repair the account and
 organization, reference catalogues, mortgage fixtures, delegate accounts,
 client portal access, its next appointment, and CRM demo records without
 resetting PostgreSQL. The seed is idempotent and only updates records carrying
@@ -125,8 +134,8 @@ its stable demo keys; it does not delete user-created data.
 The CRM fixture contains nine clients and eight cases with people, consent
 history, products, properties, saved mortgage offers, applications, tasks,
 documents, activities, and a Multiwniosek draft. Mortgage source documents are
-deterministic local fixtures stored through the same MinIO adapter as the app,
-so seeding never downloads live bank files.
+deterministic fixtures; imports and synchronization store their bytes through
+the same Vercel Blob adapter as the app.
 
 ## Optional LiveKit profile
 
@@ -183,10 +192,10 @@ The initial container bootstrap supplies the runtime surface the schema needs:
 - `pgcrypto`, `pg_trgm`, `unaccent`, `vector`, and `btree_gist`;
 - explicit ACLs for `anonymous`, `authenticated`, and `openexpert_service`.
 
-MinIO is the local object-store target for the shared storage adapter. Its API
-CORS allowlist is restricted to the CRM and client portal origins on
-`127.0.0.1`/`localhost` ports `3004` and `3006`, so those applications can use
-signed direct `PUT` uploads without enabling arbitrary browser origins.
+Local Nuxt processes use server-only Vercel Blob read-write tokens for the
+public and private stores. Keep those values outside the generated env block;
+`db:local:setup` preserves them. Browser uploads still use short-lived,
+path-specific signed `PUT` URLs, so the read-write tokens never reach clients.
 
 To inspect the fully interpolated Compose configuration manually:
 

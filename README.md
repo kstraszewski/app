@@ -11,7 +11,7 @@ agentów AI.
 - PostgreSQL 17, RLS i pgvector
 - Better Auth
 - PostgREST-compatible Data API
-- Vercel Blob / lokalne MinIO
+- Vercel Blob
 - Resend / lokalny Mailpit
 - Trigger.dev dla trwałych zadań w tle
 - Vercel
@@ -28,10 +28,10 @@ agentów AI.
 - integracja Trigger.dev z Vercel i GitHub wdraża taski razem z aplikacją;
 - LiveKit Cloud obsługuje spotkania WebRTC.
 
-Lokalnie te granice mają zamienniki: PostgreSQL + PostgREST, Better Auth,
-MinIO, Mailpit, proces `trigger dev` oraz opcjonalny self-hosted LiveKit. Kod
-domenowy nie zależy od konkretnego dostawcy storage ani od hostowanego API
-bazy.
+Lokalnie PostgreSQL + PostgREST, Better Auth, Mailpit, proces `trigger dev`
+oraz opcjonalny self-hosted LiveKit zastępują usługi hostowane. Pliki we
+wszystkich środowiskach trafiają do Vercel Blob, więc aplikacja nie utrzymuje
+drugiego systemu object storage.
 
 ## Aplikacje
 
@@ -58,15 +58,21 @@ colima start --cpu 4 --memory 6
 
 ```bash
 pnpm install
+pnpm storage:env:pull
 pnpm db:setup
 pnpm dev
 ```
+
+`storage:env:pull` pobiera konfigurację Development z podłączonego projektu CRM,
+zapisuje do ignorowanego `.env.blob.local` wyłącznie identyfikatory obu
+magazynów Blob i krótkotrwały token OIDC, a pozostałe sekrety odrzuca.
+Publiczny i prywatny store są współdzielone przez lokalne procesy aplikacji.
 
 `pnpm db:setup`:
 
 1. tworzy ignorowany `.env.local-stack` i synchronizuje zarządzane bloki
    `apps/*/.env`;
-2. uruchamia PostgreSQL 17 + pgvector, PostgREST, MinIO i Mailpit;
+2. uruchamia PostgreSQL 17 + pgvector, PostgREST i Mailpit;
 3. generuje lokalny klucz Ed25519 dla krótkich tokenów Data API;
 4. stosuje migracje z kontrolą checksum;
 5. tworzy konto Better Auth oraz organizację przez ten sam RPC i RLS, których
@@ -105,8 +111,6 @@ Adresy:
 - Data API: http://127.0.0.1:55321
 - PostgreSQL: `127.0.0.1:55322`
 - Mailpit: http://127.0.0.1:55324
-- MinIO API: http://127.0.0.1:55326
-- MinIO console: http://127.0.0.1:55327
 
 Pierwsze uruchomienie pobiera obrazy kontenerów. Kolejne korzystają z
 lokalnego cache i zachowanych wolumenów.
@@ -128,13 +132,14 @@ pnpm db:verify
 pnpm db:seed-demo
 pnpm db:reset
 pnpm db:stop
+pnpm storage:env:pull
 pnpm mortgage:sync
 pnpm trigger:dev
 ```
 
 `db:reset` usuwa wyłącznie nazwany wolumen lokalnego PostgreSQL i wymaga
-potwierdzenia; zachowuje obiekty MinIO. Dokładny opis ról, portów, kluczy i
-mechanizmu migracji znajduje się w
+potwierdzenia; nie dotyka obiektów Vercel Blob. Dokładny opis ról, portów,
+kluczy i mechanizmu migracji znajduje się w
 [`docs/local-postgres-stack.md`](docs/local-postgres-stack.md).
 
 ### LiveKit i Trigger.dev lokalnie

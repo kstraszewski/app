@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type {
   MailAddress,
+  MailBankAgentState,
+  MailBankAgentStatusPayload,
   MailConnectionInfo,
   MailConnectionPayload,
   MailContextDescriptor,
@@ -173,6 +175,11 @@ const composerKey = ref(0)
 const composerConnectionId = ref('')
 const agentMailReplyRequestId = ref('')
 const agentMailReplyTarget = shallowRef<MailThreadDetail | null>(null)
+const bankMailAgentStatuses = shallowRef<Record<string, MailBankAgentState>>({})
+const bankMailAgentStatusResolvedScopeKey = ref('')
+let bankMailAgentStatusTimer: number | undefined
+let bankMailAgentStatusRequestSequence = 0
+let bankMailAgentStatusMounted = false
 const composerDraft = reactive({
   to: '',
   cc: '',
@@ -465,6 +472,121 @@ const {
 )
 
 const selectedThread = computed(() => selectedThreadPayload.value?.data ?? null)
+const bankMailAgentMessageIds = computed(() => {
+  const messageIds = new Set<string>()
+  for (const thread of threadPayload.value.data) {
+    if (thread.latestMessageId) messageIds.add(thread.latestMessageId)
+  }
+  for (const message of selectedThread.value?.messages ?? []) messageIds.add(message.id)
+  return [...messageIds].slice(0, 50)
+})
+const bankMailAgentStatusScopeKey = computed(() => (
+  `${connectionId.value}:${bankMailAgentMessageIds.value.join('\u001f')}`
+))
+const selectedThreadBankMailAgentProcessing = computed(() => (
+  selectedThread.value?.messages.some(message => (
+    bankMailAgentStatuses.value[message.id] === 'processing'
+  )) ?? false
+))
+const selectedThreadBankMailAgentStatusChecking = computed(() => (
+  Boolean(selectedThread.value?.messages.length)
+  && bankMailAgentStatusResolvedScopeKey.value !== bankMailAgentStatusScopeKey.value
+))
+const mailQuickActionsBlocked = computed(() => (
+  selectedThreadBankMailAgentProcessing.value
+  || selectedThreadBankMailAgentStatusChecking.value
+))
+const mailQuickActionsBlockTitle = computed(() => (
+  selectedThreadBankMailAgentProcessing.value
+    ? 'EVE analizuje wiadomość'
+    : 'Sprawdzamy stan analizy EVE'
+))
+const mailQuickActionsBlockDescription = computed(() => (
+  selectedThreadBankMailAgentProcessing.value
+    ? 'Możesz odpowiedzieć ręcznie. Pozostałe szybkie akcje odblokują się automatycznie po zakończeniu analizy.'
+    : 'Ręczna odpowiedź jest dostępna. Pozostałe akcje włączymy po sprawdzeniu stanu EVE.'
+))
+
+function bankMailAgentState(messageId: string | undefined): MailBankAgentState | undefined {
+  return messageId ? bankMailAgentStatuses.value[messageId] : undefined
+}
+
+function bankMailAgentStatusVisible(messageId: string | undefined): boolean {
+  const state = bankMailAgentState(messageId)
+  return state === 'processing' || state === 'review_required' || state === 'failed'
+}
+
+function clearBankMailAgentStatusTimer(): void {
+  if (bankMailAgentStatusTimer === undefined) return
+  window.clearTimeout(bankMailAgentStatusTimer)
+  bankMailAgentStatusTimer = undefined
+}
+
+function scheduleBankMailAgentStatusRefresh(delay: number): void {
+  clearBankMailAgentStatusTimer()
+  if (!bankMailAgentStatusMounted || !bankMailAgentMessageIds.value.length) return
+  bankMailAgentStatusTimer = window.setTimeout(() => {
+    bankMailAgentStatusTimer = undefined
+    void refreshBankMailAgentStatuses()
+  }, delay)
+}
+
+async function refreshBankMailAgentStatuses(): Promise<void> {
+  clearBankMailAgentStatusTimer()
+  if (
+    !bankMailAgentStatusMounted
+    || document.visibilityState !== 'visible'
+    || !connectionId.value
+    || !bankMailAgentMessageIds.value.length
+  ) return
+
+  const requestSequence = ++bankMailAgentStatusRequestSequence
+  const scopeKey = bankMailAgentStatusScopeKey.value
+  const messageIds = [...bankMailAgentMessageIds.value]
+  try {
+    const response = await requestFetch<MailBankAgentStatusPayload>(
+      orgApiPath('/mail/agent-status'),
+      {
+        method: 'POST',
+        body: { connectionId: connectionId.value, messageIds },
+      },
+    )
+    if (
+      requestSequence !== bankMailAgentStatusRequestSequence
+      || scopeKey !== bankMailAgentStatusScopeKey.value
+    ) return
+    bankMailAgentStatuses.value = Object.fromEntries(
+      response.data.map(status => [status.messageId, status.state]),
+    )
+    bankMailAgentStatusResolvedScopeKey.value = scopeKey
+  }
+  catch {
+    // Mail reading must remain available if the optional EVE status lookup is
+    // temporarily unavailable, but actions fail closed until the next bounded
+    // poll confirms that no analysis is running.
+    if (scopeKey === bankMailAgentStatusScopeKey.value) {
+      bankMailAgentStatusResolvedScopeKey.value = ''
+    }
+  }
+  finally {
+    if (
+      requestSequence === bankMailAgentStatusRequestSequence
+      && scopeKey === bankMailAgentStatusScopeKey.value
+    ) {
+      const hasActiveAnalysis = Object.values(bankMailAgentStatuses.value)
+        .some(state => state === 'processing')
+      scheduleBankMailAgentStatusRefresh(hasActiveAnalysis ? 2_500 : 15_000)
+    }
+  }
+}
+
+watch(bankMailAgentStatusScopeKey, () => {
+  bankMailAgentStatusRequestSequence += 1
+  bankMailAgentStatuses.value = {}
+  bankMailAgentStatusResolvedScopeKey.value = ''
+  if (bankMailAgentStatusMounted) void refreshBankMailAgentStatuses()
+})
+
 const providerRecipientSuggestions = computed<MailProviderRecipientSuggestion[]>(() => {
   const accountEmail = (composerConnection.value?.accountEmail || '').trim().toLowerCase()
   const addresses: MailAddress[] = [
@@ -634,9 +756,10 @@ const FOCUS_REFRESH_STALE_MS = 60_000
 let autoRefreshTimer: number | undefined
 
 function refreshWhenVisible(): void {
+  if (document.visibilityState !== 'visible') return
+  void refreshBankMailAgentStatuses()
   if (
-    document.visibilityState !== 'visible'
-    || refreshing.value
+    refreshing.value
     || composerOpen.value
     || connectionModalOpen.value
     || !connectionId.value
@@ -649,6 +772,8 @@ function refreshWhenVisible(): void {
 }
 
 onMounted(() => {
+  bankMailAgentStatusMounted = true
+  void refreshBankMailAgentStatuses()
   window.addEventListener('focus', refreshWhenVisible)
   document.addEventListener('visibilitychange', refreshWhenVisible)
   autoRefreshTimer = window.setInterval(refreshWhenVisible, AUTO_REFRESH_INTERVAL_MS)
@@ -717,6 +842,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  bankMailAgentStatusMounted = false
+  bankMailAgentStatusRequestSequence += 1
+  clearBankMailAgentStatusTimer()
   window.removeEventListener('focus', refreshWhenVisible)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (autoRefreshTimer !== undefined) window.clearInterval(autoRefreshTimer)
@@ -933,7 +1061,7 @@ function openReply(): void {
 function prepareReplyWithAgent(): void {
   const thread = selectedThread.value
   const connection = activeConnection.value
-  if (!thread || !connection || agentMailReplyPending.value) return
+  if (!thread || !connection || agentMailReplyPending.value || mailQuickActionsBlocked.value) return
   if (!replyRecipients(thread).length) {
     openReplyForThread(thread)
     return
@@ -984,6 +1112,16 @@ watch(agentInvocationResult, (result) => {
       description: result.message,
       color: 'error',
       icon: 'i-lucide-triangle-alert',
+    })
+    return
+  }
+
+  if (mailQuickActionsBlocked.value) {
+    toast.add({
+      title: 'EVE nadal analizuje wiadomość',
+      description: 'Po zakończeniu analizy ponownie wybierz przygotowanie odpowiedzi.',
+      color: 'info',
+      icon: 'i-lucide-lock-keyhole',
     })
     return
   }
@@ -1059,7 +1197,13 @@ async function refreshMailbox(showToast = true): Promise<void> {
 async function updateContextLink(linked: boolean): Promise<void> {
   const scopeType = contextScopeType.value
   const thread = selectedContextThread.value
-  if (!scopeType || !props.scopeId || !thread || contextLinking.value) return
+  if (
+    !scopeType
+    || !props.scopeId
+    || !thread
+    || contextLinking.value
+    || mailQuickActionsBlocked.value
+  ) return
   contextLinking.value = true
   try {
     await $fetch(orgApiPath('/mail/context/links'), {
@@ -1739,6 +1883,38 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     />
                   </span>
                   <span class="mail-thread__snippet">{{ thread.snippet || 'Brak podglądu treści.' }}</span>
+                  <UBadge
+                    v-if="bankMailAgentState(thread.latestMessageId) === 'processing'"
+                    class="mail-thread__agent-status"
+                    color="info"
+                    variant="subtle"
+                    size="xs"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <UIcon name="i-lucide-loader-circle" class="animate-spin" aria-hidden="true" />
+                    EVE analizuje
+                  </UBadge>
+                  <UBadge
+                    v-else-if="bankMailAgentState(thread.latestMessageId) === 'review_required'"
+                    class="mail-thread__agent-status"
+                    color="warning"
+                    variant="subtle"
+                    size="xs"
+                  >
+                    <UIcon name="i-lucide-user-check" aria-hidden="true" />
+                    EVE · do weryfikacji
+                  </UBadge>
+                  <UBadge
+                    v-else-if="bankMailAgentState(thread.latestMessageId) === 'failed'"
+                    class="mail-thread__agent-status"
+                    color="error"
+                    variant="subtle"
+                    size="xs"
+                  >
+                    <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
+                    Analiza EVE nieudana
+                  </UBadge>
                   <span
                     v-if="isContextThreadSummary(thread)"
                     class="mail-thread__context"
@@ -1874,11 +2050,15 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                   </p>
                   <h2>{{ selectedThread.subject }}</h2>
                 </div>
-                <div class="mail-detail__actions">
+                <div
+                  class="mail-detail__actions"
+                  :aria-busy="selectedThreadBankMailAgentProcessing"
+                >
                   <UButton
                     v-if="canSend"
                     class="mail-detail__action mail-detail__action--reply"
                     icon="i-lucide-reply"
+                    title="Odpowiedz ręcznie"
                     @click="openReply"
                   >
                     Odpowiedz
@@ -1890,9 +2070,11 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     variant="soft"
                     icon="i-lucide-sparkles"
                     :loading="agentMailReplyPending"
-                    :disabled="agentMailReplyPending"
+                    :disabled="agentMailReplyPending || mailQuickActionsBlocked"
                     aria-label="Przygotuj odpowiedź przez Agenta AI"
-                    title="Przygotuj odpowiedź przez Agenta AI"
+                    :title="mailQuickActionsBlocked
+                      ? mailQuickActionsBlockTitle
+                      : 'Przygotuj odpowiedź przez Agenta AI'"
                     @click="prepareReplyWithAgent"
                   >
                     <span class="mail-detail__action-label mail-detail__action-label--full">
@@ -1905,14 +2087,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                   <UButton
                     v-if="selectedThread.externalUrl"
                     class="mail-detail__action mail-detail__action--provider"
-                    :href="selectedThread.externalUrl"
+                    :href="mailQuickActionsBlocked ? undefined : selectedThread.externalUrl"
                     target="_blank"
                     rel="noopener noreferrer"
                     color="neutral"
                     variant="outline"
                     icon="i-lucide-external-link"
+                    :disabled="mailQuickActionsBlocked"
                     aria-label="Otwórz wiadomość u dostawcy"
-                    title="Otwórz wiadomość u dostawcy"
+                    :title="mailQuickActionsBlocked
+                      ? mailQuickActionsBlockTitle
+                      : 'Otwórz wiadomość u dostawcy'"
                   >
                     <span class="mail-detail__action-label mail-detail__action-label--full">
                       Otwórz u dostawcy
@@ -1925,6 +2110,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                     :variant="selectedContextThread.linked ? 'outline' : 'soft'"
                     :icon="selectedContextThread.linked ? 'i-lucide-link-2-off' : 'i-lucide-link-2'"
                     :loading="contextLinking"
+                    :disabled="contextLinking || mailQuickActionsBlocked"
+                    :title="mailQuickActionsBlocked ? mailQuickActionsBlockTitle : undefined"
                     @click="updateContextLink(!selectedContextThread.linked)"
                   >
                     <template v-if="selectedContextThread.linked">
@@ -1936,6 +2123,17 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                   </UButton>
                 </div>
               </header>
+
+              <UAlert
+                v-if="mailQuickActionsBlocked"
+                class="mail-detail__quick-actions-lock"
+                color="info"
+                variant="subtle"
+                icon="i-lucide-lock-keyhole"
+                :title="mailQuickActionsBlockTitle"
+                :description="mailQuickActionsBlockDescription"
+                aria-live="polite"
+              />
 
               <UAlert
                 v-if="selectedThread.omittedMessageCount"
@@ -1973,7 +2171,9 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                         </time>
                       </div>
                       <div
-                        v-if="message.unread || message.security.authentication === 'pass'"
+                        v-if="message.unread
+                          || message.security.authentication === 'pass'
+                          || bankMailAgentStatusVisible(message.id)"
                         class="mail-message__badges"
                       >
                         <UBadge v-if="message.unread" color="primary" variant="subtle" size="xs">
@@ -1987,6 +2187,35 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                           title="Wynik SPF, DKIM lub DMARC przekazany przez dostawcę jest poprawny. Nie oznacza to, że treść wiadomości jest bezpieczna."
                         >
                           Domena uwierzytelniona
+                        </UBadge>
+                        <UBadge
+                          v-if="bankMailAgentState(message.id) === 'processing'"
+                          color="info"
+                          variant="subtle"
+                          size="xs"
+                          role="status"
+                          aria-live="polite"
+                        >
+                          <UIcon name="i-lucide-loader-circle" class="animate-spin" aria-hidden="true" />
+                          EVE analizuje tę wiadomość
+                        </UBadge>
+                        <UBadge
+                          v-else-if="bankMailAgentState(message.id) === 'review_required'"
+                          color="warning"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          <UIcon name="i-lucide-user-check" aria-hidden="true" />
+                          EVE · do weryfikacji
+                        </UBadge>
+                        <UBadge
+                          v-else-if="bankMailAgentState(message.id) === 'failed'"
+                          color="error"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
+                          Analiza EVE nie powiodła się
                         </UBadge>
                       </div>
                       <div class="mail-message__addresses">
@@ -2677,6 +2906,16 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   white-space: nowrap;
 }
 
+.mail-thread__agent-status {
+  width: fit-content;
+}
+
+.mail-thread__agent-status :deep(svg),
+.mail-message__badges :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
+
 .mail-thread__sender-label {
   color: var(--ui-text-highlighted);
   font-size: 13px;
@@ -2811,7 +3050,8 @@ function securityWarningDescription(security: MailMessageSecurity): string {
   display: none;
 }
 
-.mail-detail__notice {
+.mail-detail__notice,
+.mail-detail__quick-actions-lock {
   margin-bottom: 16px;
 }
 

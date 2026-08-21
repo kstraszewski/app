@@ -1552,6 +1552,7 @@ function messageSummary(message: any, reference: string, accountEmail: string): 
   const participants = summaryParticipants(envelope, accountEmail)
   return {
     id: reference,
+    latestMessageId: reference,
     messageCount: 1,
     participants,
     participantsLabel: participantLabel(participants),

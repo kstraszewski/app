@@ -39,7 +39,7 @@ test('deploys bank-mail EVE as a private service of the CRM Nuxt project', async
 
   assert.deepEqual(bankMailService, {
     root: 'services/bank-mail-agent',
-    buildCommand: 'eve build',
+    buildCommand: 'OPENEXPERT_EVE_DISABLE_NITRO_TSCONFIG=1 eve build',
     framework: 'eve',
   })
   await access(new URL('services/bank-mail-agent/agent/agent.ts', crmRoot))

@@ -32,6 +32,9 @@ function conflict(): never {
 
 export default defineEventHandler(async (event) => {
   const session = await requireCrmSession(event)
+  if (session.organizationKind !== 'intermediary') {
+    throw createError({ statusCode: 404, statusMessage: 'Intermediary settings are not available' })
+  }
   requireOrganizationAdmin(session)
 
   const body = asRecord(await readBody(event))

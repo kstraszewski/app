@@ -87,6 +87,8 @@ export interface MailFolderSummary {
 
 export interface MailThreadSummary {
   id: string
+  /** Provider message reference used only to derive a scoped, stable agent-status identity. */
+  latestMessageId?: string
   messageCount: number
   participants: MailAddress[]
   participantsLabel: string
@@ -225,6 +227,21 @@ export interface MailContextLinkPayload {
 
 export interface MailThreadDetailPayload {
   data: MailThreadDetail
+}
+
+export type MailBankAgentState =
+  | 'processing'
+  | 'review_required'
+  | 'completed'
+  | 'failed'
+
+export interface MailBankAgentStatus {
+  messageId: string
+  state: MailBankAgentState
+}
+
+export interface MailBankAgentStatusPayload {
+  data: MailBankAgentStatus[]
 }
 
 export interface MailSendPayload {

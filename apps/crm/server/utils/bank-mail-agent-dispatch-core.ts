@@ -32,6 +32,8 @@ export interface BankMailAgentDispatchInput extends BankMailAgentPromptInput {
   /**
    * The provider message identity must be hashed by trusted ingress before this
    * boundary. The dispatcher deliberately has no API that accepts its raw form.
+   * Use `bankMailProviderMessageIdentitySha256` so IMAP's randomized route
+   * reference resolves to its stable mailbox/UIDVALIDITY/UID identity.
    */
   providerMessageIdSha256: string
   sourceSha256: string

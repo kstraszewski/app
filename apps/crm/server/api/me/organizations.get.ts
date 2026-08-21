@@ -1,4 +1,5 @@
 import { hasSuperAdminRole, requireAuthenticatedSession, throwDbError } from '~~/server/utils/crm'
+import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
 
 type MembershipRow = {
   role: 'expert' | 'admin'
@@ -6,6 +7,8 @@ type MembershipRow = {
     id: string
     name: string
     slug: string
+    kind: OrganizationKind
+    billing_access_state: BillingAccessState
   } | null
 }
 
@@ -14,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const [{ data, error }, superAdmin] = await Promise.all([
     session.dataApi
       .from('organization_memberships')
-      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug)')
+      .select('role, organization:organizations!organization_memberships_organization_id_fkey!inner(id, name, slug, kind, billing_access_state)')
       .eq('user_id', session.userId),
     hasSuperAdminRole(session),
   ])
@@ -74,7 +77,11 @@ export default defineEventHandler(async (event) => {
         const facilityAdmin = facilityAdminOrganizationIds.has(organization.id)
 
         return {
-          ...organization,
+          id: organization.id,
+          name: organization.name,
+          slug: organization.slug,
+          kind: organization.kind,
+          billingAccessState: organization.billing_access_state,
           role: membership.role,
           isDefault: organization.id === session.defaultOrganizationId,
           capabilities: {

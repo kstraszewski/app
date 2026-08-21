@@ -302,6 +302,7 @@ function threadDetailSummary(
   const snippet = String(latest?.bodyText ?? '').replace(/\s+/gu, ' ').trim().slice(0, 240)
   return {
     id: reference,
+    latestMessageId: latest?.id,
     messageCount: detail.messages.length,
     participants,
     participantsLabel: participants.map(address => address.label).join(', ') || accountEmail,

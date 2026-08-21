@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url'
 const isProduction = process.env.NODE_ENV === 'production'
 const isPreviewDeployment = process.env.VERCEL_ENV === 'preview'
   || process.env.VERCEL_ENV === 'development'
-const storageProvider = process.env.NUXT_STORAGE_PROVIDER
-  || (process.env.VERCEL ? 'vercel-blob' : 'minio')
 const dataApiUrl = process.env.NUXT_DATA_API_URL
   || process.env.NUXT_PUBLIC_DATA_API_URL
   || 'http://127.0.0.1:55321'
@@ -76,8 +74,10 @@ export default defineNuxtConfig({
         'lucide:map-pin',
         'lucide:menu',
         'lucide:message-square',
+        'lucide:minus',
         'lucide:palette',
         'lucide:phone',
+        'lucide:plus',
         'lucide:rotate-ccw',
         'lucide:route',
         'lucide:save',
@@ -167,24 +167,12 @@ export default defineNuxtConfig({
       },
     },
     storage: {
-      provider: storageProvider,
-      minio: {
-        endpoint: process.env.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
-        region: process.env.NUXT_MINIO_REGION || 'us-east-1',
-        accessKeyId: process.env.NUXT_MINIO_ACCESS_KEY_ID || 'openexpert',
-        secretAccessKey: process.env.NUXT_MINIO_SECRET_ACCESS_KEY || 'openexpert-minio-local-secret',
-        publicBucket: process.env.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
-        privateBucket: process.env.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
-        publicBaseUrl: process.env.NUXT_MINIO_PUBLIC_BASE_URL
-          || 'http://127.0.0.1:55326/openexpert-public',
-      },
       vercelBlob: {
         publicToken: process.env.NUXT_VERCEL_BLOB_PUBLIC_TOKEN || '',
         publicStoreId: process.env.NUXT_VERCEL_BLOB_PUBLIC_STORE_ID || '',
         publicBaseUrl: process.env.NUXT_VERCEL_BLOB_PUBLIC_BASE_URL || '',
         privateToken: process.env.NUXT_VERCEL_BLOB_PRIVATE_TOKEN || '',
         privateStoreId: process.env.NUXT_VERCEL_BLOB_PRIVATE_STORE_ID || '',
-        oidcToken: process.env.VERCEL_OIDC_TOKEN || '',
       },
     },
     resend: {

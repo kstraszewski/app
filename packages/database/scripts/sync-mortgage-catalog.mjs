@@ -12,9 +12,9 @@ import {
   createDataApiTokenSigner,
 } from '@openexpert/data-api'
 import {
-  createMinioStorageProvider,
   createStorageClient,
   createStorageBucketAdapter,
+  createVercelBlobStorageProvider,
 } from '@openexpert/storage'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -61,6 +61,11 @@ function requireConfiguration(values, key) {
   return value
 }
 
+function optionalConfiguration(values, key) {
+  const value = String(values[key] ?? '').trim()
+  return value || undefined
+}
+
 function assertLocalUrl(value, label) {
   const url = new URL(value)
   if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) {
@@ -90,6 +95,7 @@ function dataApiPrivateKey(value) {
 export function createLocalMortgageCatalogClient(configuration = {}) {
   const values = {
     ...parseEnvFile(resolve(repoRoot, '.env')),
+    ...parseEnvFile(resolve(repoRoot, '.env.blob.local')),
     ...parseEnvFile(resolve(repoRoot, '.env.local-stack')),
     ...parseEnvFile(resolve(repoRoot, 'apps/crm/.env')),
     ...process.env,
@@ -102,10 +108,6 @@ export function createLocalMortgageCatalogClient(configuration = {}) {
       + 'NUXT_PUBLIC_DATA_API_URL.',
     )
   }
-  if ((values.NUXT_STORAGE_PROVIDER || 'minio') !== 'minio') {
-    throw new Error('Local mortgage synchronization requires NUXT_STORAGE_PROVIDER=minio.')
-  }
-
   const signer = createDataApiTokenSigner({
     audience: requireConfiguration(values, 'NUXT_DATA_API_JWT_AUDIENCE'),
     issuer: requireConfiguration(values, 'NUXT_DATA_API_JWT_ISSUER'),
@@ -114,17 +116,24 @@ export function createLocalMortgageCatalogClient(configuration = {}) {
     ttlSeconds: 60,
   })
   const storage = createStorageBucketAdapter(
-    createStorageClient(createMinioStorageProvider({
-      endpoint: assertLocalUrl(
-        values.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
-        'Mortgage storage endpoint',
-      ),
-      region: values.NUXT_MINIO_REGION || 'us-east-1',
-      accessKeyId: requireConfiguration(values, 'NUXT_MINIO_ACCESS_KEY_ID'),
-      secretAccessKey: requireConfiguration(values, 'NUXT_MINIO_SECRET_ACCESS_KEY'),
-      publicBucket: values.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
-      privateBucket: values.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
-      publicBaseUrl: values.NUXT_MINIO_PUBLIC_BASE_URL || undefined,
+    createStorageClient(createVercelBlobStorageProvider({
+      stores: {
+        public: {
+          token: optionalConfiguration(values, 'NUXT_VERCEL_BLOB_PUBLIC_TOKEN'),
+          storeId: optionalConfiguration(values, 'NUXT_VERCEL_BLOB_PUBLIC_STORE_ID'),
+          oidcToken: optionalConfiguration(values, 'VERCEL_OIDC_TOKEN'),
+          publicBaseUrl: optionalConfiguration(
+            values,
+            'NUXT_VERCEL_BLOB_PUBLIC_BASE_URL',
+          ),
+        },
+        private: {
+          token: optionalConfiguration(values, 'NUXT_VERCEL_BLOB_PRIVATE_TOKEN'),
+          storeId: optionalConfiguration(values, 'NUXT_VERCEL_BLOB_PRIVATE_STORE_ID'),
+          oidcToken: optionalConfiguration(values, 'VERCEL_OIDC_TOKEN'),
+        },
+      },
+      bypassPrivateDownloadCache: true,
     })),
   )
   const client = createAuthenticatedDataApiClient(

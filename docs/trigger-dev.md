@@ -63,8 +63,8 @@ an atomic task deployment. Configure its Trigger config path as
 root.
 
 The manual `pnpm trigger:deploy` command deliberately uses
-`--skip-sync-env-vars`, preventing local PostgreSQL, MinIO, or development
-secrets from being uploaded accidentally. Prefer the
+`--skip-sync-env-vars`, preventing local PostgreSQL or development secrets
+from being uploaded accidentally. Prefer the
 [Vercel integration](https://trigger.dev/docs/vercel-integration) for normal
 production deployments.
 

@@ -4,14 +4,30 @@ useHead({ title: 'Ustawienia organizacji — OpenExpert CRM' })
 
 const { orgPath } = useOrganizationContext()
 const organizationSettingsTabs = useOrganizationSettingsTabs()
+const route = useRoute()
+const { data: organizations } = await useOrganizations()
+const activeOrganization = computed(() => organizations.value.data.find(organization => (
+  organization.slug === String(route.params.organizationSlug || '')
+)))
 const settingsAreas = computed(() => [
-  {
-    title: 'Dane pośrednika',
-    description: 'Dane prawne i identyfikacyjne używane w OFI, informacjach RODO i dokumentach kredytowych.',
-    details: 'OFI · RODO · dokumenty',
-    to: orgPath('/settings/intermediary'),
-    icon: 'i-lucide-landmark',
-  },
+  ...(activeOrganization.value?.kind === 'application'
+    ? [{
+        title: 'Subskrypcja',
+        description: 'Plan Aplikacja, stan dostępu, płatności i panel klienta Stripe.',
+        details: '200 zł / opłacone miejsce / miesiąc · kupony · Stripe',
+        to: orgPath('/settings/billing'),
+        icon: 'i-lucide-credit-card',
+      }]
+    : []),
+  ...(activeOrganization.value?.kind !== 'application'
+    ? [{
+        title: 'Dane pośrednika',
+        description: 'Dane prawne i identyfikacyjne używane w OFI, informacjach RODO i dokumentach kredytowych.',
+        details: 'OFI · RODO · dokumenty',
+        to: orgPath('/settings/intermediary'),
+        icon: 'i-lucide-landmark',
+      }]
+    : []),
   {
     title: 'Ustawienia zdolności',
     description: 'Założenia organizacji dla kalkulatora, parametry modelu oraz historia rewizji.',

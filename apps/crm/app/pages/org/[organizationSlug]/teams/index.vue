@@ -34,6 +34,8 @@ const emptyGraph: TeamGraphListPayload = {
     id: '',
     name: '',
     slug: '',
+    kind: 'intermediary',
+    billingAccessState: 'not_required',
     role: 'expert',
     isDefault: false,
     capabilities: {

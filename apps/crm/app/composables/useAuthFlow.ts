@@ -1,6 +1,7 @@
 import type { AccountContexts } from '~/types/account'
 import { authErrorCode, authErrorText, isFreshSessionRequired } from '~/utils/auth-error'
 import { getPasswordIssue } from '~/utils/password-validation'
+import { isBillingAccessGranted } from '~~/shared/organization-billing'
 
 interface AuthErrorLike {
   message?: string
@@ -43,14 +44,24 @@ export function useAuthFlow() {
     const contexts = await requestFetch<AccountContexts>('/api/me/contexts')
     const defaultOrganization = contexts.staffOrganizations.find(organization => organization.isDefault)
       ?? contexts.staffOrganizations[0]
+    const defaultOrganizationPath = defaultOrganization
+      ? `/org/${encodeURIComponent(defaultOrganization.slug)}/${
+        defaultOrganization.kind === 'application'
+        && !isBillingAccessGranted(defaultOrganization.billingAccessState)
+          ? 'settings/billing'
+          : 'dashboard'
+      }`
+      : ''
 
     if (legacyOrganizationPath && defaultOrganization) {
+      if (
+        defaultOrganization.kind === 'application'
+        && !isBillingAccessGranted(defaultOrganization.billingAccessState)
+      ) return defaultOrganizationPath
       return `/org/${encodeURIComponent(defaultOrganization.slug)}${requested}`
     }
     if (contexts.hasStaff && contexts.hasClient) return '/account'
-    if (defaultOrganization) {
-      return `/org/${encodeURIComponent(defaultOrganization.slug)}/dashboard`
-    }
+    if (defaultOrganization) return defaultOrganizationPath
     if (contexts.hasClient) return '/client'
     return '/onboarding'
   }

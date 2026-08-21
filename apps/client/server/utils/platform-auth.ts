@@ -131,6 +131,7 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
       cookieDomain: auth.cookieDomain || undefined,
       disableSignUp: true,
       magicLinkDisableSignUp: false,
+      magicLinkTokenNamespace: 'client-portal',
       trustedOrigins: auth.trustedOrigins
         .split(',')
         .map(value => value.trim())

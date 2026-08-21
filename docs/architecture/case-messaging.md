@@ -43,8 +43,8 @@ and they do not change message status.
 Message attachments use the private `crm-message-attachments` storage
 namespace. The browser first reserves an attachment through the authenticated
 conversation API. The API returns a short-lived, path-specific signed `PUT`,
-so the bytes travel directly from the browser to Vercel Blob in production or
-MinIO locally and never pass through the Nuxt request body.
+so the bytes travel directly from the browser to Vercel Blob and never pass
+through the Nuxt request body.
 
 After upload, the browser calls the completion endpoint. The server checks the
 exact private object with `HEAD` and compares its path, content type and size

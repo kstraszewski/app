@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AccountContexts } from '~/types/account'
+import { isBillingAccessGranted } from '~~/shared/organization-billing'
 
 definePageMeta({ middleware: 'auth', layout: false })
 
@@ -16,6 +17,14 @@ useHead({
   title: 'Wybierz widok — OpenExpert',
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
+
+function organizationTarget(organization: NonNullable<typeof contexts.value>['staffOrganizations'][number]) {
+  const target = organization.kind === 'application'
+    && !isBillingAccessGranted(organization.billingAccessState)
+    ? 'settings/billing'
+    : 'dashboard'
+  return `/org/${encodeURIComponent(organization.slug)}/${target}`
+}
 </script>
 
 <template>
@@ -63,22 +72,26 @@ useHead({
       <NuxtLink
         v-for="organization in contexts?.staffOrganizations ?? []"
         :key="organization.id"
-        :to="`/org/${encodeURIComponent(organization.slug)}/dashboard`"
+        :to="organizationTarget(organization)"
         class="context-card"
       >
         <span class="context-card__icon context-card__icon--staff">
-          <UIcon name="i-lucide-briefcase-business" />
+          <UIcon :name="organization.kind === 'application' ? 'i-lucide-panels-top-left' : 'i-lucide-briefcase-business'" />
         </span>
         <span>
           <small>Panel organizacji · {{ organization.role }}</small>
           <strong>{{ organization.name }}</strong>
-          <em>CRM, placówki i konsultacje</em>
+          <em v-if="organization.kind === 'application' && !isBillingAccessGranted(organization.billingAccessState)">
+            {{ organization.billingAccessState === 'blocked'
+              ? 'Subskrypcja wymaga działania, aby przywrócić dostęp'
+              : 'Dokończ subskrypcję, aby odblokować aplikację' }}
+          </em>
+          <em v-else>CRM, placówki i konsultacje</em>
         </span>
         <UIcon name="i-lucide-arrow-right" />
       </NuxtLink>
 
       <NuxtLink
-        v-if="!contexts?.hasStaff"
         to="/onboarding"
         class="context-card"
       >
@@ -86,9 +99,9 @@ useHead({
           <UIcon name="i-lucide-building-2" />
         </span>
         <span>
-          <small>Panel profesjonalisty</small>
-          <strong>Utwórz organizację</strong>
-          <em>Oddzielny obszar pracy dla ekspertów i zespołu</em>
+          <small>{{ contexts?.hasStaff ? 'Kolejny obszar pracy' : 'Panel profesjonalisty' }}</small>
+          <strong>Utwórz {{ contexts?.hasStaff ? 'kolejną ' : '' }}organizację</strong>
+          <em>Pośrednik bez opłaty albo Aplikacja w planie 200 zł / opłacone miejsce / miesiąc</em>
         </span>
         <UIcon name="i-lucide-arrow-right" />
       </NuxtLink>

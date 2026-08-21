@@ -127,6 +127,7 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
       sessionFreshAge: auth.sessionFreshAge,
       cookiePrefix: auth.cookiePrefix,
       cookieDomain: auth.cookieDomain || undefined,
+      magicLinkTokenNamespace: 'landing-primary',
       trustedOrigins: auth.trustedOrigins
         .split(',')
         .map(value => value.trim())

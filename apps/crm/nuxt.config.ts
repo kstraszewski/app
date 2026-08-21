@@ -8,8 +8,6 @@ const multiformServiceUrl = process.env.NUXT_MULTIFORM_SERVICE_URL
   || (isProduction ? 'https://openexpert-landing.vercel.app' : 'http://127.0.0.1:3013')
 const bankMailAgentServiceUrl = process.env.NUXT_BANK_MAIL_AGENT_SERVICE_URL
   || (isProduction ? '' : 'http://127.0.0.1:3014')
-const storageProvider = process.env.NUXT_STORAGE_PROVIDER
-  || (process.env.VERCEL ? 'vercel-blob' : 'minio')
 const dataApiUrl = process.env.NUXT_DATA_API_URL
   || process.env.NUXT_PUBLIC_DATA_API_URL
   || 'http://127.0.0.1:55321'
@@ -18,6 +16,7 @@ const authBaseUrl = process.env.BETTER_AUTH_URL
   || (process.env.NODE_ENV === 'production'
     ? 'https://crm.openexpert.app'
     : 'http://127.0.0.1:3004')
+const crmBaseUrl = process.env.NUXT_PUBLIC_CRM_BASE_URL || authBaseUrl
 const clientPortalBaseUrl = process.env.NUXT_PUBLIC_CLIENT_BASE_URL
   || process.env.NUXT_PUBLIC_CLIENT_PORTAL_BASE_URL
   || process.env.NUXT_CLIENT_PORTAL_BASE_URL
@@ -221,6 +220,24 @@ export default defineNuxtConfig({
         privateKey: process.env.NUXT_DATA_API_JWT_PRIVATE_KEY || '',
       },
     },
+    organizationInvitations: {
+      enabled: process.env.NUXT_ORGANIZATION_INVITATIONS_ENABLED !== 'false',
+      baseUrl: crmBaseUrl,
+      basePath: process.env.NUXT_ORGANIZATION_INVITATION_AUTH_BASE_PATH
+        || '/api/organization-auth',
+      ttlSeconds: Number(process.env.NUXT_ORGANIZATION_INVITATION_TTL_SECONDS || 60 * 60 * 24 * 7),
+    },
+    billing: {
+      baseUrl: crmBaseUrl,
+      demoMode: process.env.NUXT_STRIPE_DEMO_MODE !== 'false',
+      secretKey: process.env.NUXT_STRIPE_RESTRICTED_KEY
+        || process.env.NUXT_STRIPE_SECRET_KEY
+        || process.env.STRIPE_SECRET_KEY
+        || '',
+      webhookSecret: process.env.NUXT_STRIPE_WEBHOOK_SECRET || '',
+      applicationMonthlyPriceId: process.env.NUXT_STRIPE_APPLICATION_MONTHLY_PRICE_ID || '',
+      customerPortalConfigurationId: process.env.NUXT_STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID || '',
+    },
     auth: {
       baseUrl: authBaseUrl,
       basePath: process.env.BETTER_AUTH_BASE_PATH || '/api/auth',
@@ -337,17 +354,6 @@ export default defineNuxtConfig({
       maxOtpAttempts: Number(process.env.NUXT_CONSENT_OTP_MAX_ATTEMPTS || 5),
     },
     storage: {
-      provider: storageProvider,
-      minio: {
-        endpoint: process.env.NUXT_MINIO_ENDPOINT || 'http://127.0.0.1:55326',
-        region: process.env.NUXT_MINIO_REGION || 'us-east-1',
-        accessKeyId: process.env.NUXT_MINIO_ACCESS_KEY_ID || 'openexpert',
-        secretAccessKey: process.env.NUXT_MINIO_SECRET_ACCESS_KEY || 'openexpert-minio-local-secret',
-        publicBucket: process.env.NUXT_MINIO_PUBLIC_BUCKET || 'openexpert-public',
-        privateBucket: process.env.NUXT_MINIO_PRIVATE_BUCKET || 'openexpert-private',
-        publicBaseUrl: process.env.NUXT_MINIO_PUBLIC_BASE_URL
-          || 'http://127.0.0.1:55326/openexpert-public',
-      },
       vercelBlob: {
         publicToken: process.env.NUXT_VERCEL_BLOB_PUBLIC_TOKEN || '',
         publicStoreId: process.env.NUXT_VERCEL_BLOB_PUBLIC_STORE_ID || '',

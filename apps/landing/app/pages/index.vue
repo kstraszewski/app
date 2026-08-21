@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import {
+  APPLICATION_SEAT_PRICE_PLN,
+  buildApplicationRegistrationUrl,
+  buildLoginUrl,
+  normalizeApplicationSeatCount,
+} from '~/utils/landing-registration'
+
 const { siteOrigin } = useLandingSeo({
   title: 'OpenExpert — uruchom własne pośrednictwo kredytowe',
   description: 'OpenExpert dla pośredników kredytowych: CRM w Twojej marce, poczta zintegrowana z klientami i sprawami, rozliczenia oraz agenci AI.',
@@ -66,13 +73,24 @@ useHead({
   }],
 })
 
-const router = useRouter()
-const WAITLIST_STORAGE_KEY = 'oe-intermediary-waitlist-v1'
-const email = ref('')
-const emailInput = ref<HTMLInputElement | null>(null)
-const waitlistError = ref<string | null>(null)
-const waitlistLoading = ref(false)
 const mobileMenuOpen = ref(false)
+const runtimeConfig = useRuntimeConfig()
+const applicationSeatCount = ref(1)
+const crmBaseUrl = String(runtimeConfig.public.openexpert.crmBaseUrl)
+const plnNumberFormatter = new Intl.NumberFormat('pl-PL', {
+  maximumFractionDigits: 0,
+})
+
+const applicationMonthlyTotal = computed(() => (
+  applicationSeatCount.value * APPLICATION_SEAT_PRICE_PLN
+))
+const applicationMonthlyTotalLabel = computed(() => (
+  `${applicationSeatCount.value} × ${APPLICATION_SEAT_PRICE_PLN} = ${plnNumberFormatter.format(applicationMonthlyTotal.value)} zł / mies.`
+))
+const applicationRegistrationUrl = computed(() => (
+  buildApplicationRegistrationUrl(crmBaseUrl, applicationSeatCount.value)
+))
+const loginUrl = buildLoginUrl(crmBaseUrl)
 
 const platformRows = [
   {
@@ -145,58 +163,39 @@ const expertPoints = [
 
 const joinSteps = [
   {
-    title: 'Zostaw kontakt',
-    description: 'Podaj e-mail i przejdź do krótkiej ankiety.',
+    title: 'Wybierz liczbę miejsc',
+    description: 'Właściciel zajmuje pierwsze miejsce, a pozostałe osoby możesz dodać również później.',
   },
   {
-    title: 'Opisz swój model',
-    description: 'Powiedz, czy startujesz samodzielnie, rozwijasz zespół czy istniejącą firmę.',
+    title: 'Załóż organizację',
+    description: 'Utwórz konto właściciela i nazwij swoją organizację.',
   },
   {
-    title: 'Przygotuj się do startu',
-    description: 'Damy Ci znać o dostępie i kolejnych etapach wdrożenia.',
+    title: 'Zapłać bezpiecznie kartą',
+    description: 'Przed płatnością zobaczysz pełną miesięczną kwotę i opcję użycia kodu promocyjnego.',
   },
 ]
+
+function setApplicationSeatCount(value: unknown) {
+  applicationSeatCount.value = normalizeApplicationSeatCount(value)
+}
+
+function updateApplicationSeatCountFromInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.value === '') return
+  setApplicationSeatCount(input.value)
+}
+
+function commitApplicationSeatCount(event: Event) {
+  const input = event.target as HTMLInputElement
+  setApplicationSeatCount(input.value)
+  input.value = String(applicationSeatCount.value)
+}
 
 function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
-async function submitWaitlist() {
-  const value = email.value.trim()
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-
-  if (!isValidEmail) {
-    waitlistError.value = 'Podaj poprawny adres e-mail.'
-    await nextTick()
-    emailInput.value?.focus()
-    return
-  }
-
-  waitlistLoading.value = true
-  waitlistError.value = null
-
-  try {
-    const result = await $fetch<{ surveyToken: string }>('/api/waitlist', {
-      method: 'POST',
-      body: { email: value },
-    })
-
-    localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify({
-      step: 1,
-      email: value,
-      answers: {},
-      emailSaved: true,
-      surveyToken: result.surveyToken,
-    }))
-
-    await router.push('/waitlist')
-  } catch {
-    waitlistError.value = 'Nie udało się zapisać adresu. Spróbuj ponownie za chwilę.'
-  } finally {
-    waitlistLoading.value = false
-  }
-}
 </script>
 
 <template>
@@ -213,11 +212,13 @@ async function submitWaitlist() {
         <nav class="desktop-nav" aria-label="Główna nawigacja">
           <a href="#jak-to-dziala">Jak zacząć</a>
           <a href="#openexpert-mail">Mail</a>
+          <a href="#cennik">Cennik</a>
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
+          <a :href="loginUrl">Zaloguj się</a>
         </nav>
 
-        <a href="#dolacz" class="button button--light header-cta">Zostań pośrednikiem</a>
+        <a href="#cennik" class="button button--light header-cta">Załóż konto</a>
 
         <button
           type="button"
@@ -235,9 +236,11 @@ async function submitWaitlist() {
           <nav v-if="mobileMenuOpen" id="mobile-menu" class="mobile-nav" aria-label="Nawigacja mobilna">
             <a href="#jak-to-dziala" @click="closeMobileMenu">Jak zacząć</a>
             <a href="#openexpert-mail" @click="closeMobileMenu">OpenExpert Mail</a>
+            <a href="#cennik" @click="closeMobileMenu">Cennik</a>
             <NuxtLink to="/eksperci" @click="closeMobileMenu">Eksperci</NuxtLink>
             <NuxtLink to="/placowki" @click="closeMobileMenu">Placówki</NuxtLink>
-            <a href="#dolacz" class="mobile-nav__cta" @click="closeMobileMenu">Zostań pośrednikiem</a>
+            <a :href="loginUrl" @click="closeMobileMenu">Zaloguj się</a>
+            <a href="#cennik" class="mobile-nav__cta" @click="closeMobileMenu">Załóż konto</a>
           </nav>
         </Transition>
       </header>
@@ -256,7 +259,7 @@ async function submitWaitlist() {
             </h1>
             <p class="hero-lead">Zacznij samodzielnie albo rozwijaj całą firmę. OpenExpert daje Ci CRM w Twojej marce, uporządkowany proces obsługi, rozliczenia i agentów AI — od pierwszego kontaktu do zakończenia sprawy.</p>
             <div class="hero-actions">
-              <a href="#dolacz" class="button button--light">Zostań pośrednikiem</a>
+              <a href="#cennik" class="button button--light">Zobacz cennik</a>
               <a href="#jak-to-dziala" class="button button--dark">Zobacz, jak zacząć</a>
             </div>
           </div>
@@ -267,6 +270,89 @@ async function submitWaitlist() {
 
       <LazyLandingBenefitsSection hydrate-never />
       </div>
+
+      <section id="cennik" class="pricing-section" aria-labelledby="pricing-title">
+        <div class="pricing-inner">
+          <div class="pricing-heading">
+            <p class="section-label">Prosty cennik na każdym etapie</p>
+            <h2 id="pricing-title">Wybierz liczbę miejsc.{{ ' ' }}<br><em>Płać tylko za zespół.</em></h2>
+            <p>Zacznij od jednego konta albo od razu uruchom całą organizację. Liczbę miejsc w aplikacji możesz zwiększyć również później.</p>
+          </div>
+
+          <div class="pricing-grid">
+            <article class="pricing-card pricing-card--featured" aria-labelledby="application-plan-title">
+              <div class="pricing-card__badge">Plan miesięczny</div>
+              <div class="pricing-card__header">
+                <p class="pricing-card__eyebrow">Pełna aplikacja dla organizacji</p>
+                <h3 id="application-plan-title">Aplikacja</h3>
+                <p class="pricing-card__price">
+                  <strong>200 zł</strong>
+                  <span>brutto / opłacone miejsce / miesiąc</span>
+                </p>
+                <p class="pricing-card__description">Kup dokładnie tyle miejsc, ile potrzebujesz. Właściciel zajmuje pierwsze miejsce, a pozostałe możesz obsadzić od razu lub później.</p>
+              </div>
+
+              <div class="pricing-seat-control">
+                <label for="application-seat-count">Liczba opłaconych miejsc</label>
+                <div class="pricing-seat-stepper">
+                  <button
+                    type="button"
+                    :disabled="applicationSeatCount <= 1"
+                    aria-label="Zmniejsz liczbę miejsc"
+                    @click="setApplicationSeatCount(applicationSeatCount - 1)"
+                  >
+                    <Icon name="lucide:minus" aria-hidden="true" />
+                  </button>
+                  <input
+                    id="application-seat-count"
+                    :value="applicationSeatCount"
+                    type="number"
+                    name="applicationSeats"
+                    inputmode="numeric"
+                    min="1"
+                    max="100"
+                    step="1"
+                    aria-describedby="application-seat-note application-price-summary"
+                    @input="updateApplicationSeatCountFromInput"
+                    @change="commitApplicationSeatCount"
+                    @blur="commitApplicationSeatCount"
+                  >
+                  <button
+                    type="button"
+                    :disabled="applicationSeatCount >= 100"
+                    aria-label="Zwiększ liczbę miejsc"
+                    @click="setApplicationSeatCount(applicationSeatCount + 1)"
+                  >
+                    <Icon name="lucide:plus" aria-hidden="true" />
+                  </button>
+                </div>
+                <p id="application-seat-note" class="pricing-seat-control__note">Od 1 do 100 miejsc. Właściciel organizacji zajmuje 1 miejsce.</p>
+                <p
+                  id="application-price-summary"
+                  class="pricing-seat-control__summary"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {{ applicationMonthlyTotalLabel }}
+                </p>
+              </div>
+
+              <ul class="pricing-card__features" aria-label="W planie Aplikacja">
+                <li><Icon name="lucide:check" aria-hidden="true" /> Pełny dostęp dla całej organizacji</li>
+                <li><Icon name="lucide:check" aria-hidden="true" /> Niewykorzystane miejsca możesz obsadzić później</li>
+                <li><Icon name="lucide:check" aria-hidden="true" /> Kod promocyjny podasz podczas płatności</li>
+              </ul>
+
+              <a :href="applicationRegistrationUrl" class="button pricing-card__cta">
+                Przejdź do rejestracji
+                <Icon name="lucide:arrow-right" aria-hidden="true" />
+              </a>
+            </article>
+          </div>
+
+          <p class="pricing-legal">Plan Aplikacja jest odnawiany co miesiąc i opłacany kartą. Kwota zawiera VAT. Zmiana liczby miejsc po uruchomieniu organizacji może zmienić wysokość kolejnego obciążenia.</p>
+        </div>
+      </section>
 
       <LazyLandingJourneySection hydrate-never />
 
@@ -369,9 +455,9 @@ async function submitWaitlist() {
       <section id="dolacz" class="join-section" aria-labelledby="join-title">
         <div class="join-inner">
           <div class="join-copy">
-            <p class="section-label section-label--dark">Program wczesnego dostępu</p>
-            <h2 id="join-title">Zostań pośrednikiem.{{ ' ' }}<br>Zacznij <em>po swojemu.</em></h2>
-            <p>Masz doświadczenie, sieć kontaktów albo po prostu pomysł na własny biznes? Powiedz nam, jak chcesz działać, a pokażemy Ci OpenExpert od strony dopasowanej do Twojego modelu.</p>
+            <p class="section-label section-label--dark">Jedna prosta ścieżka</p>
+            <h2 id="join-title">Wybierz miejsca.{{ ' ' }}<br><em>Uruchom organizację.</em></h2>
+            <p>Załóż konto administratora, potwierdź adres e-mail i opłać wybraną liczbę miejsc w bezpiecznym Stripe Checkout.</p>
           </div>
 
           <div class="join-action">
@@ -385,33 +471,12 @@ async function submitWaitlist() {
               </li>
             </ol>
 
-            <form class="join-form" novalidate @submit.prevent="submitWaitlist">
-              <label for="landing-email">E-mail do kontaktu</label>
-              <div class="join-form__row">
-                <input
-                  id="landing-email"
-                  ref="emailInput"
-                  v-model="email"
-                  type="email"
-                  name="email"
-                  autocomplete="email"
-                  inputmode="email"
-                  placeholder="twoj@email.pl"
-                  required
-                  :disabled="waitlistLoading"
-                  :aria-invalid="Boolean(waitlistError)"
-                  :aria-describedby="waitlistError ? 'join-error join-note join-legal' : 'join-note join-legal'"
-                  @input="waitlistError = null"
-                >
-                <button type="submit" class="button button--light" :disabled="waitlistLoading">
-                  {{ waitlistLoading ? 'Zapisuję…' : 'Zacznij z OpenExpert' }}
-                  <Icon v-if="!waitlistLoading" name="lucide:arrow-right" aria-hidden="true" />
-                </button>
-              </div>
-              <p id="join-error" class="join-form__error" aria-live="polite">{{ waitlistError }}</p>
-              <p id="join-note" class="join-form__note">Bez spamu. Po zapisie przejdziesz do krótkiej ankiety o planowanym modelu działania.</p>
-              <p id="join-legal" class="join-form__legal">OpenExpert wspiera organizację i technologię pracy. Rozpoczęcie działalności pośrednika może wymagać odrębnych umów, wpisów lub zezwoleń — zależnie od modelu i oferowanych produktów.</p>
-            </form>
+            <div class="join-registration" aria-label="Przejdź do rejestracji organizacji">
+              <a :href="applicationRegistrationUrl" class="button button--light">
+                Aplikacja — {{ applicationSeatCount }} {{ applicationSeatCount === 1 ? 'miejsce' : 'miejsc' }}
+                <Icon name="lucide:arrow-right" aria-hidden="true" />
+              </a>
+            </div>
           </div>
         </div>
       </section>
@@ -428,7 +493,7 @@ async function submitWaitlist() {
           <NuxtLink to="/eksperci">Eksperci</NuxtLink>
           <NuxtLink to="/placowki">Placówki</NuxtLink>
           <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
-          <NuxtLink to="/waitlist">Zostań pośrednikiem</NuxtLink>
+          <a href="#cennik">Cennik</a>
           <a href="https://github.com/OpenExpertApp/OpenExpert" target="_blank" rel="noopener noreferrer">
             GitHub <Icon name="lucide:github" aria-hidden="true" />
           </a>
@@ -503,7 +568,7 @@ async function submitWaitlist() {
 .desktop-nav {
   display: flex;
   align-items: center;
-  gap: clamp(22px, 3vw, 48px);
+  gap: clamp(16px, 2.5vw, 48px);
 }
 
 .desktop-nav a,
@@ -580,7 +645,7 @@ async function submitWaitlist() {
 
 .header-cta {
   justify-self: end;
-  min-width: 188px;
+  min-width: 160px;
   min-height: 48px;
 }
 
@@ -677,6 +742,7 @@ async function submitWaitlist() {
 
 .platform-section,
 .personalize-section,
+.pricing-section,
 .experts-section,
 .join-section {
   scroll-margin-top: 88px;
@@ -750,6 +816,7 @@ async function submitWaitlist() {
 }
 
 .platform-inner,
+.pricing-inner,
 .experts-inner,
 .join-inner {
   width: min(1340px, calc(100% - 96px));
@@ -1121,6 +1188,297 @@ async function submitWaitlist() {
   line-height: 1.65;
 }
 
+.pricing-section {
+  border-top: 1px solid #d1d1cd;
+  border-bottom: 1px solid #d1d1cd;
+  background: #ecece8;
+  color: #111;
+}
+
+.pricing-inner {
+  padding: 104px 0 112px;
+}
+
+.pricing-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  align-items: end;
+  gap: 70px;
+  margin-bottom: 52px;
+}
+
+.pricing-heading .section-label {
+  grid-column: 1 / -1;
+  margin-bottom: -42px;
+}
+
+.pricing-heading h2 {
+  max-width: 820px;
+  font-size: clamp(42px, 4.25vw, 62px);
+  font-variation-settings: 'opsz' 58, 'wght' 300;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.pricing-heading > p:last-child {
+  max-width: 530px;
+  color: #505050;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+  gap: 18px;
+}
+
+.pricing-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 620px;
+  border: 1px solid #c7c7c2;
+  border-radius: 6px;
+  background: #f7f7f5;
+  padding: clamp(30px, 3vw, 42px);
+  flex-direction: column;
+}
+
+.pricing-card--featured {
+  border-color: #111;
+  background: #090909;
+  color: #f7f7f7;
+}
+
+.pricing-card__badge {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  border: 1px solid #4b4b4b;
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #c8c8c8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pricing-card__eyebrow {
+  max-width: calc(100% - 110px);
+  margin-bottom: 18px;
+  color: #707070;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.pricing-card--featured .pricing-card__eyebrow {
+  color: #929292;
+}
+
+.pricing-card h3 {
+  margin-bottom: 22px;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.pricing-card__price {
+  display: flex;
+  min-height: 76px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.pricing-card__price strong {
+  flex: 0 0 auto;
+  font-family: var(--font-serif);
+  font-size: clamp(46px, 4vw, 58px);
+  font-variation-settings: 'opsz' 58, 'wght' 360;
+  font-weight: 360;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.pricing-card__price span {
+  max-width: 220px;
+  color: #666;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.pricing-card--featured .pricing-card__price span {
+  color: #aaa;
+}
+
+.pricing-card__description {
+  max-width: 540px;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.pricing-card--featured .pricing-card__description {
+  color: #aaa;
+}
+
+.pricing-seat-control {
+  margin-top: 28px;
+  border-top: 1px solid #353535;
+  border-bottom: 1px solid #353535;
+  padding: 24px 0;
+}
+
+.pricing-seat-control label {
+  display: block;
+  margin-bottom: 11px;
+  color: #dedede;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pricing-seat-stepper {
+  display: grid;
+  width: min(100%, 280px);
+  grid-template-columns: 52px minmax(82px, 1fr) 52px;
+}
+
+.pricing-seat-stepper button,
+.pricing-seat-stepper input {
+  min-height: 48px;
+  border: 1px solid #5b5b5b;
+  background: #111;
+  color: #f7f7f7;
+}
+
+.pricing-seat-stepper button {
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.pricing-seat-stepper button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.pricing-seat-stepper button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.pricing-seat-stepper button:hover:not(:disabled) {
+  border-color: #8a8a8a;
+  background: #1d1d1d;
+}
+
+.pricing-seat-stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.pricing-seat-stepper button :deep(svg) {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.6;
+}
+
+.pricing-seat-stepper input {
+  width: 100%;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.pricing-seat-control__note {
+  margin-top: 10px;
+  color: #888;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pricing-seat-control__summary {
+  margin-top: 16px;
+  color: #f7f7f7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(15px, 1.7vw, 19px);
+  letter-spacing: -0.035em;
+  line-height: 1.35;
+}
+
+.pricing-card__features {
+  display: grid;
+  gap: 11px;
+  margin: 28px 0 32px;
+  list-style: none;
+}
+
+.pricing-card__features li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: #484848;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.pricing-card--featured .pricing-card__features li {
+  color: #c1c1c1;
+}
+
+.pricing-card__features :deep(svg) {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  stroke-width: 1.7;
+}
+
+.pricing-card__cta {
+  width: 100%;
+  min-height: 54px;
+  margin-top: auto;
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.pricing-card__cta:hover {
+  border-color: #333;
+  background: #333;
+}
+
+.pricing-card--featured .pricing-card__cta {
+  border-color: #f7f7f7;
+  background: #f7f7f7;
+  color: #090909;
+}
+
+.pricing-card--featured .pricing-card__cta:hover {
+  border-color: #d8d8d8;
+  background: #d8d8d8;
+}
+
+.pricing-legal {
+  max-width: 950px;
+  margin-top: 18px;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .join-section {
   border-top: 1px solid #292929;
   background: #030303;
@@ -1149,6 +1507,20 @@ async function submitWaitlist() {
 
 .join-action {
   min-width: 0;
+}
+
+.join-registration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.join-registration .button {
+  min-width: 0;
+  padding-right: 14px;
+  padding-left: 14px;
+  text-align: center;
 }
 
 .join-steps {
@@ -1193,6 +1565,26 @@ async function submitWaitlist() {
 
 .join-form {
   min-width: 0;
+  border-top: 1px solid #353535;
+  padding-top: 28px;
+}
+
+.join-form__heading {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 20px;
+}
+
+.join-form__heading strong {
+  color: #f2f2f2;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.join-form__heading span {
+  color: #929292;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
 .join-form label {
@@ -1334,9 +1726,20 @@ async function submitWaitlist() {
     width: calc(100% - 64px);
   }
 
+  .desktop-nav {
+    gap: 12px;
+  }
+
+  .header-cta {
+    min-width: 148px;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
   .hero,
   .personalize-inner,
   .platform-inner,
+  .pricing-inner,
   .experts-inner,
   .join-inner {
     width: min(760px, calc(100% - 64px));
@@ -1408,11 +1811,18 @@ async function submitWaitlist() {
     gap: 24px;
   }
 
+  .pricing-heading {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .pricing-heading .section-label,
   .experts-heading .section-label {
     grid-column: auto;
     margin-bottom: 0;
   }
 
+  .pricing-heading > p:last-child,
   .experts-heading > p:last-child {
     max-width: 600px;
   }
@@ -1505,6 +1915,7 @@ async function submitWaitlist() {
   .hero,
   .personalize-inner,
   .platform-inner,
+  .pricing-inner,
   .experts-inner,
   .join-inner {
     width: min(100% - 40px, 620px);
@@ -1553,6 +1964,7 @@ async function submitWaitlist() {
 
   .platform-inner,
   .personalize-inner,
+  .pricing-inner,
   .experts-inner,
   .join-inner {
     padding: 70px 0;
@@ -1566,6 +1978,7 @@ async function submitWaitlist() {
 
   .personalize-copy h2,
   .platform-intro h2,
+  .pricing-heading h2,
   .experts-heading h2,
   .join-copy h2 {
     font-size: clamp(36px, 10vw, 46px);
@@ -1573,6 +1986,7 @@ async function submitWaitlist() {
 
   .platform-intro > p:last-child,
   .personalize-copy > p:last-child,
+  .pricing-heading > p:last-child,
   .join-copy > p:last-child {
     font-size: 15.5px;
   }
@@ -1649,6 +2063,36 @@ async function submitWaitlist() {
     margin-bottom: 42px;
   }
 
+  .pricing-heading {
+    margin-bottom: 38px;
+  }
+
+  .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-card {
+    min-height: 0;
+    padding: 28px 22px;
+  }
+
+  .pricing-card__badge {
+    top: 18px;
+    right: 18px;
+  }
+
+  .pricing-card__price {
+    min-height: 0;
+  }
+
+  .pricing-card__price strong {
+    font-size: 46px;
+  }
+
+  .pricing-seat-stepper {
+    width: 100%;
+  }
+
   .experts-heading > p:last-child {
     font-size: 15px;
   }
@@ -1686,6 +2130,10 @@ async function submitWaitlist() {
     grid-template-columns: 1fr;
   }
 
+  .join-registration {
+    grid-template-columns: 1fr;
+  }
+
   .join-form .button {
     width: 100%;
   }
@@ -1715,6 +2163,7 @@ async function submitWaitlist() {
   .hero,
   .personalize-inner,
   .platform-inner,
+  .pricing-inner,
   .experts-inner,
   .join-inner {
     width: calc(100% - 32px);

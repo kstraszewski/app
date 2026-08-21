@@ -62,6 +62,7 @@ test('keeps organization settings active across every settings tab and the legac
   const items = createOrganizationAdministrationNavigationItems('acme')
   const settingsPaths = [
     '/settings/organization',
+    '/settings/billing',
     '/settings/intermediary',
     '/settings/capacity',
     '/settings/design',
@@ -86,6 +87,12 @@ test('keeps organization settings active across every settings tab and the legac
 
 test('builds the sidebar navigation for system administration pages', () => {
   assert.deepEqual(createSystemAdministrationNavigationItems('acme'), [
+    {
+      label: 'Organizacje',
+      to: `${organizationBase}/settings/organizations`,
+      icon: 'i-lucide-building-2',
+      exact: false,
+    },
     {
       label: 'Instytucje',
       to: `${organizationBase}/settings/institutions`,
@@ -118,6 +125,7 @@ test('marks exactly one system administration item active on base and nested pat
   }
 
   const nestedPaths = [
+    [`${organizationBase}/settings/organizations/application-1`, 'Organizacje'],
     [`${organizationBase}/settings/institutions/institution-1`, 'Instytucje'],
     [`${organizationBase}/settings/products/product-1`, 'Produkty kredytowe'],
     [`${organizationBase}/settings/institution-files/file-1`, 'Dokumenty bankowe'],
@@ -134,6 +142,6 @@ test('marks exactly one system administration item active on base and nested pat
 test('encodes organization slugs in system administration links', () => {
   assert.equal(
     createSystemAdministrationNavigationItems('oddział warszawa')[0]?.to,
-    '/org/oddzia%C5%82%20warszawa/settings/institutions',
+    '/org/oddzia%C5%82%20warszawa/settings/organizations',
   )
 })

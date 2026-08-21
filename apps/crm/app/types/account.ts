@@ -1,7 +1,11 @@
+import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
+
 export interface AccountContextOrganization {
   id: string
   name: string
   slug: string
+  kind: OrganizationKind
+  billingAccessState: BillingAccessState
   role: string
   isDefault: boolean
 }

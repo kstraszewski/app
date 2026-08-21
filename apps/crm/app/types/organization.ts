@@ -1,3 +1,5 @@
+import type { BillingAccessState, OrganizationKind } from '~~/shared/organization-billing'
+
 export interface OrganizationCapabilities {
   organizationAdmin: boolean
   teamAdmin: boolean
@@ -10,6 +12,8 @@ export interface OrganizationSummary {
   id: string
   name: string
   slug: string
+  kind: OrganizationKind
+  billingAccessState: BillingAccessState
   role: 'expert' | 'admin'
   isDefault: boolean
   capabilities: OrganizationCapabilities

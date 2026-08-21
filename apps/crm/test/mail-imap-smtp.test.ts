@@ -504,6 +504,7 @@ test('lists by UID and binds every opaque reference to mailbox UIDVALIDITY', asy
   assert.equal(page.data[0]?.subject, 'Decyzja kredytowa')
   assert.equal(page.data[0]?.unread, false)
   assert.equal(page.data[1]?.unread, true)
+  assert.equal(page.data[0]?.latestMessageId, page.data[0]?.id)
   assert.equal(released, 1)
   assert.deepEqual(openImapMessageReference(page.data[0]!.id, referenceSecret), {
     mailbox: 'INBOX',

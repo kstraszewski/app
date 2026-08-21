@@ -436,10 +436,9 @@ export async function persistOrRecoverOpenExpertMockBankObject(input: {
     })
   }
   catch (error) {
-    // S3/MinIO and Vercel Blob do not expose the same conflict error class.
-    // An immutable object at this exact path is the recovery record; use it
-    // after any upload failure, and surface the original failure if no object
-    // actually exists.
+    // An immutable Vercel Blob object at this exact path is the recovery
+    // record. Use it after any upload failure, and surface the original
+    // failure if no object actually exists.
     const recovered = await downloadObject(input.storage, input.path, input.contentType)
     if (recovered) return recovered
     throw error

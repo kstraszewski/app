@@ -66,6 +66,7 @@ test('summarizes a Gmail thread without exposing provider-specific payloads', ()
 
   assert.deepEqual(gmailThreadSummary(thread, 'konrad@example.com'), {
     id: 'thread-1',
+    latestMessageId: 'message-1',
     messageCount: 1,
     participants: [{
       name: 'Anna Nowak',

@@ -7,16 +7,29 @@ import { createError, getHeader, getRequestURL, type H3Event } from 'h3'
 import type {
   MailFolderId,
   MailFolderSummary,
+  MailMessageDetail,
   MailThreadDetail,
   MailThreadListPayload,
 } from '../../shared/types/mail.ts'
 import {
+  gmailMessageDetail,
+  gmailMessageAttachmentSources,
   gmailThreadDetail,
   gmailThreadSummary,
   messageHeader,
+  type GmailMessageResource,
   type GmailThreadResource,
 } from './gmail-message.ts'
 import type { GmailSendPayload } from './gmail-send.ts'
+import {
+  decodeGmailAttachmentResponse,
+  GmailAttachmentResponseError,
+  MAX_GMAIL_ATTACHMENT_RESPONSE_BYTES,
+  MAX_GMAIL_BANK_ATTACHMENT_BYTES,
+  MAX_GMAIL_PROVIDER_RESPONSE_BYTES,
+  readBoundedJsonResponse,
+  type GmailAttachmentDownload,
+} from './gmail-attachment-core.ts'
 import { mailEncryptionSecretIsStrong } from './mail-crypto-core.ts'
 
 export type MailProviderName = 'google'
@@ -315,14 +328,191 @@ export async function fetchGmailThread(
   accountEmail: string,
   threadId: string,
 ): Promise<MailThreadDetail> {
-  const headers = { authorization: `Bearer ${accessToken}` }
-  const thread = await providerJson<GmailThreadResource>(
-    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=full`,
-    { headers },
-    'Gmail thread',
-  )
+  const thread = await fetchGmailThreadResource(accessToken, threadId)
   const externalUrl = `https://mail.google.com/mail/u/${encodeURIComponent(accountEmail)}/#all/${encodeURIComponent(threadId)}`
   return gmailThreadDetail(thread, accountEmail, externalUrl)
+}
+
+async function fetchGmailThreadResource(
+  accessToken: string,
+  threadId: string,
+): Promise<GmailThreadResource> {
+  const normalizedThreadId = opaqueGmailResourceId(threadId, 'Gmail thread ID')
+  return providerJson<GmailThreadResource>(
+    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(normalizedThreadId)}?format=full`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+    'Gmail thread',
+  )
+}
+
+/**
+ * Server-only bank-document path. Unlike the display projection, this does
+ * not trim a long thread to its latest 20 messages before the immutable
+ * provider-message hash is resolved. It remains bounded and returns only the
+ * same sanitized message projection used by canonical intake hashing.
+ */
+export async function fetchGmailBankThreadMessages(
+  accessToken: string,
+  threadId: string,
+): Promise<MailMessageDetail[]> {
+  return (await fetchGmailBankThreadMessageResources(accessToken, threadId))
+    .map(gmailMessageDetail)
+}
+
+export async function fetchGmailBankThreadMessageResources(
+  accessToken: string,
+  threadId: string,
+): Promise<GmailMessageResource[]> {
+  const normalizedThreadId = opaqueGmailResourceId(threadId, 'Gmail thread ID')
+  const thread = await fetchGmailThreadResource(accessToken, normalizedThreadId)
+  const messages = thread.messages ?? []
+  if (
+    thread.id !== normalizedThreadId
+    || messages.length < 1
+    || messages.length > 100
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Gmail bank-document thread has an unsupported message count',
+    })
+  }
+  const messageIds = messages.map(message => String(message.id ?? ''))
+  if (
+    messageIds.some(id => !id)
+    || new Set(messageIds).size !== messageIds.length
+    || messages.some(message => message.threadId !== normalizedThreadId)
+  ) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'Gmail bank-document thread has inconsistent message identities',
+    })
+  }
+  return messages
+}
+
+function opaqueGmailResourceId(value: unknown, label: string): string {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  if (
+    normalized.length < 1
+    || normalized.length > 4_096
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(normalized)
+  ) {
+    throw createError({ statusCode: 400, statusMessage: `Invalid ${label}` })
+  }
+  return normalized
+}
+
+export async function fetchGmailAttachment(
+  accessToken: string,
+  messageId: string,
+  attachmentId: string,
+  expectedSize?: number,
+): Promise<GmailAttachmentDownload> {
+  const normalizedMessageId = opaqueGmailResourceId(messageId, 'Gmail message ID')
+  const normalizedAttachmentId = opaqueGmailResourceId(attachmentId, 'Gmail attachment ID')
+  if (
+    expectedSize !== undefined
+    && (!Number.isSafeInteger(expectedSize)
+      || expectedSize < 1
+      || expectedSize > MAX_GMAIL_BANK_ATTACHMENT_BYTES)
+  ) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid Gmail attachment size' })
+  }
+  const response = await providerJson<{ data?: string, size?: number }>(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(normalizedMessageId)}/attachments/${encodeURIComponent(normalizedAttachmentId)}`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+    'Gmail attachment',
+    MAX_GMAIL_ATTACHMENT_RESPONSE_BYTES,
+  )
+  try {
+    return decodeGmailAttachmentResponse(response, expectedSize)
+  }
+  catch (error) {
+    if (error instanceof GmailAttachmentResponseError) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: 'Gmail attachment returned an invalid response',
+      })
+    }
+    throw error
+  }
+}
+
+export async function fetchGmailNamedAttachment(
+  accessToken: string,
+  messageId: string,
+  expected: {
+    filename: string
+    mimeType: string
+    size: number
+    attachmentId: string | null
+    inlineData: string | null
+  },
+): Promise<GmailAttachmentDownload> {
+  const normalizedMessageId = opaqueGmailResourceId(messageId, 'Gmail message ID')
+  if (
+    !expected.filename
+    || expected.filename.length > 255
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(expected.filename)
+    || !expected.mimeType
+    || expected.mimeType.length > 255
+    || !Number.isSafeInteger(expected.size)
+    || expected.size < 1
+    || expected.size > MAX_GMAIL_BANK_ATTACHMENT_BYTES
+    || Boolean(expected.attachmentId) === Boolean(expected.inlineData)
+  ) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid expected Gmail attachment' })
+  }
+  const message = await providerJson<GmailMessageResource>(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(normalizedMessageId)}?format=full`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+    'Gmail message attachment metadata',
+    MAX_GMAIL_ATTACHMENT_RESPONSE_BYTES,
+  )
+  if (String(message.id ?? '') !== normalizedMessageId) {
+    throw createError({ statusCode: 502, statusMessage: 'Gmail message identity changed' })
+  }
+  const candidates = gmailMessageAttachmentSources(message).filter(source => (
+    source.filename === expected.filename
+    && source.mimeType.toLowerCase() === expected.mimeType.toLowerCase()
+    && source.size === expected.size
+  ))
+  if (!candidates.length) {
+    throw createError({ statusCode: 404, statusMessage: 'Gmail attachment is missing' })
+  }
+  if (candidates.length !== 1) {
+    throw createError({ statusCode: 409, statusMessage: 'Gmail attachment is ambiguous' })
+  }
+  const candidate = candidates[0]!
+  if (Boolean(candidate.attachmentId) === Boolean(candidate.inlineData)) {
+    throw createError({ statusCode: 422, statusMessage: 'Gmail attachment locator is inconsistent' })
+  }
+  if (
+    candidate.attachmentId !== expected.attachmentId
+    || candidate.inlineData !== expected.inlineData
+  ) {
+    throw createError({ statusCode: 412, statusMessage: 'Gmail attachment locator changed' })
+  }
+  if (candidate.inlineData) {
+    try {
+      return decodeGmailAttachmentResponse(
+        { data: candidate.inlineData, size: candidate.size },
+        expected.size,
+      )
+    }
+    catch (error) {
+      if (error instanceof GmailAttachmentResponseError) {
+        throw createError({ statusCode: 502, statusMessage: 'Gmail attachment returned an invalid response' })
+      }
+      throw error
+    }
+  }
+  return fetchGmailAttachment(
+    accessToken,
+    normalizedMessageId,
+    candidate.attachmentId!,
+    expected.size,
+  )
 }
 
 export async function fetchGmailReplyContext(
@@ -598,6 +788,7 @@ async function providerJson<T>(
   url: string,
   init: RequestInit,
   operation: string,
+  maxResponseBytes = MAX_GMAIL_PROVIDER_RESPONSE_BYTES,
 ): Promise<T> {
   const method = String(init.method ?? 'GET').toUpperCase()
   const maxAttempts = method === 'GET' || method === 'HEAD' ? 3 : 1
@@ -622,7 +813,7 @@ async function providerJson<T>(
 
     if (response.ok) {
       try {
-        return await response.json() as T
+        return await readBoundedJsonResponse(response, maxResponseBytes) as T
       } catch {
         throw createError({
           statusCode: 502,
@@ -631,7 +822,7 @@ async function providerJson<T>(
       }
     }
 
-    await response.text().catch(() => '')
+    await response.body?.cancel().catch(() => undefined)
     const retryable = response.status === 429 || response.status >= 500
     if (retryable && attempt + 1 < maxAttempts) {
       await wait(providerRetryDelay(attempt, response.headers.get('retry-after')))

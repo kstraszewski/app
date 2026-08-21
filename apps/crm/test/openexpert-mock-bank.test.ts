@@ -17,10 +17,12 @@ import {
   createOpenExpertMockBankEsisPdf,
   createOpenExpertMockBankRequestId,
   deriveOpenExpertMockBankChildRequestId,
+  extractOpenExpertMockBankEncryptedArchive,
   isValidOpenExpertMockBankPesel,
   OPENEXPERT_MOCK_BANK_NAME,
   openExpertMockBankCreditDecisionDocumentText,
   openExpertMockBankEsisDocumentText,
+  openExpertMockBankEsisTextMatchesDocument,
   resolveOpenExpertMockBankDocumentDates,
   verifyOpenExpertMockBankEncryptedArchive,
   type OpenExpertMockBankFinancialTerms,
@@ -116,6 +118,37 @@ test('builds a personalized ESIS body with every document-validation signal', ()
   assert.match(text, /2(?:[\s\u00a0]?963),19[\s\u00a0]zł/u)
   assert.match(text, /360 równych ratach miesięcznych/u)
   assert.match(text, /2026-09-18/u)
+
+  const semanticInput = {
+    text,
+    pageCount: 2,
+    applicationNumber,
+    applicantNames,
+    issueDate: '2026-08-19',
+    validUntil: '2026-09-18',
+    financialTerms,
+  }
+  assert.equal(openExpertMockBankEsisTextMatchesDocument(semanticInput), true)
+  assert.equal(openExpertMockBankEsisTextMatchesDocument({
+    ...semanticInput,
+    applicantNames: ['Inna Osoba', applicantNames[1]],
+  }), false)
+  assert.equal(openExpertMockBankEsisTextMatchesDocument({
+    ...semanticInput,
+    applicantNames: [...applicantNames].reverse(),
+  }), false)
+  for (const [field, value] of [
+    ['loanAmount', 499_999],
+    ['annualInterestRate', 5.88],
+    ['aprc', 6.4],
+    ['monthlyInstallment', 2_963.18],
+    ['termMonths', 359],
+  ] as const) {
+    assert.equal(openExpertMockBankEsisTextMatchesDocument({
+      ...semanticInput,
+      financialTerms: { ...financialTerms, [field]: value },
+    }), false, field)
+  }
 })
 
 test('makes both credit-decision outcomes unambiguous and dates positive validity', () => {
@@ -202,6 +235,16 @@ test('encrypts the PDF in an AES-256 ZIP readable only with the PESEL password',
     applicationNumber,
     pesel,
   })
+
+  const extracted = await extractOpenExpertMockBankEncryptedArchive({
+    bytes: archive.bytes,
+    kind: 'esis',
+    applicationNumber,
+    pesel,
+  })
+  assert.equal(extracted.fileName, document.fileName)
+  assert.equal(extracted.mediaType, 'application/pdf')
+  assert.deepEqual(extracted.bytes, document.bytes)
 
   assert.ok(archive.bytes.byteLength > 0)
   assert.equal(archive.fileName, `${applicationNumber}-formularz-ESIS.zip`)

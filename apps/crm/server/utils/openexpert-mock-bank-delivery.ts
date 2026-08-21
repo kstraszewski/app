@@ -3,21 +3,31 @@ import {
   EmailDeliveryError,
 } from '@openexpert/email'
 import { createError, type H3Event } from 'h3'
+import { serverDataBackend } from './data-api.ts'
 import { serverStorageClient } from './platform-storage.ts'
 import {
   createOpenExpertMockBankCreditDecisionPdf,
   createOpenExpertMockBankEncryptedArchive,
   createOpenExpertMockBankEsisPdf,
+  extractOpenExpertMockBankEncryptedArchive,
+  MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES,
   openExpertMockBankArchiveFileName,
+  openExpertMockBankEsisTextMatchesDocument,
   openExpertMockBankPdfFileName,
   resolveOpenExpertMockBankDocumentDates,
-  verifyOpenExpertMockBankEncryptedArchive,
   type OpenExpertMockBankDocumentKind,
 } from './openexpert-mock-bank-documents.ts'
+import { extractBoundedPdfText } from './bounded-pdf-text.ts'
 import {
   OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION,
   openExpertMockBankEmailIdempotencyKey,
 } from './openexpert-mock-bank-email.ts'
+import {
+  assertOpenExpertMockBankManifestDeliveryIdentity,
+  deliverOpenExpertMockBankPayloadSnapshot,
+  loadCommittedOpenExpertMockBankPayload,
+  type OpenExpertMockBankPersistedPayload,
+} from './openexpert-mock-bank-delivery-core.ts'
 import {
   commitOpenExpertMockBankDispatchPayload,
   renewOpenExpertMockBankDispatchSendLease,
@@ -29,12 +39,17 @@ import {
   loadOpenExpertMockBankObject,
   OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
   openExpertMockBankFullPayloadSha256,
+  openExpertMockBankGenerationContextSha256,
+  OpenExpertMockBankPayloadError,
   persistOrRecoverOpenExpertMockBankObject,
-  discardEmptyUncommittedOpenExpertMockBankObject,
   type OpenExpertMockBankPayloadIdentity,
   type OpenExpertMockBankPersistedPayloadManifest,
   type OpenExpertMockBankStoredObject,
 } from './openexpert-mock-bank-payload.ts'
+import {
+  loadMortgageDocumentValidationContext,
+  type MortgageDocumentValidationContext,
+} from './mortgage-document-validation-context.ts'
 import {
   openExpertMockBankEmailConfig,
   type OpenExpertMockBankContext,
@@ -52,11 +67,35 @@ export interface OpenExpertMockBankDeliveryResult {
   decisionOutcome: 'positive' | null
 }
 
-interface PersistedPayload {
-  manifest: OpenExpertMockBankPersistedPayloadManifest
-  manifestObject: OpenExpertMockBankStoredObject
-  archiveObject: OpenExpertMockBankStoredObject
-  payloadSha256: string
+function uncommittedPayloadInvalid(): never {
+  throw createError({
+    statusCode: 409,
+    statusMessage: 'crm_mock_bank_uncommitted_payload_invalid',
+  })
+}
+
+async function uncommittedStorageRead<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  }
+  catch (error) {
+    if (error instanceof OpenExpertMockBankPayloadError) uncommittedPayloadInvalid()
+    throw error
+  }
+}
+
+function decodeUncommittedManifest(
+  bytes: Uint8Array,
+  identity: OpenExpertMockBankPayloadIdentity,
+): OpenExpertMockBankPersistedPayloadManifest {
+  try {
+    const manifest = decodeOpenExpertMockBankPayloadManifest(bytes, identity)
+    assertOpenExpertMockBankManifestDeliveryIdentity(manifest)
+    return manifest
+  }
+  catch {
+    uncommittedPayloadInvalid()
+  }
 }
 
 function safeProviderDeliveryFailureReason(error: EmailDeliveryError): string {
@@ -122,6 +161,86 @@ function identityFromReservation(
   }
 }
 
+function generationDocumentDates(input: {
+  context: OpenExpertMockBankContext
+  reservation: OpenExpertMockBankDispatchReservation
+}) {
+  return resolveOpenExpertMockBankDocumentDates({
+    now: new Date(input.reservation.generationStartedAt),
+    decisionDueAt: input.context.process.decisionDueAt,
+  })
+}
+
+async function loadEsisGenerationValidation(input: {
+  event: H3Event
+  organizationId: string
+  caseId: string
+  context: OpenExpertMockBankContext
+  reservation: OpenExpertMockBankDispatchReservation
+}): Promise<MortgageDocumentValidationContext> {
+  const dates = generationDocumentDates(input)
+  const validation = await loadMortgageDocumentValidationContext(
+    serverDataBackend(input.event) as any,
+    input.organizationId,
+    input.caseId,
+    input.context.applicationId,
+    'esis',
+    { validUntil: `${dates.esisValidUntil}T00:00:00.000Z` },
+  )
+  if (validation.bankId !== String(input.context.application.bank_id)
+    || validation.offerId !== String(input.context.application.offer_id)
+    || validation.validUntil?.slice(0, 10) !== dates.esisValidUntil
+    || validation.loanAmount !== input.context.loanAmount
+    || validation.currency !== input.context.currency) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'crm_mock_bank_generation_context_changed',
+    })
+  }
+  return validation
+}
+
+function sameOrderedText(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function assertManifestGenerationContext(input: {
+  manifest: OpenExpertMockBankPersistedPayloadManifest
+  context: OpenExpertMockBankContext
+  reservation: OpenExpertMockBankDispatchReservation
+  validation: MortgageDocumentValidationContext | null
+}): void {
+  const dates = generationDocumentDates(input)
+  const document = input.manifest.document
+  const expectedValidUntil = input.manifest.identity.kind === 'esis'
+    ? dates.esisValidUntil
+    : dates.decisionValidUntil
+  const expectedApplicants = input.validation?.expectation.applicantNames
+    ?? input.context.applicantNames
+  const terms = document.financialTerms
+  if (document.issueDate !== dates.issueDate
+    || document.validUntil !== expectedValidUntil
+    || !sameOrderedText(document.applicantNames, expectedApplicants)
+    || terms.loanAmount !== input.context.loanAmount
+    || terms.currency !== input.context.currency
+    || terms.annualInterestRate !== input.context.interestRatePct
+    || terms.aprc !== input.context.aprcPct
+    || terms.monthlyInstallment !== input.context.monthlyInstallment
+    || terms.termMonths !== input.context.termMonths) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'crm_mock_bank_generation_context_changed',
+    })
+  }
+  if (input.manifest.version === 2
+    && input.manifest.generationContextSha256 !== openExpertMockBankGenerationContextSha256({
+      identity: input.manifest.identity,
+      document,
+    })) {
+    throw createError({ statusCode: 500, statusMessage: 'Hash kontekstu generacji jest niespójny.' })
+  }
+}
+
 async function buildManifest(input: {
   event: H3Event
   organizationId: string
@@ -129,6 +248,7 @@ async function buildManifest(input: {
   kind: OpenExpertMockBankDocumentKind
   recipientEmail: string
   reservation: OpenExpertMockBankDispatchReservation
+  validation: MortgageDocumentValidationContext | null
 }): Promise<OpenExpertMockBankPersistedPayloadManifest> {
   const { runtime, sender } = currentSender(input.event, input.organizationId)
   if (!sender.isConfigured || !sender.provider || !runtime.from?.trim()) {
@@ -137,23 +257,43 @@ async function buildManifest(input: {
       statusMessage: 'Wysyłka e-mail OpenExpert Banku nie jest skonfigurowana.',
     })
   }
-  const dates = resolveOpenExpertMockBankDocumentDates({
-    now: new Date(input.reservation.generationStartedAt),
-    decisionDueAt: input.context.process.decisionDueAt,
-  })
+  const dates = generationDocumentDates(input)
   const validUntil = input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil
+  const applicantNames = input.validation?.expectation.applicantNames
+    ?? input.context.applicantNames
   const template = await renderOpenExpertMockBankEmail({
     kind: input.kind,
     applicationNumber: input.context.applicationNumber,
-    applicantNames: input.context.applicantNames,
+    applicantNames,
     issueDate: dates.issueDate,
     validUntil,
     ...(input.kind === 'credit_decision' ? { decisionOutcome: 'positive' as const } : {}),
     archiveName: openExpertMockBankArchiveFileName(input.kind, input.context.applicationNumber),
   })
+  const identity = identityFromReservation(input.reservation)
+  const document: OpenExpertMockBankPersistedPayloadManifest['document'] = {
+    pdfFileName: openExpertMockBankPdfFileName(input.kind, input.context.applicationNumber),
+    issueDate: dates.issueDate,
+    validUntil: input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil,
+    decisionOutcome: input.kind === 'credit_decision' ? 'positive' : null,
+    applicantNames: [...applicantNames],
+    financialTerms: {
+      loanAmount: input.context.loanAmount,
+      currency: input.context.currency,
+      annualInterestRate: input.context.interestRatePct,
+      aprc: input.context.aprcPct,
+      monthlyInstallment: input.context.monthlyInstallment,
+      termMonths: input.context.termMonths,
+    },
+  }
+  const generationContextSha256 = openExpertMockBankGenerationContextSha256({
+    identity,
+    document,
+  })
   return {
-    version: 1,
-    identity: identityFromReservation(input.reservation),
+    version: 2,
+    generationContextSha256,
+    identity,
     transport: {
       provider: sender.provider,
       from: runtime.from.trim(),
@@ -188,42 +328,7 @@ async function buildManifest(input: {
         contentType: 'application/zip',
       },
     },
-    document: {
-      pdfFileName: openExpertMockBankPdfFileName(input.kind, input.context.applicationNumber),
-      issueDate: dates.issueDate,
-      validUntil: input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil,
-      decisionOutcome: input.kind === 'credit_decision' ? 'positive' : null,
-      applicantNames: [...input.context.applicantNames],
-      financialTerms: {
-        loanAmount: input.context.loanAmount,
-        currency: input.context.currency,
-        annualInterestRate: input.context.interestRatePct,
-        aprc: input.context.aprcPct,
-        monthlyInstallment: input.context.monthlyInstallment,
-        termMonths: input.context.termMonths,
-      },
-    },
-  }
-}
-
-function assertManifestDeliveryIdentity(
-  manifest: OpenExpertMockBankPersistedPayloadManifest,
-): void {
-  const expectedIdempotencyKey = openExpertMockBankEmailIdempotencyKey(
-    manifest.identity.kind,
-    manifest.identity.dispatchId,
-    manifest.identity.generation,
-  )
-  if (manifest.message.idempotencyKey !== expectedIdempotencyKey
-    || manifest.message.attachment.filename !== openExpertMockBankArchiveFileName(
-      manifest.identity.kind,
-      manifest.identity.applicationNumber,
-    )
-    || manifest.document.pdfFileName !== openExpertMockBankPdfFileName(
-      manifest.identity.kind,
-      manifest.identity.applicationNumber,
-    )) {
-    throw createError({ statusCode: 500, statusMessage: 'Utrwalony payload OpenExpert Banku jest niespójny.' })
+    document,
   }
 }
 
@@ -257,116 +362,138 @@ async function buildArchive(
   return archive.bytes
 }
 
-async function loadCommittedPayload(input: {
-  event: H3Event
-  organizationId: string
-  reservation: OpenExpertMockBankDispatchReservation
-}): Promise<PersistedPayload> {
-  const storage = serverStorageClient(input.event)
-  const [manifestObject, archiveObject] = await Promise.all([
-    loadOpenExpertMockBankObject({
-      storage,
-      path: input.reservation.manifestStoragePath,
-      contentType: OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
-      expectedSha256: input.reservation.manifestSha256,
-      expectedSizeBytes: input.reservation.manifestSizeBytes,
-    }),
-    loadOpenExpertMockBankObject({
-      storage,
-      path: input.reservation.archiveStoragePath,
-      contentType: 'application/zip',
-      expectedSha256: input.reservation.archiveSha256,
-      expectedSizeBytes: input.reservation.archiveSizeBytes,
-    }),
-  ])
-  if (!manifestObject || !archiveObject || !input.reservation.payloadSha256) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'Utrwalony payload OpenExpert Banku jest chwilowo niedostępny.',
+async function assertArchiveMatchesManifest(input: {
+  archiveBytes: Uint8Array
+  manifest: OpenExpertMockBankPersistedPayloadManifest
+  pesel: string
+}): Promise<void> {
+  try {
+    const extracted = await extractOpenExpertMockBankEncryptedArchive({
+      bytes: input.archiveBytes,
+      kind: input.manifest.identity.kind,
+      applicationNumber: input.manifest.identity.applicationNumber,
+      pesel: input.pesel,
     })
+    if (extracted.fileName !== input.manifest.document.pdfFileName) {
+      throw new TypeError('archive entry mismatch')
+    }
+    if (input.manifest.identity.kind !== 'esis') return
+    const inspected = await extractBoundedPdfText({
+      bytes: extracted.bytes,
+      maxBytes: MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES,
+    })
+    if (!openExpertMockBankEsisTextMatchesDocument({
+      text: inspected.text,
+      pageCount: inspected.pageCount,
+      applicationNumber: input.manifest.identity.applicationNumber,
+      applicantNames: input.manifest.document.applicantNames,
+      issueDate: input.manifest.document.issueDate,
+      validUntil: input.manifest.document.validUntil!,
+      financialTerms: input.manifest.document.financialTerms,
+    })) {
+      throw new TypeError('archive document mismatch')
+    }
   }
-  const manifest = decodeOpenExpertMockBankPayloadManifest(
-    manifestObject.bytes,
-    identityFromReservation(input.reservation),
-  )
-  assertManifestDeliveryIdentity(manifest)
-  const payloadSha256 = openExpertMockBankFullPayloadSha256({
-    manifestBytes: manifestObject.bytes,
-    archiveBytes: archiveObject.bytes,
-  })
-  if (payloadSha256 !== input.reservation.payloadSha256) {
-    throw createError({ statusCode: 500, statusMessage: 'Hash payloadu OpenExpert Banku jest niespójny.' })
+  catch { uncommittedPayloadInvalid() }
+}
+
+interface OpenExpertMockBankDeliveryDependencies {
+  storage: ReturnType<typeof serverStorageClient>
+  configuredSender: ReturnType<typeof senderConfig>
+  senderForPayload(input: {
+    from: string
+    replyTo: string | null
+    provider: 'resend' | 'smtp'
+  }): ReturnType<typeof senderConfig>
+  loadGenerationValidation: typeof loadEsisGenerationValidation
+  buildPayloadManifest: typeof buildManifest
+  buildPayloadArchive: typeof buildArchive
+  commitPayload: typeof commitOpenExpertMockBankDispatchPayload
+  renewSendLease: typeof renewOpenExpertMockBankDispatchSendLease
+}
+
+function defaultDeliveryDependencies(
+  event: H3Event,
+  organizationId: string,
+): OpenExpertMockBankDeliveryDependencies {
+  const { runtime, sender } = currentSender(event, organizationId)
+  return {
+    storage: serverStorageClient(event),
+    configuredSender: sender,
+    senderForPayload: transport => senderConfig({ runtime, ...transport }),
+    loadGenerationValidation: loadEsisGenerationValidation,
+    buildPayloadManifest: buildManifest,
+    buildPayloadArchive: buildArchive,
+    commitPayload: commitOpenExpertMockBankDispatchPayload,
+    renewSendLease: renewOpenExpertMockBankDispatchSendLease,
   }
-  return { manifest, manifestObject, archiveObject, payloadSha256 }
 }
 
 async function createOrRecoverPayload(input: {
   event: H3Event
   organizationId: string
+  caseId: string
   context: OpenExpertMockBankContext
   kind: OpenExpertMockBankDocumentKind
   recipientEmail: string
   reservation: OpenExpertMockBankDispatchReservation
   requestId: string
-}): Promise<PersistedPayload> {
-  const storage = serverStorageClient(input.event)
+}, dependencies: OpenExpertMockBankDeliveryDependencies): Promise<OpenExpertMockBankPersistedPayload> {
+  const storage = dependencies.storage
   const identity = identityFromReservation(input.reservation)
+  const validation = input.kind === 'esis'
+    ? await dependencies.loadGenerationValidation(input)
+    : null
 
-  await Promise.all([
-    discardEmptyUncommittedOpenExpertMockBankObject({
-      storage,
-      path: input.reservation.manifestStoragePath,
-    }),
-    discardEmptyUncommittedOpenExpertMockBankObject({
-      storage,
-      path: input.reservation.archiveStoragePath,
-    }),
-  ])
-
-  let manifestObject = await loadOpenExpertMockBankObject({
+  let manifestObject: OpenExpertMockBankStoredObject | null
+  manifestObject = await uncommittedStorageRead(() => loadOpenExpertMockBankObject({
     storage,
     path: input.reservation.manifestStoragePath,
     contentType: OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
-  })
+  }))
   if (!manifestObject) {
-    const manifest = await buildManifest(input)
-    manifestObject = await persistOrRecoverOpenExpertMockBankObject({
+    const generatedManifest = await dependencies.buildPayloadManifest({ ...input, validation })
+    manifestObject = await uncommittedStorageRead(() => persistOrRecoverOpenExpertMockBankObject({
       storage,
       path: input.reservation.manifestStoragePath,
       contentType: OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
-      bytes: encodeOpenExpertMockBankPayloadManifest(manifest),
-    })
+      bytes: encodeOpenExpertMockBankPayloadManifest(generatedManifest),
+    }))
   }
-  const manifest = decodeOpenExpertMockBankPayloadManifest(manifestObject.bytes, identity)
-  assertManifestDeliveryIdentity(manifest)
+  // Persist may lose a first-writer race and recover an already stored
+  // immutable object. Always decode the stored winner, never keep using the
+  // locally generated candidate.
+  const manifest = decodeUncommittedManifest(manifestObject.bytes, identity)
+  assertManifestGenerationContext({ ...input, manifest, validation })
 
-  let archiveObject = await loadOpenExpertMockBankObject({
+  let archiveObject: OpenExpertMockBankStoredObject | null
+  archiveObject = await uncommittedStorageRead(() => loadOpenExpertMockBankObject({
     storage,
     path: input.reservation.archiveStoragePath,
     contentType: 'application/zip',
-  })
+  }))
   if (!archiveObject) {
-    archiveObject = await persistOrRecoverOpenExpertMockBankObject({
+    const generatedArchive = await dependencies.buildPayloadArchive(manifest, input.context.pesel)
+    archiveObject = await uncommittedStorageRead(() => persistOrRecoverOpenExpertMockBankObject({
       storage,
       path: input.reservation.archiveStoragePath,
       contentType: 'application/zip',
-      bytes: await buildArchive(manifest, input.context.pesel),
-    })
+      bytes: generatedArchive,
+    }))
   }
   // A provider-generic upload conflict is recovered by downloading the exact
   // immutable path. Validate that winner before binding its hashes to the
   // ledger; AES salts make comparing it with a freshly generated ZIP invalid.
-  await verifyOpenExpertMockBankEncryptedArchive({
-    bytes: archiveObject.bytes,
-    kind: manifest.identity.kind,
-    applicationNumber: manifest.identity.applicationNumber,
+  await assertArchiveMatchesManifest({
+    archiveBytes: archiveObject.bytes,
+    manifest,
     pesel: input.context.pesel,
   })
   const payloadSha256 = openExpertMockBankFullPayloadSha256({
     manifestBytes: manifestObject.bytes,
     archiveBytes: archiveObject.bytes,
   })
-  const committed = await commitOpenExpertMockBankDispatchPayload({
+  const committed = await dependencies.commitPayload({
     event: input.event,
     dispatchId: input.reservation.dispatchId,
     requestId: input.requestId,
@@ -376,6 +503,22 @@ async function createOrRecoverPayload(input: {
     archiveSha256: archiveObject.sha256,
     archiveSizeBytes: archiveObject.sizeBytes,
     payloadSha256,
+    ...(manifest.version === 2 && input.kind === 'esis' && validation
+      ? {
+          generationContext: {
+            organizationId: input.organizationId,
+            caseId: input.caseId,
+            applicationId: input.context.applicationId,
+            kind: 'esis' as const,
+            recipientConnectionId: input.reservation.recipientConnectionId!,
+            applicantContextSha256: validation.applicantContextSha256,
+            bankContextSha256: validation.bankContextSha256,
+            expectationSha256: validation.expectationSha256,
+            validUntil: `${manifest.document.validUntil}T00:00:00.000Z`,
+            generationContextSha256: manifest.generationContextSha256,
+          },
+        }
+      : {}),
   })
   if (committed.payloadSha256 !== payloadSha256
     || committed.manifestSha256 !== manifestObject.sha256
@@ -385,88 +528,41 @@ async function createOrRecoverPayload(input: {
   return { manifest, manifestObject, archiveObject, payloadSha256 }
 }
 
-async function persistedPayload(input: {
-  event: H3Event
-  organizationId: string
-  context: OpenExpertMockBankContext
-  kind: OpenExpertMockBankDocumentKind
-  recipientEmail: string
-  reservation: OpenExpertMockBankDispatchReservation
-  requestId: string
-}): Promise<PersistedPayload> {
-  return input.reservation.payloadReadyAt
-    ? loadCommittedPayload(input)
-    : createOrRecoverPayload(input)
-}
-
 export async function deliverOpenExpertMockBankDocument(input: {
   event: H3Event
   organizationId: string
+  caseId: string
   context: OpenExpertMockBankContext
   kind: OpenExpertMockBankDocumentKind
   recipientEmail: string
   reservation: OpenExpertMockBankDispatchReservation
   requestId: string
 }): Promise<OpenExpertMockBankDeliveryResult> {
-  requireOpenExpertMockBankDeliveryConfigured(input.event, input.organizationId)
-  const payload = await persistedPayload(input)
-  const runtime = openExpertMockBankEmailConfig(input.event, input.organizationId)
-  const sender = senderConfig({
-    runtime,
-    from: payload.manifest.transport.from,
-    replyTo: payload.manifest.transport.replyTo,
-    provider: payload.manifest.transport.provider,
-  })
-  if (!sender.isConfigured || sender.provider !== payload.manifest.transport.provider) {
+  const dependencies = defaultDeliveryDependencies(input.event, input.organizationId)
+  if (!dependencies.configuredSender.isConfigured) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Transport utrwalonej wiadomości OpenExpert Banku nie jest już dostępny.',
-    })
-  }
-
-  const renewed = await renewOpenExpertMockBankDispatchSendLease({
-    event: input.event,
-    dispatchId: input.reservation.dispatchId,
-    requestId: input.requestId,
-    generation: input.reservation.generation,
-  })
-  if (!renewed.shouldSend
-    || renewed.payloadSha256 !== payload.payloadSha256
-    || renewed.recipientConnectionId !== input.reservation.recipientConnectionId) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Wysyłka OpenExpert Banku utraciła aktualną rezerwację.',
+      statusMessage: 'Wysyłka e-mail OpenExpert Banku nie jest skonfigurowana.',
     })
   }
 
   try {
-    const result = await sender.send({
-      to: payload.manifest.message.to,
-      subject: payload.manifest.message.subject,
-      html: payload.manifest.message.html,
-      text: payload.manifest.message.text,
-      idempotencyKey: payload.manifest.message.idempotencyKey,
-      tags: payload.manifest.message.tags,
-      attachments: [{
-        filename: payload.manifest.message.attachment.filename,
-        content: payload.archiveObject.bytes,
-        contentType: payload.manifest.message.attachment.contentType,
-      }],
+    return await deliverOpenExpertMockBankPayloadSnapshot({
+      committed: Boolean(input.reservation.payloadReadyAt),
+      expectedRecipientConnectionId: input.reservation.recipientConnectionId,
+      loadCommitted: () => loadCommittedOpenExpertMockBankPayload({
+        storage: dependencies.storage,
+        reservation: input.reservation,
+      }),
+      createUncommitted: () => createOrRecoverPayload(input, dependencies),
+      senderForPayload: dependencies.senderForPayload,
+      renewSendLease: () => dependencies.renewSendLease({
+        event: input.event,
+        dispatchId: input.reservation.dispatchId,
+        requestId: input.requestId,
+        generation: input.reservation.generation,
+      }),
     })
-    if (result.status !== 'sent') {
-      throw createError({
-        statusCode: 503,
-        statusMessage: 'Wysyłka e-mail OpenExpert Banku nie jest skonfigurowana.',
-      })
-    }
-    return {
-      providerMessageId: result.id,
-      archiveFileName: payload.manifest.message.attachment.filename,
-      pdfFileName: payload.manifest.document.pdfFileName,
-      issueDate: payload.manifest.document.issueDate,
-      validUntil: payload.manifest.document.validUntil,
-      decisionOutcome: payload.manifest.document.decisionOutcome === 'positive' ? 'positive' : null,
-    }
   }
   catch (error) {
     if (error instanceof EmailDeliveryError) {

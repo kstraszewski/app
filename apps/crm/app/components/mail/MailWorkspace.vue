@@ -477,10 +477,12 @@ const {
 const selectedThread = computed(() => selectedThreadPayload.value?.data ?? null)
 const bankMailAgentMessageIds = computed(() => {
   const messageIds = new Set<string>()
+  // The open thread must never lose its per-message result or ESIS download
+  // card merely because the mailbox list already contains 50 newer threads.
+  for (const message of selectedThread.value?.messages ?? []) messageIds.add(message.id)
   for (const thread of threadPayload.value.data) {
     if (thread.latestMessageId) messageIds.add(thread.latestMessageId)
   }
-  for (const message of selectedThread.value?.messages ?? []) messageIds.add(message.id)
   return [...messageIds].slice(0, 50)
 })
 const bankMailAgentStatusScopeKey = computed(() => (
@@ -519,13 +521,27 @@ function bankMailAgentStatus(messageId: string | undefined): MailBankAgentStatus
   return messageId ? bankMailAgentStatuses.value[messageId] : undefined
 }
 
+function bankMailAgentAttachmentProcessing(messageId: string | undefined): boolean {
+  const state = bankMailAgentStatus(messageId)?.attachment?.state
+  return state === 'queued'
+    || state === 'downloading'
+    || state === 'verifying_source'
+    || state === 'unlocking'
+    || state === 'validating'
+    || state === 'importing'
+    || state === 'retrying'
+}
+
 function bankMailAgentReanalysisIsPending(messageId: string): boolean {
   return bankMailAgentReanalysisPending.value[messageId] === true
 }
 
 function bankMailAgentStatusVisible(messageId: string | undefined): boolean {
   const state = bankMailAgentState(messageId)
-  return state === 'processing' || state === 'review_required' || state === 'failed'
+  return state === 'processing'
+    || state === 'review_required'
+    || state === 'failed'
+    || Boolean(bankMailAgentStatus(messageId)?.attachment)
 }
 
 function clearBankMailAgentStatusTimer(): void {
@@ -589,6 +605,7 @@ async function refreshBankMailAgentStatuses(): Promise<void> {
         .some(status => (
           status.state === 'processing'
           || status.reanalysis.state === 'processing'
+          || bankMailAgentAttachmentProcessing(status.messageId)
         ))
       scheduleBankMailAgentStatusRefresh(hasActiveAnalysis ? 2_500 : 15_000)
     }
@@ -2286,6 +2303,45 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                           <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
                           Analiza EVE nie powiodła się
                         </UBadge>
+                        <UBadge
+                          v-if="bankMailAgentAttachmentProcessing(message.id)"
+                          color="info"
+                          variant="subtle"
+                          size="xs"
+                          role="status"
+                          aria-live="polite"
+                        >
+                          <UIcon name="i-lucide-loader-circle" class="animate-spin" aria-hidden="true" />
+                          ESIS · przetwarzanie
+                        </UBadge>
+                        <UBadge
+                          v-else-if="bankMailAgentStatus(message.id)?.attachment?.state === 'attached'"
+                          color="success"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          <UIcon name="i-lucide-file-check-2" aria-hidden="true" />
+                          ESIS dodany do sprawy
+                        </UBadge>
+                        <UBadge
+                          v-else-if="bankMailAgentStatus(message.id)?.attachment?.state === 'review_required'
+                            || bankMailAgentStatus(message.id)?.attachment?.state === 'conflict'"
+                          color="warning"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          <UIcon name="i-lucide-file-warning" aria-hidden="true" />
+                          ESIS · wymaga sprawdzenia
+                        </UBadge>
+                        <UBadge
+                          v-else-if="bankMailAgentStatus(message.id)?.attachment?.state === 'failed'"
+                          color="error"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          <UIcon name="i-lucide-file-x-2" aria-hidden="true" />
+                          ESIS nie został dodany
+                        </UBadge>
                       </div>
                       <div class="mail-message__addresses">
                         <span v-if="message.from?.email">{{ message.from.email }}</span>
@@ -2352,7 +2408,15 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                       </div>
                     </div>
                     <p class="mail-attachments__notice">
-                      Odebrane pliki pozostają u dostawcy i nie są pobierane do CRM.
+                      <template v-if="bankMailAgentStatus(message.id)?.attachment?.state === 'attached'">
+                        Archiwum źródłowe pozostaje u dostawcy. Zweryfikowany PDF ESIS został automatycznie dodany do sprawy i można go pobrać powyżej.
+                      </template>
+                      <template v-else-if="bankMailAgentAttachmentProcessing(message.id)">
+                        Formularz ESIS jest bezpiecznie pobierany, sprawdzany i dodawany do właściwego wniosku.
+                      </template>
+                      <template v-else>
+                        Odebrane pliki pozostają u dostawcy i nie są pobierane do CRM.
+                      </template>
                     </p>
                   </div>
                 </section>

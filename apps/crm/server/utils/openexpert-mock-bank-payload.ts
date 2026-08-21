@@ -13,7 +13,8 @@ import {
 
 export const OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE = 'crm-mock-bank-outbox' as const
 export const OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE = 'application/json' as const
-export const OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION = 1 as const
+export const OPENEXPERT_MOCK_BANK_LEGACY_PAYLOAD_VERSION = 1 as const
+export const OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION = 2 as const
 export const MAX_OPENEXPERT_MOCK_BANK_OUTBOX_OBJECT_BYTES = 5 * 1024 * 1024
 export const MAX_OPENEXPERT_MOCK_BANK_MANIFEST_BYTES = 256 * 1024
 
@@ -30,8 +31,7 @@ export interface OpenExpertMockBankPayloadIdentity {
   generationStartedAt: string
 }
 
-export interface OpenExpertMockBankPersistedPayloadManifest {
-  version: typeof OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION
+interface OpenExpertMockBankPersistedPayloadManifestBase {
   identity: OpenExpertMockBankPayloadIdentity
   transport: {
     provider: 'resend' | 'smtp'
@@ -60,14 +60,30 @@ export interface OpenExpertMockBankPersistedPayloadManifest {
   }
 }
 
+export type OpenExpertMockBankPersistedPayloadManifest =
+  | OpenExpertMockBankPersistedPayloadManifestBase & {
+    version: typeof OPENEXPERT_MOCK_BANK_LEGACY_PAYLOAD_VERSION
+  }
+  | OpenExpertMockBankPersistedPayloadManifestBase & {
+    version: typeof OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION
+    generationContextSha256: string
+  }
+
 export interface OpenExpertMockBankStoredObject {
   bytes: Uint8Array
   sha256: string
   sizeBytes: number
 }
 
+export class OpenExpertMockBankPayloadError extends TypeError {
+  constructor(message: string) {
+    super(`Nieprawidłowy payload OpenExpert Banku: ${message}`)
+    this.name = 'OpenExpertMockBankPayloadError'
+  }
+}
+
 function invalid(message: string): never {
-  throw new TypeError(`Nieprawidłowy payload OpenExpert Banku: ${message}`)
+  throw new OpenExpertMockBankPayloadError(message)
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -102,9 +118,20 @@ function positiveInteger(value: unknown, field: string, maximum = Number.MAX_SAF
   return result
 }
 
-function finiteNumber(value: unknown, field: string): number {
+function finiteNumber(
+  value: unknown,
+  field: string,
+  maximum: number,
+  decimalPlaces: number,
+): number {
   const result = Number(value)
-  if (typeof value !== 'number' || !Number.isFinite(result) || result < 0) invalid(field)
+  if (typeof value !== 'number'
+    || !Number.isFinite(result)
+    || result < 0
+    || result > maximum
+    || Number(result.toFixed(decimalPlaces)) !== result) {
+    invalid(field)
+  }
   return result
 }
 
@@ -155,7 +182,7 @@ function assertIdentity(
     || result.applicationNumber !== expected.applicationNumber
     || result.kind !== expected.kind
     || result.generation !== expected.generation
-    || result.generationStartedAt !== expected.generationStartedAt
+    || Date.parse(result.generationStartedAt) !== Date.parse(expected.generationStartedAt)
   )) {
     invalid('identity nie odpowiada rezerwacji')
   }
@@ -175,19 +202,96 @@ function assertFinancialTerms(value: unknown): OpenExpertMockBankFinancialTerms 
   const currency = line(input.currency, 'document.financialTerms.currency', 3)
   if (!/^[A-Z]{3}$/u.test(currency)) invalid('document.financialTerms.currency')
   return {
-    loanAmount: finiteNumber(input.loanAmount, 'document.financialTerms.loanAmount'),
+    loanAmount: finiteNumber(
+      input.loanAmount,
+      'document.financialTerms.loanAmount',
+      1_000_000_000,
+      2,
+    ),
     currency,
     annualInterestRate: finiteNumber(
       input.annualInterestRate,
       'document.financialTerms.annualInterestRate',
+      100,
+      5,
     ),
-    aprc: finiteNumber(input.aprc, 'document.financialTerms.aprc'),
+    aprc: finiteNumber(input.aprc, 'document.financialTerms.aprc', 100, 5),
     monthlyInstallment: finiteNumber(
       input.monthlyInstallment,
       'document.financialTerms.monthlyInstallment',
+      100_000_000,
+      2,
     ),
     termMonths: positiveInteger(input.termMonths, 'document.financialTerms.termMonths', 600),
   }
+}
+
+function canonicalNumber(value: number, field: string): string {
+  if (!Number.isFinite(value)) invalid(field)
+  return String(Number(value))
+}
+
+function generationContextPart(key: string, value: string): string {
+  return `${key}:${Buffer.byteLength(value, 'utf8')}:${value}\n`
+}
+
+/**
+ * Cross-language digest over the exact generation identity and every field
+ * used to render the PDF. Length framing keeps applicant names unambiguous,
+ * while Number string normalization matches PostgreSQL trim_scale(numeric).
+ */
+export function openExpertMockBankGenerationContextSha256(input: {
+  identity: OpenExpertMockBankPayloadIdentity
+  document: OpenExpertMockBankPersistedPayloadManifest['document']
+}): string {
+  const identity = input.identity
+  const document = input.document
+  const values: Array<[string, string]> = [
+    ['domain', 'openexpert-mock-bank-generation-context-v1'],
+    ['identity.dispatchId', identity.dispatchId],
+    ['identity.payloadId', identity.payloadId],
+    ['identity.applicationId', identity.applicationId],
+    ['identity.applicationNumber', identity.applicationNumber],
+    ['identity.kind', identity.kind],
+    ['identity.generation', String(identity.generation)],
+    ['identity.generationStartedAt', new Date(identity.generationStartedAt).toISOString()],
+    ['document.pdfFileName', document.pdfFileName],
+    ['document.issueDate', document.issueDate],
+    ['document.validUntil', document.validUntil ?? 'null'],
+    ['document.decisionOutcome', document.decisionOutcome ?? 'null'],
+    ['document.applicantCount', String(document.applicantNames.length)],
+    ...document.applicantNames.map((name, index): [string, string] => [
+      `document.applicantNames.${index}`,
+      name,
+    ]),
+    [
+      'document.financialTerms.loanAmount',
+      canonicalNumber(document.financialTerms.loanAmount, 'document.financialTerms.loanAmount'),
+    ],
+    ['document.financialTerms.currency', document.financialTerms.currency],
+    [
+      'document.financialTerms.annualInterestRate',
+      canonicalNumber(
+        document.financialTerms.annualInterestRate,
+        'document.financialTerms.annualInterestRate',
+      ),
+    ],
+    [
+      'document.financialTerms.aprc',
+      canonicalNumber(document.financialTerms.aprc, 'document.financialTerms.aprc'),
+    ],
+    [
+      'document.financialTerms.monthlyInstallment',
+      canonicalNumber(
+        document.financialTerms.monthlyInstallment,
+        'document.financialTerms.monthlyInstallment',
+      ),
+    ],
+    ['document.financialTerms.termMonths', String(document.financialTerms.termMonths)],
+  ]
+  return createHash('sha256')
+    .update(values.map(([key, value]) => generationContextPart(key, value)).join(''), 'utf8')
+    .digest('hex')
 }
 
 export function assertOpenExpertMockBankPayloadManifest(
@@ -195,8 +299,18 @@ export function assertOpenExpertMockBankPayloadManifest(
   expectedIdentity?: OpenExpertMockBankPayloadIdentity,
 ): OpenExpertMockBankPersistedPayloadManifest {
   const input = record(value, 'root')
-  exactKeys(input, ['version', 'identity', 'transport', 'message', 'document'], 'root')
-  if (input.version !== OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION) invalid('version')
+  const version = input.version
+  if (version !== OPENEXPERT_MOCK_BANK_LEGACY_PAYLOAD_VERSION
+    && version !== OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION) {
+    invalid('version')
+  }
+  exactKeys(
+    input,
+    version === OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION
+      ? ['version', 'generationContextSha256', 'identity', 'transport', 'message', 'document']
+      : ['version', 'identity', 'transport', 'message', 'document'],
+    'root',
+  )
   const identity = assertIdentity(input.identity, expectedIdentity)
 
   const transportInput = record(input.transport, 'transport')
@@ -273,20 +387,34 @@ export function assertOpenExpertMockBankPayloadManifest(
     invalid('document.validUntil')
   }
 
-  return {
-    version: OPENEXPERT_MOCK_BANK_PAYLOAD_VERSION,
+  const document: OpenExpertMockBankPersistedPayloadManifest['document'] = {
+    pdfFileName: line(documentInput.pdfFileName, 'document.pdfFileName', 255),
+    issueDate: dateOnly(documentInput.issueDate, 'document.issueDate'),
+    validUntil,
+    decisionOutcome,
+    applicantNames,
+    financialTerms: assertFinancialTerms(documentInput.financialTerms),
+  }
+  const base = {
     identity,
     transport,
     message,
-    document: {
-      pdfFileName: line(documentInput.pdfFileName, 'document.pdfFileName', 255),
-      issueDate: dateOnly(documentInput.issueDate, 'document.issueDate'),
-      validUntil,
-      decisionOutcome,
-      applicantNames,
-      financialTerms: assertFinancialTerms(documentInput.financialTerms),
-    },
+    document,
   }
+  if (version === OPENEXPERT_MOCK_BANK_LEGACY_PAYLOAD_VERSION) {
+    return { version, ...base }
+  }
+  const generationContextSha256 = assertSha256(
+    line(input.generationContextSha256, 'generationContextSha256', 64),
+    'generationContextSha256',
+  )
+  if (generationContextSha256 !== openExpertMockBankGenerationContextSha256({
+    identity,
+    document,
+  })) {
+    invalid('generationContextSha256 nie odpowiada dokumentowi')
+  }
+  return { version, generationContextSha256, ...base }
 }
 
 export function encodeOpenExpertMockBankPayloadManifest(
@@ -446,27 +574,6 @@ export async function persistOrRecoverOpenExpertMockBankObject(input: {
   const stored = await downloadObject(input.storage, input.path, input.contentType)
   if (!stored) invalid('obiekt zniknął po zapisie')
   return stored
-}
-
-/**
- * Repairs only an uncommitted zero-byte object left by an incompatible storage
- * adapter. Once payload hashes are committed this path is never called, so an
- * immutable, valid first writer remains authoritative.
- */
-export async function discardEmptyUncommittedOpenExpertMockBankObject(input: {
-  storage: StorageClient
-  path: string
-}): Promise<boolean> {
-  const object = await input.storage.head({
-    namespace: OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE,
-    path: input.path,
-  })
-  if (!object || object.size !== 0) return false
-  await input.storage.delete({
-    namespace: OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE,
-    path: input.path,
-  })
-  return true
 }
 
 export async function loadOpenExpertMockBankObject(input: {

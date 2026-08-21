@@ -11,6 +11,7 @@ import { drainClientLegalDocumentDeliveries } from '~~/server/utils/client-legal
 import { drainCrmDocumentStorageCleanups } from '~~/server/utils/crm-document-storage-cleanup'
 import { drainNotificationDeliveryJobs } from '~~/server/utils/notifications'
 import { cleanupOpenExpertMockBankPayloads } from '~~/server/utils/openexpert-mock-bank-cleanup'
+import { drainBankMailPdfAttachmentJobs } from '~~/server/utils/bank-mail-pdf-attachment'
 
 interface NotificationRuntimeConfig {
   outboxSecret?: string
@@ -58,6 +59,7 @@ export default defineEventHandler(async (event) => {
     legalDocumentResult,
     documentStorageResult,
     mockBankPayloadResult,
+    bankMailPdfResult,
   ] = await Promise.all([
     drainNotificationDeliveryJobs(
       event,
@@ -75,28 +77,38 @@ export default defineEventHandler(async (event) => {
       Math.min(limit, 25),
     ),
     cleanupOpenExpertMockBankPayloads(event, { limit: Math.min(limit, 20) }),
+    drainBankMailPdfAttachmentJobs(
+      event,
+      `crm-bank-mail-pdf:${runId}`,
+      1,
+    ),
   ])
   return {
     data: {
       claimed: notificationResult.claimed
         + legalDocumentResult.claimed
         + documentStorageResult.claimed
-        + mockBankPayloadResult.claimed,
+        + mockBankPayloadResult.claimed
+        + bankMailPdfResult.claimed,
       completed: notificationResult.completed
         + legalDocumentResult.completed
         + documentStorageResult.completed
         + documentStorageResult.retained
-        + mockBankPayloadResult.completed,
+        + mockBankPayloadResult.completed
+        + bankMailPdfResult.completed,
       delivered: notificationResult.delivered + legalDocumentResult.delivered,
       failed: notificationResult.failed
         + legalDocumentResult.failed
         + documentStorageResult.failed
-        + mockBankPayloadResult.failed,
-      blocked: legalDocumentResult.blocked,
+        + mockBankPayloadResult.failed
+        + bankMailPdfResult.failed
+        + bankMailPdfResult.conflicts,
+      blocked: legalDocumentResult.blocked + bankMailPdfResult.reviewRequired,
       notifications: notificationResult,
       legalDocuments: legalDocumentResult,
       documentStorage: documentStorageResult,
       mockBankPayloads: mockBankPayloadResult,
+      bankMailPdfAttachments: bankMailPdfResult,
     },
   }
 })

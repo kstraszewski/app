@@ -2,10 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   gmailMessageDetail,
+  gmailMessageAttachmentSources,
   gmailMessageSecurity,
   gmailThreadDetail,
   gmailThreadSummary,
+  GmailMimeStructureError,
+  MAX_GMAIL_MESSAGE_ATTACHMENTS,
+  MAX_GMAIL_MIME_DEPTH,
+  MAX_GMAIL_MIME_PARTS,
   parseMailAddresses,
+  type GmailMessagePart,
   type GmailMessageResource,
   type GmailThreadResource,
 } from '../server/utils/gmail-message.ts'
@@ -127,6 +133,44 @@ test('prefers plain text and returns attachment metadata', () => {
   }])
 })
 
+test('walks Gmail MIME iteratively with strict depth, part and attachment bounds', () => {
+  let nested: GmailMessagePart = {
+    mimeType: 'text/plain',
+    body: { data: base64url('bounded') },
+  }
+  for (let depth = 0; depth < MAX_GMAIL_MIME_DEPTH; depth += 1) {
+    nested = { mimeType: 'multipart/mixed', parts: [nested] }
+  }
+  assert.equal(gmailMessageDetail(message('bounded-depth', { payload: nested })).bodyText, 'bounded')
+  nested = { mimeType: 'multipart/mixed', parts: [nested] }
+  assert.throws(
+    () => gmailMessageDetail(message('too-deep', { payload: nested })),
+    GmailMimeStructureError,
+  )
+
+  const tooManyParts: GmailMessagePart = {
+    mimeType: 'multipart/mixed',
+    parts: Array.from({ length: MAX_GMAIL_MIME_PARTS }, () => ({ mimeType: 'text/plain' })),
+  }
+  assert.throws(
+    () => gmailMessageDetail(message('too-many-parts', { payload: tooManyParts })),
+    GmailMimeStructureError,
+  )
+
+  const attachments: GmailMessagePart = {
+    mimeType: 'multipart/mixed',
+    parts: Array.from({ length: MAX_GMAIL_MESSAGE_ATTACHMENTS + 1 }, (_, index) => ({
+      mimeType: 'application/octet-stream',
+      filename: `attachment-${index}.zip`,
+      body: { attachmentId: `attachment-${index}`, size: 1 },
+    })),
+  }
+  assert.throws(
+    () => gmailMessageAttachmentSources(message('too-many-attachments', { payload: attachments })),
+    GmailMimeStructureError,
+  )
+})
+
 test('keeps the plain alternative and returns the fullest sanitized HTML body', () => {
   const parsed = gmailMessageDetail(message('message-rich-html', {
     payload: {
@@ -172,7 +216,7 @@ test('keeps the plain alternative and returns the fullest sanitized HTML body', 
 })
 
 test('ignores attached MIME subtrees when selecting the message body', () => {
-  const parsed = gmailMessageDetail(message('message-with-attached-mail', {
+  const raw = message('message-with-attached-mail', {
     payload: {
       mimeType: 'multipart/mixed',
       headers: [
@@ -191,9 +235,11 @@ test('ignores attached MIME subtrees when selecting the message body', () => {
       }, {
         mimeType: 'message/rfc822',
         parts: [{
-          mimeType: 'text/html',
+          mimeType: 'application/zip',
+          filename: 'nested-untrusted.zip',
           body: {
-            data: base64url(`<article>${'Treść załączonej wiadomości. '.repeat(20)}</article>`),
+            attachmentId: 'nested-untrusted-id',
+            size: 123,
           },
         }],
       }, {
@@ -213,11 +259,13 @@ test('ignores attached MIME subtrees when selecting the message body', () => {
         }],
       }],
     },
-  }))
+  })
+  const parsed = gmailMessageDetail(raw)
 
   assert.equal(parsed.bodyText, 'Właściwa treść tekstowa.')
   assert.match(parsed.bodyHtml || '', /Właściwa treść HTML/u)
   assert.doesNotMatch(parsed.bodyHtml || '', /załączonej wiadomości|HTML załącznika/iu)
+  assert.deepEqual(gmailMessageAttachmentSources(raw), [])
 })
 
 test('turns HTML fallback into inert readable text', () => {

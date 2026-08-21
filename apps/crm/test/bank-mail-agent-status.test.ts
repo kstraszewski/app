@@ -72,6 +72,7 @@ test('maps only controlled lifecycle states back to requested message IDs', () =
         retryAfterSeconds: 0,
         result: null,
       },
+      attachment: null,
     },
     {
       messageId: 'message-1-randomized-imap-reference',
@@ -88,6 +89,7 @@ test('maps only controlled lifecycle states back to requested message IDs', () =
         retryAfterSeconds: 0,
         result: null,
       },
+      attachment: null,
     },
     {
       messageId: 'message-2',
@@ -104,6 +106,7 @@ test('maps only controlled lifecycle states back to requested message IDs', () =
         retryAfterSeconds: 0,
         result: null,
       },
+      attachment: null,
     },
   ])
 })
@@ -186,6 +189,7 @@ test('maps only controlled EVE results, links and advisory reanalysis fields', (
         applicationId: null,
       },
     },
+    attachment: null,
   }])
 
   const [unsafe] = mapBankMailAgentStatuses([
@@ -205,6 +209,75 @@ test('maps only controlled EVE results, links and advisory reanalysis fields', (
     },
   }])
   assert.equal(unsafe?.result, null)
+})
+
+test('maps only controlled automatic ESIS attachment state and download identity', () => {
+  const hash = 'a'.repeat(64)
+  const completedAt = '2026-08-21T16:44:00.000Z'
+  const [status] = mapBankMailAgentStatuses([
+    { messageId: 'message-1', sha256: hash },
+  ], [{
+    providerMessageIdSha256: hash,
+    state: 'review_required',
+    attachment: {
+      state: 'attached',
+      resolutionCode: 'openexpert_mock_esis_attached',
+      documentId: '44444444-4444-4444-8444-444444444444',
+      fileName: 'OEB-20260820-233690-formularz-ESIS.pdf',
+      completedAt,
+    },
+  }])
+  assert.deepEqual(status?.attachment, {
+    state: 'attached',
+    resolutionCode: 'openexpert_mock_esis_attached',
+    documentId: '44444444-4444-4444-8444-444444444444',
+    fileName: 'OEB-20260820-233690-formularz-ESIS.pdf',
+    completedAt,
+  })
+
+  const [unsafe] = mapBankMailAgentStatuses([
+    { messageId: 'message-1', sha256: hash },
+  ], [{
+    providerMessageIdSha256: hash,
+    state: 'review_required',
+    attachment: {
+      state: 'attached',
+      resolutionCode: 'raw_provider_error_message',
+      documentId: '44444444-4444-4444-8444-444444444444',
+      fileName: 'secret.pdf',
+      completedAt,
+    },
+  }])
+  assert.equal(unsafe?.attachment, null)
+
+  for (const attachment of [
+    {
+      state: 'queued',
+      resolutionCode: 'source_archive_mismatch',
+      documentId: null,
+      fileName: null,
+      completedAt: null,
+    },
+    {
+      state: 'attached',
+      resolutionCode: null,
+      documentId: '44444444-4444-4444-8444-444444444444',
+      fileName: 'ESIS.pdf',
+      completedAt,
+    },
+    {
+      state: 'retrying',
+      resolutionCode: 'processing_failed',
+      documentId: null,
+      fileName: null,
+      completedAt: null,
+    },
+  ]) {
+    const [invalid] = mapBankMailAgentStatuses([
+      { messageId: 'message-1', sha256: hash },
+    ], [{ providerMessageIdSha256: hash, state: 'review_required', attachment }])
+    assert.equal(invalid?.attachment, null)
+  }
 })
 
 test('status RPC is mailbox-scoped and exposes no content-bearing columns', async () => {
@@ -227,6 +300,14 @@ test('mail workspace shows and actively refreshes the per-message EVE state', as
   assert.match(workspace, /i-lucide-loader-circle[^\n]+animate-spin/u)
   assert.match(workspace, /hasActiveAnalysis \? 2_500 : 15_000/u)
   assert.match(workspace, /document\.visibilityState !== 'visible'/u)
+  const statusScope = workspace.match(
+    /const bankMailAgentMessageIds = computed\([\s\S]*?return \[\.\.\.messageIds\]\.slice\(0, 50\)\n\}\)/u,
+  )?.[0] ?? ''
+  assert.ok(
+    statusScope.indexOf('selectedThread.value?.messages')
+      < statusScope.indexOf('threadPayload.value.data'),
+    'the selected thread must be prioritized before the bounded mailbox status list',
+  )
 })
 
 test('mail workspace keeps manual reply available while blocking parallel quick actions', async () => {
@@ -268,4 +349,10 @@ test('mail message shows Eve answer, rerun action and linked case/client chips',
   assert.match(panel, /reanalysisCaseConflict/u)
   assert.match(panel, /Eve nie zmieniła istniejącego powiązania/u)
   assert.match(panel, /linkedCase\?\.id === result\.caseId/u)
+  assert.match(panel, />Dokument ESIS</u)
+  assert.match(panel, /Pobierz ESIS/u)
+  assert.match(panel, /crmApiPath\(`\/cases\/\$\{caseId\}\/documents\/\$\{attachment\.documentId\}`\)/u)
+  assert.match(panel, /bezpiecznie rozpakowany, zweryfikowany i dodany jako ESIS/u)
+  assert.match(workspace, /bankMailAgentAttachmentProcessing\(status\.messageId\)/u)
+  assert.match(workspace, /Zweryfikowany PDF ESIS został automatycznie dodany do sprawy/u)
 })

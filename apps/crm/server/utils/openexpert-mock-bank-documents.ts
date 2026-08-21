@@ -30,7 +30,7 @@ const PAGE_HEIGHT = 841.89
 const PAGE_MARGIN_X = 48
 const PAGE_BOTTOM = 58
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN_X * 2
-const MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES = 4 * 1024 * 1024
+export const MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES = 4 * 1024 * 1024
 
 export type OpenExpertMockBankDocumentKind = 'esis' | 'credit_decision'
 export type OpenExpertMockBankDecisionOutcome = 'positive' | 'negative'
@@ -80,6 +80,12 @@ export interface OpenExpertMockBankEncryptedArchive {
   mediaType: typeof OPENEXPERT_MOCK_BANK_ARCHIVE_MEDIA_TYPE
   kind: OpenExpertMockBankDocumentKind
   applicationNumber: string
+}
+
+export interface OpenExpertMockBankExtractedDocument {
+  bytes: Uint8Array
+  fileName: string
+  mediaType: typeof OPENEXPERT_MOCK_BANK_PDF_MEDIA_TYPE
 }
 
 export interface OpenExpertMockBankDocumentDates {
@@ -479,6 +485,70 @@ export function openExpertMockBankEsisDocumentText(
     ],
     buildEsisSections(base, validUntil),
   )
+}
+
+/** Exact rendered applicant and financial-term lines shared by the generator
+ * and trusted inbound/outbox verifiers. Values are returned only to local
+ * process memory and must never be logged or placed in a service token. */
+export function openExpertMockBankEsisSemanticMarkers(
+  input: Omit<OpenExpertMockBankEsisPdfInput, 'fontBytes'>,
+): string[] {
+  const base = normalizeBaseInput({
+    ...input,
+    fontBytes: new Uint8Array(1_000),
+  })
+  const validUntil = assertDateOnly(input.validUntil, 'Data ważności ESIS')
+  if (validUntil < base.issueDate) invalid('Data ważności ESIS nie może poprzedzać daty wydania.')
+  return [
+    ...applicantLines(base.applicantNames),
+    ...financialTermLines(base.financialTerms),
+  ]
+}
+
+/**
+ * Verifies the bounded text extracted from an ESIS PDF against every value
+ * rendered from the trusted manifest. Keeping this matcher beside the
+ * formatter prevents the outbound recovery path and inbound attachment
+ * worker from drifting apart.
+ */
+export function openExpertMockBankEsisTextMatchesDocument(
+  input: Omit<OpenExpertMockBankEsisPdfInput, 'fontBytes'> & {
+    text: string
+    pageCount: number
+  },
+): boolean {
+  if (typeof input.text !== 'string'
+    || input.text.length > 250_000
+    || !Number.isSafeInteger(input.pageCount)
+    || input.pageCount < 1
+    || input.pageCount > 100) {
+    return false
+  }
+  try {
+    const applicationNumber = assertOpenExpertMockBankApplicationNumber(input.applicationNumber)
+    const issueDate = assertDateOnly(input.issueDate, 'Data wydania')
+    const validUntil = assertDateOnly(input.validUntil, 'Data ważności ESIS')
+    const normalized = input.text.replace(/\s+/gu, ' ').trim()
+    const markers = openExpertMockBankEsisSemanticMarkers(input)
+      .map(marker => marker.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean)
+    let markerOffset = 0
+    const markersInOrder = markers.every((marker) => {
+      const index = normalized.indexOf(marker, markerOffset)
+      if (index < 0) return false
+      markerOffset = index + marker.length
+      return true
+    })
+    return Boolean(normalized)
+      && normalized.includes('EUROPEJSKI ZNORMALIZOWANY ARKUSZ INFORMACYJNY (ESIS)')
+      && normalized.includes(`Numer wniosku: ${applicationNumber}`)
+      && normalized.includes(`(${issueDate})`)
+      && normalized.includes(`(${validUntil})`)
+      && markersInOrder
+  }
+  catch {
+    return false
+  }
 }
 
 export function openExpertMockBankCreditDecisionDocumentText(
@@ -881,12 +951,12 @@ export async function createOpenExpertMockBankEncryptedArchive(input: {
   }
 }
 
-export async function verifyOpenExpertMockBankEncryptedArchive(input: {
+export async function extractOpenExpertMockBankEncryptedArchive(input: {
   bytes: Uint8Array
   kind: OpenExpertMockBankDocumentKind
   applicationNumber: string
   pesel: unknown
-}): Promise<void> {
+}): Promise<OpenExpertMockBankExtractedDocument> {
   if (!(input.bytes instanceof Uint8Array)
     || input.bytes.byteLength === 0
     || input.bytes.byteLength > MAX_OPENEXPERT_MOCK_BANK_ARCHIVE_BYTES) {
@@ -910,17 +980,61 @@ export async function verifyOpenExpertMockBankEncryptedArchive(input: {
       || entry.encrypted !== true
       || entry.zipCrypto !== false
       || entry.extraFieldAES?.strength !== 3
+      || !Number.isSafeInteger(entry.compressedSize)
+      || entry.compressedSize < 1
       || !Number.isSafeInteger(entry.uncompressedSize)
       || entry.uncompressedSize < 5
-      || entry.uncompressedSize > MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES) {
+      || entry.uncompressedSize > MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES
+      || entry.uncompressedSize / entry.compressedSize > 100) {
       invalid('Utrwalone archiwum nie zawiera oczekiwanego pojedynczego pliku AES-256.')
     }
-    const pdf = await entry.getData(new Uint8ArrayWriter(), { password })
-    if (!pdf
-      || pdf.byteLength < 5
+    const chunks: Uint8Array[] = []
+    let extractedBytes = 0
+    const boundedWriter = new WritableStream<Uint8Array>({
+      write(chunk) {
+        if (!(chunk instanceof Uint8Array)
+          || extractedBytes + chunk.byteLength > MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES) {
+          invalid('Rozpakowany dokument przekracza bezpieczny limit 4 MiB.')
+        }
+        extractedBytes += chunk.byteLength
+        chunks.push(chunk.slice())
+      },
+    })
+    await entry.getData(boundedWriter, {
+      password,
+      signal: AbortSignal.timeout(10_000),
+      checkOverlappingEntry: true,
+    })
+    const pdf = new Uint8Array(extractedBytes)
+    let offset = 0
+    for (const chunk of chunks) {
+      pdf.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    const trailerStart = Math.max(0, pdf.byteLength - 2_048)
+    if (pdf.byteLength < 8
       || pdf.byteLength > MAX_OPENEXPERT_MOCK_BANK_PDF_BYTES
-      || new TextDecoder().decode(pdf.slice(0, 5)) !== '%PDF-') {
+      || new TextDecoder().decode(pdf.slice(0, 5)) !== '%PDF-'
+      || !new TextDecoder().decode(pdf.slice(trailerStart)).includes('%%EOF')) {
       invalid('Utrwalone archiwum nie zawiera poprawnego dokumentu PDF.')
+    }
+    let parsedPdf: PDFDocument
+    try {
+      parsedPdf = await PDFDocument.load(pdf, {
+        ignoreEncryption: false,
+        updateMetadata: false,
+      })
+    }
+    catch {
+      invalid('Utrwalone archiwum zawiera uszkodzony albo zaszyfrowany dokument PDF.')
+    }
+    if (parsedPdf.isEncrypted || parsedPdf.getPageCount() < 1 || parsedPdf.getPageCount() > 100) {
+      invalid('Utrwalone archiwum zawiera dokument PDF o niedozwolonej strukturze.')
+    }
+    return {
+      bytes: pdf,
+      fileName: expectedEntryName,
+      mediaType: OPENEXPERT_MOCK_BANK_PDF_MEDIA_TYPE,
     }
   }
   catch (error) {
@@ -930,4 +1044,13 @@ export async function verifyOpenExpertMockBankEncryptedArchive(input: {
   finally {
     await reader.close()
   }
+}
+
+export async function verifyOpenExpertMockBankEncryptedArchive(input: {
+  bytes: Uint8Array
+  kind: OpenExpertMockBankDocumentKind
+  applicationNumber: string
+  pesel: unknown
+}): Promise<void> {
+  await extractOpenExpertMockBankEncryptedArchive(input)
 }

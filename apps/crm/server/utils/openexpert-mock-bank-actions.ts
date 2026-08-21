@@ -29,6 +29,13 @@ export interface OpenExpertMockBankActionResult {
 }
 
 function safeDispatchFailureCode(error: unknown): string {
+  const statusMessage = String((error as { statusMessage?: unknown })?.statusMessage ?? '')
+  if (statusMessage === 'crm_mock_bank_generation_context_changed') {
+    return 'generation_context_changed'
+  }
+  if (statusMessage === 'crm_mock_bank_uncommitted_payload_invalid') {
+    return 'uncommitted_payload_invalid'
+  }
   const status = Number((error as { statusCode?: unknown })?.statusCode)
   if (status === 503) return 'email_service_unavailable'
   if (status === 502) return 'email_provider_rejected'
@@ -85,6 +92,7 @@ export async function dispatchOpenExpertMockBankDocument(input: {
     delivery = await deliverOpenExpertMockBankDocument({
       event: input.event,
       organizationId: input.session.organizationId,
+      caseId: input.caseId,
       context: input.context,
       kind: input.kind,
       recipientEmail: input.recipient.email,

@@ -45,6 +45,25 @@ export interface GmailThreadResource {
   messages?: GmailMessageResource[]
 }
 
+export interface GmailAttachmentSource {
+  attachmentId: string | null
+  inlineData: string | null
+  filename: string
+  mimeType: string
+  size: number
+}
+
+export const MAX_GMAIL_MIME_DEPTH = 10
+export const MAX_GMAIL_MIME_PARTS = 100
+export const MAX_GMAIL_MESSAGE_ATTACHMENTS = 20
+
+export class GmailMimeStructureError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GmailMimeStructureError'
+  }
+}
+
 const MESSAGE_BODY_CHARACTER_LIMIT = 160_000
 const THREAD_BODY_CHARACTER_LIMIT = 500_000
 const THREAD_HTML_CHARACTER_LIMIT = 1_000_000
@@ -381,21 +400,22 @@ function collectTextParts(
   textParts: string[],
   htmlParts: string[],
 ): void {
-  if (!part) return
-  const filename = String(part.filename ?? '').trim()
-  const mimeType = String(part.mimeType ?? '').toLowerCase()
-  const disposition = headerValue(part.headers, 'content-disposition')
-    .split(';', 1)[0]
-    ?.trim()
-    .toLowerCase()
-  if (filename || disposition === 'attachment' || mimeType === 'message/rfc822') return
+  walkGmailMimeParts(part, (candidate) => {
+    const filename = String(candidate.filename ?? '').trim()
+    const mimeType = String(candidate.mimeType ?? '').toLowerCase()
+    const disposition = headerValue(candidate.headers, 'content-disposition')
+      .split(';', 1)[0]
+      ?.trim()
+      .toLowerCase()
+    if (filename || disposition === 'attachment' || mimeType === 'message/rfc822') return false
 
-  if (part.body?.data) {
-    const decoded = decodePartBody(part)
-    if (mimeType === 'text/plain') textParts.push(decoded)
-    else if (mimeType === 'text/html') htmlParts.push(decoded)
-  }
-  for (const child of part.parts ?? []) collectTextParts(child, textParts, htmlParts)
+    if (candidate.body?.data) {
+      const decoded = decodePartBody(candidate)
+      if (mimeType === 'text/plain') textParts.push(decoded)
+      else if (mimeType === 'text/html') htmlParts.push(decoded)
+    }
+    return true
+  })
 }
 
 function selectBestHtmlPart(parts: string[]): string {
@@ -424,29 +444,102 @@ function decodePartBody(part: GmailMessagePart): string {
   }
 }
 
-function collectAttachments(part: GmailMessagePart | undefined): MailAttachment[] {
+export function gmailMessageAttachmentSources(
+  message: GmailMessageResource,
+): GmailAttachmentSource[] {
+  const part = message.payload
   if (!part) return []
-  const result: MailAttachment[] = []
-  const visit = (candidate: GmailMessagePart) => {
+  const result: GmailAttachmentSource[] = []
+  walkGmailMimeParts(part, (candidate) => {
     const filename = String(candidate.filename ?? '').trim()
+    const mimeType = String(candidate.mimeType ?? '').toLowerCase()
+    const disposition = headerValue(candidate.headers, 'content-disposition')
+      .split(';', 1)[0]
+      ?.trim()
+      .toLowerCase()
     if (filename) {
       result.push({
-        id: candidate.body?.attachmentId || null,
+        attachmentId: candidate.body?.attachmentId || null,
+        inlineData: candidate.body?.data || null,
         filename: stripUnsafeMailDisplayControls(filename).trim() || 'załącznik',
-        mimeType: candidate.mimeType || 'application/octet-stream',
+        mimeType: mimeType || 'application/octet-stream',
         size: Math.max(0, Number(candidate.body?.size) || 0),
       })
     }
-    for (const child of candidate.parts ?? []) visit(child)
-  }
-  visit(part)
+    // An attached message/container is one opaque MIME attachment. Never
+    // treat files nested inside it as attachments of the trusted outer mail.
+    return !(filename || disposition === 'attachment' || mimeType === 'message/rfc822')
+  })
   return result
 }
 
+function walkGmailMimeParts(
+  root: GmailMessagePart | undefined,
+  visit: (part: GmailMessagePart) => boolean | void,
+): void {
+  if (!root) return
+  const stack: Array<{ part: unknown, depth: number, active: boolean }> = [
+    { part: root, depth: 0, active: true },
+  ]
+  let partCount = 0
+  let attachmentCount = 0
+
+  while (stack.length) {
+    const frame = stack.pop()!
+    if (!frame.part || typeof frame.part !== 'object' || Array.isArray(frame.part)) {
+      throw new GmailMimeStructureError('Gmail MIME tree contains an invalid part')
+    }
+    if (frame.depth > MAX_GMAIL_MIME_DEPTH) {
+      throw new GmailMimeStructureError('Gmail MIME tree is too deep')
+    }
+    partCount += 1
+    if (partCount > MAX_GMAIL_MIME_PARTS) {
+      throw new GmailMimeStructureError('Gmail MIME tree has too many parts')
+    }
+
+    const part = frame.part as GmailMessagePart
+    if (String(part.filename ?? '').trim()) {
+      attachmentCount += 1
+      if (attachmentCount > MAX_GMAIL_MESSAGE_ATTACHMENTS) {
+        throw new GmailMimeStructureError('Gmail message has too many attachments')
+      }
+    }
+    const children = part.parts
+    if (children !== undefined && !Array.isArray(children)) {
+      throw new GmailMimeStructureError('Gmail MIME part children are invalid')
+    }
+    if ((children?.length ?? 0) > 0 && frame.depth >= MAX_GMAIL_MIME_DEPTH) {
+      throw new GmailMimeStructureError('Gmail MIME tree is too deep')
+    }
+
+    const descendantsActive = frame.active && visit(part) !== false
+    for (let index = (children?.length ?? 0) - 1; index >= 0; index -= 1) {
+      stack.push({
+        part: children![index],
+        depth: frame.depth + 1,
+        active: descendantsActive,
+      })
+    }
+  }
+}
+
+function collectAttachments(part: GmailMessagePart | undefined): MailAttachment[] {
+  if (!part) return []
+  return gmailMessageAttachmentSources({ payload: part }).map(source => ({
+    id: source.attachmentId,
+    filename: source.filename,
+    mimeType: source.mimeType,
+    size: source.size,
+  }))
+}
+
 function partHasAttachment(part: GmailMessagePart | undefined): boolean {
-  if (!part) return false
-  if (String(part.filename ?? '').trim()) return true
-  return (part.parts ?? []).some(partHasAttachment)
+  let found = false
+  walkGmailMimeParts(part, (candidate) => {
+    if (String(candidate.filename ?? '').trim()) found = true
+    return true
+  })
+  return found
 }
 
 function normalizeSnippet(value: string): string {

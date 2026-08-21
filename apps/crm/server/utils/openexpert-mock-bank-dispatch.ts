@@ -1,5 +1,6 @@
 import { createError, type H3Event } from 'h3'
 import { serverDataBackend } from './data-api.ts'
+import { serverScopedBackendDataClient } from './platform-data.ts'
 import {
   assertOpenExpertMockBankApplicationNumber,
   assertOpenExpertMockBankRequestId,
@@ -47,6 +48,12 @@ export interface OpenExpertMockBankPayloadCleanupJob {
 }
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
+const UTC_MIDNIGHT_PATTERN = /^\d{4}-\d{2}-\d{2}T00:00:00[.]000Z$/u
+
+export const OPENEXPERT_MOCK_BANK_GENERATION_CONTEXT_SOURCE
+  = 'openexpert-mock-bank-generation-context-v1' as const
+export const OPENEXPERT_MOCK_BANK_SERVICE_ID = 'openexpert-crm-mock-bank' as const
+export const OPENEXPERT_MOCK_BANK_PAYLOAD_COMMIT_PRESET = 'mock-bank-payload-commit' as const
 
 function requiredText(value: unknown, field: string): string {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -102,6 +109,23 @@ function optionalTimestamp(value: unknown, field: string): string | null {
 function optionalSha256(value: unknown, field: string): string | null {
   const result = optionalText(value)
   if (result && !SHA256_PATTERN.test(result)) {
+    throw createError({ statusCode: 500, statusMessage: `Mock bank dispatch is invalid (${field})` })
+  }
+  return result
+}
+
+function requiredSha256(value: unknown, field: string): string {
+  const result = optionalSha256(value, field)
+  if (!result) {
+    throw createError({ statusCode: 500, statusMessage: `Mock bank dispatch is invalid (${field})` })
+  }
+  return result
+}
+
+function utcMidnight(value: unknown, field: string): string {
+  const result = requiredText(value, field)
+  if (!UTC_MIDNIGHT_PATTERN.test(result)
+    || new Date(result).toISOString() !== result) {
     throw createError({ statusCode: 500, statusMessage: `Mock bank dispatch is invalid (${field})` })
   }
   return result
@@ -216,17 +240,78 @@ export async function commitOpenExpertMockBankDispatchPayload(input: {
   archiveSha256: string
   archiveSizeBytes: number
   payloadSha256: string
+  generationContext?: {
+    organizationId: string
+    caseId: string
+    applicationId: string
+    kind: 'esis'
+    recipientConnectionId: string
+    applicantContextSha256: string
+    bankContextSha256: string
+    expectationSha256: string
+    validUntil: string
+    generationContextSha256: string
+  }
 }): Promise<OpenExpertMockBankDispatchReservation> {
-  const backendData = serverDataBackend(input.event) as any
+  const dispatchId = assertOpenExpertMockBankRequestId(input.dispatchId)
+  const requestId = assertOpenExpertMockBankRequestId(input.requestId)
+  const generation = positiveInteger(input.generation, 'generation')
+  const manifestSha256 = requiredSha256(input.manifestSha256, 'manifestSha256')
+  const manifestSizeBytes = positiveInteger(input.manifestSizeBytes, 'manifestSizeBytes')
+  const archiveSha256 = requiredSha256(input.archiveSha256, 'archiveSha256')
+  const archiveSizeBytes = positiveInteger(input.archiveSizeBytes, 'archiveSizeBytes')
+  const payloadSha256 = requiredSha256(input.payloadSha256, 'payloadSha256')
+  let backendData = serverDataBackend(input.event) as any
+  if (input.generationContext) {
+    const generationContext = input.generationContext
+    const claims = {
+      source: OPENEXPERT_MOCK_BANK_GENERATION_CONTEXT_SOURCE,
+      serviceId: OPENEXPERT_MOCK_BANK_SERVICE_ID,
+      preset: OPENEXPERT_MOCK_BANK_PAYLOAD_COMMIT_PRESET,
+      organizationId: assertOpenExpertMockBankRequestId(generationContext.organizationId),
+      caseId: assertOpenExpertMockBankRequestId(generationContext.caseId),
+      applicationId: assertOpenExpertMockBankRequestId(generationContext.applicationId),
+      kind: generationContext.kind,
+      requestId,
+      recipientConnectionId: assertOpenExpertMockBankRequestId(
+        generationContext.recipientConnectionId,
+      ),
+      dispatchId,
+      generation,
+      generationContextSha256: requiredSha256(
+        generationContext.generationContextSha256,
+        'generationContextSha256',
+      ),
+      applicantContextSha256: requiredSha256(
+        generationContext.applicantContextSha256,
+        'applicantContextSha256',
+      ),
+      bankContextSha256: requiredSha256(
+        generationContext.bankContextSha256,
+        'bankContextSha256',
+      ),
+      expectationSha256: requiredSha256(
+        generationContext.expectationSha256,
+        'expectationSha256',
+      ),
+      validUntil: utcMidnight(generationContext.validUntil, 'validUntil'),
+      manifestSha256,
+      manifestSizeBytes,
+      archiveSha256,
+      archiveSizeBytes,
+      payloadSha256,
+    }
+    backendData = serverScopedBackendDataClient(input.event, { ...claims }) as any
+  }
   const result = await backendData.rpc('commit_crm_mock_bank_dispatch_payload', {
-    p_dispatch_id: assertOpenExpertMockBankRequestId(input.dispatchId),
-    p_request_id: assertOpenExpertMockBankRequestId(input.requestId),
-    p_generation: positiveInteger(input.generation, 'generation'),
-    p_manifest_sha256: input.manifestSha256,
-    p_manifest_size_bytes: positiveInteger(input.manifestSizeBytes, 'manifestSizeBytes'),
-    p_archive_sha256: input.archiveSha256,
-    p_archive_size_bytes: positiveInteger(input.archiveSizeBytes, 'archiveSizeBytes'),
-    p_payload_sha256: input.payloadSha256,
+    p_dispatch_id: dispatchId,
+    p_request_id: requestId,
+    p_generation: generation,
+    p_manifest_sha256: manifestSha256,
+    p_manifest_size_bytes: manifestSizeBytes,
+    p_archive_sha256: archiveSha256,
+    p_archive_size_bytes: archiveSizeBytes,
+    p_payload_sha256: payloadSha256,
   })
   throwDbError(result.error)
   return parseReservation(result.data)

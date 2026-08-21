@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
 import type {
+  MailBankAgentAttachment,
+  MailBankAgentAttachmentResolutionCode,
+  MailBankAgentAttachmentState,
   MailBankAgentReanalysis,
   MailBankAgentReanalysisState,
   MailBankAgentResult,
@@ -96,6 +99,80 @@ const supportedReanalysisStates = new Set<MailBankAgentReanalysisState>([
   'completed',
   'failed',
 ])
+const supportedAttachmentStates = new Set<MailBankAgentAttachmentState>([
+  'queued',
+  'downloading',
+  'verifying_source',
+  'unlocking',
+  'validating',
+  'importing',
+  'attached',
+  'review_required',
+  'retrying',
+  'failed',
+  'conflict',
+])
+const supportedAttachmentResolutionCodes = new Set<MailBankAgentAttachmentResolutionCode>([
+  'openexpert_mock_esis_attached',
+  'existing_esis_requires_review',
+  'source_archive_mismatch',
+  'dispatch_generation_changed',
+  'attachment_scope_conflict',
+  'canonical_link_invalid',
+  'policy_disabled',
+  'attachment_not_found',
+  'attachment_ambiguous',
+  'archive_invalid',
+  'archive_unlock_failed',
+  'pdf_invalid',
+  'inspection_failed',
+  'storage_object_conflict',
+  'retry_limit_reached',
+  'processing_failed',
+  'provider_unavailable',
+  'storage_unavailable',
+  'processing_timeout',
+])
+const activeAttachmentStates = new Set<MailBankAgentAttachmentState>([
+  'queued',
+  'downloading',
+  'verifying_source',
+  'unlocking',
+  'validating',
+  'importing',
+])
+const attachmentResolutionsByState: Partial<Record<
+  MailBankAgentAttachmentState,
+  ReadonlySet<MailBankAgentAttachmentResolutionCode>
+>> = {
+  retrying: new Set([
+    'provider_unavailable',
+    'storage_unavailable',
+    'processing_timeout',
+  ]),
+  attached: new Set(['openexpert_mock_esis_attached']),
+  review_required: new Set([
+    'existing_esis_requires_review',
+  ]),
+  conflict: new Set([
+    'source_archive_mismatch',
+    'dispatch_generation_changed',
+    'storage_object_conflict',
+    'attachment_scope_conflict',
+  ]),
+  failed: new Set([
+    'policy_disabled',
+    'canonical_link_invalid',
+    'attachment_not_found',
+    'attachment_ambiguous',
+    'archive_invalid',
+    'archive_unlock_failed',
+    'pdf_invalid',
+    'inspection_failed',
+    'retry_limit_reached',
+    'processing_failed',
+  ]),
+}
 
 export interface BankMailAgentStatusRequest {
   connectionId: string
@@ -223,6 +300,7 @@ export function mapBankMailAgentStatuses(
         link: bankMailAgentThreadLink(row.link),
         context: null,
         reanalysis: bankMailAgentReanalysis(row.reanalysis),
+        attachment: bankMailAgentAttachment(row.attachment),
       })
     }
   }
@@ -372,5 +450,52 @@ function emptyBankMailAgentReanalysis(): MailBankAgentReanalysis {
     canRerun: false,
     retryAfterSeconds: 0,
     result: null,
+  }
+}
+
+function bankMailAgentAttachment(value: unknown): MailBankAgentAttachment | null {
+  const row = record(value)
+  if (!row) return null
+  const state = String(row.state ?? '') as MailBankAgentAttachmentState
+  const resolutionCode = row.resolutionCode === null || row.resolutionCode === undefined
+    ? null
+    : String(row.resolutionCode) as MailBankAgentAttachmentResolutionCode
+  const documentId = nullableUuid(row.documentId)
+  const fileName = row.fileName === null || row.fileName === undefined
+    ? null
+    : String(row.fileName).trim()
+  const completedAt = row.completedAt === null || row.completedAt === undefined
+    ? null
+    : isoTimestamp(row.completedAt)
+  const terminal = new Set<MailBankAgentAttachmentState>([
+    'attached',
+    'review_required',
+    'failed',
+    'conflict',
+  ]).has(state)
+  const resolutionValid = activeAttachmentStates.has(state)
+    ? resolutionCode === null
+    : resolutionCode !== null
+      && Boolean(attachmentResolutionsByState[state]?.has(resolutionCode))
+  if (
+    !supportedAttachmentStates.has(state)
+    || (resolutionCode !== null && !supportedAttachmentResolutionCodes.has(resolutionCode))
+    || !resolutionValid
+    || documentId === undefined
+    || (fileName !== null && (
+      !fileName
+      || fileName.length > 255
+      || /[\u0000-\u001F\u007F]/u.test(fileName)
+    ))
+    || (terminal !== Boolean(completedAt))
+    || (state === 'attached' && (!documentId || !fileName))
+    || (state !== 'attached' && (documentId !== null || fileName !== null))
+  ) return null
+  return {
+    state,
+    resolutionCode,
+    documentId,
+    fileName,
+    completedAt,
   }
 }

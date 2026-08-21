@@ -12,7 +12,7 @@ interface NotificationOutboxDrainResponse {
 export const notificationOutbox = schedules.task({
   id: 'openexpert-notification-outbox',
   cron: '* * * * *',
-  ttl: '2m',
+  ttl: '5m',
   retry: {
     maxAttempts: 3,
     factor: 2,
@@ -36,7 +36,7 @@ export const notificationOutbox = schedules.task({
       },
       body: JSON.stringify({ limit: 50 }),
       redirect: 'error',
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(180_000),
     })
     if (!response.ok) {
       const details = (await response.text()).slice(0, 500)

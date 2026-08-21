@@ -24,6 +24,7 @@ const mockService = source('../server/utils/openexpert-mock-bank-service.ts')
 const mockSimulator = source('../server/utils/openexpert-mock-bank-simulator.ts')
 const mockActions = source('../server/utils/openexpert-mock-bank-actions.ts')
 const mockDelivery = source('../server/utils/openexpert-mock-bank-delivery.ts')
+const mockDeliveryCore = source('../server/utils/openexpert-mock-bank-delivery-core.ts')
 const mockDispatch = source('../server/utils/openexpert-mock-bank-dispatch.ts')
 const mockPayload = source('../server/utils/openexpert-mock-bank-payload.ts')
 const mockCleanup = source('../server/utils/openexpert-mock-bank-cleanup.ts')
@@ -38,6 +39,7 @@ const mortgageActionUi = source('../app/components/CaseMortgageActionSlideover.v
 const notificationOutboxRoute = source('../server/api/internal/notifications/outbox.post.ts')
 const notificationOutboxWorker = source('../../../packages/tasks/src/trigger/notification-outbox.ts')
 const migration = source('../../../packages/database/postgres/migrations/0058_openexpert_mock_bank.sql')
+const pdfAttachmentMigration = source('../../../packages/database/postgres/migrations/0087_bank_mail_agent_pdf_attachments.sql')
 const logoRepairMigration = source('../../../packages/database/postgres/migrations/0059_openexpert_mock_bank_logo_url.sql')
 const bankLogo = source('../public/assets/openexpert-bank.svg')
 const envExample = source('../../../.env.example')
@@ -271,10 +273,16 @@ test('sent replay, explicit resend and active leases have distinct semantics', (
   )
 })
 
-test('same-generation retry reuses committed private payload and hashes', () => {
+test('same-generation retry reuses only valid immutable payloads and rotates invalid paths', () => {
   assert.match(platformStorage, /bypassPrivateDownloadCache: true/u)
   assert.match(vercelBlobProvider, /result\.blob\.size === 0[\s\S]*?sdk\.head/u)
-  assert.match(mockDelivery, /discardEmptyUncommittedOpenExpertMockBankObject/u)
+  assert.doesNotMatch(mockDelivery, /discardEmptyUncommittedOpenExpertMockBankObject|\.delete\(/u)
+  assert.doesNotMatch(mockPayload, /discardEmptyUncommittedOpenExpertMockBankObject|storage\.delete\(/u)
+  assert.match(mockDelivery, /crm_mock_bank_uncommitted_payload_invalid/u)
+  assert.match(
+    mockActions,
+    /crm_mock_bank_uncommitted_payload_invalid'[\s\S]*?return 'uncommitted_payload_invalid'/u,
+  )
   assert.match(migration, /UNIQUE \(application_id, kind\)/u)
   assert.match(migration, /UNIQUE \(request_id\)/u)
   assert.match(migration, /generation_started_at timestamptz NOT NULL/u)
@@ -298,6 +306,26 @@ test('same-generation retry reuses committed private payload and hashes', () => 
     /\b(?:generation|generation_started_at|payload_id|manifest_storage_path|archive_storage_path|recipient_connection_id)\s*=/u,
   )
   assert.match(migration, /crm_mock_bank_dispatch_recipient_binding_mismatch/u)
+  const rotateStart = pdfAttachmentMigration.indexOf(
+    'CREATE FUNCTION private.rotate_crm_mock_bank_generation_context_retry()',
+  )
+  const rotateEnd = pdfAttachmentMigration.indexOf(
+    'CREATE FUNCTION private.pin_crm_mock_bank_generation_context()',
+    rotateStart,
+  )
+  assert.ok(rotateStart >= 0)
+  assert.ok(rotateEnd > rotateStart)
+  const rotateSql = pdfAttachmentMigration.slice(rotateStart, rotateEnd)
+  assert.match(rotateSql, /OLD\.payload_ready_at IS NULL/u)
+  assert.match(rotateSql, /OLD\.error_code IN \([\s\S]*?'generation_context_changed',[\s\S]*?'uncommitted_payload_invalid'/u)
+  assert.match(rotateSql, /NEW\.request_id IS DISTINCT FROM OLD\.request_id/u)
+  assert.match(rotateSql, /OLD\.manifest_storage_path, 'manifest'/u)
+  assert.match(rotateSql, /OLD\.archive_storage_path, 'archive'/u)
+  assert.match(rotateSql, /next_generation := OLD\.generation \+ 1/u)
+  assert.match(rotateSql, /next_payload_id := gen_random_uuid\(\)/u)
+  assert.match(rotateSql, /NEW\.manifest_storage_path :=[\s\S]*?next_payload_id/u)
+  assert.match(rotateSql, /NEW\.archive_storage_path :=[\s\S]*?next_payload_id/u)
+  assert.match(rotateSql, /NEW\.payload_ready_at := NULL/u)
   assert.match(migration, /CREATE FUNCTION public\.commit_crm_mock_bank_dispatch_payload\(/u)
   assert.match(migration, /dispatch_row\.generation IS DISTINCT FROM p_generation/u)
   assert.match(migration, /crm_mock_bank_payload_commit_mismatch/u)
@@ -314,8 +342,8 @@ test('same-generation retry reuses committed private payload and hashes', () => 
   assert.match(migration, /dispatch_row\.payload_ready_at IS NULL/u)
   assert.match(migration, /lease_expires_at = renewal_now \+ interval '5 minutes'/u)
   assert.match(mockDispatch, /backendData\.rpc\('renew_crm_mock_bank_dispatch_send_lease'/u)
-  const renewAt = mockDelivery.indexOf('renewOpenExpertMockBankDispatchSendLease({')
-  const providerSendAt = mockDelivery.indexOf('await sender.send({')
+  const renewAt = mockDeliveryCore.indexOf('await input.renewSendLease()')
+  const providerSendAt = mockDeliveryCore.indexOf('await sender.send({')
   assert.ok(renewAt >= 0)
   assert.ok(providerSendAt > renewAt)
 
@@ -324,29 +352,54 @@ test('same-generation retry reuses committed private payload and hashes', () => 
   assert.match(mockPayload, /stored\.sha256 !== assertSha256\(input\.expectedSha256/u)
   assert.match(mockPayload, /openExpertMockBankFullPayloadSha256/u)
   assert.match(mockDispatch, /backendData\.rpc\('commit_crm_mock_bank_dispatch_payload'/u)
-  assert.match(mockDelivery, /input\.reservation\.payloadReadyAt\s*\? loadCommittedPayload\(input\)\s*: createOrRecoverPayload\(input\)/u)
-  const persistedPayloadStart = mockDelivery.indexOf('async function persistedPayload(')
-  const deliverStart = mockDelivery.indexOf('export async function deliverOpenExpertMockBankDocument(', persistedPayloadStart)
-  const persistedPayloadSource = mockDelivery.slice(persistedPayloadStart, deliverStart)
-  assert.ok(persistedPayloadStart >= 0)
-  assert.ok(deliverStart > persistedPayloadStart)
-  assert.doesNotMatch(persistedPayloadSource, /verifyOpenExpertMockBankEncryptedArchive/u)
   assert.match(
-    mockDelivery.slice(
-      mockDelivery.indexOf('async function createOrRecoverPayload('),
-      persistedPayloadStart,
-    ),
-    /verifyOpenExpertMockBankEncryptedArchive/u,
+    mockDeliveryCore,
+    /input\.committed\s*\? await input\.loadCommitted\(\)\s*: await input\.createUncommitted\(\)/u,
   )
-  assert.match(mockDelivery, /expectedSha256: input\.reservation\.manifestSha256/u)
-  assert.match(mockDelivery, /expectedSha256: input\.reservation\.archiveSha256/u)
-  assert.match(mockDelivery, /payloadSha256 !== input\.reservation\.payloadSha256/u)
+  assert.match(
+    mockDelivery,
+    /committed: Boolean\(input\.reservation\.payloadReadyAt\)/u,
+  )
+  const committedPayloadStart = mockDeliveryCore.indexOf(
+    'export async function loadCommittedOpenExpertMockBankPayload(',
+  )
+  const deliveryStart = mockDeliveryCore.indexOf(
+    'export async function deliverOpenExpertMockBankPayloadSnapshot(',
+    committedPayloadStart,
+  )
+  assert.ok(committedPayloadStart >= 0)
+  assert.ok(deliveryStart > committedPayloadStart)
+  const committedPayloadSource = mockDeliveryCore.slice(
+    committedPayloadStart,
+    deliveryStart,
+  )
+  assert.doesNotMatch(
+    committedPayloadSource,
+    /loadEsisGenerationValidation|assertManifestGenerationContext/u,
+  )
+  assert.match(committedPayloadSource, /expectedSha256: input\.reservation\.manifestSha256/u)
+  assert.match(committedPayloadSource, /expectedSha256: input\.reservation\.archiveSha256/u)
+  assert.doesNotMatch(committedPayloadSource, /assertArchiveMatchesManifest/u)
+  const uncommittedPayloadStart = mockDelivery.indexOf('async function createOrRecoverPayload(')
+  const deliverStart = mockDelivery.indexOf(
+    'export async function deliverOpenExpertMockBankDocument(',
+    uncommittedPayloadStart,
+  )
+  assert.ok(uncommittedPayloadStart >= 0)
+  assert.ok(deliverStart > uncommittedPayloadStart)
+  assert.match(
+    mockDelivery.slice(uncommittedPayloadStart, deliverStart),
+    /await assertArchiveMatchesManifest\([\s\S]*?openExpertMockBankFullPayloadSha256/u,
+  )
+  assert.match(mockDeliveryCore, /expectedSha256: input\.reservation\.manifestSha256/u)
+  assert.match(mockDeliveryCore, /expectedSha256: input\.reservation\.archiveSha256/u)
+  assert.match(mockDeliveryCore, /payloadSha256 !== input\.reservation\.payloadSha256/u)
   assert.match(
     mockDelivery,
     /openExpertMockBankEmailIdempotencyKey\([\s\S]*?input\.reservation\.dispatchId,[\s\S]*?input\.reservation\.generation/u,
   )
-  assert.match(mockDelivery, /to: payload\.manifest\.message\.to/u)
-  assert.match(mockDelivery, /content: payload\.archiveObject\.bytes/u)
+  assert.match(mockDeliveryCore, /to: payload\.manifest\.message\.to/u)
+  assert.match(mockDeliveryCore, /content: payload\.archiveObject\.bytes/u)
   assert.match(mockActions, /reservation\.recipientConnectionId !== input\.recipient\.connectionId/u)
   assert.match(mockActions, /status: 'failed',[\s\S]*?throw error/u)
   assert.match(mockCleanup, /namespace: OPENEXPERT_MOCK_BANK_OUTBOX_NAMESPACE/u)
@@ -418,18 +471,21 @@ test('ledger, persisted manifest, logs and CRM activity never persist a PESEL va
     /\.select\('application_id, kind, status, attempts, last_attempt_at, lease_expires_at, sent_at'\)/u,
   )
 
-  const manifestStart = mockPayload.indexOf('export interface OpenExpertMockBankPersistedPayloadManifest')
+  const manifestStart = mockPayload.indexOf('export type OpenExpertMockBankPersistedPayloadManifest')
   const manifestEnd = mockPayload.indexOf('export interface OpenExpertMockBankStoredObject', manifestStart)
   assert.ok(manifestStart >= 0)
   assert.ok(manifestEnd > manifestStart)
   assert.doesNotMatch(mockPayload.slice(manifestStart, manifestEnd), /\bpesel\b/iu)
 
   const buildManifestStart = mockDelivery.indexOf('function buildManifest(')
-  const buildManifestEnd = mockDelivery.indexOf('function assertManifestDeliveryIdentity(', buildManifestStart)
+  const buildManifestEnd = mockDelivery.indexOf('async function buildArchive(', buildManifestStart)
   assert.ok(buildManifestStart >= 0)
   assert.ok(buildManifestEnd > buildManifestStart)
   assert.doesNotMatch(mockDelivery.slice(buildManifestStart, buildManifestEnd), /context\.pesel/u)
-  assert.match(mockDelivery, /buildArchive\(manifest, input\.context\.pesel\)/u)
+  assert.match(
+    mockDelivery,
+    /dependencies\.buildPayloadArchive\(manifest, input\.context\.pesel\)/u,
+  )
 
   const activityStart = migration.indexOf('CREATE FUNCTION private.record_crm_mock_bank_dispatch_activity()')
   const activityEnd = migration.indexOf('\n$$;', activityStart)

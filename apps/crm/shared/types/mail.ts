@@ -302,6 +302,48 @@ export interface MailBankAgentReanalysis {
   result: MailBankAgentResult | null
 }
 
+export type MailBankAgentAttachmentState =
+  | 'queued'
+  | 'downloading'
+  | 'verifying_source'
+  | 'unlocking'
+  | 'validating'
+  | 'importing'
+  | 'attached'
+  | 'review_required'
+  | 'retrying'
+  | 'failed'
+  | 'conflict'
+
+export type MailBankAgentAttachmentResolutionCode =
+  | 'openexpert_mock_esis_attached'
+  | 'existing_esis_requires_review'
+  | 'source_archive_mismatch'
+  | 'dispatch_generation_changed'
+  | 'attachment_scope_conflict'
+  | 'canonical_link_invalid'
+  | 'policy_disabled'
+  | 'attachment_not_found'
+  | 'attachment_ambiguous'
+  | 'archive_invalid'
+  | 'archive_unlock_failed'
+  | 'pdf_invalid'
+  | 'inspection_failed'
+  | 'storage_object_conflict'
+  | 'retry_limit_reached'
+  | 'processing_failed'
+  | 'provider_unavailable'
+  | 'storage_unavailable'
+  | 'processing_timeout'
+
+export interface MailBankAgentAttachment {
+  state: MailBankAgentAttachmentState
+  resolutionCode: MailBankAgentAttachmentResolutionCode | null
+  documentId: string | null
+  fileName: string | null
+  completedAt: string | null
+}
+
 export interface MailBankAgentStatus {
   messageId: string
   state: MailBankAgentState
@@ -309,6 +351,7 @@ export interface MailBankAgentStatus {
   link: MailBankAgentThreadLink | null
   context: MailBankAgentContext | null
   reanalysis: MailBankAgentReanalysis
+  attachment: MailBankAgentAttachment | null
 }
 
 export interface MailBankAgentStatusPayload {

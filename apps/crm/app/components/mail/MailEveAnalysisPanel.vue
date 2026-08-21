@@ -19,7 +19,7 @@ const emit = defineEmits<{
   reanalyze: [messageId: string]
 }>()
 
-const { orgPath } = useOrganizationContext()
+const { crmApiPath, orgPath } = useOrganizationContext()
 
 const headingId = computed(() => (
   `eve-analysis-${props.status.messageId.replace(/[^A-Za-z0-9_-]/gu, '-').slice(-80)}`
@@ -53,6 +53,22 @@ const initialAnalysisProcessing = computed(() => props.status.state === 'process
 const analysisProcessing = computed(() => (
   initialAnalysisProcessing.value || reanalysisProcessing.value
 ))
+const attachmentProcessingStates = new Set([
+  'queued',
+  'downloading',
+  'verifying_source',
+  'unlocking',
+  'validating',
+  'importing',
+  'retrying',
+])
+const attachmentProcessing = computed(() => (
+  Boolean(
+    props.status.attachment
+    && attachmentProcessingStates.has(props.status.attachment.state),
+  )
+))
+const panelBusy = computed(() => analysisProcessing.value || attachmentProcessing.value)
 const reanalysisFailed = computed(() => props.status.reanalysis.state === 'failed')
 const currentResult = computed(() => (
   props.status.reanalysis.state === 'completed' && props.status.reanalysis.result
@@ -79,6 +95,59 @@ const canRequestReanalysis = computed(() => (
   !analysisProcessing.value
   && props.status.reanalysis.canRerun
 ))
+const attachmentPresentation = computed(() => {
+  const state = props.status.attachment?.state
+  if (state === 'attached') {
+    return {
+      color: 'success' as const,
+      icon: 'i-lucide-file-check-2',
+      label: 'ESIS dodany do sprawy',
+    }
+  }
+  if (state === 'review_required') {
+    return {
+      color: 'warning' as const,
+      icon: 'i-lucide-file-warning',
+      label: 'ESIS wymaga sprawdzenia',
+    }
+  }
+  if (state === 'conflict') {
+    return {
+      color: 'warning' as const,
+      icon: 'i-lucide-files',
+      label: 'Konflikt dokumentów ESIS',
+    }
+  }
+  if (state === 'failed') {
+    return {
+      color: 'error' as const,
+      icon: 'i-lucide-file-x-2',
+      label: 'Nie udało się dodać ESIS',
+    }
+  }
+  const labels: Record<string, string> = {
+    queued: 'ESIS oczekuje na pobranie',
+    downloading: 'Pobieranie ESIS z poczty',
+    verifying_source: 'Sprawdzanie pochodzenia ESIS',
+    unlocking: 'Bezpieczne odblokowanie ZIP',
+    validating: 'Weryfikacja dokumentu ESIS',
+    importing: 'Dodawanie ESIS do sprawy',
+    retrying: 'Ponowna próba przetworzenia ESIS',
+  }
+  return {
+    color: 'info' as const,
+    icon: 'i-lucide-loader-circle',
+    label: labels[state ?? ''] ?? 'Przetwarzanie dokumentu ESIS',
+  }
+})
+const attachmentDownloadUrl = computed(() => {
+  const attachment = props.status.attachment
+  const caseId = props.status.link?.state === 'linked'
+    ? props.status.link.caseId
+    : context.value?.case?.id
+  if (attachment?.state !== 'attached' || !attachment.documentId || !caseId) return null
+  return `${crmApiPath(`/cases/${caseId}/documents/${attachment.documentId}`)}?download=1`
+})
 const resultSignals = computed(() => {
   const result = currentResult.value
   if (!result) return { items: [], remaining: 0 }
@@ -247,6 +316,38 @@ function signalLabel(code: string): string {
   return labels[code] ?? ''
 }
 
+function attachmentDescription(): string {
+  const attachment = props.status.attachment
+  if (!attachment) return ''
+  if (attachment.state === 'attached') {
+    return 'Zaufany plik z OpenExpert Banku został automatycznie pobrany, bezpiecznie rozpakowany, zweryfikowany i dodany jako ESIS do właściwego wniosku.'
+  }
+  const descriptions: Record<string, string> = {
+    source_archive_mismatch: 'Odebrany plik nie odpowiada artefaktowi wysłanemu przez OpenExpert Bank. Nic nie zostało rozpakowane ani dodane.',
+    dispatch_generation_changed: 'Odebrany plik nie jest najnowszą wysłaną wersją formularza ESIS.',
+    attachment_scope_conflict: 'Plik wskazuje inny wniosek lub sprawę niż bezpiecznie powiązana wiadomość.',
+    canonical_link_invalid: 'Powiązanie wiadomości ze sprawą zmieniło się przed dodaniem dokumentu.',
+    policy_disabled: 'Automatyczne przetwarzanie tego nadawcy zostało wyłączone. Dokument nie został dodany.',
+    attachment_not_found: 'Dostawca poczty nie udostępnił oczekiwanego formularza ESIS.',
+    attachment_ambiguous: 'W wiadomości nie udało się jednoznacznie wybrać jednego formularza ESIS.',
+    archive_invalid: 'Archiwum nie spełnia bezpiecznych wymagań i nie zostało otwarte.',
+    archive_unlock_failed: 'Nie udało się bezpiecznie odblokować archiwum. Dokument nie został dodany.',
+    pdf_invalid: 'Rozpakowany plik nie jest prawidłowym dokumentem PDF ESIS.',
+    inspection_failed: 'Plik nie przeszedł kontrolowanej inspekcji i nie został dodany do wniosku.',
+    existing_esis_requires_review: 'Wniosek ma już inny dokument ESIS. Istniejący dokument nie został zastąpiony automatycznie.',
+    storage_object_conflict: 'W magazynie istnieje inny dokument pod tym samym kontrolowanym miejscem. Wymagana jest ręczna weryfikacja.',
+    provider_unavailable: 'Dostawca poczty jest chwilowo niedostępny. Dokument zostanie przetworzony ponownie.',
+    storage_unavailable: 'Magazyn dokumentów jest chwilowo niedostępny. Mechanizm spróbuje ponownie.',
+    processing_timeout: 'Przetwarzanie zostało bezpiecznie przerwane i zostanie wznowione.',
+    retry_limit_reached: 'Nie udało się ukończyć przetwarzania po bezpiecznych ponownych próbach.',
+    processing_failed: 'Nie udało się ukończyć automatycznego przetwarzania. Dokument nie został dodany.',
+  }
+  return descriptions[attachment.resolutionCode ?? '']
+    ?? (attachmentProcessing.value
+      ? 'Dokument jest przetwarzany automatycznie. Możesz w tym czasie nadal czytać wiadomość.'
+      : 'Dokument nie został dodany automatycznie. Wymagana jest ręczna weryfikacja.')
+}
+
 function formatCompletedAt(value: string | null | undefined): string {
   if (!value) return ''
   const date = new Date(value)
@@ -262,7 +363,7 @@ function formatCompletedAt(value: string | null | undefined): string {
   <section
     class="mail-eve-analysis"
     :aria-labelledby="headingId"
-    :aria-busy="analysisProcessing"
+    :aria-busy="panelBusy"
   >
     <header class="mail-eve-analysis__header">
       <div class="mail-eve-analysis__title">
@@ -358,6 +459,52 @@ function formatCompletedAt(value: string | null | undefined): string {
           </UButton>
         </div>
       </div>
+
+      <section
+        v-if="status.attachment"
+        class="mail-eve-analysis__document"
+        aria-label="Automatyczne przetwarzanie dokumentu ESIS"
+      >
+        <div class="mail-eve-analysis__document-icon" aria-hidden="true">
+          <UIcon
+            :name="attachmentPresentation.icon"
+            :class="{ 'animate-spin': attachmentProcessing }"
+          />
+        </div>
+        <div class="mail-eve-analysis__document-copy">
+          <span>Dokument ESIS</span>
+          <strong>{{ attachmentPresentation.label }}</strong>
+          <p>{{ attachmentDescription() }}</p>
+          <small v-if="status.attachment.fileName">
+            {{ status.attachment.fileName }}
+          </small>
+          <small v-if="status.attachment.state === 'attached' && status.attachment.completedAt">
+            Dodano automatycznie {{ formatCompletedAt(status.attachment.completedAt) }}
+          </small>
+        </div>
+        <UButton
+          v-if="attachmentDownloadUrl"
+          :href="attachmentDownloadUrl"
+          external
+          download
+          color="primary"
+          variant="solid"
+          size="sm"
+          icon="i-lucide-download"
+        >
+          Pobierz ESIS
+        </UButton>
+        <UBadge
+          v-else
+          :color="attachmentPresentation.color"
+          variant="subtle"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {{ attachmentPresentation.label }}
+        </UBadge>
+      </section>
 
       <div v-if="resultSignals.items.length" class="mail-eve-analysis__signals">
         <span>Dlaczego Eve tak uznała?</span>
@@ -523,6 +670,60 @@ function formatCompletedAt(value: string | null | undefined): string {
   gap: 7px;
 }
 
+.mail-eve-analysis__document {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 18%, var(--ui-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ui-primary) 4%, var(--ui-bg));
+}
+
+.mail-eve-analysis__document-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-bg));
+}
+
+.mail-eve-analysis__document-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.mail-eve-analysis__document-copy > span {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mail-eve-analysis__document-copy strong {
+  color: var(--ui-text-highlighted);
+  font-size: 13px;
+}
+
+.mail-eve-analysis__document-copy p,
+.mail-eve-analysis__document-copy small {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mail-eve-analysis__document-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mail-eve-analysis__chips,
 .mail-eve-analysis__signals > div {
   display: flex;
@@ -591,6 +792,18 @@ function formatCompletedAt(value: string | null | undefined): string {
 
   .mail-eve-analysis__footer :deep(button) {
     min-height: 44px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .mail-eve-analysis__document {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .mail-eve-analysis__document > :deep(a),
+  .mail-eve-analysis__document > :deep(button),
+  .mail-eve-analysis__document > :deep(span:last-child) {
+    grid-column: 1 / -1;
     width: 100%;
     justify-content: center;
   }

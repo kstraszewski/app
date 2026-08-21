@@ -219,10 +219,18 @@ async function ensureProductionMigrationRole(client) {
       console.log('~ ownership openexpert_owner')
     }
 
-    // 0084 was initially applied directly by the Neon database owner before
+    const ownerRole = await client.query(
+      "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
+    )
+    if (ownerRole.rows[0]?.can_set_owner_role !== true) {
+      throw new Error('Production migration connection cannot assume openexpert_owner')
+    }
+
+    // 0084 was initially applied directly by the Neon connection role before
     // it joined this release runner. Transfer that one cached RPC to the
-    // dedicated application owner while the connection still has its original
-    // role; the migration loop deliberately SET ROLEs before replacing it.
+    // dedicated application owner only when this exact connection still owns
+    // it and can assume the target role. The migration loop deliberately SET
+    // ROLEs before replacing it.
     const strongProposalFunction =
       'public.get_strong_bank_mail_agent_proposal_case(uuid)'
     const strongProposalOwner = await client.query(`
@@ -234,12 +242,9 @@ async function ensureProductionMigrationRole(client) {
       strongProposalOwner.rowCount === 1
       && strongProposalOwner.rows[0]?.owner !== 'openexpert_owner'
     ) {
-      if (
-        role.connection_role !== role.database_owner
-        || strongProposalOwner.rows[0]?.owner !== role.connection_role
-      ) {
+      if (strongProposalOwner.rows[0]?.owner !== role.connection_role) {
         throw new Error(
-          'Only the database/function owner may transfer the legacy bank-mail RPC',
+          'Only the current function owner may transfer the legacy bank-mail RPC',
         )
       }
       const transferStatement = await client.query(
@@ -250,12 +255,6 @@ async function ensureProductionMigrationRole(client) {
       console.log('~ ownership get_strong_bank_mail_agent_proposal_case')
     }
 
-    const ownerRole = await client.query(
-      "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
-    )
-    if (ownerRole.rows[0]?.can_set_owner_role !== true) {
-      throw new Error('Production migration connection cannot assume openexpert_owner')
-    }
     await client.query('COMMIT')
   }
   catch (caught) {

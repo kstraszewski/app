@@ -107,6 +107,9 @@ test('production migration assumes the application owner before locks and checks
 
 test('production migration transfers the legacy bank-mail getter before assuming the app owner', async () => {
   const source = await readFile(migrationScriptUrl, 'utf8')
+  const capabilityCheckIndex = source.indexOf(
+    "SELECT pg_has_role(current_user, 'openexpert_owner', 'USAGE') AS can_set_owner_role",
+  )
   const legacyFunctionIndex = source.indexOf(
     'public.get_strong_bank_mail_agent_proposal_case(uuid)',
   )
@@ -115,11 +118,12 @@ test('production migration transfers the legacy bank-mail getter before assuming
   )
   const setRoleIndex = source.indexOf("await client.query('SET LOCAL ROLE openexpert_owner')")
 
-  assert.ok(legacyFunctionIndex >= 0)
+  assert.ok(capabilityCheckIndex >= 0)
+  assert.ok(legacyFunctionIndex > capabilityCheckIndex)
   assert.ok(transferIndex > legacyFunctionIndex)
   assert.ok(setRoleIndex > transferIndex)
   assert.match(
     source,
-    /role\.connection_role !== role\.database_owner[\s\S]+?strongProposalOwner\.rows\[0\]\?\.owner !== role\.connection_role/u,
+    /if \(strongProposalOwner\.rows\[0\]\?\.owner !== role\.connection_role\) \{[\s\S]+?Only the current function owner may transfer the legacy bank-mail RPC/u,
   )
 })

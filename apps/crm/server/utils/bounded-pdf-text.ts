@@ -1,10 +1,14 @@
 export const MAX_BANK_MAIL_PDF_TEXT_CHARACTERS = 250_000
 export const MAX_BANK_MAIL_PDF_PAGES = 100
 
-function ensurePdfJsGlobals(): void {
+async function ensurePdfJsGlobals(): Promise<void> {
   const globals = globalThis as unknown as Record<string, unknown>
-  globals.DOMMatrix ||= class DOMMatrix { constructor(..._args: unknown[]) {} }
-  globals.Path2D ||= class Path2D { constructor(..._args: unknown[]) {} }
+  if (globals.DOMMatrix && globals.Path2D && globals.ImageData) return
+
+  const canvas = await import('@napi-rs/canvas')
+  globals.DOMMatrix ||= canvas.DOMMatrix
+  globals.Path2D ||= canvas.Path2D
+  globals.ImageData ||= canvas.ImageData
 }
 
 function normalizedText(value: string): string {
@@ -29,7 +33,7 @@ export async function extractBoundedPdfText(input: {
   ) {
     throw new TypeError('PDF text extraction input is invalid')
   }
-  ensurePdfJsGlobals()
+  await ensurePdfJsGlobals()
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const loadingTask = getDocument({
     data: input.bytes.slice(),

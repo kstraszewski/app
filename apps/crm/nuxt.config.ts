@@ -104,7 +104,16 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['@nuxtjs/mdc', '@nuxt/ui', 'eve/nuxt', 'nuxt-charts'],
+  modules: [
+    '@nuxtjs/mdc',
+    '@nuxt/ui',
+    'eve/nuxt',
+    'nuxt-charts',
+    'nuxt-email-renderer',
+  ],
+  nuxtEmailRenderer: {
+    codeHighlighting: false,
+  },
   nuxtCharts: {
     prefix: 'Nc',
     include: ['LineChart'],

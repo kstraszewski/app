@@ -1,5 +1,5 @@
 import {
-  createEmailService,
+  createTransactionalEmailSender,
   EmailDeliveryError,
   normalizeTransactionalEmailAddress,
   type EmailDeliveryResult,
@@ -11,6 +11,7 @@ import {
 } from '@openexpert/auth/server'
 import { serverDataBackend } from '../../utils/data-api'
 import { serverAuth } from '../../utils/platform-auth'
+import { renderWaitlistConfirmationEmail } from '../../utils/waitlist-email-content'
 import { createError, readBody, setHeader } from 'h3'
 
 export default defineEventHandler(async (event) => {
@@ -75,14 +76,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Nie udało się zapisać adresu.' })
   }
 
-  const emailService = createEmailService(config.resend)
+  const emailSender = createTransactionalEmailSender(config.resend)
   let emailDelivery: EmailDeliveryResult | { status: 'failed' }
 
   try {
-    emailDelivery = await emailService.sendWaitlistConfirmation({
+    const content = await renderWaitlistConfirmationEmail(siteUrl)
+    emailDelivery = await emailSender.send({
       to: email,
-      waitlistId: data.id,
-      siteUrl,
+      ...content,
+      tags: [{ name: 'email_type', value: 'waitlist_confirmation' }],
+      idempotencyKey: `waitlist-confirmation/${data.id}`,
     })
   } catch (emailError) {
     console.error('Waitlist confirmation email failed', {

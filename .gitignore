@@ -36,9 +36,12 @@ apps/*/.env.*
 
 # Generated local QA, build, and document artifacts
 .playwright-mcp/
+apps/*/.nuxt-*/
 apps/crm/.nuxt-mail-release-*/
 apps/crm/output/
 apps/landing/.design-qa/
+openexpert-auth-email-mobile.png
+openexpert-bank-demo-case.png
 openexpert-mail-desktop.png
 output/
 tmp/

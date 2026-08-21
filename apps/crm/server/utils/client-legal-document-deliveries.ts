@@ -12,7 +12,6 @@ import {
 import { serverDataBackend } from './data-api'
 import {
   CLIENT_LEGAL_DOCUMENTS_EMAIL_TEMPLATE_VERSION,
-  clientLegalDocumentsEmailTemplate,
 } from './client-legal-documents-email.ts'
 import { INTERMEDIARY_DOCUMENT_GENERATOR_VERSION } from './intermediary-document-content.ts'
 import {
@@ -21,6 +20,7 @@ import {
 } from './intermediary-document-pdf.ts'
 import { createIntermediaryDocument } from './intermediary-documents.ts'
 import { serverStorageClient } from './platform-storage'
+import { renderClientLegalDocumentsEmail } from './system-email-content.ts'
 
 const legalDocumentDeliveryConcurrency = 2
 const legalDocumentNudgeLimit = 5
@@ -541,7 +541,7 @@ async function processClientLegalDocumentDelivery(
 
     const sender = legalDocumentEmailSender(event)
     provider = sender.provider
-    const template = clientLegalDocumentsEmailTemplate({ organizationName })
+    const template = await renderClientLegalDocumentsEmail({ organizationName })
     const delivery = await sender.send({
       to: recipientEmail,
       subject: template.subject,

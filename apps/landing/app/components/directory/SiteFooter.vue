@@ -12,6 +12,7 @@
         <NuxtLink to="/eksperci">Eksperci</NuxtLink>
         <NuxtLink to="/placowki">Placówki</NuxtLink>
         <NuxtLink to="/o-nas">O OpenExpert</NuxtLink>
+        <NuxtLink to="/posrednictwo-kredytowe">Pośrednictwo kredytowe</NuxtLink>
         <a href="mailto:hello@openexpert.app">Kontakt</a>
       </nav>
     </div>

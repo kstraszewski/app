@@ -10,6 +10,7 @@ import {
   EmailDeliveryError,
 } from '@openexpert/email'
 import { getRequestHeaders, type H3Event } from 'h3'
+import { renderLandingAuthEmail } from './auth-email-content'
 
 interface PlatformAuthRuntimeConfig {
   baseUrl: string
@@ -53,38 +54,6 @@ export interface PlatformAuthClaims {
 let cachedRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('\'', '&#39;')
-}
-
-function emailContent(kind: 'email-verification' | 'magic-link' | 'password-reset', url: string) {
-  const safeUrl = escapeHtml(url)
-  if (kind === 'password-reset') {
-    return {
-      subject: 'Ustaw nowe hasło w OpenExpert',
-      text: `Otwórz ten link, aby ustawić nowe hasło:\n\n${url}\n\nJeśli to nie Ty, zignoruj tę wiadomość.`,
-      html: `<p>Otwórz poniższy link, aby ustawić nowe hasło w OpenExpert.</p><p><a href="${safeUrl}">Ustaw nowe hasło</a></p><p>Jeśli to nie Ty, zignoruj tę wiadomość.</p>`,
-    }
-  }
-  if (kind === 'magic-link') {
-    return {
-      subject: 'Twój link logowania do OpenExpert',
-      text: `Otwórz ten jednorazowy link, aby zalogować się do OpenExpert:\n\n${url}`,
-      html: `<p>Otwórz poniższy jednorazowy link, aby zalogować się do OpenExpert.</p><p><a href="${safeUrl}">Zaloguj się</a></p>`,
-    }
-  }
-  return {
-    subject: 'Potwierdź adres email w OpenExpert',
-    text: `Otwórz ten link, aby potwierdzić adres email:\n\n${url}`,
-    html: `<p>Otwórz poniższy link, aby potwierdzić adres email w OpenExpert.</p><p><a href="${safeUrl}">Potwierdź email</a></p>`,
-  }
-}
 
 function requestHeaders(event: H3Event): Headers {
   const result = new Headers()
@@ -135,7 +104,7 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
     },
     emailSender: {
       async send(message) {
-        const content = emailContent(message.kind, message.url)
+        const content = await renderLandingAuthEmail(message.kind, message.url)
         const result = await sender.send({
           to: message.to,
           ...content,

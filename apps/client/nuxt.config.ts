@@ -26,7 +26,10 @@ const demoServerEnabled = process.env.NUXT_DEMO_ENABLED === 'true' || demoEnable
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
-  modules: ['@nuxt/ui'],
+  modules: ['@nuxt/ui', 'nuxt-email-renderer'],
+  nuxtEmailRenderer: {
+    codeHighlighting: false,
+  },
   css: ['~/assets/css/main.css'],
   typescript: {
     tsConfig: {

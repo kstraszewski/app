@@ -17,7 +17,6 @@ import {
 import {
   OPENEXPERT_MOCK_BANK_EMAIL_TEMPLATE_VERSION,
   openExpertMockBankEmailIdempotencyKey,
-  openExpertMockBankEmailTemplate,
 } from './openexpert-mock-bank-email.ts'
 import {
   commitOpenExpertMockBankDispatchPayload,
@@ -42,6 +41,7 @@ import {
   type OpenExpertMockBankEmailConfig,
 } from './openexpert-mock-bank-service.ts'
 import { loadIntermediaryDocumentFont } from './intermediary-documents.ts'
+import { renderOpenExpertMockBankEmail } from './system-email-content.ts'
 
 export interface OpenExpertMockBankDeliveryResult {
   providerMessageId: string
@@ -122,14 +122,14 @@ function identityFromReservation(
   }
 }
 
-function buildManifest(input: {
+async function buildManifest(input: {
   event: H3Event
   organizationId: string
   context: OpenExpertMockBankContext
   kind: OpenExpertMockBankDocumentKind
   recipientEmail: string
   reservation: OpenExpertMockBankDispatchReservation
-}): OpenExpertMockBankPersistedPayloadManifest {
+}): Promise<OpenExpertMockBankPersistedPayloadManifest> {
   const { runtime, sender } = currentSender(input.event, input.organizationId)
   if (!sender.isConfigured || !sender.provider || !runtime.from?.trim()) {
     throw createError({
@@ -141,13 +141,15 @@ function buildManifest(input: {
     now: new Date(input.reservation.generationStartedAt),
     decisionDueAt: input.context.process.decisionDueAt,
   })
-  const template = openExpertMockBankEmailTemplate({
+  const validUntil = input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil
+  const template = await renderOpenExpertMockBankEmail({
     kind: input.kind,
     applicationNumber: input.context.applicationNumber,
     applicantNames: input.context.applicantNames,
     issueDate: dates.issueDate,
-    validUntil: input.kind === 'esis' ? dates.esisValidUntil : dates.decisionValidUntil,
+    validUntil,
     ...(input.kind === 'credit_decision' ? { decisionOutcome: 'positive' as const } : {}),
+    archiveName: openExpertMockBankArchiveFileName(input.kind, input.context.applicationNumber),
   })
   return {
     version: 1,
@@ -327,11 +329,12 @@ async function createOrRecoverPayload(input: {
     contentType: OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
   })
   if (!manifestObject) {
+    const manifest = await buildManifest(input)
     manifestObject = await persistOrRecoverOpenExpertMockBankObject({
       storage,
       path: input.reservation.manifestStoragePath,
       contentType: OPENEXPERT_MOCK_BANK_MANIFEST_MEDIA_TYPE,
-      bytes: encodeOpenExpertMockBankPayloadManifest(buildManifest(input)),
+      bytes: encodeOpenExpertMockBankPayloadManifest(manifest),
     })
   }
   const manifest = decodeOpenExpertMockBankPayloadManifest(manifestObject.bytes, identity)

@@ -38,6 +38,7 @@
     "ai": "7.0.38",
     "h3": "1.15.11",
     "nuxt": "^4.5.1",
+    "nuxt-email-renderer": "2.11.0",
     "tailwindcss": "^4.3.3",
     "vue": "^3.5.40",
     "vue-router": "^5.2.0",

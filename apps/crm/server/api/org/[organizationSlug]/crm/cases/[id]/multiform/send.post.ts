@@ -12,11 +12,11 @@ import {
 import {
   assertMultiformEmailArchiveSize,
   MULTIFORM_EMAIL_ARCHIVE_NAME,
-  multiformPackageEmailTemplate,
   normalizeMultiformDeliveryRequestId,
   normalizeMultiformPeselPassword,
 } from '~~/server/utils/multiform-package-email'
 import { recordCrmActivity, requireCrmSession, throwDbError } from '~~/server/utils/crm'
+import { renderMultiformPackageEmail } from '~~/server/utils/system-email-content'
 
 type Row = Record<string, any>
 
@@ -214,7 +214,7 @@ export default defineEventHandler(async (event) => {
     }
     const archive = archives.get(recipient.clientId)
     if (!archive) continue
-    const template = multiformPackageEmailTemplate({ recipientName: recipient.displayName })
+    const template = await renderMultiformPackageEmail({ recipientName: recipient.displayName })
     try {
       const result = await sender.send({
         to: recipient.email,

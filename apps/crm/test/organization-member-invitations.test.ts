@@ -52,6 +52,7 @@ test('admin and public endpoints enforce same-origin session-bound acceptance', 
   const createEndpoint = source('../server/api/org/[organizationSlug]/member-invitations/index.post.ts')
   const acceptEndpoint = source('../server/api/member-invitations/[token]/accept.post.ts')
   const auth = source('../server/utils/platform-auth.ts')
+  const authEmailContent = source('../server/utils/auth-email-content.ts')
 
   assert.match(createEndpoint, /isOpenExpertSameOriginJsonRequest/)
   assert.match(createEndpoint, /requireCrmSession/)
@@ -60,8 +61,9 @@ test('admin and public endpoints enforce same-origin session-bound acceptance', 
   assert.match(acceptEndpoint, /requireAuthIdentity/)
   assert.match(acceptEndpoint, /identity\.emailVerified/)
   assert.match(acceptEndpoint, /accept_organization_member_invitation_v1/)
-  assert.match(auth, /metadata\?\.organizationMemberInvitation === true/)
-  assert.match(auth, /przyjęcie zaproszenia nie uruchomi żadnej płatności/)
+  assert.match(auth, /magicLinkTokenNamespace: 'crm-organization-invitation'/)
+  assert.match(authEmailContent, /metadata\?\.organizationMemberInvitation === true/)
+  assert.match(authEmailContent, /Miejsce jest już opłacone/)
 })
 
 test('member quote and confirmation fence active plus reserved occupied seats', () => {

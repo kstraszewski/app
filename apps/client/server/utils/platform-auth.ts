@@ -10,6 +10,7 @@ import {
 } from '@openexpert/email'
 import { useRuntimeConfig } from '#imports'
 import { getRequestHeaders, type H3Event } from 'h3'
+import { renderClientAuthEmail } from './auth-email-content'
 
 interface PlatformAuthRuntimeConfig {
   baseUrl: string
@@ -44,49 +45,6 @@ interface PlatformAuthEmailConfig {
 let cachedRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('\'', '&#39;')
-}
-
-function emailContent(
-  kind: 'email-verification' | 'magic-link' | 'password-reset',
-  url: string,
-  metadata?: Record<string, unknown>,
-) {
-  const safeUrl = escapeHtml(url)
-  if (kind === 'password-reset') {
-    return {
-      subject: 'Ustaw nowe hasło w panelu OpenExpert',
-      text: `Otwórz ten link, aby ustawić nowe hasło:\n\n${url}\n\nJeśli to nie Ty, zignoruj tę wiadomość.`,
-      html: `<p>Otwórz poniższy link, aby ustawić nowe hasło w panelu OpenExpert.</p><p><a href="${safeUrl}">Ustaw nowe hasło</a></p><p>Jeśli to nie Ty, zignoruj tę wiadomość.</p>`,
-    }
-  }
-  if (kind === 'magic-link') {
-    if (metadata?.clientPortalBooking === true) {
-      return {
-        subject: 'Potwierdź konto i dokończ rezerwację w OpenExpert',
-        text: `Otwórz ten jednorazowy link, aby potwierdzić konto klienta i wrócić do rezerwacji spotkania:\n\n${url}\n\nLink wygasa po godzinie. Jeśli to nie Ty rozpocząłeś rezerwację, zignoruj tę wiadomość.`,
-        html: `<p>Potwierdź konto klienta, aby bezpiecznie wrócić do rezerwacji spotkania.</p><p><a href="${safeUrl}">Potwierdź konto i kontynuuj</a></p><p>Link wygasa po godzinie. Jeśli to nie Ty rozpocząłeś rezerwację, zignoruj tę wiadomość.</p>`,
-      }
-    }
-    return {
-      subject: 'Twój link logowania do panelu OpenExpert',
-      text: `Otwórz ten jednorazowy link, aby zalogować się do panelu OpenExpert:\n\n${url}\n\nLink wygasa po godzinie. Nie przekazuj go dalej.`,
-      html: `<p>Otwórz poniższy jednorazowy link, aby zalogować się do panelu OpenExpert.</p><p><a href="${safeUrl}">Zaloguj się</a></p><p>Link wygasa po godzinie. Nie przekazuj go dalej.</p>`,
-    }
-  }
-  return {
-    subject: 'Potwierdź adres email w panelu OpenExpert',
-    text: `Otwórz ten link, aby potwierdzić adres email:\n\n${url}`,
-    html: `<p>Otwórz poniższy link, aby potwierdzić adres email.</p><p><a href="${safeUrl}">Potwierdź email</a></p>`,
-  }
-}
 
 function requestHeaders(event: H3Event): Headers {
   const result = new Headers()
@@ -161,7 +119,7 @@ export function serverAuth(event: H3Event): OpenExpertAuthRuntime {
     },
     emailSender: {
       async send(message) {
-        const content = emailContent(
+        const content = await renderClientAuthEmail(
           message.kind,
           message.url,
           message.kind === 'magic-link' ? message.metadata : undefined,

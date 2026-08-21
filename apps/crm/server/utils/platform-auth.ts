@@ -10,6 +10,7 @@ import {
   EmailDeliveryError,
 } from '@openexpert/email'
 import { createError, getRequestHeaders, type H3Event } from 'h3'
+import { emailContent } from './auth-email-content'
 import {
   resolveAuthSmsConfig,
   sendAuthSms,
@@ -83,152 +84,6 @@ let cachedClientPortalRuntime:
 let cachedOrganizationInvitationRuntime:
   | { fingerprint: string, runtime: OpenExpertAuthRuntime }
   | undefined
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('\'', '&#39;')
-}
-
-function emailContent(
-  kind: 'email-verification' | 'magic-link' | 'password-reset',
-  url: string,
-  metadata?: Record<string, unknown>,
-) {
-  const safeUrl = escapeHtml(url)
-  if (kind === 'password-reset') {
-    return {
-      subject: 'Ustaw nowe hasło w OpenExpert',
-      text: `Otwórz ten link, aby ustawić nowe hasło:\n\n${url}\n\nJeśli to nie Ty, zignoruj tę wiadomość.`,
-      html: `<p>Otwórz poniższy link, aby ustawić nowe hasło w OpenExpert.</p><p><a href="${safeUrl}">Ustaw nowe hasło</a></p><p>Jeśli to nie Ty, zignoruj tę wiadomość.</p>`,
-    }
-  }
-  if (kind === 'magic-link') {
-    if (metadata?.organizationMemberInvitation === true) {
-      const organizationName = String(metadata.organizationName || '').trim().slice(0, 160)
-      const safeOrganizationName = escapeHtml(organizationName)
-      const role = metadata.role === 'admin' ? 'administratora' : 'użytkownika'
-      const organizationText = organizationName
-        ? ` do organizacji „${organizationName}”`
-        : ' do organizacji'
-      const organizationHtml = safeOrganizationName
-        ? ` do organizacji <strong>${safeOrganizationName}</strong>`
-        : ' do organizacji'
-      return {
-        subject: `Zaproszenie ${role} do OpenExpert`,
-        text: [
-          `Otrzymujesz zaproszenie${organizationText}.`,
-          '',
-          'To miejsce jest już opłacone — przyjęcie zaproszenia nie uruchomi żadnej płatności.',
-          'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i dołączyć:',
-          url,
-          '',
-          'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
-          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
-        ].join('\n'),
-        html: `<p>Otrzymujesz zaproszenie${organizationHtml}.</p><p>To miejsce jest już opłacone — przyjęcie zaproszenia nie uruchomi żadnej płatności.</p><p><a href="${safeUrl}">Dołącz do organizacji</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
-      }
-    }
-    if (metadata?.organizationInvitation === true) {
-      const organizationName = String(metadata.organizationName || '').trim().slice(0, 160)
-      const safeOrganizationName = escapeHtml(organizationName)
-      const organizationText = organizationName
-        ? ` dla organizacji „${organizationName}”`
-        : ''
-      const organizationHtml = safeOrganizationName
-        ? ` dla organizacji <strong>${safeOrganizationName}</strong>`
-        : ''
-      const billingDiscountLabel = String(metadata.billingDiscountLabel || '').trim().slice(0, 160)
-      const safeBillingDiscountLabel = escapeHtml(billingDiscountLabel)
-      const billingDiscountText = billingDiscountLabel
-        ? `\nPrzypisana oferta: ${billingDiscountLabel}. Rabat zostanie zastosowany automatycznie w Stripe Checkout.\n`
-        : ''
-      const billingDiscountHtml = safeBillingDiscountLabel
-        ? `<p><strong>Przypisana oferta:</strong> ${safeBillingDiscountLabel}. Rabat zostanie zastosowany automatycznie w Stripe Checkout.</p>`
-        : ''
-      if (metadata.onboardingSource === 'self_service') {
-        const initialSeatCount = Number(metadata.initialSeatCount)
-        const seatCount = Number.isSafeInteger(initialSeatCount)
-          && initialSeatCount >= 1
-          && initialSeatCount <= 100
-          ? initialSeatCount
-          : 1
-        const billingPlan = metadata.billingPlan === 'team' ? 'Zespół' : 'Indywidualny'
-        const seatLabel = seatCount === 1 ? '1 użytkownika' : `${seatCount} użytkowników`
-        return {
-          subject: 'Dokończ rejestrację organizacji w OpenExpert',
-          text: [
-            `Otrzymaliśmy prośbę o utworzenie konta administratora${organizationText}.`,
-            `Wybrany pakiet ${billingPlan} obejmuje ${seatLabel}.`,
-            '',
-            'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i przejść do płatności:',
-            url,
-            '',
-            'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
-            'Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.',
-          ].join('\n'),
-          html: `<p>Otrzymaliśmy prośbę o utworzenie konta administratora${organizationHtml}.</p><p>Wybrany pakiet <strong>${billingPlan}</strong> obejmuje <strong>${seatLabel}</strong>.</p><p><a href="${safeUrl}">Potwierdź email i kontynuuj</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie rozpoczynałeś rejestracji, zignoruj tę wiadomość.</p>`,
-        }
-      }
-      return {
-        subject: 'Aktywuj organizację w OpenExpert',
-        text: [
-          `Otrzymujesz zaproszenie do utworzenia konta administratora${organizationText}.`,
-          billingDiscountText,
-          '',
-          'Otwórz poniższy jednorazowy link, aby potwierdzić adres email i kontynuować:',
-          url,
-          '',
-          'Link logowania jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
-          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
-        ].join('\n'),
-        html: `<p>Otrzymujesz zaproszenie do utworzenia konta administratora${organizationHtml}.</p>${billingDiscountHtml}<p><a href="${safeUrl}">Aktywuj organizację</a></p><p>Link logowania jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
-      }
-    }
-    if (metadata?.clientPortalInvitation === true) {
-      return {
-        subject: 'Aktywuj bezpieczny panel klienta OpenExpert',
-        text: [
-          'Twój ekspert udostępnił Ci bezpieczny panel klienta OpenExpert.',
-          '',
-          `Aktywuj panel, otwierając ten jednorazowy link (ważny przez 1 godzinę):`,
-          url,
-          '',
-          'Link jest przeznaczony tylko dla Ciebie — nie przekazuj go dalej.',
-          'Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.',
-        ].join('\n'),
-        html: `<p>Twój ekspert udostępnił Ci bezpieczny panel klienta OpenExpert.</p><p><a href="${safeUrl}">Aktywuj panel klienta</a></p><p>Link jest jednorazowy i ważny przez 1 godzinę. Jest przeznaczony tylko dla Ciebie — nie przekazuj go dalej.</p><p>Jeśli nie oczekujesz tej wiadomości, możesz ją zignorować.</p>`,
-      }
-    }
-    if (metadata?.clientPortalBookingActivation === true) {
-      return {
-        subject: 'Aktywuj panel po rezerwacji w OpenExpert',
-        text: [
-          'Twoja konsultacja została zapisana.',
-          '',
-          'Otwórz poniższy jednorazowy link, aby aktywować panel klienta i zobaczyć termin:',
-          url,
-          '',
-          'Link jest ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.',
-        ].join('\n'),
-        html: `<p>Twoja konsultacja została zapisana.</p><p><a href="${safeUrl}">Aktywuj panel klienta</a></p><p>Link jest jednorazowy, ważny przez 1 godzinę i przeznaczony tylko dla Ciebie.</p>`,
-      }
-    }
-    return {
-      subject: 'Twój link logowania do OpenExpert',
-      text: `Otwórz ten jednorazowy link, aby zalogować się do OpenExpert:\n\n${url}`,
-      html: `<p>Otwórz poniższy jednorazowy link, aby zalogować się do OpenExpert.</p><p><a href="${safeUrl}">Zaloguj się</a></p>`,
-    }
-  }
-  return {
-    subject: 'Potwierdź adres email w OpenExpert',
-    text: `Otwórz ten link, aby potwierdzić adres email:\n\n${url}`,
-    html: `<p>Otwórz poniższy link, aby potwierdzić adres email w OpenExpert.</p><p><a href="${safeUrl}">Potwierdź email</a></p>`,
-  }
-}
 
 function requestHeaders(event: H3Event): Headers {
   const result = new Headers()
@@ -326,7 +181,7 @@ function createPlatformAuthRuntime(
     },
     emailSender: {
       async send(message) {
-        const content = emailContent(
+        const content = await emailContent(
           message.kind,
           message.url,
           message.kind === 'magic-link' ? message.metadata : undefined,

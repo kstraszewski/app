@@ -43,7 +43,10 @@ export default defineNuxtConfig({
       mutableConfig.server.hmr = false
     },
   },
-  modules: ['eve/nuxt', '@nuxt/icon'],
+  modules: ['eve/nuxt', '@nuxt/icon', 'nuxt-email-renderer'],
+  nuxtEmailRenderer: {
+    codeHighlighting: false,
+  },
   eve: {
     eveRoot: '../../multiform-agent',
   },

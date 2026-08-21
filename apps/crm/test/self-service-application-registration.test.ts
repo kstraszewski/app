@@ -62,15 +62,17 @@ test('self-service registration creates only a valid individual or team applicat
 
 test('purpose-specific invitation email distinguishes requested registration from an admin invite', () => {
   const auth = source('../server/utils/platform-auth.ts')
+  const email = source('../server/utils/auth-email-content.ts')
   const handler = source('../server/api/organization-auth/[...all].ts')
 
-  assert.match(auth, /metadata\.onboardingSource === 'self_service'/)
+  assert.match(email, /metadata\.onboardingSource === 'self_service'/)
   assert.match(auth, /options\.organizationInvitationOnly && !sender\.isConfigured/)
   assert.match(auth, /Registration email is temporarily unavailable/)
-  assert.match(auth, /Dokończ rejestrację organizacji w OpenExpert/)
-  assert.match(auth, /Jeśli nie rozpoczynałeś rejestracji/)
-  assert.match(auth, /initialSeatCount >= 1/)
-  assert.match(auth, /initialSeatCount <= 100/)
+  assert.match(email, /Dokończ rejestrację organizacji w OpenExpert/)
+  assert.match(email, /Jeśli nie rozpoczynałeś rejestracji/)
+  assert.match(email, /initialSeatCount >= 1/)
+  assert.match(email, /initialSeatCount <= 100/)
+  assert.match(email, /renderEmailComponent/)
   assert.match(handler, /event\.method !== 'GET'/)
   assert.match(handler, /authPath !== 'magic-link\/verify'/)
   assert.doesNotMatch(handler, /sign-up|signInMagicLink/)

@@ -158,6 +158,32 @@ test('trusted ESIS is typed, non-AI, immutable and remains current only for matc
   assert.match(sql, /UPDATE OF[\s\S]*bank_id,[\s\S]*sender_domain,[\s\S]*allow_subdomains,[\s\S]*authentication_policy/u)
 })
 
+test('existing append-only mortgage events receive one guarded actor-kind backfill', async () => {
+  const sql = await readFile(migrationUrl, 'utf8')
+  const start = sql.indexOf(
+    'ALTER TABLE public.crm_mortgage_application_events\n  ADD COLUMN bank_mail_attachment_job_id',
+  )
+  const end = sql.indexOf(
+    'ALTER TABLE public.crm_document_storage_cleanup_jobs',
+    start,
+  )
+  const backfill = sql.slice(start, end)
+
+  assert.ok(start >= 0 && end > start, 'mortgage event migration block is missing')
+  assert.match(backfill, /pg_catalog\.pg_trigger/u)
+  assert.match(backfill, /NOT pg_trigger_row\.tgisinternal/u)
+  assert.match(backfill, /pg_trigger_row\.tgenabled = 'O'/u)
+  assert.match(
+    backfill,
+    /pg_trigger_row\.tgfoid =[\s\S]*'private\.guard_crm_mortgage_application_event_write\(\)'::regprocedure/u,
+  )
+  assert.match(
+    backfill,
+    /DISABLE TRIGGER crm_mortgage_application_events_guard_append_only[\s\S]*UPDATE public\.crm_mortgage_application_events[\s\S]*CASE WHEN actor_user_id IS NULL THEN 'system' ELSE 'user' END[\s\S]*ENABLE TRIGGER crm_mortgage_application_events_guard_append_only/u,
+  )
+  assert.doesNotMatch(backfill, /DISABLE TRIGGER (?:USER|ALL)|session_replication_role/u)
+})
+
 test('public status is presentation-safe and rollout lists a schema-cache refresh', async () => {
   const sql = await readFile(migrationUrl, 'utf8')
   const getter = sql.slice(sql.indexOf(

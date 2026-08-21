@@ -1252,8 +1252,66 @@ ALTER TABLE public.crm_mortgage_application_events
   ADD COLUMN bank_mail_attachment_job_id uuid,
   ADD COLUMN actor_kind text;
 
+-- The existing ledger is intentionally append-only, including for its owner.
+-- ADD COLUMN above holds ACCESS EXCLUSIVE until this migration transaction
+-- commits, so no writer can enter while the one exact historical backfill is
+-- authorized.  Fail closed if the established guard is missing, internal or
+-- not in its normal enabled state.  PostgreSQL rolls both ALTER TRIGGER state
+-- changes back together with the migration on every later failure.
+DO $mortgage_event_backfill_guard_preflight$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_trigger AS pg_trigger_row
+    JOIN pg_catalog.pg_class AS relation
+      ON relation.oid = pg_trigger_row.tgrelid
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND relation.relname = 'crm_mortgage_application_events'
+      AND pg_trigger_row.tgname = 'crm_mortgage_application_events_guard_append_only'
+      AND NOT pg_trigger_row.tgisinternal
+      AND pg_trigger_row.tgenabled = 'O'
+      AND pg_trigger_row.tgfoid =
+        'private.guard_crm_mortgage_application_event_write()'::regprocedure
+  ) THEN
+    RAISE EXCEPTION 'mortgage_application_events_append_only_guard_invalid'
+      USING errcode = '55000';
+  END IF;
+END
+$mortgage_event_backfill_guard_preflight$;
+
+ALTER TABLE public.crm_mortgage_application_events
+  DISABLE TRIGGER crm_mortgage_application_events_guard_append_only;
+
 UPDATE public.crm_mortgage_application_events
 SET actor_kind = CASE WHEN actor_user_id IS NULL THEN 'system' ELSE 'user' END;
+
+ALTER TABLE public.crm_mortgage_application_events
+  ENABLE TRIGGER crm_mortgage_application_events_guard_append_only;
+
+DO $mortgage_event_backfill_guard_postflight$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_trigger AS pg_trigger_row
+    JOIN pg_catalog.pg_class AS relation
+      ON relation.oid = pg_trigger_row.tgrelid
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND relation.relname = 'crm_mortgage_application_events'
+      AND pg_trigger_row.tgname = 'crm_mortgage_application_events_guard_append_only'
+      AND NOT pg_trigger_row.tgisinternal
+      AND pg_trigger_row.tgenabled = 'O'
+      AND pg_trigger_row.tgfoid =
+        'private.guard_crm_mortgage_application_event_write()'::regprocedure
+  ) THEN
+    RAISE EXCEPTION 'mortgage_application_events_append_only_guard_restore_failed'
+      USING errcode = '55000';
+  END IF;
+END
+$mortgage_event_backfill_guard_postflight$;
 
 ALTER TABLE public.crm_mortgage_application_events
   ALTER COLUMN actor_kind SET DEFAULT 'user',

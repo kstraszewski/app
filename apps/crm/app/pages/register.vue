@@ -134,6 +134,18 @@ const loginTarget = computed(() => ({
     redirect: `/register?plan=${state.billingPlan}&seats=${state.initialSeatCount}`,
   },
 }))
+const returnToOrganizationsTarget = computed(() => '/org')
+const pageTitle = computed(() => {
+  if (submittedRequest.value) return submittedTitle.value
+  return authenticatedUser.value ? 'Utwórz kolejną organizację' : 'Załóż organizację'
+})
+const pageDescription = computed(() => {
+  if (submittedRequest.value) return submittedDescription.value
+  if (authenticatedUser.value) {
+    return 'Wybierz plan. Po potwierdzeniu adresu otworzymy osobny Checkout Stripe dla nowej organizacji.'
+  }
+  return 'Wybierz plan, potwierdź email i opłać subskrypcję w Stripe.'
+})
 const submittedTitle = computed(() => {
   if (deliveryStatus.value === 'sent') return 'Sprawdź swoją skrzynkę'
   if (deliveryStatus.value === 'failed') return 'Nie udało się wysłać wiadomości'
@@ -241,10 +253,8 @@ function editRegistration() {
   <AuthShell
     :badge="state.billingPlan === 'individual' ? 'Plan Indywidualny' : 'Plan Zespół'"
     icon="i-lucide-building-2"
-    :title="submittedRequest ? submittedTitle : 'Załóż organizację'"
-    :description="submittedRequest
-      ? submittedDescription
-      : 'Wybierz plan, potwierdź email i opłać subskrypcję w Stripe.'"
+    :title="pageTitle"
+    :description="pageDescription"
   >
     <div v-if="submittedRequest" class="registration-resume" aria-live="polite">
       <UAlert
@@ -332,7 +342,7 @@ function editRegistration() {
         variant="subtle"
         icon="i-lucide-user-check"
         title="Użyjemy Twojego obecnego konta"
-        :description="`Nowa organizacja zostanie przypisana do ${authenticatedUser.email}.`"
+        :description="`Nowa organizacja zostanie przypisana do ${authenticatedUser.email} i otrzyma oddzielną subskrypcję Stripe. Po potwierdzeniu linku wybierzesz kartę w osobnym Checkout.`"
       />
 
       <UFormField name="billingPlan" label="Pakiet" required>
@@ -476,8 +486,14 @@ function editRegistration() {
     </UForm>
 
     <template #footer>
-      Masz już konto?
-      <NuxtLink :to="loginTarget">Zaloguj się</NuxtLink>
+      <template v-if="authenticatedUser">
+        Nie chcesz teraz tworzyć organizacji?
+        <NuxtLink :to="returnToOrganizationsTarget">Wróć do aplikacji</NuxtLink>
+      </template>
+      <template v-else>
+        Masz już konto?
+        <NuxtLink :to="loginTarget">Zaloguj się</NuxtLink>
+      </template>
     </template>
   </AuthShell>
 </template>

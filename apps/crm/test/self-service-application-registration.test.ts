@@ -109,6 +109,8 @@ test('registration and resume UI carry the selected seat count through the magic
   const register = source('../app/pages/register.vue')
   const invitation = source('../app/pages/organization-invitation.vue')
   const login = source('../app/pages/login.vue')
+  const shell = source('../app/components/CrmAppShell.vue')
+  const organizationPicker = source('../app/pages/org/index.vue')
 
   assert.match(register, /route\.query\.seats/)
   assert.match(register, /<UInputNumber/)
@@ -122,6 +124,8 @@ test('registration and resume UI carry the selected seat count through the magic
   assert.match(register, /billingPlan: event\.data\.billingPlan/)
   assert.doesNotMatch(register, /Wysłaliśmy instrukcję/)
   assert.match(register, /Samo wysłanie formularza nie obciąża karty/)
+  assert.match(register, /Utwórz kolejną organizację/)
+  assert.match(register, /oddzielną subskrypcję Stripe/)
   assert.doesNotMatch(register, /signUp\.(email|phone)/)
 
   assert.match(invitation, /invitation\.value\?\.initialSeatCount/)
@@ -130,4 +134,9 @@ test('registration and resume UI carry the selected seat count through the magic
   assert.match(invitation, /Pozostałe \$\{initialSeatCount\.value - 1\} osoby możesz dodać po aktywacji/)
   assert.match(login, /to="\/register"/)
   assert.match(login, /Załóż organizację aplikacyjną/)
+  assert.match(shell, /label="Utwórz nową organizację"/)
+  assert.match(shell, /to="\/register\?newOrganization=1"/)
+  assert.match(shell, /class="crm-organization-create-mini"/)
+  assert.match(organizationPicker, /Utwórz nową organizację/)
+  assert.match(organizationPicker, /to="\/register\?newOrganization=1"/)
 })

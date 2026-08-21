@@ -35,6 +35,14 @@ function organizationTarget(organization: typeof data.value.data[number]) {
           <h1>Wybierz organizację</h1>
           <span>Jedno konto może pracować w wielu niezależnych organizacjach.</span>
         </div>
+        <UButton
+          class="organization-picker__create"
+          color="primary"
+          icon="i-lucide-plus"
+          to="/register?newOrganization=1"
+        >
+          Utwórz nową organizację
+        </UButton>
       </div>
 
       <UAlert
@@ -95,7 +103,7 @@ function organizationTarget(organization: typeof data.value.data[number]) {
           <UIcon name="i-lucide-building" />
           <h2>Brak organizacji</h2>
           <p>Utwórz własną organizację albo przyjmij zaproszenie od jej administratora.</p>
-          <UButton to="/onboarding" icon="i-lucide-building-2">
+          <UButton to="/register?newOrganization=1" icon="i-lucide-building-2">
             Utwórz organizację
           </UButton>
         </div>
@@ -122,6 +130,15 @@ function organizationTarget(organization: typeof data.value.data[number]) {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.organization-picker__heading > div {
+  min-width: 0;
+}
+
+.organization-picker__create {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .organization-picker__logo {
@@ -206,5 +223,18 @@ function organizationTarget(organization: typeof data.value.data[number]) {
 
 .organization-picker__empty > .icon {
   font-size: 32px;
+}
+
+@media (max-width: 680px) {
+  .organization-picker__heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .organization-picker__create {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
 }
 </style>

@@ -574,18 +574,39 @@ async function signOut() {
           icon="i-lucide-building-2"
           aria-label="Aktywna organizacja"
         />
+
+        <UButton
+          class="crm-organization-create"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-plus"
+          label="Utwórz nową organizację"
+          to="/register?newOrganization=1"
+        />
       </div>
 
-      <UButton
-        class="crm-organization-mini"
-        color="neutral"
-        variant="ghost"
-        square
-        icon="i-lucide-building-2"
-        :aria-label="`Aktywna organizacja: ${selectedOrganizationLabel}`"
-        :title="selectedOrganizationLabel"
-        @click="expandSidebar"
-      />
+      <div class="crm-organization-mini-actions">
+        <UButton
+          class="crm-organization-mini"
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-building-2"
+          :aria-label="`Aktywna organizacja: ${selectedOrganizationLabel}`"
+          :title="selectedOrganizationLabel"
+          @click="expandSidebar"
+        />
+        <UButton
+          class="crm-organization-create-mini"
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-plus"
+          aria-label="Utwórz nową organizację"
+          title="Utwórz nową organizację"
+          to="/register?newOrganization=1"
+        />
+      </div>
 
       <div v-if="canUseOmnisearch" class="crm-omnisearch-trigger">
         <UButton
@@ -938,10 +959,21 @@ async function signOut() {
 }
 
 .crm-organization-select {
+  display: grid;
+  gap: 6px;
   width: 100%;
 }
 
-.crm-nav :deep(.crm-organization-mini) {
+.crm-nav :deep(.crm-organization-create) {
+  justify-content: flex-start;
+  color: color-mix(in srgb, var(--ui-text-inverted) 72%, transparent);
+}
+
+.crm-nav :deep(.crm-organization-create:hover) {
+  color: var(--ui-text-inverted);
+}
+
+.crm-organization-mini-actions {
   display: none;
 }
 
@@ -1120,9 +1152,10 @@ async function signOut() {
   display: none;
 }
 
-.crm-shell--collapsed .crm-nav :deep(.crm-organization-mini) {
-  display: inline-flex;
-  align-self: center;
+.crm-shell--collapsed .crm-organization-mini-actions {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
 }
 
 .crm-shell--collapsed .crm-omnisearch-trigger :deep(.crm-omnisearch-trigger__full) {
@@ -1307,17 +1340,18 @@ async function signOut() {
   }
 
   .crm-organization-select,
-  .crm-organization-mini,
+  .crm-organization-mini-actions,
   .crm-links,
   .crm-nav__footer,
   .crm-shell--collapsed .crm-organization-select,
+  .crm-shell--collapsed .crm-organization-mini-actions,
   .crm-shell--collapsed .crm-links,
   .crm-shell--collapsed .crm-nav__footer {
     display: none;
   }
 
   .crm-shell--mobile-open .crm-organization-select {
-    display: flex;
+    display: grid;
   }
 
   .crm-shell--mobile-open .crm-links,
@@ -1327,10 +1361,6 @@ async function signOut() {
 
   .crm-shell--collapsed .crm-link-group__label {
     display: block;
-  }
-
-  .crm-shell--collapsed .crm-nav :deep(.crm-organization-mini) {
-    display: none;
   }
 
   .crm-links {

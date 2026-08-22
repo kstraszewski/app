@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   createImapSmtpAdapter,
+  fetchImapSmtpAttachmentBytes,
   fetchImapSmtpThread,
   fetchImapSmtpThreadPage,
   findImapSmtpSentMessage,
   IMAP_MAX_BODY_CHARACTERS,
   IMAP_MAX_SOURCE_BYTES,
+  ImapSmtpAttachmentError,
   ImapSmtpConfigurationError,
   ImapSmtpDeliveryError,
   ImapSmtpMailboxStateError,
@@ -830,6 +832,144 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
   assert.equal(detail.messages[0]?.security.authentication, 'pass')
   assert.equal(detail.messages[0]?.attachments[0]?.filename, 'decyzja.pdf')
   assert.equal(released, 1)
+})
+
+test('downloads an IMAP MIME part under a read-only UIDVALIDITY-bound lock', async () => {
+  const expected = Uint8Array.from([0, 1, 2, 254, 255])
+  let released = 0
+  let lockOptions: any = null
+  let downloadCall: { range: unknown; part: string; options: any } | null = null
+  const runtime: ImapSmtpAdapterRuntime = {
+    resolveEndpoint: async kind => resolved(kind),
+    createImapClient: () => {
+      const client: any = {
+        mailbox: false,
+        connect: async () => {},
+        logout: async () => {},
+        close: () => {},
+        list: async () => [],
+        getMailboxLock: async (_mailbox: string, options: unknown) => {
+          lockOptions = options
+          client.mailbox = { uidValidity: 77n }
+          return { release: () => { released += 1 } }
+        },
+        fetchOne: async () => ({
+          uid: 7,
+          bodyStructure: {
+            type: 'multipart/mixed',
+            childNodes: [{
+              part: '2.1',
+              type: 'application/pdf',
+              disposition: 'attachment',
+              dispositionParameters: { filename: 'decision.pdf' },
+              encoding: 'base64',
+              size: expected.byteLength,
+            }],
+          },
+        }),
+        download: async (range: unknown, part: string, options: unknown) => {
+          downloadCall = { range, part, options }
+          return {
+            content: (async function* () {
+              yield expected.subarray(0, 2)
+              yield expected.subarray(2)
+            })(),
+          }
+        },
+      }
+      return client as ImapClientLike
+    },
+  }
+  const messageReference = sealImapMessageReference({
+    mailbox: 'INBOX',
+    uidValidity: '77',
+    uid: 7,
+    messageId: '<message-7@bank.example>',
+  }, referenceSecret)
+
+  const result = await fetchImapSmtpAttachmentBytes(runtimeConfig(runtime), {
+    messageReference,
+    partId: '2.1',
+    maxBytes: expected.byteLength,
+  })
+
+  assert.deepEqual(result, expected)
+  assert.deepEqual(lockOptions, {
+    readOnly: true,
+    description: 'openexpert-attachment-download',
+  })
+  assert.deepEqual(downloadCall, {
+    range: 7,
+    part: '2.1',
+    options: { uid: true, maxBytes: expected.byteLength + 1, chunkSize: 64 * 1024 },
+  })
+  assert.equal(released, 1)
+})
+
+test('decodes a bounded quoted-printable IMAP body part and never returns partial excess', async () => {
+  const encoded = Buffer.from('PDF=00=FF=0A', 'ascii')
+  const expected = Uint8Array.from([80, 68, 70, 0, 255, 10])
+  let released = 0
+  const runtime: ImapSmtpAdapterRuntime = {
+    resolveEndpoint: async kind => resolved(kind),
+    createImapClient: () => {
+      const client: any = {
+        mailbox: false,
+        connect: async () => {},
+        logout: async () => {},
+        close: () => {},
+        list: async () => [],
+        getMailboxLock: async () => {
+          client.mailbox = { uidValidity: 77n }
+          return { release: () => { released += 1 } }
+        },
+        fetchOne: async (_range: unknown, query: any) => {
+          if (query.bodyStructure) {
+            return {
+              uid: 7,
+              bodyStructure: {
+                part: '2',
+                type: 'application/octet-stream',
+                disposition: 'attachment',
+                dispositionParameters: { filename: 'decision.bin' },
+                encoding: 'quoted-printable',
+                size: encoded.byteLength,
+              },
+            }
+          }
+          const request = query.bodyParts[0]
+          const chunk = encoded.subarray(request.start, request.start + request.maxLength)
+          return { uid: 7, bodyParts: new Map([['2', chunk]]) }
+        },
+      }
+      return client as ImapClientLike
+    },
+  }
+  const messageReference = sealImapMessageReference({
+    mailbox: 'INBOX',
+    uidValidity: '77',
+    uid: 7,
+    messageId: '<message-7@bank.example>',
+  }, referenceSecret)
+
+  assert.deepEqual(await fetchImapSmtpAttachmentBytes(runtimeConfig(runtime), {
+    messageReference,
+    partId: '2',
+    maxBytes: expected.byteLength,
+  }), expected)
+  await assert.rejects(
+    fetchImapSmtpAttachmentBytes(runtimeConfig(runtime), {
+      messageReference,
+      partId: '2',
+      maxBytes: expected.byteLength - 1,
+    }),
+    (error: unknown) => (
+      error instanceof ImapSmtpAttachmentError
+      && error.statusCode === 413
+      && error.code === 'ATTACHMENT_TOO_LARGE'
+    ),
+  )
+  assert.equal(released, 2)
 })
 
 test('uses the persisted Message-ID, keeps Bcc envelope-only, and appends the same MIME to Sent', async () => {

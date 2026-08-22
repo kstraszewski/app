@@ -8,6 +8,7 @@ import {
   decodeMicrosoftThreadReference,
   encodeMicrosoftThreadReference,
   exchangeMicrosoftMailOAuthCode,
+  fetchMicrosoftMailAttachmentBytes,
   fetchMicrosoftMailIdentity,
   fetchMicrosoftMailReplyContext,
   fetchMicrosoftMailThread,
@@ -209,6 +210,82 @@ test('loads identity and supports personal accounts whose mail property is empty
   })
   assert.match(calls[0]!.url, /\/v1\.0\/me\?/u)
   assert.equal(requestHeaders(calls[0]!).get('authorization'), 'Bearer access-token')
+})
+
+test('downloads bounded Microsoft fileAttachment contentBytes through dependencies.fetch', async () => {
+  const expected = Uint8Array.from([0, 1, 2, 254, 255])
+  let call: FetchCall | null = null
+  const fetchImpl = (async (input: URL | RequestInfo, init: RequestInit = {}) => {
+    call = {
+      url: typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url,
+      init,
+    }
+    return jsonResponse({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      size: expected.byteLength,
+      contentBytes: Buffer.from(expected).toString('base64'),
+    })
+  }) as typeof fetch
+
+  const result = await fetchMicrosoftMailAttachmentBytes('access-token', {
+    messageId: 'message-provider-id',
+    attachmentId: 'attachment-provider-id',
+    maxBytes: expected.byteLength,
+  }, { fetch: fetchImpl })
+
+  assert.deepEqual(result, expected)
+  assert.ok(call)
+  const url = new URL(call.url)
+  assert.equal(
+    url.pathname,
+    '/v1.0/me/messages/message-provider-id/attachments/attachment-provider-id',
+  )
+  assert.match(url.searchParams.get('$select') || '', /contentBytes/u)
+  assert.equal(requestHeaders(call).get('authorization'), 'Bearer access-token')
+  assert.equal(requestHeaders(call).get('prefer'), 'IdType="ImmutableId"')
+})
+
+test('rejects oversized and non-file Microsoft attachment responses', async () => {
+  await assert.rejects(
+    fetchMicrosoftMailAttachmentBytes('access-token', {
+      messageId: 'message-provider-id',
+      attachmentId: 'attachment-provider-id',
+      maxBytes: 4,
+    }, {
+      fetch: async () => jsonResponse({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        size: 5,
+        contentBytes: Buffer.alloc(5).toString('base64'),
+      }),
+    }),
+    (error: unknown) => (
+      error instanceof MicrosoftMailError
+      && error.statusCode === 413
+      && error.code === 'ATTACHMENT_TOO_LARGE'
+    ),
+  )
+
+  await assert.rejects(
+    fetchMicrosoftMailAttachmentBytes('access-token', {
+      messageId: 'message-provider-id',
+      attachmentId: 'attachment-provider-id',
+      maxBytes: 4,
+    }, {
+      fetch: async () => jsonResponse({
+        '@odata.type': '#microsoft.graph.itemAttachment',
+        size: 4,
+      }),
+    }),
+    (error: unknown) => (
+      error instanceof MicrosoftMailError
+      && error.statusCode === 409
+      && error.code === 'ATTACHMENT_TYPE_UNSUPPORTED'
+    ),
+  )
 })
 
 test('signs opaque base64url thread references and rejects tampering or cross-connection use', () => {

@@ -890,7 +890,7 @@ function reloadDraft() {
   font-size: 11px;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 1024px) {
   .multiform-main {
     width: min(100% - 32px, 680px);
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
@@ -936,6 +936,12 @@ function reloadDraft() {
 
   .multiform-complete :deep(a) {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .multiform-main {
+    padding-bottom: var(--portal-mobile-nav-clearance);
   }
 }
 

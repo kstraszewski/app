@@ -4,7 +4,7 @@ import {
 } from '@openexpert/crm-agent-capabilities'
 import { defineTool } from 'eve/tools'
 import { z } from 'zod'
-import { requireBankMailAgentCaller } from '../lib/caller.ts'
+import { requireInitialBankMailAgentCaller } from '../lib/caller.ts'
 import { createBankMailServiceDataApiClient } from '../lib/data-api.ts'
 import { callBankMailServiceRpc } from '../lib/rpc.ts'
 
@@ -33,7 +33,7 @@ export default defineTool({
   description: 'Record an idempotent, human-review-only proposal for one exact case/application candidate. The RPC re-checks mailbox ownership and application membership from trusted intake scope. This tool cannot attach a file, change an application, or raise the action ceiling above review_required.',
   inputSchema,
   async execute({ caseId, applicationId, evidence: rawEvidence }, ctx) {
-    const caller = requireBankMailAgentCaller(ctx)
+    const caller = requireInitialBankMailAgentCaller(ctx)
     const evidence = BankMailProposalEvidenceSchema.parse(rawEvidence)
     const policy = reduceBankMailProposal(evidence)
     if (policy.decision !== 'review_required') {

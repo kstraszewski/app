@@ -2155,7 +2155,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1024px) {
   .portal-conversation--pane .portal-conversation__back {
     display: grid;
   }

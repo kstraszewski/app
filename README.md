@@ -64,8 +64,8 @@ pnpm dev
 ```
 
 `storage:env:pull` pobiera konfigurację Development z podłączonego projektu CRM,
-zapisuje do ignorowanego `.env.blob.local` wyłącznie identyfikatory obu
-magazynów Blob i krótkotrwały token OIDC, a pozostałe sekrety odrzuca.
+zapisuje do ignorowanego `.env.blob.local` wyłącznie osobne tokeny read-write
+i identyfikatory obu magazynów Blob, a pozostałe sekrety odrzuca.
 Publiczny i prywatny store są współdzielone przez lokalne procesy aplikacji.
 
 `pnpm db:setup`:

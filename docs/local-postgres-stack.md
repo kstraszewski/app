@@ -20,11 +20,12 @@ pnpm --filter @openexpert/database db:local:setup
 ```
 
 The first command pulls the linked Vercel Development environment, keeps only the
-shared public/private Blob store IDs and short-lived OIDC credential in the
+shared public/private Blob store IDs and their read-write tokens in the
 git-ignored root `.env.blob.local`, and discards the temporary full env file.
 Root development scripts load that filtered file for all Nuxt applications,
 while database setup only manages local database, auth, and mail values in the
-app-specific `.env` files. Refresh it when the OIDC credential expires.
+app-specific `.env` files. Rotate the Blob tokens whenever a local credential is
+no longer trusted.
 
 The stack uses the established local API, database, and Mailpit ports. Stop
 anything already bound to those ports, or override the `OPENEXPERT_*_PORT`

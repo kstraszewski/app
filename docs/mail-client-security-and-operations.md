@@ -8,9 +8,11 @@ Klient obsługuje wiele prywatnych kont jednego użytkownika:
 - Outlook.com, Hotmail, Live oraz Microsoft 365 przez Microsoft OAuth i Graph,
 - pozostałych dostawców przez szyfrowane IMAP + SMTP.
 
-Nie ma wspólnej skrzynki wszystkich ekspertów, procesów działających w tle, IMAP
-IDLE, watcherów, analizy AI ani automatycznych akcji na sprawach. Lista jest
-pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
+Nie ma wspólnej skrzynki wszystkich ekspertów, IMAP IDLE ani watcherów. Lista
+jest pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie. Główny
+agent EVE może na wyraźne polecenie eksperta przeszukiwać zwykłą korespondencję,
+wiadomości klienta lub sprawy, odczytywać ograniczone fragmenty wątków oraz
+tekst ze wskazanych załączników.
 
 ## Granice dostępu i prywatność
 
@@ -19,11 +21,30 @@ pobierana na żądanie oraz odświeżana wyłącznie w widocznej karcie.
 - Każde API skrzynki wymaga należącego do bieżącego użytkownika `connectionId`.
   Przełączenie konta czyści wątek, wyszukiwanie i stronicowanie.
 - Treść wiadomości, odebrane załączniki, odbiorcy, tematy i wyszukiwane frazy nie
-  są utrwalane w CRM. Odpowiedzi API mają `private, no-store`.
+  są zapisywane w tabelach ani storage CRM. Odpowiedzi API mają `private,
+  no-store`. Gdy ekspert użyje integracji EVE, metadane wyszukiwania, ograniczone
+  fragmenty treści wiadomości oraz wybrane fragmenty dokumentu stają się częścią
+  trwałej historii tej sesji EVE; nie należy więc używać narzędzia do
+  korespondencji ani plików, których treść nie powinna trafić do rozmowy z
+  Agentem AI.
+- Wyszukiwanie EVE może użyć dokładnego adresu uczestnika albo zakresu klienta
+  lub sprawy. Zakres sprawy łączy adresy jej klientów z wątkami przypiętymi
+  ręcznie, wysłanymi z kontekstu CRM lub powiązanymi przez agenta bankowego.
+  Skrzynka nadal zawsze należy do aktualnego użytkownika. Dla wątku znalezionego
+  wyłącznie po uczestniku do modelu trafiają tylko wiadomości odebrane od albo
+  wysłane do tego dokładnego adresu; pełny mieszany wątek jest dostępny przy
+  trwałym powiązaniu lub zwykłym wyszukiwaniu własnej skrzynki.
+- Wyszukiwanie i odczyt są stronicowane i ograniczone. EVE otrzymuje informację
+  o dalszej stronie, częściowych awariach oraz liczbie pominiętych wiadomości;
+  nie powinien przedstawiać ograniczonego okna jako kompletnej historii.
 - Rekord wysyłki zawiera jedynie hash żądania, stabilny `Message-ID`, status oraz
   identyfikatory techniczne dostawcy.
-- Odebrane załączniki są pokazywane jako metadane. Pobieranie pozostaje u
-  dostawcy, więc pliki nie przechodzą przez serwer CRM.
+- Odebrane załączniki są standardowo pokazywane jako metadane. Dopiero jawny
+  odczyt przez EVE pobiera pojedynczy plik przez serwer CRM do pamięci, z limitem
+  8 MiB. Surowe bajty nie są zapisywane; do modelu i historii EVE trafiają tylko
+  ograniczone fragmenty wyodrębnionego tekstu. Odczyt obsługuje PDF, DOCX, XLSX
+  i bezpieczne formaty tekstowe; skany, obrazy, archiwa, zaszyfrowane dokumenty i
+  stare formaty Office są odrzucane bez OCR ani rozpakowywania.
 
 ## OAuth i poświadczenia
 
@@ -183,8 +204,9 @@ zweryfikowaniu braku starych szyfrogramów można usunąć klucz legacy.
 
 ## Świadomie odłożone
 
-Watchery Gmail/Graph, webhooki, Microsoft subscriptions, IMAP IDLE, analiza AI i
-dynamiczne przyciski nie należą do tej wersji. Gdy powstaną, mają jedynie
-tworzyć propozycje z jawnym zatwierdzeniem eksperta; treść e-maila pozostaje
-danymi niezaufanymi i nie może wydawać agentowi poleceń ani samodzielnie zapisywać
-czegokolwiek do sprawy.
+Watchery Gmail/Graph, webhooki, Microsoft subscriptions, IMAP IDLE oraz ciągła
+automatyczna analiza całej skrzynki nie należą do tej wersji. Odczyt przez
+głównego agenta odbywa się na żądanie eksperta. Przyszłe automatyzacje mają
+jedynie tworzyć propozycje z jawnym zatwierdzeniem; treść e-maila pozostaje
+danymi niezaufanymi i nie może wydawać agentowi poleceń ani samodzielnie
+zapisywać czegokolwiek do sprawy.

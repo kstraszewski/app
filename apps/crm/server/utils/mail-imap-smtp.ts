@@ -31,6 +31,7 @@ import {
 export const IMAP_PROVIDER_ID = 'imap' as const
 export const IMAP_MAX_SOURCE_BYTES = 2 * 1024 * 1024
 export const IMAP_MAX_BODY_CHARACTERS = 160_000
+export const IMAP_RECEIVED_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024
 
 const CONNECTION_TIMEOUT_MS = 8_000
 const GREETING_TIMEOUT_MS = 8_000
@@ -152,6 +153,12 @@ export interface ImapReplyContext {
   references: string[]
 }
 
+export interface ImapAttachmentDownloadInput {
+  messageReference: string
+  partId: string
+  maxBytes: number
+}
+
 export interface ImapSmtpSendAttachment {
   filename: string
   mimeType: string
@@ -207,6 +214,11 @@ export interface ImapClientLike {
   getMailboxLock(path: string, options?: unknown): Promise<{ release(): void }>
   fetch(range: unknown, query: unknown, options?: unknown): AsyncIterable<any> | Iterable<any>
   fetchOne(range: unknown, query: unknown, options?: unknown): Promise<any>
+  download?(
+    range: unknown,
+    part: string,
+    options?: { uid?: boolean; maxBytes?: number; chunkSize?: number },
+  ): Promise<{ content?: unknown; meta?: Record<string, unknown> }>
   search(query: unknown, options?: unknown): Promise<number[] | false>
   append(
     path: string,
@@ -283,6 +295,30 @@ export class ImapSmtpMailboxStateError extends Error {
   ) {
     super(message)
     this.name = 'ImapSmtpMailboxStateError'
+    this.code = code
+  }
+}
+
+export class ImapSmtpAttachmentError extends Error {
+  readonly statusCode: number
+  readonly code:
+    | 'ATTACHMENT_CONTENT_INVALID'
+    | 'ATTACHMENT_CONTENT_UNAVAILABLE'
+    | 'ATTACHMENT_LIMIT_INVALID'
+    | 'ATTACHMENT_NOT_FOUND'
+    | 'ATTACHMENT_REFERENCE_INVALID'
+    | 'ATTACHMENT_TOO_LARGE'
+    | 'ATTACHMENT_TYPE_UNSUPPORTED'
+
+  constructor(
+    statusCode: number,
+    code: ImapSmtpAttachmentError['code'],
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause })
+    this.name = 'ImapSmtpAttachmentError'
+    this.statusCode = statusCode
     this.code = code
   }
 }
@@ -417,6 +453,68 @@ export function createImapSmtpAdapter(
     })
   }
 
+  async function getAttachmentBytes(
+    input: ImapAttachmentDownloadInput,
+  ): Promise<Uint8Array> {
+    const decoded = openImapMessageReference(input.messageReference, referenceSecret)
+    const partId = normalizeAttachmentPartId(input.partId)
+    const maxBytes = normalizeReceivedAttachmentMaxBytes(input.maxBytes)
+    return withImap(async (client) => {
+      const lock = await client.getMailboxLock(decoded.mailbox, {
+        readOnly: true,
+        description: 'openexpert-attachment-download',
+      })
+      try {
+        assertUidValidity(client, decoded.uidValidity)
+        const message = await client.fetchOne(decoded.uid, {
+          uid: true,
+          bodyStructure: true,
+        }, { uid: true })
+        if (!message || Number(message.uid) !== decoded.uid) {
+          throw new ImapSmtpMailboxStateError(
+            'MESSAGE_NOT_FOUND',
+            'Wiadomość IMAP nie istnieje lub została przeniesiona.',
+          )
+        }
+        const part = findBodyStructurePart(message.bodyStructure, partId)
+        if (!part || !isAttachmentBodyPart(part)) {
+          throw new ImapSmtpAttachmentError(
+            404,
+            'ATTACHMENT_NOT_FOUND',
+            'Załącznik IMAP nie istnieje.',
+          )
+        }
+
+        if (client.download) {
+          const downloaded = await client.download(decoded.uid, partId, {
+            uid: true,
+            maxBytes: maxBytes + 1,
+            chunkSize: 64 * 1024,
+          })
+          if (!downloaded?.content) {
+            if (Math.max(0, Number(part.size) || 0) === 0) return new Uint8Array()
+            throw new ImapSmtpAttachmentError(
+              409,
+              'ATTACHMENT_CONTENT_UNAVAILABLE',
+              'Treść załącznika IMAP jest niedostępna.',
+            )
+          }
+          const bytes = await collectBoundedAttachmentContent(
+            downloaded.content,
+            maxBytes + 1,
+          )
+          if (bytes.byteLength > maxBytes) throw imapReceivedAttachmentTooLarge()
+          return bytes
+        }
+
+        return fetchAndDecodeImapBodyPart(client, decoded.uid, part, partId, maxBytes)
+      }
+      finally {
+        lock.release()
+      }
+    })
+  }
+
   return {
     provider: IMAP_PROVIDER_ID,
     accountEmail: config.accountEmail,
@@ -510,6 +608,8 @@ export function createImapSmtpAdapter(
     },
 
     getMessageDetail,
+
+    getAttachmentBytes,
 
     async getThreadDetail(reference: string): Promise<MailThreadDetail> {
       const detail = await getMessageDetail(reference)
@@ -992,6 +1092,13 @@ export async function fetchImapSmtpThread(
   reference: string,
 ): Promise<MailThreadDetail> {
   return runtimeAdapter(config).getThreadDetail(reference)
+}
+
+export async function fetchImapSmtpAttachmentBytes(
+  config: ImapSmtpRuntimeConfig,
+  input: ImapAttachmentDownloadInput,
+): Promise<Uint8Array> {
+  return runtimeAdapter(config).getAttachmentBytes(input)
 }
 
 export async function fetchImapSmtpReplyContext(
@@ -1621,14 +1728,9 @@ function bodyStructureAttachments(node: any): MailAttachment[] {
   const attachments: MailAttachment[] = []
   const visit = (part: any, depth = 0) => {
     if (!part || depth > 32 || attachments.length >= 100) return
-    const disposition = String(part.disposition ?? '').toLowerCase()
-    const type = String(part.type ?? '').toLowerCase()
     const filename = part.dispositionParameters?.filename || part.parameters?.name
-    if (
-      filename
-      || disposition === 'attachment'
-      || (type && !type.startsWith('text/') && !type.startsWith('multipart/') && disposition !== 'inline')
-    ) {
+    const type = String(part.type ?? '').toLowerCase()
+    if (isAttachmentBodyPart(part)) {
       attachments.push({
         id: part.part ? String(part.part) : null,
         filename: safeText(filename || 'załącznik', 255) || 'załącznik',
@@ -1642,6 +1744,280 @@ function bodyStructureAttachments(node: any): MailAttachment[] {
   }
   visit(node)
   return attachments
+}
+
+function isAttachmentBodyPart(part: any): boolean {
+  const disposition = String(part?.disposition ?? '').toLowerCase()
+  const type = String(part?.type ?? '').toLowerCase()
+  const filename = part?.dispositionParameters?.filename || part?.parameters?.name
+  return Boolean(
+    filename
+    || disposition === 'attachment'
+    || (type && !type.startsWith('text/') && !type.startsWith('multipart/') && disposition !== 'inline'),
+  )
+}
+
+function findBodyStructurePart(node: any, partId: string): any | null {
+  let found: any | null = null
+  const visit = (part: any, depth: number) => {
+    if (!part || found || depth > 32) return
+    if (String(part.part ?? '') === partId) {
+      found = part
+      return
+    }
+    for (const child of part.childNodes ?? []) visit(child, depth + 1)
+  }
+  visit(node, 0)
+  return found
+}
+
+async function fetchAndDecodeImapBodyPart(
+  client: ImapClientLike,
+  uid: number,
+  part: any,
+  partId: string,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  const encoding = normalizeAttachmentTransferEncoding(part?.encoding)
+  const encodedLimit = encodedImapAttachmentBudget(maxBytes + 1, encoding)
+  const raw = await fetchBoundedImapBodyPart(client, uid, partId, encodedLimit + 1)
+  if (raw.byteLength > encodedLimit) throw imapReceivedAttachmentTooLarge()
+  if (!raw.byteLength && Math.max(0, Number(part?.size) || 0) > 0) {
+    throw new ImapSmtpAttachmentError(
+      409,
+      'ATTACHMENT_CONTENT_UNAVAILABLE',
+      'Treść załącznika IMAP jest niedostępna.',
+    )
+  }
+
+  const decoded = decodeImapTransferEncoding(raw, encoding)
+  if (decoded.byteLength > maxBytes) throw imapReceivedAttachmentTooLarge()
+  return decoded
+}
+
+async function fetchBoundedImapBodyPart(
+  client: ImapClientLike,
+  uid: number,
+  partId: string,
+  maxEncodedBytes: number,
+): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (total < maxEncodedBytes) {
+    const maxLength = Math.min(64 * 1024, maxEncodedBytes - total)
+    const fetched = await client.fetchOne(uid, {
+      uid: true,
+      bodyParts: [{ key: partId, start: total, maxLength }],
+    }, { uid: true })
+    if (!fetched || Number(fetched.uid) !== uid) {
+      throw new ImapSmtpMailboxStateError(
+        'MESSAGE_NOT_FOUND',
+        'Wiadomość IMAP nie istnieje lub została przeniesiona.',
+      )
+    }
+    const value = fetched.bodyParts instanceof Map
+      ? fetched.bodyParts.get(partId)
+      : fetched.bodyParts?.[partId]
+    if (value === undefined || value === null) break
+    const chunk = toAttachmentChunk(value)
+    if (!chunk.byteLength) break
+    const remaining = maxEncodedBytes - total
+    const accepted = chunk.subarray(0, remaining)
+    chunks.push(accepted)
+    total += accepted.byteLength
+    if (chunk.byteLength < maxLength || accepted.byteLength < chunk.byteLength) break
+  }
+
+  const result = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
+async function collectBoundedAttachmentContent(
+  content: unknown,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (content instanceof Uint8Array) {
+    return new Uint8Array(content.subarray(0, maxBytes))
+  }
+  if (typeof content === 'string') {
+    const bytes = Buffer.from(content)
+    return new Uint8Array(bytes.subarray(0, maxBytes))
+  }
+  if (!content || typeof (content as AsyncIterable<unknown>)[Symbol.asyncIterator] !== 'function') {
+    throw new ImapSmtpAttachmentError(
+      409,
+      'ATTACHMENT_CONTENT_UNAVAILABLE',
+      'Treść załącznika IMAP jest niedostępna.',
+    )
+  }
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for await (const value of content as AsyncIterable<unknown>) {
+      const chunk = toAttachmentChunk(value)
+      if (!chunk.byteLength) continue
+      const remaining = maxBytes - total
+      if (remaining <= 0) break
+      const accepted = chunk.subarray(0, remaining)
+      chunks.push(accepted)
+      total += accepted.byteLength
+      if (accepted.byteLength < chunk.byteLength || total >= maxBytes) break
+    }
+  }
+  catch (error) {
+    if (error instanceof ImapSmtpAttachmentError) throw error
+    throw new ImapSmtpAttachmentError(
+      502,
+      'ATTACHMENT_CONTENT_UNAVAILABLE',
+      'Nie udało się pobrać treści załącznika IMAP.',
+      { cause: error },
+    )
+  }
+
+  const result = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
+function toAttachmentChunk(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value
+  if (typeof value === 'string') return Buffer.from(value)
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  }
+  throw new ImapSmtpAttachmentError(
+    502,
+    'ATTACHMENT_CONTENT_INVALID',
+    'Serwer IMAP zwrócił nieprawidłową treść załącznika.',
+  )
+}
+
+function normalizeAttachmentTransferEncoding(value: unknown): string {
+  const encoding = String(value ?? '').trim().toLowerCase()
+  if (!encoding || ['7bit', '8bit', 'binary'].includes(encoding)) return 'binary'
+  if (encoding === 'base64' || encoding === 'quoted-printable') return encoding
+  throw new ImapSmtpAttachmentError(
+    409,
+    'ATTACHMENT_TYPE_UNSUPPORTED',
+    'Kodowanie załącznika IMAP nie jest obsługiwane.',
+  )
+}
+
+function encodedImapAttachmentBudget(decodedBytes: number, encoding: string): number {
+  if (encoding === 'base64') {
+    const significantBytes = Math.ceil(decodedBytes / 3) * 4
+    return significantBytes + Math.ceil(significantBytes / 76) * 2 + 1_024
+  }
+  if (encoding === 'quoted-printable') return decodedBytes * 4 + 1_024
+  return decodedBytes
+}
+
+function decodeImapTransferEncoding(raw: Uint8Array, encoding: string): Uint8Array {
+  if (encoding === 'binary') return new Uint8Array(raw)
+  if (encoding === 'quoted-printable') return decodeQuotedPrintableAttachment(raw)
+
+  const compact = Buffer.from(raw).toString('latin1').replace(/[\t\r\n ]/gu, '')
+  if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(compact)) {
+    throw invalidImapAttachmentContent()
+  }
+  const unpaddedLength = compact.replace(/=+$/u, '').length
+  const paddingLength = compact.length - unpaddedLength
+  const remainder = unpaddedLength % 4
+  const expectedPadding = remainder === 0 ? 0 : 4 - remainder
+  if (
+    remainder === 1
+    || (paddingLength > 0 && (compact.length % 4 !== 0 || paddingLength !== expectedPadding))
+  ) throw invalidImapAttachmentContent()
+  return new Uint8Array(Buffer.from(compact, 'base64'))
+}
+
+function decodeQuotedPrintableAttachment(raw: Uint8Array): Uint8Array {
+  const bytes = Buffer.from(raw)
+  const output = Buffer.allocUnsafe(bytes.length)
+  let written = 0
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] !== 0x3D) {
+      output[written++] = bytes[index]!
+      continue
+    }
+    if (bytes[index + 1] === 0x0D && bytes[index + 2] === 0x0A) {
+      index += 2
+      continue
+    }
+    if (bytes[index + 1] === 0x0A) {
+      index += 1
+      continue
+    }
+    const high = hexadecimalNibble(bytes[index + 1])
+    const low = hexadecimalNibble(bytes[index + 2])
+    if (high < 0 || low < 0) throw invalidImapAttachmentContent()
+    output[written++] = (high << 4) | low
+    index += 2
+  }
+  return new Uint8Array(output.subarray(0, written))
+}
+
+function hexadecimalNibble(value: number | undefined): number {
+  if (value === undefined) return -1
+  if (value >= 0x30 && value <= 0x39) return value - 0x30
+  if (value >= 0x41 && value <= 0x46) return value - 0x41 + 10
+  if (value >= 0x61 && value <= 0x66) return value - 0x61 + 10
+  return -1
+}
+
+function invalidImapAttachmentContent(): ImapSmtpAttachmentError {
+  return new ImapSmtpAttachmentError(
+    502,
+    'ATTACHMENT_CONTENT_INVALID',
+    'Serwer IMAP zwrócił nieprawidłową treść załącznika.',
+  )
+}
+
+function imapReceivedAttachmentTooLarge(): ImapSmtpAttachmentError {
+  return new ImapSmtpAttachmentError(
+    413,
+    'ATTACHMENT_TOO_LARGE',
+    'Załącznik IMAP przekracza limit pobierania.',
+  )
+}
+
+function normalizeAttachmentPartId(value: unknown): string {
+  const partId = String(value ?? '').trim()
+  if (!/^[1-9]\d*(?:\.[1-9]\d*)*$/u.test(partId) || partId.length > 128) {
+    throw new ImapSmtpAttachmentError(
+      400,
+      'ATTACHMENT_REFERENCE_INVALID',
+      'Identyfikator części załącznika IMAP jest nieprawidłowy.',
+    )
+  }
+  return partId
+}
+
+function normalizeReceivedAttachmentMaxBytes(value: unknown): number {
+  const maxBytes = Number(value)
+  if (
+    !Number.isSafeInteger(maxBytes)
+    || maxBytes < 1
+    || maxBytes > IMAP_RECEIVED_ATTACHMENT_MAX_BYTES
+  ) {
+    throw new ImapSmtpAttachmentError(
+      400,
+      'ATTACHMENT_LIMIT_INVALID',
+      'Limit bajtów załącznika IMAP jest nieprawidłowy.',
+    )
+  }
+  return maxBytes
 }
 
 function parsedAddresses(value: any): MailAddress[] {

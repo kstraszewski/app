@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { type TestContext } from 'node:test'
+import { fetchGmailAttachmentBytesCore } from '../server/utils/mail-gmail-attachment.ts'
 import {
   gmailMessageDetail,
   gmailMessageSecurity,
@@ -12,6 +13,26 @@ import {
 
 function base64url(value: string): string {
   return Buffer.from(value, 'utf8').toString('base64url')
+}
+
+function mockFetch(
+  t: TestContext,
+  handler: (url: URL, init: RequestInit) => Response | Promise<Response>,
+): void {
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: URL | RequestInfo, init: RequestInit = {}) => {
+    const url = new URL(
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url,
+    )
+    return handler(url, init)
+  }) as typeof fetch
+  t.after(() => {
+    globalThis.fetch = original
+  })
 }
 
 function message(
@@ -37,6 +58,70 @@ function message(
     ...overrides,
   }
 }
+
+test('downloads Gmail attachment bytes through the attachment endpoint with a hard limit', async (t) => {
+  const expected = Uint8Array.from([0, 1, 2, 255])
+  mockFetch(t, (url, init) => {
+    assert.equal(
+      url.pathname,
+      '/gmail/v1/users/me/messages/message-attachment/attachments/provider-attachment',
+    )
+    assert.equal(new Headers(init.headers).get('authorization'), 'Bearer access-token')
+    return new Response(JSON.stringify({
+      size: expected.byteLength,
+      data: Buffer.from(expected).toString('base64url'),
+    }))
+  })
+
+  const result = await fetchGmailAttachmentBytesCore('access-token', {
+    messageId: 'message-attachment',
+    attachmentId: 'provider-attachment',
+    attachmentIndex: 0,
+    maxBytes: expected.byteLength,
+  })
+  assert.deepEqual(result, expected)
+})
+
+test('falls back to the indexed inline Gmail body.data and rejects bytes over the caller limit', async (t) => {
+  const inline = Uint8Array.from([80, 68, 70, 0, 255])
+  mockFetch(t, (url) => {
+    assert.equal(url.searchParams.get('format'), 'full')
+    assert.equal(url.searchParams.get('fields'), 'payload')
+    return new Response(JSON.stringify({
+      payload: {
+        mimeType: 'multipart/mixed',
+        parts: [{
+          filename: 'first.txt',
+          mimeType: 'text/plain',
+          body: { data: base64url('first') },
+        }, {
+          filename: 'decision.pdf',
+          mimeType: 'application/pdf',
+          body: {
+            size: inline.byteLength,
+            data: Buffer.from(inline).toString('base64url'),
+          },
+        }],
+      },
+    }))
+  })
+
+  const result = await fetchGmailAttachmentBytesCore('access-token', {
+    messageId: 'message-inline',
+    attachmentIndex: 1,
+    maxBytes: inline.byteLength,
+  })
+  assert.deepEqual(result, inline)
+
+  await assert.rejects(
+    fetchGmailAttachmentBytesCore('access-token', {
+      messageId: 'message-inline',
+      attachmentIndex: 1,
+      maxBytes: inline.byteLength - 1,
+    }),
+    (error: any) => error?.statusCode === 413,
+  )
+})
 
 test('summarizes a Gmail thread without exposing provider-specific payloads', () => {
   const thread: GmailThreadResource = {

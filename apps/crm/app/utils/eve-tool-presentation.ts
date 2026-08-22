@@ -17,6 +17,34 @@ export interface EveToolStatusPresentation {
 }
 
 const toolDefinitions: Record<string, EveToolDefinition> = {
+  search_mail: {
+    label: 'Przeszukaj pocztę',
+    activeLabel: 'Przeszukuję pocztę',
+    completeLabel: 'Przeszukano pocztę',
+    icon: 'i-lucide-mail-search',
+    source: 'Poczta OpenExpert',
+  },
+  read_mail_threads: {
+    label: 'Odczytaj korespondencję',
+    activeLabel: 'Odczytuję korespondencję',
+    completeLabel: 'Odczytano korespondencję',
+    icon: 'i-lucide-mails',
+    source: 'Poczta OpenExpert',
+  },
+  search_mail_attachments: {
+    label: 'Wyszukaj pliki w poczcie',
+    activeLabel: 'Szukam plików w poczcie',
+    completeLabel: 'Przeszukano pocztę',
+    icon: 'i-lucide-mail-search',
+    source: 'Poczta OpenExpert',
+  },
+  read_mail_attachment: {
+    label: 'Odczytaj załączniki',
+    activeLabel: 'Odczytuję załączniki',
+    completeLabel: 'Odczytano załączniki',
+    icon: 'i-lucide-file-search-2',
+    source: 'Poczta OpenExpert',
+  },
   list_user_cases: {
     label: 'Znajdź sprawy w CRM',
     activeLabel: 'Szukam spraw w CRM',
@@ -151,6 +179,44 @@ export function eveToolInputSummary(part: EveDynamicToolPart) {
     return `Zakres: ${scope}`
   }
 
+  if (toolName === 'search_mail_attachments') {
+    const query = shortText(input.query, 100)
+    const participant = shortText(input.participantEmail, 100)
+    const folder = input.folder === 'sent' ? 'wysłane' : 'odebrane'
+    if (participant) return `Poczta ${folder} · uczestnik: ${participant}`
+    if (query) return `Poczta ${folder} · zapytanie: ${query}`
+    return `Poczta ${folder} · ostatnie wiadomości z plikami`
+  }
+
+  if (toolName === 'search_mail') {
+    const query = shortText(input.query, 100)
+    const participant = shortText(input.participantEmail, 100)
+    const scope = objectValue(input.scope)
+    const folder = input.folder === 'sent'
+      ? 'wysłane'
+      : input.folder === 'inbox' ? 'odebrane' : 'odebrane i wysłane'
+    const continuation = typeof input.cursor === 'string' ? ' · kolejna strona' : ''
+    if (scope?.type === 'case') return `Poczta sprawy · ${folder}${continuation}`
+    if (scope?.type === 'client') return `Poczta klienta · ${folder}${continuation}`
+    if (participant) return `${folder} · uczestnik: ${participant}${continuation}`
+    if (query) return `${folder} · zapytanie: ${query}${continuation}`
+    return `${folder} · ostatnia korespondencja${continuation}`
+  }
+
+  if (toolName === 'read_mail_threads') {
+    const question = shortText(input.question, 120)
+    const count = Array.isArray(input.references) ? input.references.length : 1
+    const scope = count === 1 ? '1 wątek' : `${count} wątki`
+    return question ? `${scope} · cel: ${question}` : `${scope} z poczty`
+  }
+
+  if (toolName === 'read_mail_attachment') {
+    const question = shortText(input.question, 120)
+    const count = Array.isArray(input.references) ? input.references.length : 1
+    const scope = count === 1 ? '1 plik' : `${count} pliki`
+    return question ? `${scope} · szukana informacja: ${question}` : `${scope} z poczty`
+  }
+
   if (toolName === 'add_case_note' || toolName === 'crm_add_note') {
     const summary = shortText(input.summary ?? input.note)
     if (summary) return `Treść notatki: ${summary}`
@@ -186,6 +252,44 @@ export function eveToolOutputSummary(part: EveDynamicToolPart) {
   if (toolName === 'list_user_cases' && Array.isArray(output.cases)) {
     const count = typeof output.total === 'number' ? output.total : output.cases.length
     return count === 1 ? 'Znaleziono 1 sprawę.' : `Znaleziono ${count} spraw.`
+  }
+  if (toolName === 'search_mail_attachments' && Array.isArray(output.messages)) {
+    const count = output.messages.length
+    return count === 0
+      ? 'Nie znaleziono wiadomości z pasującymi plikami.'
+      : count === 1 ? 'Znaleziono 1 wiadomość z plikami.' : `Znaleziono ${count} wiadomości z plikami.`
+  }
+  if (toolName === 'search_mail' && Array.isArray(output.threads)) {
+    const count = output.threads.length
+    const coverage = objectValue(output.coverage)
+    const suffix = coverage?.complete === false ? ' Zakres nie jest jeszcze kompletny.' : ''
+    return count === 0
+      ? `Nie znaleziono pasującej korespondencji.${suffix}`
+      : count === 1
+        ? `Znaleziono 1 wątek.${suffix}`
+        : `Znaleziono ${count} wątków.${suffix}`
+  }
+  if (toolName === 'read_mail_threads' && Array.isArray(output.threads)) {
+    const readCount = typeof output.readThreadCount === 'number'
+      ? output.readThreadCount
+      : output.threads.length
+    const failureCount = typeof output.failureCount === 'number' ? output.failureCount : 0
+    if (failureCount > 0) return `Odczytano ${readCount} wątków; ${failureCount} nie udało się odczytać.`
+    return readCount === 1 ? 'Odczytano 1 wątek.' : `Odczytano ${readCount} wątki.`
+  }
+  if (toolName === 'read_mail_attachment') {
+    if (Array.isArray(output.attachments)) {
+      const readCount = typeof output.readAttachmentCount === 'number'
+        ? output.readAttachmentCount
+        : output.attachments.length
+      const failureCount = typeof output.failureCount === 'number' ? output.failureCount : 0
+      if (failureCount > 0) return `Odczytano ${readCount} plików; ${failureCount} nie udało się odczytać.`
+      return readCount === 1 ? 'Odczytano 1 załącznik.' : `Odczytano ${readCount} załączniki.`
+    }
+    const extraction = objectValue(output.extraction)
+    if (extraction?.status === 'extracted') return 'Wyodrębniono tekst z załącznika.'
+    if (extraction?.status === 'no_text') return 'Załącznik nie zawiera tekstu możliwego do odczytania.'
+    if (extraction?.status === 'unsupported') return 'Format załącznika nie jest jeszcze obsługiwany.'
   }
   if (toolName === 'check_case_documents' && Array.isArray(output.missingDocuments)) {
     const count = output.missingDocuments.length

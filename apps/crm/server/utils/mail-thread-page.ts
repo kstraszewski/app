@@ -39,6 +39,29 @@ export async function loadMailThreadPage(
     session,
     input.connectionId,
   )
+  return fetchMailThreadPageForConnection(event, {
+    ...input,
+    backendData,
+    session,
+    connection,
+  })
+}
+
+export async function fetchMailThreadPageForConnection(
+  event: H3Event,
+  input: {
+    backendData: any
+    session: Awaited<ReturnType<typeof requireCrmSession>>
+    connection: MailConnectionRow
+    folder: MailFolderId
+    search?: string
+    participantEmails?: string[]
+    pageToken?: string
+    maxResults?: number
+    observeBankMail?: boolean
+  },
+): Promise<MailThreadListPayload> {
+  const { backendData, connection, session } = input
   if (connection.status === 'revoked') {
     throw createError({
       statusCode: 409,
@@ -54,6 +77,7 @@ export async function loadMailThreadPage(
       connection.provider === 'google'
       && input.folder === 'INBOX'
       && !input.pageToken
+      && input.observeBankMail !== false
     ) {
       const task = ingestGmailBankMailThreadPage(event, {
         backendData,

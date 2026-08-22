@@ -1243,10 +1243,14 @@ onMounted(async () => {
 }
 
 .billing-state {
+  text-align: center;
+}
+
+.billing-state :deep(.card-body) {
   display: grid;
+  height: 100%;
   align-content: center;
   justify-items: center;
-  text-align: center;
 }
 
 .billing-state__visual {

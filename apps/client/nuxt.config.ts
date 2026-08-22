@@ -174,6 +174,7 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: 'pl' },
       title: 'Panel klienta — OpenExpert',
       meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'description', content: 'Bezpieczny panel klienta OpenExpert.' },
         { name: 'robots', content: 'noindex, nofollow' },
         { name: 'theme-color', content: '#ffffff' },

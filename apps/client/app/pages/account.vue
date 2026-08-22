@@ -1506,7 +1506,7 @@ onMounted(loadAccounts)
 .modal-form { display: grid; gap: 17px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 3px; }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .account-shell { width: min(820px, calc(100% - 36px)); padding-top: 42px; }
   .account-layout { grid-template-columns: 1fr; gap: 20px; }
   .account-nav { position: static; }

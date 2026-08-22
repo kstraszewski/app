@@ -48,6 +48,21 @@ export interface BankMailAgentPromptPayload {
   }
 }
 
+export interface BankMailReanalysisPromptPayload {
+  surface: 'bank-mail-reanalysis'
+  task: 'advisory-reassess-case-match'
+  contentTrust: 'untrusted'
+  constraints: {
+    advisoryOnly: true
+    noCanonicalMutations: true
+    noAutomaticAttachment: true
+    noProtectedIdentifiersIncluded: true
+    useTrustedToolsForScopeAndSenderIdentity: true
+    mustRecordReanalysisResult: true
+  }
+  message: BankMailAgentPromptPayload['message']
+}
+
 function boundedInteger(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0
   return Math.min(Math.trunc(value), 25 * 1024 * 1024)
@@ -110,4 +125,27 @@ export function buildBankMailAgentPromptPayload(
 
 export function buildBankMailAgentPrompt(input: BankMailAgentPromptInput): string {
   return JSON.stringify(buildBankMailAgentPromptPayload(input))
+}
+
+export function buildBankMailReanalysisPromptPayload(
+  input: BankMailAgentPromptInput,
+): BankMailReanalysisPromptPayload {
+  return {
+    surface: 'bank-mail-reanalysis',
+    task: 'advisory-reassess-case-match',
+    contentTrust: 'untrusted',
+    constraints: {
+      advisoryOnly: true,
+      noCanonicalMutations: true,
+      noAutomaticAttachment: true,
+      noProtectedIdentifiersIncluded: true,
+      useTrustedToolsForScopeAndSenderIdentity: true,
+      mustRecordReanalysisResult: true,
+    },
+    message: buildBankMailAgentPromptPayload(input).message,
+  }
+}
+
+export function buildBankMailReanalysisPrompt(input: BankMailAgentPromptInput): string {
+  return JSON.stringify(buildBankMailReanalysisPromptPayload(input))
 }

@@ -17,7 +17,27 @@ import {
   type GmailThreadResource,
 } from './gmail-message.ts'
 import type { GmailSendPayload } from './gmail-send.ts'
+import {
+  fetchGmailAttachmentBytesCore,
+  GMAIL_ATTACHMENT_DOWNLOAD_MAX_BYTES,
+} from './mail-gmail-attachment.ts'
 import { mailEncryptionSecretIsStrong } from './mail-crypto-core.ts'
+
+export const GMAIL_RECEIVED_ATTACHMENT_MAX_BYTES = GMAIL_ATTACHMENT_DOWNLOAD_MAX_BYTES
+
+export interface GmailAttachmentDownloadInput {
+  messageId: string
+  attachmentId?: string | null
+  attachmentIndex: number
+  maxBytes: number
+}
+
+export async function fetchGmailAttachmentBytes(
+  accessToken: string,
+  input: GmailAttachmentDownloadInput,
+): Promise<Uint8Array> {
+  return fetchGmailAttachmentBytesCore(accessToken, input)
+}
 
 export type MailProviderName = 'google'
 

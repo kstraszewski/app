@@ -347,7 +347,7 @@ onMounted(() => {
 }
 
 .login-modes button {
-  min-height: 42px;
+  min-height: 44px;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -367,6 +367,10 @@ onMounted(() => {
   min-height: 52px;
   background: #000;
   color: #fff;
+}
+
+.login-form :deep(input) {
+  min-height: 48px;
 }
 
 .login-separator {

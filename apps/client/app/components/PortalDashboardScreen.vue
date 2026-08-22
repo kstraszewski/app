@@ -779,19 +779,21 @@ const meetingModeLabel = computed(() => {
 .portal-dashboard__empty-cases h3 { font-size: 17px; }
 .portal-dashboard__empty-cases p { margin-top: 3px; color: var(--ui-text-muted); font-size: 13px; }
 
-@media (max-width: 980px) {
+@media (max-width: 1024px) {
   .portal-dashboard__focus {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "now now"
+      "meeting expert";
   }
 
   .now-card {
-    min-height: 420px;
+    min-height: 360px;
     padding: 28px;
   }
 
-  .now-card__footer {
-    align-items: flex-start;
-    flex-direction: column;
+  .context-card {
+    min-height: 180px;
   }
 }
 

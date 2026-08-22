@@ -181,7 +181,7 @@ withDefaults(defineProps<{
   font-size: 11px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .auth-shell {
     grid-template-rows: 68px 1fr auto;
   }
@@ -196,8 +196,10 @@ withDefaults(defineProps<{
   }
 
   .auth-shell__form-column {
+    width: 100%;
+    max-width: 640px;
     margin: 0 auto;
-    padding: 64px 28px 80px;
+    padding: 64px clamp(28px, 5vw, 40px) 80px;
   }
 
   .auth-shell__footer {

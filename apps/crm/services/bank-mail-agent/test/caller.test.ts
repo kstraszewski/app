@@ -41,13 +41,49 @@ function context(current = principal(), initiator = principal()): SessionContext
 
 test('returns scope only when current and initiating principals match', () => {
   assert.deepEqual(requireBankMailAgentCaller(context()), {
+    mode: 'initial',
+    serviceId: BANK_MAIL_AGENT_SERVICE_ID,
+    preset: BANK_MAIL_AGENT_PRESET,
     organizationId: attributes.organizationId,
     organizationSlug: attributes.organizationSlug,
     intakeId: attributes.intakeId,
     analysisRunId: attributes.analysisRunId,
     connectionId: attributes.connectionId,
     mailboxOwnerUserId: attributes.mailboxOwnerUserId,
+    reanalysisRequestId: null,
   })
+})
+
+test('returns immutable reanalysis scope only when request and run ids match', () => {
+  const reanalysis = principal({
+    serviceId: 'openexpert-crm-bank-mail-reanalysis',
+    preset: 'bank-mail-reanalysis',
+    reanalysisRequestId: attributes.analysisRunId,
+  })
+  reanalysis.principalId = 'openexpert-crm-bank-mail-reanalysis'
+  assert.deepEqual(requireBankMailAgentCaller(context(reanalysis, reanalysis)), {
+    mode: 'reanalysis',
+    serviceId: 'openexpert-crm-bank-mail-reanalysis',
+    preset: 'bank-mail-reanalysis',
+    organizationId: attributes.organizationId,
+    organizationSlug: attributes.organizationSlug,
+    intakeId: attributes.intakeId,
+    analysisRunId: attributes.analysisRunId,
+    connectionId: attributes.connectionId,
+    mailboxOwnerUserId: attributes.mailboxOwnerUserId,
+    reanalysisRequestId: attributes.analysisRunId,
+  })
+
+  const mismatched = principal({
+    serviceId: 'openexpert-crm-bank-mail-reanalysis',
+    preset: 'bank-mail-reanalysis',
+    reanalysisRequestId: '66666666-6666-4666-8666-666666666666',
+  })
+  mismatched.principalId = 'openexpert-crm-bank-mail-reanalysis'
+  assert.throws(
+    () => requireBankMailAgentCaller(context(mismatched, mismatched)),
+    /authenticated/u,
+  )
 })
 
 test('rejects retargeting an existing session to a different run', () => {

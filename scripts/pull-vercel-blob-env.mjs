@@ -20,7 +20,6 @@ const temporaryDirectory = join(
 )
 const pulledEnvironmentPath = join(temporaryDirectory, 'development.env')
 const blobKeys = [
-  'VERCEL_OIDC_TOKEN',
   'NUXT_VERCEL_BLOB_PUBLIC_TOKEN',
   'NUXT_VERCEL_BLOB_PUBLIC_STORE_ID',
   'NUXT_VERCEL_BLOB_PUBLIC_BASE_URL',
@@ -59,21 +58,12 @@ function hasValue(values, key) {
 }
 
 function assertBlobConfiguration(values) {
-  const hasPublicAuth = hasValue(values, 'NUXT_VERCEL_BLOB_PUBLIC_TOKEN')
-    || hasValue(values, 'NUXT_VERCEL_BLOB_PUBLIC_STORE_ID')
-  const hasPrivateAuth = hasValue(values, 'NUXT_VERCEL_BLOB_PRIVATE_TOKEN')
-    || hasValue(values, 'NUXT_VERCEL_BLOB_PRIVATE_STORE_ID')
-  const usesOidc = !hasValue(values, 'NUXT_VERCEL_BLOB_PUBLIC_TOKEN')
+  if (
+    !hasValue(values, 'NUXT_VERCEL_BLOB_PUBLIC_TOKEN')
     || !hasValue(values, 'NUXT_VERCEL_BLOB_PRIVATE_TOKEN')
-
-  if (!hasPublicAuth || !hasPrivateAuth) {
+  ) {
     throw new Error(
-      'The linked Vercel Development environment is missing a public or private Blob store.',
-    )
-  }
-  if (usesOidc && !hasValue(values, 'VERCEL_OIDC_TOKEN')) {
-    throw new Error(
-      'The linked Vercel Development environment did not provide VERCEL_OIDC_TOKEN.',
+      'The linked Vercel Development environment is missing a public or private Blob read-write token.',
     )
   }
 }

@@ -279,7 +279,7 @@ const viewDescription = computed(() => {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .portal-case-layout {
     display: block;
   }

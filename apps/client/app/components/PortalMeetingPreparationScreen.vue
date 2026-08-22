@@ -1842,9 +1842,15 @@ async function completePreparation() {
 .preparation-sources a { display: inline-flex; align-items: center; gap: 4px; color: var(--ui-text-toned); font-size: 10px; }
 .preparation-sources a svg { width: 11px; height: 11px; }
 
-@media (max-width: 960px) {
-  .preparation-hero { grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr); padding: 30px; }
-  .preparation-workspace { grid-template-columns: 220px minmax(0, 1fr); }
+@media (max-width: 1024px) {
+  .preparation-hero { grid-template-columns: 1fr; min-height: 0; gap: 28px; padding: 30px; }
+  .preparation-hero__copy { max-width: none; }
+  .preparation-meeting-card { min-height: 300px; }
+  .preparation-workspace { grid-template-columns: 1fr; }
+  .preparation-steps { position: static; overflow-x: auto; padding: 14px; }
+  .preparation-steps__heading, .preparation-steps__privacy { display: none; }
+  .preparation-steps ol { display: flex; width: max-content; }
+  .preparation-steps li { width: 175px; }
   .preparation-card { padding: 28px; }
   .preparation-options--three { grid-template-columns: 1fr; }
   .preparation-summary { grid-template-columns: 1fr; }
@@ -1852,18 +1858,14 @@ async function completePreparation() {
 
 @media (max-width: 760px) {
   .meeting-preparation__main { width: min(640px, calc(100% - 32px)); padding: 22px 0 70px; }
-  .preparation-hero { grid-template-columns: 1fr; min-height: 0; gap: 28px; }
-  .preparation-hero__copy { max-width: none; }
   .preparation-hero h1 { font-size: 42px; }
-  .preparation-meeting-card { min-height: 300px; }
-  .preparation-workspace { grid-template-columns: 1fr; }
-  .preparation-steps { position: static; overflow-x: auto; padding: 14px; }
-  .preparation-steps__heading, .preparation-steps__privacy { display: none; }
-  .preparation-steps ol { display: flex; width: max-content; }
-  .preparation-steps li { width: 175px; }
   .preparation-card__header--questions { align-items: flex-start; }
   .preparation-question-recommendation { align-items: flex-start; flex-direction: column; }
   .preparation-meeting-plan ol { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .meeting-preparation__main { padding-bottom: var(--portal-mobile-nav-clearance); }
 }
 
 @media (max-width: 560px) {

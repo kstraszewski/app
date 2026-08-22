@@ -2275,7 +2275,7 @@ function securityWarningDescription(security: MailMessageSecurity): string {
                       </div>
                     </div>
                     <p class="mail-attachments__notice">
-                      Odebrane pliki pozostają u dostawcy i nie są pobierane do CRM.
+                      Wiadomości i pliki pozostają u dostawcy. Na Twoje żądanie EVE może odczytać ograniczone fragmenty wątku lub wskazanego pliku; wykorzystane fragmenty trafiają do historii rozmowy z Agentem AI.
                     </p>
                   </div>
                 </section>

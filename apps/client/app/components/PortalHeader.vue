@@ -320,7 +320,7 @@ async function signOut() {
   font-size: 12px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .portal-header {
     grid-template-columns: auto 1fr auto;
     height: 68px;

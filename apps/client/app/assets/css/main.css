@@ -95,6 +95,8 @@ html {
   min-width: 320px;
   background: var(--ui-bg);
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
 }
 

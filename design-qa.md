@@ -54,6 +54,64 @@ Nad listą zgód znajduje się teraz trójstanowy checkbox „Zaznacz wszystkie�
 
 ---
 
+# Design QA — pośrednictwo kredytowe OpenExpert
+
+## Wynik
+
+`passed`
+
+Podstrona `/posrednictwo-kredytowe` została zaprojektowana od nowa jako editorialowy landing partnerski: jasna plansza sprzedażowa, czarny rail procesu, mocny dowód „5 dni roboczych”, warunki współpracy, sekcja OpenExpert Mail oraz końcowe CTA. Nie pozostały znane problemy P0, P1 ani P2 w sprawdzonych stanach.
+
+## Materiał i normalizacja
+
+- Referencja wizualna: `/Users/konradstraszewski/.codex/generated_images/01a023bf-26e3-7e10-9b16-56b9035b00ec/exec-404070ca-437d-4169-a57b-a565355c1a65.png`, 864 × 1821 px.
+- Finalny pełny widok desktop: `/private/tmp/openexpert-brokerage-final-full.png`, 1440 × 3442 px; złożony bezszwowo na granicach sekcji z widoków renderowanych przy CSS viewport 1440 × 1100 px.
+- Finalny mobile — góra: `/private/tmp/openexpert-brokerage-mobile-top.png`, 390 × 844 px.
+- Finalny mobile — CTA i stopka: `/private/tmp/openexpert-brokerage-mobile-cta.png`, 390 × 844 px.
+- Pełne porównanie w jednym obrazie: `/private/tmp/openexpert-brokerage-qa-comparison.png`, 1638 × 1821 px; referencja po lewej, implementacja po prawej, obie znormalizowane do 1821 px wysokości.
+- Porównanie hero i raila procesu: `/private/tmp/openexpert-brokerage-qa-hero-comparison.png`, 2316 × 1100 px; referencja po lewej, implementacja po prawej, ten sam stan początkowy.
+- Źródło iteracji typograficznej: `/private/var/folders/m6/ync19sd96gz4pg73zt0mq_6m0000gn/T/codex-clipboard-69dc0f93-805c-4edc-9aea-c0afab013e80.png`, 1108 × 610 px.
+- Finalny widok po korekcie fontu — desktop: `/private/tmp/openexpert-brokerage-font-desktop-final.png`, 1440 × 1100 px; CSS viewport 1440 × 1100 px, DPR 1.
+- Finalny widok po korekcie fontu — mobile: `/private/tmp/openexpert-brokerage-font-mobile-final.png`, 390 × 844 px; CSS viewport 390 × 844 px, DPR 1.
+- Skupione porównanie typografii przed/po: `/private/tmp/openexpert-brokerage-font-comparison.png`, 2012 × 610 px; problematyczny stan po lewej, poprawiony stan po prawej.
+
+## Ocena wymaganych powierzchni
+
+- **Hierarchia i kompozycja:** zachowano kluczowy kierunek referencji: jasne pole główne, czarny pionowy rail trzech kroków, ogromny dowód liczbowy i czarny pas akredytacji. Kolejne sekcje prowadzą od obietnicy przez warunki i narzędzie do kontaktu.
+- **Typografia:** duży, kontrastowy serif buduje editorialowy charakter, a istniejące kroje sans i mono odpowiadają za copy, etykiety i dane. Tytuły nie kolidują z treścią przy 1440 ani 390 px.
+- **Kolory, obramowania i spacing:** strona używa ograniczonej palety ciepłej bieli, czerni i neutralnej szarości, cienkich linii oraz dużych pól oddechu. Nie wprowadzono obcych gradientów, promieni ani efektów.
+- **Ikony i zasoby:** użyto istniejącego logo OpenExpert oraz ikon Lucide/Iconify z projektu. Nie dodano atrap, emoji, własnych SVG ani CSS-art.
+- **Copy:** obietnica rozliczenia jest jednoznaczna: „Od podpisania umowy kredytowej z klientem do wypłaty prowizji — do 5 dni roboczych”. Osobno pokazano darmowy pełny dostęp do OpenExpert, transparentne stawki, cyfrową akredytację w dwa tygodnie i Gmail 2 TB zintegrowany z CRM.
+- **Responsywność:** przy 1440 × 1100 i 390 × 844 `scrollWidth === innerWidth`; rail, benefit rows, funkcje poczty, przepływ wiadomości, CTA i stopka przechodzą w czytelny układ jednokolumnowy bez obcięcia copy.
+- **Dostępność i SEO:** sekcje mają etykiety `aria-labelledby`, strona zachowuje jeden nagłówek H1, nazwane linki i landmark `main`. Świeże otwarcie zwraca poprawny tytuł, opis, canonical oraz JSON-LD typu `WebPage`.
+
+## Interakcje sprawdzone w przeglądarce
+
+- Link „Zobacz warunki” ma `href="#warunki"`; po kliknięciu ustawił hash i wyrównał sekcję warunków do górnej krawędzi widoku.
+- Główne CTA w headerze, hero i sekcji końcowej mają poprawny adres `mailto:` z tematem pośrednictwa kredytowego; nie uruchamiano zewnętrznego klienta poczty podczas QA.
+- Bezpośrednie kotwice `#warunki`, `#mail` i `#kontakt` prowadzą do stabilnych sekcji.
+- Desktop i mobile nie wykazały poziomego overflow ani nakładających się bloków.
+
+## Historia porównania i poprawki
+
+- **P1 — metadane mogły przejść w stan błędu Nuxta:** funkcja danych strukturalnych odwoływała się do `canonicalUrl` i `siteOrigin` zanim zakończyła się inicjalizacja destrukturyzacji. JSON-LD przeniesiono do osobnego `useHead` po uzyskaniu obu wartości. Świeża karta pokazuje teraz `Pośrednictwo kredytowe dla ekspertów | OpenExpert`, właściwy opis i poprawny JSON-LD.
+- **P2 — dowód rozliczenia był podatny na niejednoznaczność copy:** finalne brzmienie wskazuje oba końce okresu — podpisanie umowy kredytowej z klientem oraz wypłatę prowizji — i powtarza je spójnie w hero, kroku procesu i sekcji warunków.
+- **P1 — displayowy Imbue był zbyt skondensowany, a syntetyczna kursywa wyglądała jak uszkodzony font:** podstrona otrzymała lokalny stos `Baskerville / Iowan Old Style / Georgia`, normalny krój dla obu linii hero, spokojniejszy tracking i naturalne proporcje liczby „5”. Zmiana obejmuje wyłącznie editorialowe elementy tej podstrony i nie modyfikuje globalnej typografii produktu.
+- **Post-fix:** hero ma dwie czytelne linie na desktopie i kontrolowane trzy linie na 390 px. W obu viewportach `scrollWidth === innerWidth`; sekcja rozliczenia i późniejsze nagłówki nie mają kolizji ani obcięcia. Świeża konsola nie zawiera ostrzeżeń ani błędów.
+- Pełne i skupione porównanie potwierdziły zgodność kierunku wizualnego z referencją; różnice treści i długości strony wynikają z finalnego zakresu benefitów oraz użycia istniejącego headera i stopki produktu.
+
+## Walidacja techniczna
+
+- `pnpm --filter @openexpert/landing typecheck` — zakończone kodem 0.
+- `pnpm --filter @openexpert/landing test` — 116/116 testów zakończonych powodzeniem.
+- `git diff --check -- apps/landing/app/pages/posrednictwo-kredytowe.vue` — bez błędów.
+
+## Final result
+
+`passed`
+
+---
+
 # Design QA — najbliższe terminy na kartach ekspertów
 
 ## Wynik

@@ -27,6 +27,7 @@ export const MICROSOFT_MAIL_SCOPES = [
 export const MICROSOFT_SIMPLE_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024
 export const MICROSOFT_LARGE_ATTACHMENT_LIMIT_BYTES = 150 * 1024 * 1024
 export const MICROSOFT_MAIL_CURSOR_MAX_LENGTH = 4_096
+export const MICROSOFT_RECEIVED_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024
 
 const GRAPH_ORIGIN = 'https://graph.microsoft.com'
 const GRAPH_API_PREFIX = '/v1.0/me/'
@@ -40,6 +41,7 @@ const MAX_THREAD_BODY_CHARACTERS = 500_000
 const MAX_THREAD_HTML_CHARACTERS = 1_000_000
 const MAX_CURSOR_URL_LENGTH = 16_384
 const MAX_THREAD_REFERENCE_LENGTH = 6_000
+const MICROSOFT_ATTACHMENT_JSON_OVERHEAD_BYTES = 64 * 1024
 
 const GRAPH_LIST_FIELDS = [
   'id',
@@ -130,11 +132,19 @@ export interface MicrosoftGraphInternetHeader {
 }
 
 export interface MicrosoftGraphAttachment {
+  '@odata.type'?: string | null
   id?: string | null
   name?: string | null
   contentType?: string | null
+  contentBytes?: string | null
   size?: number | null
   isInline?: boolean | null
+}
+
+export interface MicrosoftMailAttachmentDownloadInput {
+  messageId: string
+  attachmentId: string
+  maxBytes: number
 }
 
 export interface MicrosoftGraphMessage {
@@ -383,6 +393,53 @@ export async function fetchMicrosoftMailIdentity(
     email,
     displayName: cleanDisplayText(profile.displayName || email) || email,
   }
+}
+
+/** Downloads a Graph fileAttachment as decoded bytes with a hard caller limit. */
+export async function fetchMicrosoftMailAttachmentBytes(
+  accessToken: string,
+  input: MicrosoftMailAttachmentDownloadInput,
+  dependencies: MicrosoftMailDependencies = {},
+): Promise<Uint8Array> {
+  const messageId = cleanCallerProviderIdentifier(input.messageId, 'Microsoft message ID')
+  const attachmentId = cleanCallerProviderIdentifier(input.attachmentId, 'Microsoft attachment ID')
+  const maxBytes = microsoftReceivedAttachmentMaxBytes(input.maxBytes)
+  const query = new URLSearchParams({
+    '$select': 'id,name,contentType,size,isInline,contentBytes',
+  })
+  const attachment = await graphBoundedJson<MicrosoftGraphAttachment>(
+    `${GRAPH_ORIGIN}/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?${query}`,
+    { headers: graphHeaders(accessToken, { Prefer: 'IdType="ImmutableId"' }) },
+    'Microsoft attachment download',
+    dependencies,
+    encodedMicrosoftAttachmentBudget(maxBytes) + MICROSOFT_ATTACHMENT_JSON_OVERHEAD_BYTES,
+  )
+
+  const attachmentType = cleanConfigText(attachment['@odata.type']).toLowerCase()
+  if (attachmentType && attachmentType !== '#microsoft.graph.fileattachment') {
+    throw new MicrosoftMailError(
+      409,
+      'ATTACHMENT_TYPE_UNSUPPORTED',
+      'This Microsoft attachment type cannot be downloaded',
+    )
+  }
+  const declaredSize = nonNegativeIntegerOrNull(attachment.size)
+  if (declaredSize !== null && declaredSize > maxBytes) {
+    throw microsoftReceivedAttachmentTooLarge()
+  }
+  if (typeof attachment.contentBytes !== 'string') {
+    throw new MicrosoftMailError(
+      409,
+      'ATTACHMENT_CONTENT_UNAVAILABLE',
+      'Microsoft attachment content is unavailable',
+    )
+  }
+
+  const decodedSize = decodedMicrosoftBase64Size(attachment.contentBytes)
+  if (decodedSize > maxBytes) throw microsoftReceivedAttachmentTooLarge()
+  const bytes = Buffer.from(attachment.contentBytes, 'base64')
+  if (bytes.byteLength > maxBytes) throw microsoftReceivedAttachmentTooLarge()
+  return new Uint8Array(bytes)
 }
 
 export function encodeMicrosoftThreadReference(
@@ -1476,6 +1533,68 @@ async function graphJson<T>(
   }
 }
 
+async function graphBoundedJson<T>(
+  url: string,
+  init: RequestInit,
+  operation: string,
+  dependencies: MicrosoftMailDependencies,
+  maxResponseBytes: number,
+): Promise<T> {
+  const response = await graphResponse(url, init, operation, dependencies)
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > maxResponseBytes) {
+    await response.body?.cancel().catch(() => {})
+    throw microsoftReceivedAttachmentTooLarge()
+  }
+
+  const bytes = await readBoundedGraphResponse(response, maxResponseBytes)
+  try {
+    return JSON.parse(Buffer.from(bytes).toString('utf8')) as T
+  }
+  catch (error) {
+    throw new MicrosoftMailError(
+      502,
+      'GRAPH_INVALID_RESPONSE',
+      `${operation} returned an invalid response`,
+      { cause: error },
+    )
+  }
+}
+
+async function readBoundedGraphResponse(
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array()
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (!value?.byteLength) continue
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {})
+        throw microsoftReceivedAttachmentTooLarge()
+      }
+      chunks.push(value)
+    }
+  }
+  finally {
+    reader.releaseLock()
+  }
+
+  const result = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
 async function graphNoContent(
   url: string,
   init: RequestInit,
@@ -2002,6 +2121,59 @@ function cleanCallerProviderIdentifier(value: unknown, label: string): string {
   catch (error) {
     throw new MicrosoftMailError(400, 'PROVIDER_ID_INVALID', `${label} is invalid`, { cause: error })
   }
+}
+
+function microsoftReceivedAttachmentMaxBytes(value: unknown): number {
+  const maxBytes = Number(value)
+  if (
+    !Number.isSafeInteger(maxBytes)
+    || maxBytes < 1
+    || maxBytes > MICROSOFT_RECEIVED_ATTACHMENT_MAX_BYTES
+  ) {
+    throw new MicrosoftMailError(
+      400,
+      'ATTACHMENT_LIMIT_INVALID',
+      'Microsoft attachment byte limit is invalid',
+    )
+  }
+  return maxBytes
+}
+
+function microsoftReceivedAttachmentTooLarge(): MicrosoftMailError {
+  return new MicrosoftMailError(
+    413,
+    'ATTACHMENT_TOO_LARGE',
+    'Microsoft attachment exceeds the download limit',
+  )
+}
+
+function encodedMicrosoftAttachmentBudget(maxBytes: number): number {
+  return Math.ceil((maxBytes + 1) / 3) * 4 + 2
+}
+
+function decodedMicrosoftBase64Size(value: string): number {
+  if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
+    throw new MicrosoftMailError(
+      502,
+      'ATTACHMENT_CONTENT_INVALID',
+      'Microsoft attachment returned invalid content',
+    )
+  }
+  const unpaddedLength = value.replace(/=+$/u, '').length
+  const paddingLength = value.length - unpaddedLength
+  const remainder = unpaddedLength % 4
+  const expectedPadding = remainder === 0 ? 0 : 4 - remainder
+  if (
+    remainder === 1
+    || (paddingLength > 0 && (value.length % 4 !== 0 || paddingLength !== expectedPadding))
+  ) {
+    throw new MicrosoftMailError(
+      502,
+      'ATTACHMENT_CONTENT_INVALID',
+      'Microsoft attachment returned invalid content',
+    )
+  }
+  return Math.floor(unpaddedLength * 3 / 4)
 }
 
 function cleanOptionalProviderIdentifier(value: unknown): string | null {

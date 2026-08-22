@@ -1,298 +1,246 @@
 <script setup lang="ts">
+const contactHref = 'mailto:hello@openexpert.app?subject=Po%C5%9Brednictwo%20kredytowe%20z%20OpenExpert'
+
 const { canonicalUrl, siteOrigin } = useLandingSeo({
-  title: 'Pośrednictwo kredytowe dla ekspertów — akredytacja w 2 tygodnie | OpenExpert',
-  description:
-    'Prowadź pośrednictwo kredytowe z OpenExpert: wypłata prowizji do 5 dni roboczych od podpisania umowy kredytowej, bezpłatny dostęp do aplikacji, proste i transparentne stawki, akredytacja w 2 tygodnie oraz poczta Gmail 2 TB w cenie.',
+  title: 'Pośrednictwo kredytowe dla ekspertów | OpenExpert',
+  description: 'Cyfrowa akredytacja w 2 tygodnie, prowizja wypłacana do 5 dni roboczych od podpisania umowy kredytowej z klientem i bezpłatny dostęp do OpenExpert.',
   path: '/posrednictwo-kredytowe',
-  socialImageAlt: 'Pośrednictwo kredytowe z OpenExpert — akredytacja w 2 tygodnie i prowizja do 5 dni roboczych',
+  socialImageAlt: 'Pośrednictwo kredytowe z OpenExpert',
 })
 
 useHead({
   script: [{
-    key: 'structured-data:posrednictwo-kredytowe',
+    key: 'structured-data:brokerage',
     type: 'application/ld+json',
     innerHTML: serializeLandingStructuredData({
       '@context': 'https://schema.org',
-      '@graph': [
-        {
-          '@type': 'WebPage',
-          '@id': `${canonicalUrl}#webpage`,
-          url: canonicalUrl,
-          name: 'Pośrednictwo kredytowe dla ekspertów — OpenExpert',
-          description: 'Oferta pośrednictwa kredytowego dla niezależnych ekspertów i doradców: w pełni cyfrowa akredytacja w 2 tygodnie, wypłata prowizji do 5 dni roboczych od podpisania umowy kredytowej, bezpłatny dostęp do aplikacji, proste stawki i poczta Gmail 2 TB w cenie.',
-          isPartOf: { '@id': `${siteOrigin}/#website` },
-          about: { '@id': `${siteOrigin}/#organization` },
-          breadcrumb: { '@id': `${canonicalUrl}#breadcrumb` },
-          inLanguage: 'pl-PL',
-        },
-        {
-          '@type': 'BreadcrumbList',
-          '@id': `${canonicalUrl}#breadcrumb`,
-          itemListElement: [
-            {
-              '@type': 'ListItem',
-              position: 1,
-              name: 'OpenExpert',
-              item: `${siteOrigin}/`,
-            },
-            {
-              '@type': 'ListItem',
-              position: 2,
-              name: 'Pośrednictwo kredytowe',
-              item: canonicalUrl,
-            },
-          ],
-        },
-      ],
+      '@type': 'WebPage',
+      '@id': `${canonicalUrl}#webpage`,
+      url: canonicalUrl,
+      name: 'Pośrednictwo kredytowe dla ekspertów — OpenExpert',
+      description: 'Warunki współpracy dla ekspertów kredytowych w OpenExpert.',
+      isPartOf: { '@id': `${siteOrigin}/#website` },
+      inLanguage: 'pl-PL',
     }),
   }],
 })
 
-const heroSignals = [
-  { icon: 'lucide:banknote', label: 'Prowizja do 5 dni roboczych' },
-  { icon: 'lucide:badge-check', label: 'Akredytacja w 2 tygodnie' },
-  { icon: 'lucide:app-window', label: 'Bezpłatna aplikacja' },
-  { icon: 'lucide:mail', label: 'Gmail 2 TB w cenie' },
-]
-
-const stats = [
-  {
-    value: '2 tygodnie',
-    label: 'w pełni cyfrowa akredytacja — najszybsza na rynku',
-  },
-  {
-    value: 'do 5 dni roboczych',
-    label: 'wypłata prowizji od podpisania umowy kredytowej z klientem',
-  },
-  {
-    value: '0 zł',
-    label: 'pełny, bezpłatny dostęp do aplikacji OpenExpert',
-  },
-  {
-    value: '2 TB',
-    label: 'poczta Gmail w cenie, w 100% zintegrowana z CRM',
-  },
-]
-
-const benefits = [
-  {
-    icon: 'lucide:banknote',
-    meta: 'Rozliczenia',
-    title: 'Prowizja do 5 dni roboczych',
-    description:
-      'Wypłatę prowizji otrzymujesz do 5 dni roboczych od podpisania umowy kredytowej z klientem. Krótki cykl rozliczenia ułatwia planowanie przychodów.',
-  },
-  {
-    icon: 'lucide:app-window',
-    meta: 'Narzędzia pracy',
-    title: 'Pełny, bezpłatny dostęp do aplikacji',
-    description:
-      'Od pierwszego dnia korzystasz z całego OpenExpert: CRM, proces obsługi klienta, dokumenty i agenci AI w jednym miejscu. Bez opłat za dostęp do aplikacji.',
-  },
-  {
-    icon: 'lucide:percent',
-    meta: 'Zasady współpracy',
-    title: 'Proste i transparentne stawki',
-    description:
-      'Stawki prowizyjne mamy proste i przejrzyste. Znasz zasady rozliczenia, zanim rozpoczniesz pierwszą sprawę — bez ukrytych warunków i skomplikowanych tabel.',
-  },
-  {
-    icon: 'lucide:badge-check',
-    meta: 'Start',
-    title: 'Akredytacja w 2 tygodnie',
-    description:
-      'To najszybsza na rynku i jedyna w pełni cyfrowa akredytacja. Cały proces załatwisz online, a wejście w pośrednictwo kredytowe zajmuje 2 tygodnie.',
-  },
-  {
-    icon: 'lucide:mail',
-    meta: 'Komunikacja',
-    title: 'Gmail 2 TB w cenie',
-    description:
-      'Do pracy dostajesz pocztę Gmail o pojemności 2 TB — zawsze dostępną i w 100% zintegrowaną z CRM. Korespondencja z klientem i bankiem trafia prosto do kontekstu sprawy.',
-    linkLabel: 'Zobacz OpenExpert Mail',
-    linkTo: '/poczta-dla-ekseprta',
-  },
-]
-
-const processSteps = [
+const journey = [
   {
     number: '01',
-    icon: 'lucide:send',
-    label: 'Zgłoszenie',
-    title: 'Startujesz online',
-    description:
-      'Wypełniasz jedno zgłoszenie i przekazujesz dane potrzebne do akredytacji. Bez dokumentów na papierze i wizyt stacjonarnych.',
+    icon: 'lucide:badge-check',
+    label: 'Akredytacja',
+    title: '2 tygodnie. W pełni cyfrowo.',
+    description: 'Najszybsza na rynku i jedyna w pełni cyfrowa akredytacja.',
   },
   {
     number: '02',
-    icon: 'lucide:badge-check',
-    label: 'Akredytacja',
-    title: 'Cyfrowa akredytacja w 2 tygodnie',
-    description:
-      'Najszybsza ścieżka na rynku i jedyna prowadzona w pełni cyfrowo. Po 2 tygodniach możesz pracować na pośrednictwie kredytowym.',
+    icon: 'lucide:file-signature',
+    label: 'Sprzedaż',
+    title: 'Podpisujesz umowę z klientem.',
+    description: 'Prowadzisz klienta i sprawę w jednym, uporządkowanym środowisku.',
   },
   {
     number: '03',
-    icon: 'lucide:briefcase',
-    label: 'Praca z klientem',
-    title: 'Prowadzisz sprawy w jednej aplikacji',
-    description:
-      'CRM, proces kredytowy i poczta Gmail zintegrowana z CRM-em w 100%. Korespondencja, dokumenty i statusy spraw są w jednym miejscu.',
-  },
-  {
-    number: '04',
     icon: 'lucide:banknote',
     label: 'Rozliczenie',
-    title: 'Prowizja do 5 dni roboczych',
-    description:
-      'Od podpisania umowy kredytowej z klientem masz do 5 dni roboczych na wypłatę prowizji. Stawki pozostają proste i transparentne.',
+    title: 'Prowizja trafia do Ciebie.',
+    description: 'Do 5 dni roboczych od podpisania umowy kredytowej z klientem.',
+  },
+]
+
+const partnership = [
+  {
+    number: '01',
+    title: 'Pełny OpenExpert za darmo',
+    description: 'CRM, obsługa spraw, dokumenty i komunikacja — bez opłat za dostęp do aplikacji.',
+  },
+  {
+    number: '02',
+    title: 'Transparentne stawki',
+    description: 'Proste zasady prowizyjne, które znasz przed rozpoczęciem współpracy.',
+  },
+  {
+    number: '03',
+    title: 'Szybkie rozliczenie',
+    description: 'Od podpisania umowy kredytowej z klientem do wypłaty prowizji — do 5 dni roboczych.',
+  },
+]
+
+const mailFeatures = [
+  {
+    icon: 'lucide:mail',
+    title: 'Gmail 2 TB w cenie',
+    description: 'Duża skrzynka do codziennej pracy z klientami i bankami.',
+  },
+  {
+    icon: 'lucide:refresh-cw',
+    title: 'Zawsze dostępna',
+    description: 'Twoja korespondencja jest pod ręką dokładnie wtedy, kiedy jej potrzebujesz.',
+  },
+  {
+    icon: 'lucide:workflow',
+    title: '100% zintegrowana z CRM',
+    description: 'Wiadomości, załączniki i kontekst klienta pozostają przy właściwej sprawie.',
   },
 ]
 </script>
 
 <template>
-  <div class="credit-page">
-    <DirectorySiteHeader />
+  <div class="brokerage-page">
+    <DirectorySiteHeader
+      :cta-href="contactHref"
+      cta-label="Zostań partnerem"
+    />
 
     <main id="directory-content" tabindex="-1">
-      <section class="credit-hero" aria-labelledby="credit-hero-title">
-        <div class="credit-shell">
-          <nav class="credit-breadcrumb" aria-label="Okruszki">
+      <section class="hero" aria-labelledby="brokerage-title">
+        <div class="hero__main">
+          <nav class="breadcrumb" aria-label="Okruszki">
             <NuxtLink to="/">OpenExpert</NuxtLink>
             <span aria-hidden="true">/</span>
             <span aria-current="page">Pośrednictwo kredytowe</span>
           </nav>
 
-          <p class="credit-kicker">Dla niezależnych ekspertów i doradców</p>
-          <h1 id="credit-hero-title">
-            Prowadź kredyty w jednym systemie.{{ ' ' }}
-            <em>Prowizja do 5 dni roboczych.</em>
-          </h1>
-          <p class="credit-hero__lead">
-            OpenExpert to zaplecze dla Twojego pośrednictwa kredytowego: w pełni
-            cyfrowa akredytacja w 2 tygodnie, bezpłatna aplikacja z CRM, proste
-            i transparentne stawki oraz poczta Gmail 2 TB w cenie, zintegrowana
-            z CRM w 100%.
-          </p>
-
-          <div class="credit-hero__actions">
-            <NuxtLink to="/#dolacz" class="credit-button credit-button--primary">
-              Zacznij z OpenExpert
-              <Icon name="lucide:arrow-right" aria-hidden="true" />
-            </NuxtLink>
-            <a href="#akredytacja" class="credit-button credit-button--secondary">
-              Zobacz, jak zacząć
+          <div class="hero__copy">
+            <p class="overline">System pracy dla eksperta kredytowego</p>
+            <h1 id="brokerage-title">
+              Kredyty.<br>
+              <em>Na Twoich zasadach.</em>
+            </h1>
+            <p class="hero__lead">
+              OpenExpert łączy technologię, proces i jasne warunki współpracy,
+              abyś mógł skupić się na kliencie i swoim wyniku.
+            </p>
+            <a :href="contactHref" class="button button--dark">
+              Porozmawiajmy o współpracy
+              <Icon name="lucide:arrow-up-right" aria-hidden="true" />
             </a>
           </div>
 
-          <ul class="credit-hero__signals" aria-label="Najważniejsze warunki współpracy">
-            <li v-for="signal in heroSignals" :key="signal.label">
-              <Icon :name="signal.icon" aria-hidden="true" />
-              {{ signal.label }}
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="credit-stats" aria-label="Kluczowe warunki współpracy w liczbach">
-        <div class="credit-shell">
-          <dl class="credit-stats__grid">
-            <div v-for="stat in stats" :key="stat.value">
-              <dt>{{ stat.value }}</dt>
-              <dd>{{ stat.label }}</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
-
-      <section id="korzysci" class="credit-benefits" aria-labelledby="credit-benefits-title">
-        <div class="credit-shell">
-          <header class="credit-section-heading credit-section-heading--split">
+          <div class="payout-proof">
+            <strong>5</strong>
             <div>
-              <p class="credit-kicker">Co dostajesz z OpenExpert</p>
-              <h2 id="credit-benefits-title">Warunki, które realnie{{ ' ' }}<em>zmieniają Twoją pracę.</em></h2>
+              <span>dni roboczych</span>
+              <p>
+                od podpisania umowy kredytowej z klientem
+                <b>do wypłaty prowizji</b>
+              </p>
             </div>
-            <p>
-              Zasady współpracy opisujemy wprost. Pięć konkretów, które otrzymujesz,
-              gdy prowadzisz pośrednictwo kredytowe z OpenExpert.
-            </p>
+          </div>
+        </div>
+
+        <aside class="journey" aria-label="Od akredytacji do wypłaty prowizji">
+          <p class="journey__heading">Twoja droga do prowizji</p>
+          <ol>
+            <li v-for="step in journey" :key="step.number">
+              <span class="journey__number">{{ step.number }}</span>
+              <Icon :name="step.icon" aria-hidden="true" />
+              <p class="journey__label">{{ step.label }}</p>
+              <h2>{{ step.title }}</h2>
+              <p class="journey__description">{{ step.description }}</p>
+            </li>
+          </ol>
+        </aside>
+      </section>
+
+      <section class="accreditation" aria-labelledby="accreditation-title">
+        <div class="accreditation__inner">
+          <Icon name="lucide:calendar-check-2" aria-hidden="true" />
+          <div>
+            <p class="overline">Akredytacja w 2 tygodnie</p>
+            <h2 id="accreditation-title">Całość online. Od pierwszego kroku.</h2>
+          </div>
+          <p>
+            Najszybsza na rynku i jedyna w pełni cyfrowa akredytacja.
+            Prosty proces bez papierowego obiegu.
+          </p>
+          <a href="#warunki">
+            Zobacz warunki
+            <Icon name="lucide:arrow-down" aria-hidden="true" />
+          </a>
+        </div>
+      </section>
+
+      <section id="warunki" class="partnership" aria-labelledby="partnership-title">
+        <div class="shell">
+          <header class="section-heading">
+            <p class="overline">Partnerstwo bez drobnego druku</p>
+            <h2 id="partnership-title">
+              Wszystko, czego potrzebujesz.<br>
+              <em>Bez rzeczy, których nie potrzebujesz.</em>
+            </h2>
           </header>
 
-          <div class="credit-benefits__grid">
-            <article v-for="(benefit, index) in benefits" :key="benefit.title">
-              <div class="credit-benefit__topline">
-                <span>0{{ index + 1 }}</span>
-                <small>{{ benefit.meta }}</small>
-              </div>
-              <span class="credit-benefit__icon"><Icon :name="benefit.icon" aria-hidden="true" /></span>
-              <h3>{{ benefit.title }}</h3>
-              <p>{{ benefit.description }}</p>
-              <NuxtLink v-if="benefit.linkTo" :to="benefit.linkTo" class="credit-benefit__link">
-                {{ benefit.linkLabel }}
-                <Icon name="lucide:arrow-right" aria-hidden="true" />
-              </NuxtLink>
+          <ol class="partnership__list">
+            <li v-for="item in partnership" :key="item.number">
+              <span>{{ item.number }}</span>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description }}</p>
+              <Icon name="lucide:arrow-down-right" aria-hidden="true" />
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="mail" class="mail" aria-labelledby="mail-title">
+        <div class="shell">
+          <div class="mail__heading">
+            <div>
+              <p class="overline">OpenExpert Mail</p>
+              <h2 id="mail-title">
+                Gmail 2 TB w cenie.<br>
+                <em>Poczta, która zna sprawę.</em>
+              </h2>
+            </div>
+            <p>
+              Zawsze dostępna i w 100% zintegrowana z CRM. Bez przełączania się
+              między skrzynką, klientem i dokumentami.
+            </p>
+          </div>
+
+          <div class="mail__features">
+            <article v-for="feature in mailFeatures" :key="feature.title">
+              <Icon :name="feature.icon" aria-hidden="true" />
+              <h3>{{ feature.title }}</h3>
+              <p>{{ feature.description }}</p>
             </article>
-            <article class="credit-benefits__cta">
-              <h3>Poznaj drogę wejścia</h3>
-              <p>Cztery kroki od zgłoszenia do pierwszej wypłaty prowizji.</p>
-              <a href="#akredytacja">
-                Przejdź do procesu
-                <Icon name="lucide:arrow-down" aria-hidden="true" />
-              </a>
-            </article>
+          </div>
+
+          <div class="mail__flow" aria-label="Integracja poczty z CRM">
+            <div>
+              <Icon name="lucide:mail-open" aria-hidden="true" />
+              <span>Wiadomość od klienta</span>
+            </div>
+            <Icon name="lucide:arrow-right" aria-hidden="true" />
+            <div>
+              <Icon name="lucide:paperclip" aria-hidden="true" />
+              <span>Dokumenty i historia</span>
+            </div>
+            <Icon name="lucide:arrow-right" aria-hidden="true" />
+            <div>
+              <Icon name="lucide:folder-check" aria-hidden="true" />
+              <span>Właściwa sprawa w CRM</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="akredytacja" class="credit-process" aria-labelledby="credit-process-title">
-        <div class="credit-shell">
-          <header class="credit-process__heading">
-            <p class="credit-kicker">Proces wejścia</p>
-            <h2 id="credit-process-title">Od zgłoszenia do pierwszej{{ ' ' }}<em>wypłaty prowizji.</em></h2>
-          </header>
-
-          <ol class="credit-process__steps">
-            <li v-for="step in processSteps" :key="step.number">
-              <div class="credit-process__number">{{ step.number }}</div>
-              <span class="credit-process__icon"><Icon :name="step.icon" aria-hidden="true" /></span>
-              <div>
-                <p>{{ step.label }}</p>
-                <h3>{{ step.title }}</h3>
-                <span>{{ step.description }}</span>
-              </div>
-            </li>
-          </ol>
-
-          <aside class="credit-process__aside">
-            <div>
-              <Icon name="lucide:shield-check" aria-hidden="true" />
-              <span>Transparentność od pierwszego dnia</span>
-            </div>
-            <p>
-              Proste stawki prowizyjne i jasny harmonogram wypłat: prowizja trafia
-              do Ciebie do 5 dni roboczych od podpisania umowy kredytowej
-              z klientem. Masz pytania przed zgłoszeniem? Napisz na
-              <a href="mailto:hello@openexpert.app">hello@openexpert.app</a>.
-            </p>
-          </aside>
-        </div>
-      </section>
-
-      <section class="credit-final" aria-labelledby="credit-final-title">
-        <div class="credit-shell">
-          <p class="credit-kicker">Pośrednictwo kredytowe z OpenExpert</p>
-          <h2 id="credit-final-title">Gotowy, aby poprowadzić{{ ' ' }}<em>sprawy kredytowe?</em></h2>
-          <p>
-            Rozpocznij akredytację, korzystaj z pełnej aplikacji bezpłatnie
-            i odbieraj prowizję do 5 dni roboczych od podpisania umowy kredytowej
-            z klientem.
-          </p>
-          <div class="credit-final__actions">
-            <NuxtLink to="/#dolacz" class="credit-button credit-button--primary">
-              Zacznij z OpenExpert
-              <Icon name="lucide:arrow-right" aria-hidden="true" />
-            </NuxtLink>
-            <NuxtLink to="/" class="credit-button credit-button--secondary">Wróć na stronę główną</NuxtLink>
+      <section id="kontakt" class="closing" aria-labelledby="closing-title">
+        <div class="shell closing__inner">
+          <div>
+            <p class="overline">Pośrednictwo kredytowe z OpenExpert</p>
+            <h2 id="closing-title">
+              Gotowy na prostszy start<br>
+              <em>i szybsze rozliczenie?</em>
+            </h2>
+          </div>
+          <div class="closing__action">
+            <p>Napisz do nas. Pokażemy Ci proces akredytacji i zasady współpracy.</p>
+            <a :href="contactHref" class="button button--light">
+              Napisz do OpenExpert
+              <Icon name="lucide:arrow-up-right" aria-hidden="true" />
+            </a>
           </div>
         </div>
       </section>
@@ -303,10 +251,12 @@ const processSteps = [
 </template>
 
 <style scoped>
-.credit-page {
+.brokerage-page {
+  --brokerage-display: Baskerville, 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+
   min-width: 0;
-  background: #f7f7f5;
-  color: #111;
+  background: #f6f4ef;
+  color: #0b0b0b;
   font-family: var(--font-sans);
 }
 
@@ -314,678 +264,657 @@ const processSteps = [
   outline: none;
 }
 
-.credit-shell {
+.shell {
   width: min(1240px, calc(100% - 96px));
   margin: 0 auto;
 }
 
-.credit-kicker {
-  color: #666;
+.overline {
+  color: #6b6963;
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.13em;
   line-height: 1.5;
   text-transform: uppercase;
 }
 
-.credit-hero {
-  border-bottom: 1px solid #292929;
-  background:
-    radial-gradient(circle at 78% 12%, rgb(53 118 84 / 18%), transparent 34%),
-    #030303;
-  color: #f7f7f7;
-  padding: 34px 0 clamp(84px, 10vw, 132px);
-}
-
-.credit-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: clamp(56px, 7vw, 92px);
-  color: #777;
-  font-size: 12px;
-}
-
-.credit-breadcrumb a {
-  color: #b6b6b6;
-  text-decoration: none;
-}
-
-.credit-breadcrumb a:hover {
-  color: #fff;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.credit-hero .credit-kicker {
-  color: #8fd8b8;
-}
-
-.credit-hero h1 {
-  max-width: 940px;
-  margin-top: 20px;
-  font-size: clamp(46px, 6.4vw, 90px);
-  font-variation-settings: 'opsz' 88, 'wght' 300;
-  font-weight: 300;
-  letter-spacing: -0.055em;
-  line-height: 0.95;
-}
-
-.credit-hero h1 em {
-  display: block;
-  color: #b9e8d1;
-  font-variation-settings: 'opsz' 68, 'wght' 340;
-  font-weight: 340;
-}
-
-.credit-hero__lead {
-  max-width: 720px;
-  margin-top: 32px;
-  color: #b0b0b0;
-  font-size: clamp(16px, 1.5vw, 19px);
-  line-height: 1.65;
-}
-
-.credit-hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 36px;
-}
-
-.credit-button {
+.button {
   display: inline-flex;
   min-height: 48px;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 11px;
   border: 1px solid;
-  border-radius: 4px;
-  padding: 12px 17px;
+  padding: 11px 17px;
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--transition-fast);
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
 }
 
-.credit-button:hover {
-  transform: translateY(-1px);
+.button:hover {
+  transform: translateY(-2px);
 }
 
-.credit-button--primary {
-  border-color: #d8f4e6;
-  background: #b9e8d1;
-  box-shadow: 0 8px 24px rgb(143 216 184 / 12%);
-  color: #10231a;
-}
-
-.credit-button--primary:hover {
-  background: #cef2df;
-}
-
-.credit-button--secondary {
-  border-color: #484848;
-  background: #121212;
-  color: #ededed;
-}
-
-.credit-button--secondary:hover {
-  border-color: #777;
-  background: #1a1a1a;
-}
-
-.credit-button :deep(svg) {
+.button :deep(svg) {
   width: 16px;
   height: 16px;
 }
 
-.credit-hero__signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  margin-top: 38px;
-  color: #8f8f8f;
-  list-style: none;
+.button--dark {
+  border-color: #0b0b0b;
+  background: #0b0b0b;
+  color: #fff;
 }
 
-.credit-hero__signals li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
+.button--dark:hover {
+  background: #303030;
 }
 
-.credit-hero__signals li :deep(svg) {
-  width: 14px;
-  height: 14px;
-  color: #8fd8b8;
+.button--light {
+  border-color: #fff;
+  background: #fff;
+  color: #0b0b0b;
 }
 
-.credit-stats {
-  border-bottom: 1px solid #d0d0cb;
-  background: #fbfbf8;
-  padding: clamp(40px, 5vw, 64px) 0;
+.brokerage-page :is(a, button):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
 }
 
-.credit-stats__grid {
+.hero {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(28px, 4vw, 56px);
+  grid-template-columns: minmax(0, 2.2fr) minmax(320px, 0.8fr);
+  min-height: 860px;
+  border-bottom: 1px solid #cac7c0;
 }
 
-.credit-stats__grid dt {
-  font-size: clamp(26px, 2.6vw, 38px);
-  font-variation-settings: 'opsz' 40, 'wght' 380;
-  font-weight: 380;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-}
-
-.credit-stats__grid dd {
-  max-width: 260px;
-  margin-top: 10px;
-  color: #666;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.credit-benefits {
-  padding: clamp(78px, 9vw, 124px) 0;
-}
-
-.credit-section-heading {
-  margin-bottom: clamp(44px, 6vw, 72px);
-}
-
-.credit-section-heading--split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.65fr);
-  align-items: end;
-  gap: clamp(44px, 7vw, 110px);
-}
-
-.credit-section-heading h2 {
-  margin-top: 20px;
-  font-size: clamp(38px, 5vw, 66px);
-  font-variation-settings: 'opsz' 68, 'wght' 300;
-  font-weight: 300;
-  letter-spacing: -0.05em;
-  line-height: 1;
-}
-
-.credit-section-heading h2 em {
-  color: #777;
-  font-family: var(--font-serif);
-  font-weight: 400;
-}
-
-.credit-section-heading--split > p {
-  color: #555;
-  font-size: 15px;
-  line-height: 1.7;
-}
-
-.credit-benefits__grid {
-  display: grid;
-  overflow: hidden;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  border: 1px solid #d6d6d1;
-  border-radius: 7px;
-  background: #d6d6d1;
-}
-
-.credit-benefits__grid article {
+.hero__main {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  background: #f7f7f3;
-  padding: 28px clamp(22px, 3vw, 36px) 34px;
+  padding: 34px clamp(48px, 7vw, 112px) 48px;
 }
 
-.credit-benefit__topline {
+.breadcrumb {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  color: #898983;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.credit-benefit__icon {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 auto;
-  place-items: center;
-  margin-top: 46px;
-  border: 1px solid #bfcfc6;
-  border-radius: 50%;
-  background: #e9f3ed;
-  color: #2f7958;
-}
-
-.credit-benefit__icon :deep(svg) {
-  width: 22px;
-  height: 22px;
-  stroke-width: 1.35;
-}
-
-.credit-benefits__grid h3 {
-  margin-top: 23px;
-  font-size: 21px;
-  font-weight: 520;
-  letter-spacing: -0.03em;
-  line-height: 1.18;
-}
-
-.credit-benefits__grid article > p {
-  margin-top: 12px;
-  color: #686864;
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.credit-benefit__link {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 18px;
-  border-bottom: 1px solid #2f7958;
-  color: #2f7958;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.credit-benefit__link :deep(svg) {
-  width: 15px;
-  height: 15px;
-}
-
-.credit-benefits__cta {
-  justify-content: flex-end;
-  background: #111;
-}
-
-.credit-benefits__cta h3 {
-  color: #f4f4f4;
-}
-
-.credit-benefits__cta > p {
-  color: #a3a3a3;
-}
-
-.credit-benefits__cta a {
-  display: inline-flex;
-  width: fit-content;
   align-items: center;
   gap: 9px;
-  margin-top: 22px;
-  border-bottom: 1px solid #8fd8b8;
-  color: #b9e8d1;
-  font-size: 13px;
-  font-weight: 600;
+  color: #85817a;
+  font-size: 12px;
+}
+
+.breadcrumb a {
+  color: #3e3c38;
   text-decoration: none;
 }
 
-.credit-benefits__cta a :deep(svg) {
-  width: 15px;
-  height: 15px;
-}
-
-.credit-process {
-  border-bottom: 1px solid #294437;
-  background: #07120c;
-  color: #f4f5f2;
-  padding: clamp(78px, 9vw, 124px) 0;
-}
-
-.credit-process .credit-kicker {
-  color: #8fd8b8;
-}
-
-.credit-process__heading h2 {
-  max-width: 900px;
-  margin-top: 20px;
-  font-size: clamp(38px, 5vw, 66px);
-  font-variation-settings: 'opsz' 68, 'wght' 290;
-  font-weight: 290;
-  letter-spacing: -0.05em;
-  line-height: 1;
-}
-
-.credit-process__heading h2 em {
-  color: #b9e8d1;
-}
-
-.credit-process__steps {
-  margin-top: clamp(48px, 6vw, 80px);
-  border-top: 1px solid #355244;
-  list-style: none;
-}
-
-.credit-process__steps li {
-  display: grid;
-  grid-template-columns: 74px 64px minmax(0, 1fr);
-  align-items: center;
-  gap: 24px;
-  border-bottom: 1px solid #355244;
-  padding: 27px 0;
-}
-
-.credit-process__number {
-  color: #668271;
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
-.credit-process__icon {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border: 1px solid #3c6752;
-  border-radius: 50%;
-  color: #9de0bd;
-}
-
-.credit-process__icon :deep(svg) {
-  width: 21px;
-  height: 21px;
-  stroke-width: 1.4;
-}
-
-.credit-process__steps li > div:last-child {
-  display: grid;
-  grid-template-columns: minmax(110px, 0.35fr) minmax(240px, 0.75fr) minmax(300px, 1fr);
-  align-items: center;
-  gap: clamp(24px, 4vw, 64px);
-}
-
-.credit-process__steps p {
-  color: #8fd8b8;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.credit-process__steps h3 {
-  font-size: clamp(18px, 2vw, 25px);
-  font-weight: 470;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-}
-
-.credit-process__steps li > div:last-child > span {
-  color: #8f9c94;
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
-.credit-process__aside {
-  display: grid;
-  grid-template-columns: minmax(230px, 0.45fr) minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(28px, 5vw, 80px);
-  margin-top: 34px;
-  border: 1px solid #355244;
-  border-radius: 5px;
-  background: #0c1c13;
-  padding: 22px 26px;
-}
-
-.credit-process__aside > div {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  color: #dcebe2;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.credit-process__aside :deep(svg) {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  color: #8fd8b8;
-  stroke-width: 1.35;
-}
-
-.credit-process__aside > p {
-  color: #92a097;
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
-.credit-process__aside a {
-  color: #b9e8d1;
+.breadcrumb a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.credit-final {
-  background:
-    radial-gradient(circle at 77% 45%, rgb(53 118 84 / 10%), transparent 32%),
-    #ecece8;
-  padding: clamp(88px, 10vw, 140px) 0;
+.hero__copy {
+  max-width: 860px;
+  margin-top: clamp(82px, 9vw, 128px);
 }
 
-.credit-final h2 {
-  max-width: 960px;
-  margin-top: 21px;
-  font-size: clamp(42px, 6.2vw, 86px);
-  font-variation-settings: 'opsz' 82, 'wght' 300;
-  font-weight: 300;
-  letter-spacing: -0.055em;
-  line-height: 0.96;
+.hero h1 {
+  margin-top: 26px;
+  font-family: var(--brokerage-display);
+  font-size: clamp(76px, 7.2vw, 112px);
+  font-synthesis: none;
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 0.92;
+  text-wrap: balance;
 }
 
-.credit-final h2 em {
-  color: #2f7958;
-  font-family: var(--font-serif);
+.hero h1 em {
+  color: #55524c;
+  font-family: inherit;
+  font-style: normal;
   font-weight: 400;
 }
 
-.credit-final > .credit-shell > p:not(.credit-kicker) {
-  max-width: 640px;
-  margin-top: 28px;
-  color: #555;
-  font-size: 16px;
-  line-height: 1.65;
-}
-
-.credit-final__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+.hero__lead {
+  max-width: 520px;
   margin-top: 36px;
+  color: #4f4c47;
+  font-size: 16px;
+  line-height: 1.7;
 }
 
-.credit-final .credit-button--primary {
-  border-color: #111;
-  background: #111;
-  box-shadow: none;
+.hero__copy .button {
+  margin-top: 32px;
+}
+
+.payout-proof {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: auto;
+  padding-top: 80px;
+}
+
+.payout-proof > strong {
+  font-family: var(--brokerage-display);
+  font-size: clamp(142px, 15vw, 220px);
+  font-synthesis: none;
+  font-weight: 400;
+  letter-spacing: -0.08em;
+  line-height: 0.62;
+}
+
+.payout-proof span {
+  display: block;
+  font-family: var(--brokerage-display);
+  font-size: clamp(38px, 3.8vw, 58px);
+  font-synthesis: none;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+}
+
+.payout-proof p {
+  max-width: 310px;
+  margin-top: 15px;
+  color: #55524c;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  line-height: 1.55;
+  text-transform: uppercase;
+}
+
+.payout-proof b {
+  display: block;
+  color: #0b0b0b;
+  font-weight: 700;
+}
+
+.journey {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 42px clamp(30px, 3.2vw, 52px);
+  background: #080808;
+  color: #f7f7f4;
+}
+
+.journey__heading {
+  color: #81817c;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.journey ol {
+  display: grid;
+  flex: 1;
+  grid-template-rows: repeat(3, 1fr);
+  margin-top: 32px;
+  list-style: none;
+}
+
+.journey li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-top: 1px solid #30302e;
+  padding: 30px 0 30px 38px;
+}
+
+.journey li:first-child {
+  border-top: 0;
+}
+
+.journey__number {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  color: #a4a49f;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.journey li > :deep(svg) {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 23px;
+  stroke-width: 1.25;
+}
+
+.journey__label {
+  color: #888883;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.journey h2 {
+  margin-top: 9px;
+  font-size: 21px;
+  font-weight: 450;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.journey__description {
+  max-width: 250px;
+  margin-top: 10px;
+  color: #a9a9a3;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.accreditation {
+  background: #080808;
   color: #fff;
 }
 
-.credit-final .credit-button--primary:hover {
-  background: #2c2c2c;
+.accreditation__inner {
+  display: grid;
+  width: min(1440px, 100%);
+  min-height: 132px;
+  grid-template-columns: auto 1fr 1fr auto;
+  align-items: center;
+  gap: clamp(24px, 4vw, 60px);
+  margin: 0 auto;
+  border-top: 1px solid #30302e;
+  padding: 28px 48px;
 }
 
-.credit-final .credit-button--secondary {
-  border-color: #111;
-  background: transparent;
-  color: #111;
+.accreditation__inner > :deep(svg) {
+  width: 37px;
+  height: 37px;
+  stroke-width: 1.25;
 }
 
-.credit-final .credit-button--secondary:hover {
-  border-color: #555;
-  background: rgb(17 17 17 / 5%);
+.accreditation .overline {
+  color: #8d8d87;
 }
 
-.credit-page :is(a, button):focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 3px;
+.accreditation h2 {
+  margin-top: 6px;
+  font-family: var(--brokerage-display);
+  font-size: 31px;
+  font-synthesis: none;
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
 
-@media (max-width: 1099px) {
-  .credit-shell {
-    width: min(860px, calc(100% - 64px));
-  }
-
-  .credit-hero h1 {
-    max-width: 720px;
-  }
-
-  .credit-section-heading--split {
-    grid-template-columns: 1fr;
-    align-items: start;
-    gap: 28px;
-  }
-
-  .credit-section-heading--split > p {
-    max-width: 660px;
-  }
-
-  .credit-benefits__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .credit-process__steps li > div:last-child {
-    grid-template-columns: minmax(90px, 0.3fr) minmax(220px, 0.7fr) minmax(0, 1fr);
-    gap: 28px;
-  }
+.accreditation__inner > p {
+  max-width: 430px;
+  color: #aaa9a4;
+  font-size: 13px;
+  line-height: 1.65;
 }
 
-@media (max-width: 760px) {
-  .credit-shell {
-    width: min(100% - 40px, 620px);
-  }
-
-  .credit-hero {
-    padding-top: 28px;
-  }
-
-  .credit-breadcrumb {
-    margin-bottom: 54px;
-  }
-
-  .credit-hero h1 {
-    font-size: clamp(42px, 12vw, 62px);
-  }
-
-  .credit-hero__lead {
-    margin-top: 24px;
-    font-size: 15px;
-  }
-
-  .credit-hero__actions,
-  .credit-final__actions {
-    flex-direction: column;
-  }
-
-  .credit-button {
-    width: 100%;
-  }
-
-  .credit-hero__signals {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 16px;
-  }
-
-  .credit-stats__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 32px 24px;
-  }
-
-  .credit-section-heading h2 {
-    font-size: clamp(34px, 10vw, 52px);
-  }
-
-  .credit-benefits__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .credit-benefits__grid article {
-    padding: 25px 22px 30px;
-  }
-
-  .credit-benefit__icon {
-    margin-top: 36px;
-  }
-
-  .credit-process__heading h2 {
-    font-size: clamp(34px, 10vw, 52px);
-  }
-
-  .credit-process__steps li {
-    grid-template-columns: 42px minmax(0, 1fr);
-    align-items: start;
-    gap: 18px;
-    padding: 26px 0;
-  }
-
-  .credit-process__number {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .credit-process__icon {
-    grid-column: 1;
-    grid-row: 2;
-    width: 38px;
-    height: 38px;
-  }
-
-  .credit-process__steps li > div:last-child {
-    display: flex;
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .credit-process__aside {
-    grid-template-columns: 1fr;
-    gap: 16px;
-    padding: 20px;
-  }
-
-  .credit-final h2 {
-    font-size: clamp(40px, 11vw, 58px);
-  }
+.accreditation a {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-@media (max-width: 420px) {
-  .credit-hero__signals {
-    grid-template-columns: 1fr;
-  }
+.accreditation a :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
 
-  .credit-stats__grid {
-    grid-template-columns: 1fr;
-  }
+.partnership {
+  border-bottom: 1px solid #cac7c0;
+  padding: clamp(88px, 10vw, 144px) 0;
+}
+
+.section-heading h2,
+.mail h2,
+.closing h2 {
+  margin-top: 25px;
+  font-size: clamp(48px, 6vw, 82px);
+  font-variation-settings: 'opsz' 80, 'wght' 300;
+  font-weight: 300;
+  letter-spacing: -0.055em;
+  line-height: 0.94;
+}
+
+.section-heading h2 em,
+.mail h2 em,
+.closing h2 em {
+  color: #67645e;
+  font-family: var(--brokerage-display);
+  font-synthesis: none;
+  font-weight: 400;
+}
+
+.partnership__list {
+  margin-top: 76px;
+  border-top: 1px solid #8f8b83;
+  list-style: none;
+}
+
+.partnership__list li {
+  display: grid;
+  grid-template-columns: 80px minmax(220px, 0.8fr) minmax(280px, 1fr) auto;
+  align-items: center;
+  gap: 35px;
+  border-bottom: 1px solid #d2cfc8;
+  padding: 32px 0;
+}
+
+.partnership__list li > span {
+  color: #77736d;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.partnership__list h3 {
+  font-size: clamp(22px, 2.4vw, 31px);
+  font-weight: 450;
+  letter-spacing: -0.04em;
+}
+
+.partnership__list p {
+  max-width: 520px;
+  color: #5e5b55;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.partnership__list :deep(svg) {
+  width: 18px;
+  height: 18px;
+  color: #68655f;
+}
+
+.mail {
+  padding: clamp(88px, 10vw, 144px) 0;
+  background: #e9e6df;
+}
+
+.mail__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.55fr);
+  align-items: end;
+  gap: 70px;
+}
+
+.mail__heading > p {
+  max-width: 430px;
+  color: #56534d;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.mail__features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 72px;
+  border-top: 1px solid #97938b;
+}
+
+.mail__features article {
+  padding: 30px 34px 24px 0;
+}
+
+.mail__features article + article {
+  border-left: 1px solid #c8c4bc;
+  padding-left: 34px;
+}
+
+.mail__features :deep(svg) {
+  width: 29px;
+  height: 29px;
+  stroke-width: 1.3;
+}
+
+.mail__features h3 {
+  margin-top: 28px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.mail__features p {
+  max-width: 300px;
+  margin-top: 10px;
+  color: #605d57;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.mail__flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 20px;
+  margin-top: 64px;
+  border: 1px solid #aaa69e;
+  padding: 28px 32px;
+}
+
+.mail__flow > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 13px;
+}
+
+.mail__flow > div :deep(svg) {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+}
+
+.mail__flow > :deep(svg) {
+  width: 17px;
+  height: 17px;
+  color: #77736d;
+}
+
+.mail__flow span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.closing {
+  padding: clamp(84px, 10vw, 136px) 0;
+  background: #080808;
+  color: #fff;
+}
+
+.closing__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.55fr);
+  align-items: end;
+  gap: 80px;
+}
+
+.closing .overline {
+  color: #8d8d87;
+}
+
+.closing h2 em {
+  color: #aaa9a4;
+}
+
+.closing__action > p {
+  color: #aaa9a4;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.closing__action .button {
+  margin-top: 28px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .credit-button {
+  .button {
     transition: none;
   }
 
-  .credit-button:hover {
+  .button:hover {
     transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .shell {
+    width: min(100% - 40px, 680px);
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero__main {
+    min-height: 760px;
+    padding: 28px 30px 42px;
+  }
+
+  .hero__copy {
+    margin-top: 74px;
+  }
+
+  .hero h1 {
+    font-size: clamp(68px, 13vw, 100px);
+  }
+
+  .payout-proof {
+    margin-top: 100px;
+  }
+
+  .payout-proof > strong {
+    font-size: clamp(150px, 28vw, 220px);
+  }
+
+  .journey {
+    padding: 30px;
+  }
+
+  .journey ol {
+    grid-template-rows: none;
+  }
+
+  .journey li {
+    min-height: 220px;
+  }
+
+  .accreditation__inner {
+    grid-template-columns: auto 1fr;
+    padding: 28px 24px;
+  }
+
+  .accreditation__inner > p,
+  .accreditation__inner > a {
+    grid-column: 2;
+  }
+
+  .partnership__list li {
+    grid-template-columns: 48px 1fr auto;
+    gap: 18px;
+  }
+
+  .partnership__list p {
+    grid-column: 2 / -1;
+  }
+
+  .mail__heading,
+  .closing__inner {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero__main {
+    min-height: 700px;
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .breadcrumb {
+    font-size: 11px;
+  }
+
+  .hero h1 {
+    font-size: clamp(59px, 19vw, 82px);
+  }
+
+  .hero__lead {
+    font-size: 15px;
+  }
+
+  .payout-proof {
+    gap: 15px;
+    margin-top: 82px;
+  }
+
+  .payout-proof > strong {
+    font-size: clamp(130px, 38vw, 185px);
+  }
+
+  .payout-proof span {
+    font-size: 38px;
+  }
+
+  .payout-proof p {
+    max-width: 210px;
+    font-size: 8px;
+  }
+
+  .journey li {
+    min-height: 0;
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+
+  .section-heading h2,
+  .mail h2,
+  .closing h2 {
+    font-size: clamp(45px, 13vw, 65px);
+  }
+
+  .partnership__list {
+    margin-top: 52px;
+  }
+
+  .partnership__list li {
+    grid-template-columns: 34px 1fr auto;
+    padding: 26px 0;
+  }
+
+  .mail__features {
+    grid-template-columns: 1fr;
+    margin-top: 52px;
+  }
+
+  .mail__features article,
+  .mail__features article + article {
+    border-top: 1px solid #c8c4bc;
+    border-left: 0;
+    padding: 25px 0;
+  }
+
+  .mail__features article:first-child {
+    border-top: 0;
+  }
+
+  .mail__flow {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 24px;
+  }
+
+  .mail__flow > :deep(svg) {
+    margin-left: 2px;
+    transform: rotate(90deg);
   }
 }
 </style>

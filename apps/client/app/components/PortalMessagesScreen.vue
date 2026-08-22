@@ -615,7 +615,7 @@ function messagePreviewPrefix(summary: InboxConversationSummary | null) {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1024px) {
   .portal-messages-screen__main {
     width: 100%;
   }
@@ -677,7 +677,7 @@ function messagePreviewPrefix(summary: InboxConversationSummary | null) {
   }
 }
 
-@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+@media (max-width: 1024px) and (prefers-reduced-motion: reduce) {
   .portal-inbox__threads,
   .portal-inbox__conversation {
     transform: none !important;

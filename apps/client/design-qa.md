@@ -1,6 +1,54 @@
 # Client portal design QA
 
-Final result: passed
+final result: passed
+
+## Responsive QA — 2026-08-22
+
+### Source, viewport and state
+
+- User-supplied problem capture: `/tmp/codex-remote-attachments/01a028d2-f246-7d93-8719-69501692b98c/fb874385-696b-4fe9-825f-eedd994cae03/1-Photo-1.jpg` (`575 × 1280`).
+- The source shows the desktop two-column login compressed into a mobile browser. It is treated as the defect report, not as the desired mobile composition.
+- Corrected login capture: `apps/client/design-qa-login-mobile.jpg` (`576 × 1000`, DPR 1, demo enabled).
+- Normalized source/implementation comparison: `apps/client/design-qa-login-comparison.jpg` (`1149 × 1000`). The source was cropped below the browser chrome to `575 × 1000`; the implementation was captured at `576 × 1000` and normalized to `574 × 1000` for the side-by-side comparison.
+- Responsive fallback capture: `apps/client/design-qa-login-fallback-980.jpg` (`980 × 1234`, DPR 1).
+- Mobile dashboard capture: `apps/client/design-qa-rwd-dashboard-mobile.jpg` (`390 × 844`, DPR 1).
+- Browser: Codex in-app browser against `http://127.0.0.1:3016`.
+
+### Full-view comparison evidence
+
+- Layout and hierarchy: the broken compressed split view is replaced by one readable login column at `≤1024px`; the desktop story panel returns at `1025px`.
+- Typography: the mobile heading renders at `32px`; labels and helper copy no longer inherit desktop downscaling.
+- Color and contrast: the existing monochrome portal palette is preserved, including the black primary CTA and subtle bordered demo card.
+- Components and icons: login tabs are `44px`, the text field is `48px`, and the primary CTA is `52px` high. Existing logo and Lucide icons are reused.
+- Content: Polish login, demo and trust copy is unchanged; the improvement is structural and responsive.
+- A separate focused crop was not required because the entire login form and footer fit in the corrected full-view capture.
+
+### Responsive and interaction matrix
+
+| Surface | Viewport | Result |
+| --- | ---: | --- |
+| Login | `320 × 1000` | One column, no horizontal overflow, 44/48/52px tab-input-CTA targets |
+| Login | `576 × 1000` | One column, full demo row, footer visible, no horizontal overflow |
+| Login fallback | `980 × 1280` | Centered 640px form; no compressed desktop split |
+| Login desktop boundary | `1025px` wide | Two-column story/form layout restored |
+| Dashboard | `390 × 844` | Single-column cards and fixed two-item mobile navigation |
+| Dashboard | `980px` wide | Main action spans both columns; meeting and expert cards share the second row |
+| Messages | `980px` wide | List/detail becomes a coordinated single-pane flow with working back navigation |
+| Case detail | `980px` wide | Sidebar collapses into the top tab control |
+| Multiwniosek | `390px` and `980px` wide | Single-column workspace; mobile-nav clearance prevents overlap |
+| Meeting preparation | `390px` and `980px` wide | Single-column hero/workspace; horizontally scrollable step rail |
+
+Password-tab switching, return to the magic-link tab, opening a message and returning to the inbox were exercised in the browser. The checked routes produced no browser console errors or warnings.
+
+### Responsive iteration history
+
+1. Reproduced the reported geometry as a `980px` desktop layout scaled into the `575px` device capture and confirmed that the current production document already includes a viewport meta tag.
+2. Added an explicit viewport declaration and browser text-size normalization, then moved structural tablet breakpoints to `1024px` across authentication, dashboard, case, messages, account, Multiwniosek and meeting preparation.
+3. The first small-screen pass exposed P2-sized login controls (`40px` input and `42px` tabs). Increased them to `48px` and `44px`; the primary CTA remains `52px`.
+4. Re-captured the full login, the `980px` fallback, the normalized side-by-side comparison and the mobile dashboard.
+5. Verified `320`, `390`, `576`, `980`, `1024` and `1025px` boundaries, route interactions, unit tests, typecheck and production build.
+
+No P0, P1 or visible P2 issue remains in the checked responsive flows.
 
 ## Visual target
 

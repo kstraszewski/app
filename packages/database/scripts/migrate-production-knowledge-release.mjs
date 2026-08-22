@@ -64,6 +64,7 @@ const migrationNames = [
   '0085_bank_mail_thread_link_jobs.sql',
   '0086_bank_mail_agent_reanalysis.sql',
   '0087_bank_mail_agent_pdf_attachments.sql',
+  '0088_bank_mail_pdf_scope_memory.sql',
 ]
 const migrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),

@@ -88,46 +88,48 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
           <div class="phone__rail phone__rail--top" />
           <div class="phone__rail phone__rail--bottom" />
 
-          <div class="phone__screen">
-            <div class="phone__status">
-              <span>9:41</span>
-              <span class="phone__status-icons"><i /><i /><i /></span>
-            </div>
+          <div class="phone__front">
+            <div class="phone__screen">
+              <div class="phone__status">
+                <span>9:41</span>
+                <span class="phone__status-icons"><i /><i /><i /></span>
+              </div>
 
-            <div class="phone__appbar">
-              <span class="phone__mark">OE</span>
-              <span class="phone__avatar">MK</span>
-            </div>
+              <div class="phone__appbar">
+                <span class="phone__mark">OE</span>
+                <span class="phone__avatar">MK</span>
+              </div>
 
-            <div class="phone__content">
-              <p class="phone__kicker">Dzień dobry, Michał</p>
-              <h3>Co dziś<br>domykamy?</h3>
+              <div class="phone__content">
+                <p class="phone__kicker">Dzień dobry, Michał</p>
+                <h3>Co dziś<br>domykamy?</h3>
 
-              <div class="phone__agent-card">
-                <span class="phone__agent-dot" />
-                <div>
-                  <small>Agent Eve</small>
-                  <strong>Analizuje 3 nowe sprawy</strong>
+                <div class="phone__agent-card">
+                  <span class="phone__agent-dot" />
+                  <div>
+                    <small>Agent Eve</small>
+                    <strong>Analizuje 3 nowe sprawy</strong>
+                  </div>
+                  <span class="phone__arrow">↗</span>
                 </div>
-                <span class="phone__arrow">↗</span>
+
+                <div class="phone__section-heading">
+                  <strong>Następne kroki</strong>
+                  <span>3 zadania</span>
+                </div>
+
+                <div class="phone__task is-primary">
+                  <span>01</span>
+                  <div><strong>Wniosek Kowalskich</strong><small>Gotowy do review</small></div>
+                </div>
+                <div class="phone__task">
+                  <span>02</span>
+                  <div><strong>Dokumenty do banku</strong><small>Dziś, 14:30</small></div>
+                </div>
               </div>
 
-              <div class="phone__section-heading">
-                <strong>Następne kroki</strong>
-                <span>3 zadania</span>
-              </div>
-
-              <div class="phone__task is-primary">
-                <span>01</span>
-                <div><strong>Wniosek Kowalskich</strong><small>Gotowy do review</small></div>
-              </div>
-              <div class="phone__task">
-                <span>02</span>
-                <div><strong>Dokumenty do banku</strong><small>Dziś, 14:30</small></div>
-              </div>
+              <div class="phone__home" />
             </div>
-
-            <div class="phone__home" />
           </div>
 
           <div class="phone__orbit">
@@ -202,10 +204,6 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
   width: 280px;
   aspect-ratio: 0.49;
   margin: -286px 0 0 -140px;
-  padding: 8px;
-  border: 1px solid #363a3d;
-  border-radius: 44px;
-  background: #151719;
   transform-style: preserve-3d;
   will-change: transform;
   animation:
@@ -404,7 +402,21 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
   transform: translateY(-50%);
 }
 
-.phone::before {
+.phone__front {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid #363a3d;
+  border-radius: 44px;
+  background: #151719;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0.2px);
+}
+
+.phone__front::before {
   position: absolute;
   z-index: 3;
   top: 15px;
@@ -450,14 +462,13 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
 
 .phone__screen {
   position: relative;
-  z-index: 2;
   height: 100%;
   overflow: hidden;
   border-radius: 36px;
   color: #10110e;
   background: #f6f6f0;
   backface-visibility: hidden;
-  transform: translateZ(1px);
+  -webkit-backface-visibility: hidden;
 }
 
 .phone__status {
@@ -698,6 +709,7 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
 
 @media (forced-colors: active) {
   .phone,
+  .phone__front,
   .phone__back,
   .phone__side-panel,
   .phone__screen,

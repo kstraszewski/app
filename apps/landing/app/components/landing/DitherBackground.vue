@@ -131,7 +131,7 @@ const fragmentShaderSource = `
     float depth = sqrt(max(0.0, 1.0 - radiusSquared));
     vec3 normal = normalize(vec3(local, depth));
     float diffuse = max(dot(normal, lightDirection), 0.0);
-    float silhouette = smoothstep(1.0, 0.86, radiusSquared);
+    float silhouette = 1.0 - smoothstep(0.86, 1.0, radiusSquared);
     float reflectedLight = max(dot(normal, vec3(0.52, 0.28, 0.81)), 0.0);
 
     return silhouette * (0.055 + diffuse * 0.82 + reflectedLight * 0.10);
@@ -673,9 +673,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="dither-background" aria-hidden="true">
-    <canvas ref="canvas" />
-    <div v-if="useFallback" class="dither-background__fallback" />
+  <div
+    class="dither-background"
+    :class="{
+      'dither-background--dark': props.dark === true,
+      'dither-background--light': props.dark === false,
+    }"
+    aria-hidden="true"
+  >
+    <div class="dither-background__fallback" />
+    <canvas ref="canvas" :class="{ 'dither-background__canvas--hidden': useFallback }" />
   </div>
 </template>
 
@@ -696,16 +703,33 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.dither-background canvas { display: block; }
+.dither-background canvas {
+  z-index: 1;
+  display: block;
+}
+
+.dither-background__canvas--hidden { opacity: 0; }
 
 .dither-background__fallback {
+  z-index: 0;
   color: var(--fg-primary);
   background-image: radial-gradient(circle, currentColor 0 0.7px, transparent 0.85px);
   background-size: 4px 4px;
-  opacity: 0.075;
+  opacity: 0.055;
+  -webkit-mask-image:
+    radial-gradient(ellipse 72% 60% at 84% 22%, #000 0, transparent 72%),
+    radial-gradient(ellipse 48% 56% at 14% 82%, #000 0, transparent 78%);
   mask-image:
     radial-gradient(ellipse 72% 60% at 84% 22%, #000 0, transparent 72%),
     radial-gradient(ellipse 48% 56% at 14% 82%, #000 0, transparent 78%);
+}
+
+.dither-background--dark .dither-background__fallback { opacity: 0.12; }
+
+@media (prefers-color-scheme: dark) {
+  .dither-background:not(.dither-background--light) .dither-background__fallback {
+    opacity: 0.12;
+  }
 }
 
 @media print, (forced-colors: active) {

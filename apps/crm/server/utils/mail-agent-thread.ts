@@ -10,7 +10,14 @@ import {
   createMailAgentAttachmentReference,
 } from './mail-agent-reference.ts'
 import {
+  boundedMailAgentAddress,
+  boundedMailAgentCount,
+  boundedMailAgentNullableText,
+  boundedMailAgentText,
+} from './mail-agent-dto.ts'
+import {
   denseMailBodyExcerpt,
+  mailAgentCorrespondenceMessages,
   mailAgentMessageMatchesParticipants,
 } from './mail-agent-thread-core.ts'
 import {
@@ -25,7 +32,7 @@ import {
 import { fetchMailThreadDetailForConnection } from './mail-thread-detail.ts'
 import { connectionReferenceSecret } from './mail-thread-page.ts'
 
-const maximumMessagesTotal = 48
+const maximumMessagesPerProviderWindow = 12
 const maximumBodyCharactersTotal = 60_000
 const maximumBodyCharactersPerMessage = 2_400
 const minimumBodyCharactersPerMessage = 600
@@ -64,11 +71,7 @@ function addressSummary(value: {
   email: string | null
   label: string
 }): CrmAgentMailAddressSummary {
-  return {
-    name: value.name,
-    email: value.email,
-    label: value.label,
-  }
+  return boundedMailAgentAddress(value)
 }
 
 interface LoadedThread {
@@ -78,6 +81,9 @@ interface LoadedThread {
   referenceSecret: string
   accessMode: MailAgentThreadAccessMode
   participantEmails: string[]
+  threadId: string
+  continuation: ReturnType<typeof openMailAgentThreadReference>['continuation']
+  expiresAt: number
 }
 
 async function loadThread(
@@ -119,12 +125,17 @@ async function loadThread(
     referenceSecret,
     accessMode: payload.accessMode,
     participantEmails: payload.participantEmails,
+    threadId: payload.threadId,
+    continuation: payload.continuation,
+    expiresAt: payload.expiresAt,
     detail: await fetchMailThreadDetailForConnection(event, {
       backendData,
       session,
       connection,
       threadId: payload.threadId,
       observeBankMail: false,
+      maxMessages: maximumMessagesPerProviderWindow,
+      continuation: payload.continuation,
     }),
   }
 }
@@ -132,27 +143,45 @@ async function loadThread(
 function threadResult(
   session: CrmSession,
   loaded: LoadedThread,
-  messageLimit: number,
   bodyLimit: number,
   question: string | undefined,
   attachmentBudget: { remaining: number },
 ): CrmAgentMailThreadReadResult {
-  const providerWindow = [...loaded.detail.messages]
+  const providerMessages = [...loaded.detail.messages]
     .sort((left, right) => String(left.sentAt ?? '').localeCompare(String(right.sentAt ?? '')))
+  const providerWindow = providerMessages
     .map((message, providerIndex) => ({ message, providerIndex }))
+  const correspondenceMessages = new Set(mailAgentCorrespondenceMessages(providerMessages))
+  const correspondenceWindow = providerWindow.filter(({ message }) => correspondenceMessages.has(message))
   const visibleMessages = loaded.accessMode === 'participants'
-    ? providerWindow.filter(({ message }) => (
+    ? correspondenceWindow.filter(({ message }) => (
         mailAgentMessageMatchesParticipants(
           message,
           loaded.participantEmails,
           loaded.connection.account_email,
         )
       ))
-    : providerWindow
-  const selectedMessages = visibleMessages.slice(-messageLimit)
-  const locallyOmitted = visibleMessages.length - selectedMessages.length
+    : correspondenceWindow
+  if (providerWindow.length > maximumMessagesPerProviderWindow) return invalidOrStaleReference()
+  const providerMessageCount = boundedMailAgentCount(
+    loaded.detail.providerMessageCount
+      ?? providerWindow.length + loaded.detail.omittedMessageCount,
+    100_000,
+  )
+  const newerMessageCount = boundedMailAgentCount(
+    loaded.detail.newerMessageCount ?? 0,
+    100_000,
+  )
+  const messageWindowStart = boundedMailAgentCount(
+    loaded.detail.messageWindowStart ?? loaded.detail.omittedMessageCount,
+    100_000,
+  )
+  if (
+    messageWindowStart !== loaded.detail.omittedMessageCount
+    || providerMessageCount !== newerMessageCount + messageWindowStart + providerWindow.length
+  ) return invalidOrStaleReference()
 
-  const messages = selectedMessages.map(({ message, providerIndex }) => {
+  const messages = visibleMessages.map(({ message, providerIndex }) => {
     const body = denseMailBodyExcerpt(message.bodyText, bodyLimit, question)
     const availableAttachments = Math.min(
       maximumAttachmentsPerMessage,
@@ -168,40 +197,71 @@ function threadResult(
           attachmentId: attachment.id,
           attachmentIndex,
         }, loaded.referenceSecret),
-        fileName: attachment.filename,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.size,
+        fileName: boundedMailAgentText(attachment.filename, 500),
+        mimeType: boundedMailAgentText(attachment.mimeType, 255),
+        sizeBytes: boundedMailAgentCount(attachment.size),
       }))
     attachmentBudget.remaining -= attachments.length
     const recipients = [...message.to, ...message.cc]
     return {
-      ordinal: loaded.detail.omittedMessageCount + providerIndex + 1,
+      ordinal: messageWindowStart + providerIndex + 1,
       direction: directionForMessage(loaded.connection, message.from?.email, recipients),
       from: message.from ? addressSummary(message.from) : null,
       to: message.to.slice(0, maximumRecipientsPerField).map(addressSummary),
       cc: message.cc.slice(0, maximumRecipientsPerField).map(addressSummary),
-      subject: message.subject,
-      sentAt: message.sentAt,
+      subject: boundedMailAgentText(message.subject, 500),
+      sentAt: boundedMailAgentNullableText(message.sentAt, 64),
       bodyExcerpt: body.text,
       bodyExcerptStart: body.start,
       bodyTruncated: message.bodyTruncated || body.truncated,
       authentication: message.security.authentication,
       replyToMismatch: message.security.replyToMismatch,
       attachments,
-      omittedAttachmentCount: Math.max(0, message.attachments.length - attachments.length),
+      omittedAttachmentCount: boundedMailAgentCount(
+        message.attachments.length - attachments.length,
+        10_000,
+      ),
     }
   })
 
+  let nextReference: string | null = null
+  if (messageWindowStart > 0 && loaded.detail.nextPageToken) {
+    try {
+      nextReference = createMailAgentThreadReference({
+        connectionId: loaded.connection.id,
+        threadId: loaded.threadId,
+        accessMode: loaded.accessMode,
+        participantEmails: loaded.participantEmails,
+        continuation: {
+          cursor: loaded.detail.nextPageToken,
+          newerMessageCount: newerMessageCount + providerWindow.length,
+          providerMessageCount,
+        },
+        expiresAt: loaded.expiresAt,
+      }, loaded.referenceSecret)
+    }
+    catch {
+      nextReference = null
+    }
+  }
+
+  const visibleSubject = visibleMessages.at(-1)?.message.subject
+
   return {
     rank: loaded.rank,
-    mailbox: loaded.connection.account_email,
+    mailbox: boundedMailAgentText(loaded.connection.account_email, 254),
     provider: loaded.connection.provider,
-    subject: loaded.detail.subject,
-    providerMessageCount: providerWindow.length + loaded.detail.omittedMessageCount,
+    subject: boundedMailAgentText(
+      visibleSubject ?? '(brak korespondencji w tym oknie)',
+      500,
+    ),
+    providerMessageCount,
+    newerMessageCount,
     matchedMessageCountInWindow: visibleMessages.length,
     filteredMessageCount: providerWindow.length - visibleMessages.length,
     returnedMessageCount: messages.length,
-    omittedMessageCount: loaded.detail.omittedMessageCount + locallyOmitted,
+    omittedMessageCount: messageWindowStart,
+    nextReference,
     messages,
     url: `/org/${encodeURIComponent(session.organizationSlug)}/mail`,
   }
@@ -224,19 +284,19 @@ export async function readMailAgentThreads(
     return invalidOrStaleReference()
   }
 
-  const messageLimit = Math.max(1, Math.floor(maximumMessagesTotal / loaded.length))
   const selectedMessageCount = loaded.reduce(
     (sum, item) => {
+      const correspondenceMessages = mailAgentCorrespondenceMessages(item.detail.messages)
       const visibleCount = item.accessMode === 'participants'
-        ? item.detail.messages.filter(message => (
+        ? correspondenceMessages.filter(message => (
             mailAgentMessageMatchesParticipants(
               message,
               item.participantEmails,
               item.connection.account_email,
             )
           )).length
-        : item.detail.messages.length
-      return sum + Math.min(messageLimit, visibleCount)
+        : correspondenceMessages.length
+      return sum + visibleCount
     },
     0,
   )
@@ -253,7 +313,6 @@ export async function readMailAgentThreads(
     .map(item => threadResult(
       session,
       item,
-      messageLimit,
       bodyLimit,
       question,
       attachmentBudget,
@@ -264,6 +323,9 @@ export async function readMailAgentThreads(
       requestedThreadCount: references.length,
       readThreadCount: threads.length,
       failureCount,
+      failedRanks: settled.flatMap((result, index) => (
+        result.status === 'rejected' ? [index + 1] : []
+      )),
       threads,
     },
   }

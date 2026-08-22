@@ -26,11 +26,12 @@ test('validates bounded, version-compatible mail service responses', () => {
     matchReason: 'participant_email',
     matchedEmails: ['klient@example.com'],
     participants: [{ name: 'Klient', email: 'klient@example.com', label: 'Klient' }],
-    subject: 'Dokumenty',
-    latestAt: '2026-08-22T10:00:00.000Z',
-    listedMessageCount: 2,
-    snippet: 'W załączeniu decyzja.',
-    hasAttachments: true,
+    summaryLimitedToMatchedMessages: true,
+    subject: null,
+    latestAt: null,
+    listedMessageCount: null,
+    snippet: null,
+    hasAttachments: null,
     url: '/org/test/mail',
   }
   const response = {
@@ -47,12 +48,28 @@ test('validates bounded, version-compatible mail service responses', () => {
         nextCursor: `v2.${'A'.repeat(16)}.${'B'.repeat(22)}.${'C'.repeat(32)}`,
         omittedLinkedThreadCount: 0,
         omittedResultCount: 0,
+        limitations: [],
         reason: 'more_available',
       },
       threads: [thread],
     },
   }
   assert.equal(validateCrmAgentMailApiResponse(searchPath, response), response)
+  const providerLimitedResponse = {
+    data: {
+      ...response.data,
+      coverage: {
+        ...response.data.coverage,
+        nextCursor: null,
+        limitations: ['microsoft_search_result_limit'],
+        reason: 'provider_limit',
+      },
+    },
+  }
+  assert.equal(
+    validateCrmAgentMailApiResponse(searchPath, providerLimitedResponse),
+    providerLimitedResponse,
+  )
   assert.throws(
     () => validateCrmAgentMailApiResponse(searchPath, {
       data: { ...response.data, threads: [{}] },
@@ -61,7 +78,22 @@ test('validates bounded, version-compatible mail service responses', () => {
   )
   assert.throws(
     () => validateCrmAgentMailApiResponse(searchPath, {
-      data: { ...response.data, threads: Array(13).fill(thread) },
+      data: { ...response.data, threads: Array(25).fill(thread) },
+    }),
+    /niezgodną odpowiedź/u,
+  )
+  assert.throws(
+    () => validateCrmAgentMailApiResponse(searchPath, {
+      data: {
+        ...response.data,
+        coverage: {
+          ...response.data.coverage,
+          complete: true,
+          nextCursor: null,
+          limitations: ['imap_search_window'],
+          reason: 'complete',
+        },
+      },
     }),
     /niezgodną odpowiedź/u,
   )
@@ -95,16 +127,19 @@ test('validates dense bounded thread reads', () => {
       requestedThreadCount: 1,
       readThreadCount: 1,
       failureCount: 0,
+      failedRanks: [],
       threads: [{
         rank: 1,
         mailbox: 'ekspert@openexpert.pl',
         provider: 'google',
         subject: 'Dokumenty',
         providerMessageCount: 3,
+        newerMessageCount: 0,
         matchedMessageCountInWindow: 1,
         filteredMessageCount: 0,
         returnedMessageCount: 1,
         omittedMessageCount: 2,
+        nextReference: null,
         messages: [message],
         url: '/org/test/mail',
       }],

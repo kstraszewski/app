@@ -8,6 +8,7 @@ import type {
 } from '../../shared/types/mail.ts'
 import { openImapMessageReference } from './mail-imap-smtp.ts'
 import { decodeMicrosoftThreadReference } from './mail-microsoft.ts'
+import { mailThreadBlindParticipants } from './mail-message-blind-recipients.ts'
 
 export const MAX_MAIL_CONTEXT_EMAILS = 12
 export const MAX_MAIL_CONTEXT_THREAD_REFERENCE_CHARACTERS = 4_096
@@ -186,7 +187,7 @@ export function mailContextMatchedEmails(
   contextEmails: string[],
 ): string[] {
   const expected = new Set(normalizeMailContextEmails(contextEmails).emails)
-  const matched = thread.participants
+  const matched = [...thread.participants, ...mailThreadBlindParticipants(thread)]
     .map(participant => normalizedMailContextEmail(participant.email))
     .filter((email): email is string => Boolean(email && expected.has(email)))
   return [...new Set(matched)]

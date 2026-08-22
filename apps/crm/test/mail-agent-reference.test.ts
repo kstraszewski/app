@@ -70,11 +70,36 @@ test('seals participant-bound thread access separately from attachment reference
     threadId: 'thread-reference',
     accessMode: 'participants',
     participantEmails: ['client@example.com'],
+    continuation: null,
     expiresAt: now + 60 * 60 * 1_000,
   })
   assert.throws(
     () => openMailAgentAttachmentReference(reference, secret, now + 1),
     /nieprawidłowy albo wygasł/u,
+  )
+})
+
+test('seals older provider windows into thread references', () => {
+  const continuation = {
+    cursor: 'provider-bound-older-window',
+    newerMessageCount: 12,
+    providerMessageCount: 31,
+  }
+  const threadReference = createMailAgentThreadReference({
+    connectionId,
+    threadId: 'thread-reference',
+    accessMode: 'linked',
+    participantEmails: [],
+    continuation,
+  }, secret, now)
+  assert.deepEqual(
+    openMailAgentThreadReference(threadReference, secret, now + 1).continuation,
+    continuation,
+  )
+
+  assert.doesNotMatch(
+    Buffer.from(threadReference, 'base64url').toString('utf8'),
+    /provider-bound-older-window/u,
   )
 })
 

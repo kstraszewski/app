@@ -14,6 +14,7 @@ import {
   parseMailComposerContextClientIds,
 } from '../server/utils/mail-composer-context.ts'
 import type { MailThreadSummary } from '../shared/types/mail.ts'
+import { withMailThreadBlindParticipants } from '../server/utils/mail-message-blind-recipients.ts'
 
 const CASE_ID = '11111111-1111-4111-8111-111111111111'
 const CLIENT_A_ID = '22222222-2222-4222-8222-222222222222'
@@ -195,6 +196,15 @@ test('participant matching is normalized and exact', () => {
     mailContextMatchedEmails(thread, ['person@example.com', 'other@example.com']),
     ['person@example.com'],
   )
+  const blindThread = withMailThreadBlindParticipants({ ...thread }, [{
+    name: 'Ukryty klient',
+    email: 'secret@example.com',
+    label: 'Ukryty klient',
+  }])
+  assert.deepEqual(mailContextMatchedEmails(blindThread, ['secret@example.com']), [
+    'secret@example.com',
+  ])
+  assert.doesNotMatch(JSON.stringify(blindThread), /secret@example\.com/u)
 })
 
 test('provider-neutral Gmail key is stable and connection-secret independent', () => {

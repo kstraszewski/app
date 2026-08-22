@@ -3,7 +3,7 @@ import type { CrmSession } from './crm.ts'
 import {
   sealMailAgentSearchCursor,
   unsealMailAgentSearchCursor,
-  type MailAgentSearchCursorSource,
+  type MailAgentSearchCursorState,
 } from './mail-agent-search-cursor-core.ts'
 import { deriveMailReferenceSecret } from './mail-crypto.ts'
 
@@ -21,10 +21,10 @@ export function createMailAgentSearchCursor(
   event: H3Event,
   session: Pick<CrmSession, 'organizationId' | 'userId'>,
   binding: string,
-  sources: MailAgentSearchCursorSource[],
+  state: MailAgentSearchCursorState,
   now = Date.now(),
 ): string | null {
-  return sealMailAgentSearchCursor(binding, sources, cursorSecret(event, session), now)
+  return sealMailAgentSearchCursor(binding, state, cursorSecret(event, session), now)
 }
 
 export function openMailAgentSearchCursor(
@@ -33,6 +33,6 @@ export function openMailAgentSearchCursor(
   cursor: string,
   binding: string,
   now = Date.now(),
-): MailAgentSearchCursorSource[] {
+): MailAgentSearchCursorState {
   return unsealMailAgentSearchCursor(cursor, binding, cursorSecret(event, session), now)
 }

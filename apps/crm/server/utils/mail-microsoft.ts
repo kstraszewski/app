@@ -16,6 +16,11 @@ import type {
 } from '../../shared/types/mail.ts'
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
 import { sanitizeMailHtml } from './mail-html.ts'
+import {
+  withMailMessageBlindRecipients,
+  withMailThreadBlindParticipants,
+} from './mail-message-blind-recipients.ts'
+import { withMailMessageDraftState } from './mail-message-draft-state.ts'
 
 export const MICROSOFT_MAIL_SCOPES = [
   'offline_access',
@@ -72,11 +77,13 @@ const GRAPH_DETAIL_FIELDS = [
   'replyTo',
   'toRecipients',
   'ccRecipients',
+  'bccRecipients',
   'receivedDateTime',
   'sentDateTime',
   'createdDateTime',
   'lastModifiedDateTime',
   'isRead',
+  'isDraft',
   'hasAttachments',
   'body',
   'internetMessageId',
@@ -181,6 +188,13 @@ export interface MicrosoftMailThreadReference {
 export interface MicrosoftMailReferenceOptions {
   /** Per-connection secret derived by the caller; never persisted in a route reference. */
   referenceSecret: string
+}
+
+export interface MicrosoftMailThreadWindowOptions extends MicrosoftMailReferenceOptions {
+  cursor?: string
+  maxMessages?: number
+  newerMessageCount?: number
+  providerMessageCount?: number
 }
 
 export interface MicrosoftMailHeader {
@@ -615,6 +629,7 @@ export async function fetchMicrosoftMailThreadPage(
     cursor?: string
     referenceSecret: string
     maxResults?: number
+    excludeDrafts?: boolean
   },
   dependencies: MicrosoftMailDependencies = {},
 ): Promise<MailThreadListPayload> {
@@ -645,7 +660,11 @@ export async function fetchMicrosoftMailThreadPage(
     fetchMicrosoftMailFolderSummaries(accessToken, dependencies),
   ])
   const messages = (page.value ?? []).filter(hasMicrosoftMessageId)
-  const data = microsoftThreadSummaries(messages, accountEmail, options.referenceSecret)
+  const data = microsoftThreadSummaries(
+    options.excludeDrafts ? messages.filter(message => message.isDraft !== true) : messages,
+    accountEmail,
+    options.referenceSecret,
+  )
   const nextLink = cleanConfigText(page['@odata.nextLink'])
   return {
     data,
@@ -655,6 +674,7 @@ export async function fetchMicrosoftMailThreadPage(
       : null,
     resultSizeEstimate: nonNegativeIntegerOrNull(page['@odata.count']) ?? data.length,
     partialFailureCount: 0,
+    providerMessageCountOnPage: messages.length,
   }
 }
 
@@ -662,14 +682,16 @@ export async function fetchMicrosoftMailThread(
   accessToken: string,
   accountEmail: string,
   threadReference: string,
-  options: MicrosoftMailReferenceOptions,
+  options: MicrosoftMailThreadWindowOptions,
   dependencies: MicrosoftMailDependencies = {},
 ): Promise<MicrosoftMailThreadDetail> {
   const reference = decodeMicrosoftThreadReference(threadReference, options.referenceSecret)
   const conversation = await fetchMicrosoftConversationWindow(
     accessToken,
     reference,
+    threadReference,
     GRAPH_DETAIL_FIELDS,
+    options,
     dependencies,
   )
   const messages = conversation.messages
@@ -726,15 +748,51 @@ export async function fetchMicrosoftMailThread(
   }
   const latest = sorted.at(-1)!
   return {
-    id: encodeMicrosoftThreadReference({
-      conversationId: cleanOptionalProviderIdentifier(latest.conversationId),
-      anchorMessageId: String(latest.id),
-    }, options.referenceSecret),
+    id: threadReference,
     subject: cleanDisplayText(latest.subject || details.at(-1)?.subject || '') || '(bez tematu)',
     messages: details,
-    omittedMessageCount: Math.max(0, conversation.totalCount - sorted.length),
+    messageWindowStart: conversation.windowStart,
+    newerMessageCount: conversation.newerMessageCount,
+    providerMessageCount: conversation.totalCount,
+    nextPageToken: conversation.nextPageToken,
+    omittedMessageCount: conversation.windowStart,
     externalUrl: safeMicrosoftWebLink(latest.webLink),
   }
+}
+
+export async function fetchMicrosoftMailMessageDetail(
+  accessToken: string,
+  messageId: string,
+  threadReference: string,
+  options: MicrosoftMailReferenceOptions,
+  dependencies: MicrosoftMailDependencies = {},
+): Promise<MicrosoftMailMessageDetail> {
+  const reference = decodeMicrosoftThreadReference(threadReference, options.referenceSecret)
+  const query = new URLSearchParams({ '$select': GRAPH_DETAIL_FIELDS.join(',') })
+  const message = await graphJson<MicrosoftGraphMessage>(
+    `${GRAPH_ORIGIN}/v1.0/me/messages/${encodeURIComponent(messageId)}?${query}`,
+    {
+      headers: graphHeaders(accessToken, {
+        Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
+      }),
+    },
+    'Microsoft message detail',
+    dependencies,
+  )
+  const actualMessageId = cleanProviderIdentifier(message.id, 'Microsoft message ID')
+  const actualConversationId = cleanOptionalProviderIdentifier(message.conversationId)
+  if (
+    actualMessageId !== messageId
+    || (reference.conversationId
+      ? actualConversationId !== reference.conversationId
+      : actualMessageId !== reference.anchorMessageId)
+  ) {
+    throw new MicrosoftMailError(409, 'MESSAGE_THREAD_MISMATCH', 'Microsoft message no longer belongs to this thread')
+  }
+  const attachments = message.hasAttachments
+    ? await fetchMicrosoftMessageAttachments(accessToken, actualMessageId, dependencies)
+    : []
+  return microsoftMessageDetail(message, attachments)
 }
 
 export async function fetchMicrosoftMailReplyContext(
@@ -1147,9 +1205,10 @@ function microsoftMessageListUrl(
     Math.max(1, Math.trunc(requestedMaxResults ?? 20)),
   )
   const path = folder === 'STARRED'
+    || folder === 'ALL'
     ? '/v1.0/me/messages'
     : `/v1.0/me/mailFolders/${MICROSOFT_FOLDER_PATH[folder]}/messages`
-  if (folder !== 'STARRED' && !MICROSOFT_FOLDER_PATH[folder]) {
+  if (folder !== 'STARRED' && folder !== 'ALL' && !MICROSOFT_FOLDER_PATH[folder]) {
     throw new MicrosoftMailError(400, 'FOLDER_INVALID', 'Microsoft mail folder is invalid')
   }
   const query = new URLSearchParams({
@@ -1163,7 +1222,9 @@ function microsoftMessageListUrl(
     query.set('$filter', "flag/flagStatus eq 'flagged'")
   }
   else {
-    query.set('$orderby', folder === 'SENT'
+    query.set('$orderby', folder === 'ALL'
+      ? 'createdDateTime desc'
+      : folder === 'SENT'
       ? 'sentDateTime desc'
       : folder === 'DRAFT'
         ? 'lastModifiedDateTime desc'
@@ -1201,7 +1262,7 @@ function microsoftThreadSummary(
   const messages = sortMicrosoftMessages(input)
   const latest = messages.at(-1)!
   const participants = microsoftThreadParticipants(messages, accountEmail)
-  return {
+  return withMailThreadBlindParticipants({
     id: encodeMicrosoftThreadReference({
       conversationId: cleanOptionalProviderIdentifier(latest.conversationId),
       anchorMessageId: cleanProviderIdentifier(latest.id, 'Microsoft message ID'),
@@ -1218,7 +1279,7 @@ function microsoftThreadSummary(
     important: messages.some(message => String(message.importance || '').toLowerCase() === 'high'),
     draft: messages.some(message => Boolean(message.isDraft)),
     hasAttachments: messages.some(message => Boolean(message.hasAttachments)),
-  }
+  }, microsoftThreadBlindParticipants(messages, accountEmail))
 }
 
 function microsoftMessageDetail(
@@ -1237,7 +1298,7 @@ function microsoftMessageDetail(
     : normalizeBody(rawBody)
   const bodyTruncated = providerBody.length > rawBodyLimit
     || normalizedBody.length > MAX_MESSAGE_BODY_CHARACTERS
-  return {
+  return withMailMessageDraftState(withMailMessageBlindRecipients({
     id: cleanProviderIdentifier(message.id, 'Microsoft message ID'),
     from: microsoftAddress(message.from),
     replyTo: microsoftAddresses(message.replyTo),
@@ -1258,7 +1319,7 @@ function microsoftMessageDetail(
     internetMessageId: cleanOptionalInternetMessageId(message.internetMessageId),
     headers: microsoftDisplayHeaders(message.internetMessageHeaders),
     webLink: optionalSafeMicrosoftWebLink(message.webLink),
-  }
+  }, microsoftAddresses(message.bccRecipients)), message.isDraft === true)
 }
 
 /**
@@ -1271,10 +1332,25 @@ function microsoftMessageDetail(
 async function fetchMicrosoftConversationWindow(
   accessToken: string,
   reference: MicrosoftMailThreadReference,
+  threadReference: string,
   fields: readonly string[],
+  options: MicrosoftMailThreadWindowOptions,
   dependencies: MicrosoftMailDependencies,
-): Promise<{ messages: MicrosoftGraphMessage[], totalCount: number }> {
+): Promise<{
+  messages: MicrosoftGraphMessage[]
+  totalCount: number
+  newerMessageCount: number
+  windowStart: number
+  nextPageToken: string | null
+}> {
+  const maxMessages = Math.min(
+    MAX_THREAD_MESSAGES,
+    Math.max(1, Math.trunc(options.maxMessages ?? MAX_THREAD_MESSAGES)),
+  )
   if (!reference.conversationId) {
+    if (options.cursor || options.newerMessageCount || options.providerMessageCount) {
+      throw new MicrosoftMailError(409, 'THREAD_WINDOW_STALE', 'Microsoft thread continuation is stale')
+    }
     const query = new URLSearchParams({ '$select': fields.join(',') })
     const message = await graphJson<MicrosoftGraphMessage>(
       `${GRAPH_ORIGIN}/v1.0/me/messages/${encodeURIComponent(reference.anchorMessageId)}?${query}`,
@@ -1289,20 +1365,30 @@ async function fetchMicrosoftConversationWindow(
     return {
       messages: message.id ? [message] : [],
       totalCount: message.id ? 1 : 0,
+      newerMessageCount: 0,
+      windowStart: 0,
+      nextPageToken: null,
     }
   }
 
-  const query = new URLSearchParams({
-    // `createdDateTime` exists for received, sent, and draft messages. Its
-    // lower bound lets Graph satisfy the documented filter/orderby rules.
-    '$filter': `createdDateTime ge 1900-01-01T00:00:00Z and conversationId eq '${escapeODataString(reference.conversationId)}'`,
-    '$orderby': 'createdDateTime desc',
-    '$select': fields.join(','),
-    '$top': String(MAX_THREAD_MESSAGES),
-    '$count': 'true',
-  })
+  // v2 requires `isDraft` (and the hidden BCC boundary) on every page. Reject
+  // older sealed nextLinks whose `$select` predates those fail-closed fields.
+  const binding = `microsoft-mail-thread-window-v2\0${createHash('sha256').update(threadReference).digest('hex')}`
+  const url = options.cursor
+    ? openMicrosoftMailCursor(options.cursor, binding, options.referenceSecret)
+    : (() => {
+        const query = new URLSearchParams({
+          // `createdDateTime` exists for received, sent, and draft messages.
+          '$filter': `createdDateTime ge 1900-01-01T00:00:00Z and conversationId eq '${escapeODataString(reference.conversationId!)}'`,
+          '$orderby': 'createdDateTime desc',
+          '$select': fields.join(','),
+          '$top': String(maxMessages),
+          '$count': 'true',
+        })
+        return `${GRAPH_ORIGIN}/v1.0/me/messages?${query}`
+      })()
   const page = await graphJson<MicrosoftGraphCollection<MicrosoftGraphMessage>>(
-    `${GRAPH_ORIGIN}/v1.0/me/messages?${query}`,
+    url,
     {
       headers: graphHeaders(accessToken, {
         Prefer: 'IdType="ImmutableId", outlook.body-content-type="html"',
@@ -1311,11 +1397,13 @@ async function fetchMicrosoftConversationWindow(
     'Microsoft conversation detail',
     dependencies,
   )
-  const messages = (page.value ?? [])
-    .filter(hasMicrosoftMessageId)
-    .slice(0, MAX_THREAD_MESSAGES)
-  const totalCount = nonNegativeIntegerOrNull(page['@odata.count'])
-  if (totalCount === null) {
+  const messages = (page.value ?? []).filter(hasMicrosoftMessageId)
+  if (messages.length > maxMessages) {
+    throw new MicrosoftMailError(502, 'GRAPH_WINDOW_TOO_LARGE', 'Microsoft returned too many conversation messages')
+  }
+  const reportedTotalCount = nonNegativeIntegerOrNull(page['@odata.count'])
+  const expectedTotalCount = options.providerMessageCount
+  if (reportedTotalCount === null && expectedTotalCount === undefined) {
     // The UI type requires an exact omitted count. Returning zero when Graph
     // supplied a next page would under-report older mail, so fail closed.
     throw new MicrosoftMailError(
@@ -1324,9 +1412,37 @@ async function fetchMicrosoftConversationWindow(
       'Microsoft returned no conversation message count',
     )
   }
+  const totalCount = expectedTotalCount ?? reportedTotalCount!
+  if (
+    totalCount > 100_000
+    || (reportedTotalCount !== null && reportedTotalCount !== totalCount)
+  ) {
+    throw new MicrosoftMailError(409, 'THREAD_WINDOW_STALE', 'Microsoft thread changed during continuation')
+  }
+  const newerMessageCount = Math.max(0, Math.trunc(options.newerMessageCount ?? 0))
+  const windowStart = totalCount - newerMessageCount - messages.length
+  if (windowStart < 0) {
+    throw new MicrosoftMailError(409, 'THREAD_WINDOW_STALE', 'Microsoft thread continuation is stale')
+  }
+  const nextLink = cleanConfigText(page['@odata.nextLink'])
+  if (windowStart > 0 && messages.length === 0) {
+    throw new MicrosoftMailError(
+      502,
+      'GRAPH_WINDOW_INCOMPLETE',
+      'Microsoft returned an empty conversation window before the end of the thread',
+    )
+  }
+  if ((windowStart > 0) !== Boolean(nextLink)) {
+    throw new MicrosoftMailError(502, 'GRAPH_WINDOW_INCOMPLETE', 'Microsoft returned an incomplete conversation window')
+  }
   return {
     messages,
-    totalCount: Math.max(totalCount, messages.length),
+    totalCount,
+    newerMessageCount,
+    windowStart,
+    nextPageToken: nextLink
+      ? sealMicrosoftMailCursor(nextLink, binding, options.referenceSecret)
+      : null,
   }
 }
 
@@ -1832,8 +1948,17 @@ function microsoftThreadParticipants(
     ...(microsoftAddress(message.from) ? [microsoftAddress(message.from)!] : []),
     ...microsoftAddresses(message.toRecipients),
     ...microsoftAddresses(message.ccRecipients),
-    ...microsoftAddresses(message.bccRecipients),
   ])).filter(address => address.email !== normalizedAccount)
+}
+
+function microsoftThreadBlindParticipants(
+  messages: MicrosoftGraphMessage[],
+  accountEmail: string,
+): MailAddress[] {
+  const normalizedAccount = normalizeEmail(accountEmail)
+  return uniqueAddresses(messages.flatMap(message => (
+    microsoftAddresses(message.bccRecipients)
+  ))).filter(address => address.email !== normalizedAccount)
 }
 
 function uniqueAddresses(addresses: MailAddress[]): MailAddress[] {

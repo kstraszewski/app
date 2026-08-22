@@ -11,6 +11,8 @@ import type {
   MailThreadListPayload,
 } from '../../shared/types/mail.ts'
 import {
+  gmailMessageDetail,
+  gmailSearchQueryWithoutDrafts,
   gmailThreadDetail,
   gmailThreadSummary,
   messageHeader,
@@ -275,13 +277,17 @@ export async function fetchGmailThreadPage(
     query?: string
     pageToken?: string
     maxResults?: number
+    excludeDrafts?: boolean
   },
 ): Promise<MailThreadListPayload> {
   const query = new URLSearchParams({
     maxResults: String(Math.min(25, Math.max(1, options.maxResults ?? 20))),
-    labelIds: options.folder,
   })
-  if (options.query) query.set('q', options.query)
+  if (options.folder !== 'ALL') query.set('labelIds', options.folder)
+  const effectiveQuery = options.excludeDrafts
+    ? gmailSearchQueryWithoutDrafts(options.query)
+    : options.query
+  if (effectiveQuery) query.set('q', effectiveQuery)
   if (options.pageToken) query.set('pageToken', options.pageToken)
 
   const headers = { authorization: `Bearer ${accessToken}` }
@@ -321,7 +327,9 @@ export async function fetchGmailThreadPage(
 
   return {
     data: threadResults.values
-      .map(thread => gmailThreadSummary(thread, accountEmail))
+      .map(thread => gmailThreadSummary(thread, accountEmail, {
+        excludeDrafts: options.excludeDrafts,
+      }))
       .filter(thread => thread.id),
     folders: mailFolderSummaries(labelsResponse.labels ?? []),
     nextPageToken: listing.nextPageToken || null,
@@ -334,6 +342,12 @@ export async function fetchGmailThread(
   accessToken: string,
   accountEmail: string,
   threadId: string,
+  options: {
+    maxMessages?: number
+    beforeMessageId?: string
+    newerMessageCount?: number
+    providerMessageCount?: number
+  } = {},
 ): Promise<MailThreadDetail> {
   const headers = { authorization: `Bearer ${accessToken}` }
   const thread = await providerJson<GmailThreadResource>(
@@ -342,7 +356,34 @@ export async function fetchGmailThread(
     'Gmail thread',
   )
   const externalUrl = `https://mail.google.com/mail/u/${encodeURIComponent(accountEmail)}/#all/${encodeURIComponent(threadId)}`
-  return gmailThreadDetail(thread, accountEmail, externalUrl)
+  try {
+    return gmailThreadDetail(thread, accountEmail, externalUrl, options)
+  }
+  catch (error) {
+    if (error instanceof TypeError && /continuation is stale/u.test(error.message)) {
+      throw createError({ statusCode: 409, statusMessage: 'Wątek Gmail zmienił się podczas odczytu. Wyszukaj go ponownie.' })
+    }
+    throw error
+  }
+}
+
+export async function fetchGmailMessageDetail(
+  accessToken: string,
+  messageId: string,
+  expectedThreadId: string,
+): Promise<ReturnType<typeof gmailMessageDetail>> {
+  const message = await providerJson<GmailMessageResource>(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=full`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+    'Gmail message',
+  )
+  if (
+    String(message.id ?? '') !== messageId
+    || String(message.threadId ?? '') !== expectedThreadId
+  ) {
+    throw createError({ statusCode: 409, statusMessage: 'Wiadomość Gmail została przeniesiona albo zmieniona.' })
+  }
+  return gmailMessageDetail(message)
 }
 
 export async function fetchGmailReplyContext(

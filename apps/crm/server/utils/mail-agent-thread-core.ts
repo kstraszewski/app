@@ -1,7 +1,14 @@
 import type { MailMessageDetail } from '../../shared/types/mail.ts'
+import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
+import { mailMessageBlindRecipients } from './mail-message-blind-recipients.ts'
+import { mailMessageIsDraft } from './mail-message-draft-state.ts'
 
 function normalizedEmail(value: string | null | undefined): string {
   return String(value ?? '').trim().toLowerCase()
+}
+
+export function mailAgentCorrespondenceMessages<T extends object>(messages: T[]): T[] {
+  return messages.filter(message => !mailMessageIsDraft(message))
 }
 
 export function mailAgentMessageMatchesParticipants(
@@ -12,7 +19,7 @@ export function mailAgentMessageMatchesParticipants(
   const expected = new Set(participantEmails.map(normalizedEmail).filter(Boolean))
   const sent = normalizedEmail(message.from?.email) === normalizedEmail(accountEmail)
   if (sent) {
-    return [...message.to, ...message.cc]
+    return [...message.to, ...message.cc, ...mailMessageBlindRecipients(message)]
       .some(address => expected.has(normalizedEmail(address.email)))
   }
   return expected.has(normalizedEmail(message.from?.email))
@@ -24,7 +31,7 @@ export function denseMailBodyExcerpt(
   question?: string,
 ): { text: string; start: number; truncated: boolean } {
   const boundedLimit = Math.max(1, Math.trunc(limit))
-  const text = String(value ?? '')
+  const text = stripUnsafeMailDisplayControls(String(value ?? ''))
     .replace(/[\t ]+/gu, ' ')
     .replace(/\n{3,}/gu, '\n\n')
     .trim()

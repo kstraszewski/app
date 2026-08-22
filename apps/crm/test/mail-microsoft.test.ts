@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test, { type TestContext } from 'node:test'
 import {
   MICROSOFT_MAIL_CURSOR_MAX_LENGTH,
@@ -10,6 +11,7 @@ import {
   exchangeMicrosoftMailOAuthCode,
   fetchMicrosoftMailAttachmentBytes,
   fetchMicrosoftMailIdentity,
+  fetchMicrosoftMailMessageDetail,
   fetchMicrosoftMailReplyContext,
   fetchMicrosoftMailThread,
   fetchMicrosoftMailThreadPage,
@@ -23,7 +25,12 @@ import {
   sealMicrosoftMailCursor,
   sendMicrosoftMailMessage,
 } from '../server/utils/mail-microsoft.ts'
-import { mailContextSearchQuery } from '../server/utils/mail-context-core.ts'
+import {
+  mailContextMatchedEmails,
+  mailContextSearchQuery,
+} from '../server/utils/mail-context-core.ts'
+import { mailAgentMessageMatchesParticipants } from '../server/utils/mail-agent-thread-core.ts'
+import { mailMessageIsDraft } from '../server/utils/mail-message-draft-state.ts'
 
 const CONFIG = {
   clientId: 'personal-sandbox-client-id',
@@ -402,7 +409,71 @@ test('lists folders, groups a page by conversationId, and returns a sealed next 
     ['DRAFT', 1],
   ])
   assert.equal(page.resultSizeEstimate, 12)
+  assert.equal(page.providerMessageCountOnPage, 3)
   assert.ok(page.nextPageToken)
+  assert.equal(calls.length, 4)
+})
+
+test('agent Microsoft pages drop draft-only hits and keep correspondence from mixed conversations', async (t) => {
+  mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    if (url.pathname === '/v1.0/me/messages') {
+      return jsonResponse({ value: [
+        message('message-real', 'conversation-mixed', {
+          subject: 'Wysłana odpowiedź',
+          sentDateTime: '2026-08-14T08:00:00.000Z',
+          createdDateTime: '2026-08-14T08:00:00.000Z',
+          isDraft: false,
+          bccRecipients: [{ emailAddress: { address: 'secret-client@example.com' } }],
+        }),
+        message('message-draft-mixed', 'conversation-mixed', {
+          subject: 'Poufny szkic',
+          createdDateTime: '2026-08-14T09:00:00.000Z',
+          isDraft: true,
+        }),
+        message('message-draft-only', 'conversation-draft-only', {
+          subject: 'Wyłącznie szkic',
+          createdDateTime: '2026-08-14T10:00:00.000Z',
+          isDraft: true,
+        }),
+      ] })
+    }
+    return jsonResponse({ totalItemCount: 0, unreadItemCount: 0 })
+  })
+
+  const page = await fetchMicrosoftMailThreadPage('token', 'expert@example.com', {
+    folder: 'ALL',
+    referenceSecret: REFERENCE_SECRET,
+    excludeDrafts: true,
+  })
+  assert.equal(page.providerMessageCountOnPage, 3)
+  assert.equal(page.data.length, 1)
+  assert.equal(page.data[0]?.latestMessageId, 'message-real')
+  assert.equal(page.data[0]?.messageCount, 1)
+  assert.equal(page.data[0]?.subject, 'Wysłana odpowiedź')
+  assert.equal(page.data[0]?.draft, false)
+  assert.deepEqual(mailContextMatchedEmails(page.data[0]!, ['secret-client@example.com']), [
+    'secret-client@example.com',
+  ])
+  assert.doesNotMatch(
+    JSON.stringify(page.data),
+    /Poufny szkic|Wyłącznie szkic|secret-client@example\.com/u,
+  )
+})
+
+test('uses the provider-wide Microsoft collection for all mail', async (t) => {
+  const calls = mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    if (url.pathname === '/v1.0/me/messages') {
+      assert.equal(url.searchParams.get('$orderby'), 'createdDateTime desc')
+      return jsonResponse({ value: [] })
+    }
+    return jsonResponse({ totalItemCount: 0, unreadItemCount: 0 })
+  })
+  await fetchMicrosoftMailThreadPage('token', 'expert@example.com', {
+    folder: 'ALL',
+    referenceSecret: REFERENCE_SECRET,
+  })
   assert.equal(calls.length, 4)
 })
 
@@ -645,6 +716,173 @@ test('loads exactly the newest 20 conversation bodies and reports the exact omit
   assert.equal(detail.messages[0]?.id, 'message-5')
   assert.equal(detail.messages.at(-1)?.id, 'message-24')
   assert.equal(detail.omittedMessageCount, 5)
+})
+
+test('continues Microsoft detail through signed 12-message windows', async (t) => {
+  const threadId = encodeMicrosoftThreadReference({
+    conversationId: 'conversation-windowed',
+    anchorMessageId: 'message-24',
+  }, REFERENCE_SECRET)
+  const calls = mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    const skip = Number(url.searchParams.get('$skip') ?? 0)
+    const size = skip === 24 ? 1 : 12
+    const newestIndex = 24 - skip
+    const value = Array.from({ length: size }, (_, offset) => {
+      const index = newestIndex - offset
+      const date = new Date(Date.UTC(2026, 7, 14, 8, index)).toISOString()
+      return message(`message-${index}`, 'conversation-windowed', {
+        receivedDateTime: date,
+        createdDateTime: date,
+        body: { contentType: 'Text', content: `Treść ${index}` },
+      })
+    })
+    return jsonResponse({
+      value,
+      '@odata.count': 25,
+      ...(skip < 24
+        ? { '@odata.nextLink': `https://graph.microsoft.com/v1.0/me/messages?$skip=${skip + 12}` }
+        : {}),
+    })
+  })
+
+  const first = await fetchMicrosoftMailThread(
+    'token',
+    'expert@example.com',
+    threadId,
+    { referenceSecret: REFERENCE_SECRET, maxMessages: 12 },
+  )
+  assert.deepEqual(first.messages.map(value => value.id), Array.from(
+    { length: 12 },
+    (_, offset) => `message-${13 + offset}`,
+  ))
+  assert.equal(first.omittedMessageCount, 13)
+  assert.ok(first.nextPageToken)
+
+  const second = await fetchMicrosoftMailThread(
+    'token',
+    'expert@example.com',
+    threadId,
+    {
+      referenceSecret: REFERENCE_SECRET,
+      maxMessages: 12,
+      cursor: first.nextPageToken!,
+      newerMessageCount: 12,
+      providerMessageCount: 25,
+    },
+  )
+  assert.deepEqual(second.messages.map(value => value.id), Array.from(
+    { length: 12 },
+    (_, offset) => `message-${1 + offset}`,
+  ))
+  assert.equal(second.omittedMessageCount, 1)
+
+  const third = await fetchMicrosoftMailThread(
+    'token',
+    'expert@example.com',
+    threadId,
+    {
+      referenceSecret: REFERENCE_SECRET,
+      maxMessages: 12,
+      cursor: second.nextPageToken!,
+      newerMessageCount: 24,
+      providerMessageCount: 25,
+    },
+  )
+  assert.deepEqual(third.messages.map(value => value.id), ['message-0'])
+  assert.equal(third.omittedMessageCount, 0)
+  assert.equal(third.nextPageToken, null)
+  assert.equal(calls.length, 3)
+})
+
+test('rejects pre-draft-state Microsoft detail cursors instead of reading an unmarked older window', async () => {
+  const threadId = encodeMicrosoftThreadReference({
+    conversationId: 'conversation-versioned-window',
+    anchorMessageId: 'newest-message',
+  }, REFERENCE_SECRET)
+  const legacyBinding = `microsoft-mail-thread-window-v1\0${createHash('sha256').update(threadId).digest('hex')}`
+  const legacyCursor = sealMicrosoftMailCursor(
+    'https://graph.microsoft.com/v1.0/me/messages?%24skiptoken=legacy-detail-page',
+    legacyBinding,
+    REFERENCE_SECRET,
+  )
+
+  await assert.rejects(
+    fetchMicrosoftMailThread('token', 'expert@example.com', threadId, {
+      referenceSecret: REFERENCE_SECRET,
+      cursor: legacyCursor,
+      newerMessageCount: 12,
+      providerMessageCount: 24,
+    }),
+    (error: unknown) => error instanceof MicrosoftMailError && error.code === 'CURSOR_INVALID',
+  )
+})
+
+test('fails closed when Microsoft returns an empty page before the end of a thread', async (t) => {
+  const threadId = encodeMicrosoftThreadReference({
+    conversationId: 'conversation-empty-window',
+    anchorMessageId: 'message-24',
+  }, REFERENCE_SECRET)
+  mockGlobalFetch(t, () => jsonResponse({
+    value: [],
+    '@odata.count': 25,
+    '@odata.nextLink': 'https://graph.microsoft.com/v1.0/me/messages?$skip=12',
+  }))
+
+  await assert.rejects(
+    fetchMicrosoftMailThread(
+      'token',
+      'expert@example.com',
+      threadId,
+      { referenceSecret: REFERENCE_SECRET, maxMessages: 12 },
+    ),
+    (error: unknown) => error instanceof MicrosoftMailError
+      && error.code === 'GRAPH_WINDOW_INCOMPLETE',
+  )
+})
+
+test('loads an exact older Microsoft message for attachment references', async (t) => {
+  const threadId = encodeMicrosoftThreadReference({
+    conversationId: 'conversation-older-attachment',
+    anchorMessageId: 'newest-message',
+  }, REFERENCE_SECRET)
+  mockGlobalFetch(t, (call) => {
+    const url = new URL(call.url)
+    if (url.pathname.endsWith('/attachments')) {
+      return jsonResponse({ value: [{
+        id: 'attachment-old',
+        name: 'old.pdf',
+        contentType: 'application/pdf',
+        size: 42,
+        isInline: false,
+      }] })
+    }
+    assert.equal(url.pathname, '/v1.0/me/messages/older-message')
+    assert.match(url.searchParams.get('$select') || '', /bccRecipients/u)
+    assert.match(url.searchParams.get('$select') || '', /isDraft/u)
+    return jsonResponse(message('older-message', 'conversation-older-attachment', {
+      hasAttachments: true,
+      isDraft: true,
+      bccRecipients: [{ emailAddress: { name: 'Klient', address: 'client@example.com' } }],
+      body: { contentType: 'Text', content: 'Starsza wiadomość z plikiem.' },
+    }))
+  })
+
+  const detail = await fetchMicrosoftMailMessageDetail(
+    'token',
+    'older-message',
+    threadId,
+    { referenceSecret: REFERENCE_SECRET },
+  )
+  assert.equal(detail.id, 'older-message')
+  assert.equal(detail.attachments[0]?.filename, 'old.pdf')
+  assert.equal(
+    mailAgentMessageMatchesParticipants(detail, ['client@example.com'], 'decyzje@bank.example'),
+    true,
+  )
+  assert.doesNotMatch(JSON.stringify(detail), /client@example\.com/u)
+  assert.equal(mailMessageIsDraft({ ...detail }), true)
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(detail)), 'draft'), false)
 })
 
 test('fails closed for forged Graph Authentication-Results headers', () => {

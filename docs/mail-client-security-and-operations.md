@@ -34,9 +34,23 @@ tekst ze wskazanych załączników.
   wyłącznie po uczestniku do modelu trafiają tylko wiadomości odebrane od albo
   wysłane do tego dokładnego adresu; pełny mieszany wątek jest dostępny przy
   trwałym powiązaniu lub zwykłym wyszukiwaniu własnej skrzynki.
-- Wyszukiwanie i odczyt są stronicowane i ograniczone. EVE otrzymuje informację
-  o dalszej stronie, częściowych awariach oraz liczbie pominiętych wiadomości;
-  nie powinien przedstawiać ograniczonego okna jako kompletnej historii.
+- Wyszukiwanie i odczyt są stronicowane i ograniczone. Tryb `all` używa
+  provider-wide Gmail/Graph, dlatego obejmuje także pocztę zarchiwizowaną lub
+  przeniesioną poza Odebrane/Wysłane. Ogólny IMAP nie gwarantuje folderu All
+  Mail: wtedy zakres obejmuje INBOX+SENT i odpowiedź jawnie zwraca ograniczenie;
+  wyszukiwanie IMAP sygnalizuje również obcięcie bezpiecznego okna UID.
+- Microsoft Graph zwraca najwyżej 1000 wiadomości dla jednego `$search`. EVE
+  przenosi licznik przez zaszyfrowany kursor i po dojściu do tej granicy ustawia
+  `microsoft_search_result_limit`, zamiast błędnie oznaczyć wynik jako pełny.
+- EVE wyklucza szkice już w wyszukiwaniu providerowym i ponownie przy odczycie,
+  więc draft nie może zostać opisany jako wysłana korespondencja. BCC uczestniczy
+  w dokładnym dopasowaniu klienta, ale lista ukrytych odbiorców nie jest
+  serializowana do podsumowań ani historii Agenta.
+- EVE otrzymuje informację o dalszej stronie, częściowych awariach, trwałych
+  ograniczeniach providera oraz liczbie pominiętych wyników. Odczyt wątku działa
+  w stałych oknach do 12 wiadomości i zwraca zaszyfrowaną `nextReference` do
+  starszego okna, zachowując pierwotny zakres uczestników i czas wygaśnięcia.
+  Agent nie powinien przedstawiać ograniczonego okna jako kompletnej historii.
 - Rekord wysyłki zawiera jedynie hash żądania, stabilny `Message-ID`, status oraz
   identyfikatory techniczne dostawcy.
 - Odebrane załączniki są standardowo pokazywane jako metadane. Dopiero jawny
@@ -116,14 +130,21 @@ tekst ze wskazanych załączników.
   potencjalnie wstrzykniętemu `pass`. Pozytywny wynik nie jest gwarancją
   uczciwości treści.
 - Identyfikatory wątków IMAP i Microsoft oraz kursory stron są nieprzezroczyste,
-  uwierzytelnione i związane z konkretnym połączeniem. Klient nie może podsunąć
-  serwerowi dowolnego Graph `nextLink` ani surowej nazwy folderu.
+  uwierzytelnione i związane z konkretnym połączeniem. Referencje EVE są ponadto
+  szyfrowane, godzinne i związane z użytkownikiem, organizacją, trybem dostępu
+  oraz dokładnym zakresem uczestników. Model nie może podsunąć serwerowi
+  dowolnego Graph `nextLink` ani surowej nazwy folderu.
 - Detail wątku Microsoft wykonuje jedno zapytanie Graph newest-first z
   `$top=20`, ograniczonym `$select` i dokładnym `$count`, a następnie zwraca
   wybrane wiadomości chronologicznie. Nie pobiera najpierw setek pełnych body i
   nagłówków. Lista grupuje `conversationId` w obrębie bieżącej strony Graph;
   bardzo długi wątek przecinający granicę stron może więc pojawić się ponownie
   na kolejnej stronie. Detail wątku jest źródłem autorytatywnym.
+- Odczyt EVE używa mniejszego `$top=12` i podpisanej kontynuacji Graph, aby
+  cztery wątki mieściły się w jednym limicie 48 wiadomości bez lokalnego
+  pomijania. Referencja załącznika wskazuje konkretną wiadomość; jej odczyt nie
+  wraca do najnowszego okna wątku, więc plik ze starszej strony pozostaje
+  dostępny po przejściu kontynuacji.
 
 ## Wysyłka i niezawodność
 

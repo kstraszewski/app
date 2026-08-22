@@ -194,7 +194,7 @@ export function eveToolInputSummary(part: EveDynamicToolPart) {
     const scope = objectValue(input.scope)
     const folder = input.folder === 'sent'
       ? 'wysłane'
-      : input.folder === 'inbox' ? 'odebrane' : 'odebrane i wysłane'
+      : input.folder === 'inbox' ? 'odebrane' : 'cała skrzynka'
     const continuation = typeof input.cursor === 'string' ? ' · kolejna strona' : ''
     if (scope?.type === 'case') return `Poczta sprawy · ${folder}${continuation}`
     if (scope?.type === 'client') return `Poczta klienta · ${folder}${continuation}`
@@ -275,7 +275,9 @@ export function eveToolOutputSummary(part: EveDynamicToolPart) {
       : output.threads.length
     const failureCount = typeof output.failureCount === 'number' ? output.failureCount : 0
     if (failureCount > 0) return `Odczytano ${readCount} wątków; ${failureCount} nie udało się odczytać.`
-    return readCount === 1 ? 'Odczytano 1 wątek.' : `Odczytano ${readCount} wątki.`
+    const hasOlder = output.threads.some(value => objectValue(value)?.nextReference)
+    const suffix = hasOlder ? ' Dostępne są starsze wiadomości.' : ''
+    return readCount === 1 ? `Odczytano 1 wątek.${suffix}` : `Odczytano ${readCount} wątki.${suffix}`
   }
   if (toolName === 'read_mail_attachment') {
     if (Array.isArray(output.attachments)) {

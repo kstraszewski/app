@@ -11,6 +11,11 @@ export type CrmAgentMailFolder = 'all' | 'inbox' | 'sent'
 
 export type CrmAgentMailAttachmentFilter = 'any' | 'with_attachments'
 
+export type CrmAgentMailCoverageLimitation
+  = | 'imap_all_folders_unavailable'
+    | 'imap_search_window'
+    | 'microsoft_search_result_limit'
+
 export type CrmAgentMailScopeType = 'client' | 'case'
 
 export interface CrmAgentMailScope {
@@ -56,11 +61,12 @@ export interface CrmAgentMailThreadSummary {
   matchReason: CrmAgentMailMatchReason
   matchedEmails: string[]
   participants: CrmAgentMailAddressSummary[]
-  subject: string
+  summaryLimitedToMatchedMessages: boolean
+  subject: string | null
   latestAt: string | null
-  listedMessageCount: number
-  snippet: string
-  hasAttachments: boolean
+  listedMessageCount: number | null
+  snippet: string | null
+  hasAttachments: boolean | null
   url: string
 }
 
@@ -84,7 +90,8 @@ export interface CrmAgentMailSearchResponse {
       nextCursor: string | null
       omittedLinkedThreadCount: number
       omittedResultCount: number
-      reason: 'complete' | 'more_available' | 'partial_failure' | 'context_email_limit' | 'linked_window_limit' | 'result_window_limit' | 'continuation_unavailable'
+      limitations: CrmAgentMailCoverageLimitation[]
+      reason: 'complete' | 'more_available' | 'partial_failure' | 'context_email_limit' | 'linked_window_limit' | 'result_window_limit' | 'provider_limit' | 'continuation_unavailable'
     }
     threads: CrmAgentMailThreadSummary[]
   }
@@ -120,10 +127,12 @@ export interface CrmAgentMailThreadReadResult {
   provider: 'google' | 'microsoft' | 'imap'
   subject: string
   providerMessageCount: number
+  newerMessageCount: number
   matchedMessageCountInWindow: number
   filteredMessageCount: number
   returnedMessageCount: number
   omittedMessageCount: number
+  nextReference: string | null
   messages: CrmAgentMailThreadMessage[]
   url: string
 }
@@ -133,6 +142,7 @@ export interface CrmAgentMailThreadReadResponse {
     requestedThreadCount: number
     readThreadCount: number
     failureCount: number
+    failedRanks: number[]
     threads: CrmAgentMailThreadReadResult[]
   }
 }

@@ -146,7 +146,7 @@ function validateAddress(value: unknown): void {
   if (
     !address
     || !boundedResponseString(address.name, 500)
-    || !boundedNullableResponseString(address.email, 320)
+    || !boundedNullableResponseString(address.email, 254)
     || !boundedResponseString(address.label, 500)
   ) invalidMailApiResponse()
 }
@@ -172,7 +172,7 @@ function validateSearchThread(value: unknown): void {
   if (
     !boundedResponseString(thread.reference, CRM_AGENT_MAIL_ATTACHMENT_REFERENCE_MAX_LENGTH)
     || !/^[A-Za-z0-9_-]+$/u.test(String(thread.reference))
-    || !boundedResponseString(thread.mailbox, 320)
+    || !boundedResponseString(thread.mailbox, 254)
     || !['google', 'microsoft', 'imap'].includes(String(thread.provider))
     || !folders
     || folders.length > 2
@@ -186,14 +186,22 @@ function validateSearchThread(value: unknown): void {
     ].includes(String(thread.matchReason))
     || !matchedEmails
     || matchedEmails.length > 12
-    || matchedEmails.some(email => !boundedResponseString(email, 320))
+    || matchedEmails.some(email => !boundedResponseString(email, 254))
     || !participants
     || participants.length > 20
-    || !boundedResponseString(thread.subject, 500)
+    || typeof thread.summaryLimitedToMatchedMessages !== 'boolean'
+    || !boundedNullableResponseString(thread.subject, 500)
     || !boundedNullableResponseString(thread.latestAt, 64)
-    || !nonNegativeResponseInteger(thread.listedMessageCount, 100_000)
-    || !boundedResponseString(thread.snippet, 600)
-    || typeof thread.hasAttachments !== 'boolean'
+    || !(thread.listedMessageCount === null || nonNegativeResponseInteger(thread.listedMessageCount, 100_000))
+    || !boundedNullableResponseString(thread.snippet, 600)
+    || !(thread.hasAttachments === null || typeof thread.hasAttachments === 'boolean')
+    || (thread.summaryLimitedToMatchedMessages === true && (
+      thread.subject !== null
+      || thread.latestAt !== null
+      || thread.listedMessageCount !== null
+      || thread.snippet !== null
+      || thread.hasAttachments !== null
+    ))
     || !boundedResponseString(thread.url, 2_000)
     || !/^\/org\/[a-z0-9-]+\/mail$/u.test(String(thread.url))
   ) invalidMailApiResponse()
@@ -204,12 +212,14 @@ function validateSearchResponse(data: Record<string, unknown>): void {
   const threads = Array.isArray(data.threads) ? data.threads : null
   const context = data.context === null ? null : responseRecord(data.context)
   const coverage = responseRecord(data.coverage)
+  const limitations = Array.isArray(coverage?.limitations) ? coverage.limitations : null
   if (
     !['all', 'inbox', 'sent'].includes(String(data.folder))
     || !['any', 'with_attachments'].includes(String(data.attachmentFilter))
-    || !boundedNullableResponseString(data.query, 500)
-    || !boundedNullableResponseString(data.participantEmail, 320)
+    || !boundedNullableResponseString(data.query, 450)
+    || !boundedNullableResponseString(data.participantEmail, 254)
     || !('context' in data)
+    || (data.context !== null && !context)
     || (context !== null && (
       !['client', 'case'].includes(String(context.type))
       || !boundedResponseString(context.id, 36)
@@ -223,8 +233,16 @@ function validateSearchResponse(data: Record<string, unknown>): void {
     || typeof coverage.complete !== 'boolean'
     || !boundedNullableResponseString(coverage.nextCursor, CRM_AGENT_MAIL_ATTACHMENT_REFERENCE_MAX_LENGTH)
     || (coverage.nextCursor !== null && !/^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(String(coverage.nextCursor)))
-    || !nonNegativeResponseInteger(coverage.omittedLinkedThreadCount, 100)
-    || !nonNegativeResponseInteger(coverage.omittedResultCount, 1_000)
+    || !nonNegativeResponseInteger(coverage.omittedLinkedThreadCount, 100_000)
+    || !nonNegativeResponseInteger(coverage.omittedResultCount, 10_000)
+    || !limitations
+    || limitations.length > 3
+    || new Set(limitations.map(String)).size !== limitations.length
+    || limitations.some(value => ![
+      'imap_all_folders_unavailable',
+      'imap_search_window',
+      'microsoft_search_result_limit',
+    ].includes(String(value)))
     || ![
       'complete',
       'more_available',
@@ -232,10 +250,23 @@ function validateSearchResponse(data: Record<string, unknown>): void {
       'context_email_limit',
       'linked_window_limit',
       'result_window_limit',
+      'provider_limit',
       'continuation_unavailable',
     ].includes(String(coverage.reason))
+    || (coverage.complete === true && (
+      coverage.nextCursor !== null
+      || Number(data.partialFailureCount) > 0
+      || Number(coverage.omittedLinkedThreadCount) > 0
+      || Number(coverage.omittedResultCount) > 0
+      || limitations.length > 0
+      || context?.emailsTruncated === true
+      || coverage.reason !== 'complete'
+    ))
+    || (coverage.complete === false && coverage.reason === 'complete')
+    || (coverage.nextCursor !== null && coverage.reason !== 'more_available')
+    || (coverage.nextCursor === null && coverage.reason === 'more_available')
     || !threads
-    || threads.length > 12
+    || threads.length > 24
   ) invalidMailApiResponse()
   for (const thread of threads) validateSearchThread(thread)
 }
@@ -275,16 +306,26 @@ function validateThreadMessage(value: unknown): void {
 
 function validateThreadResponse(data: Record<string, unknown>): void {
   const threads = Array.isArray(data.threads) ? data.threads : null
+  const failedRanks = Array.isArray(data.failedRanks) ? data.failedRanks : null
   if (
     !nonNegativeResponseInteger(data.requestedThreadCount, 4)
     || Number(data.requestedThreadCount) < 1
     || !nonNegativeResponseInteger(data.readThreadCount, 4)
     || !nonNegativeResponseInteger(data.failureCount, 4)
     || Number(data.readThreadCount) + Number(data.failureCount) !== Number(data.requestedThreadCount)
+    || !failedRanks
+    || failedRanks.length !== Number(data.failureCount)
+    || new Set(failedRanks.map(Number)).size !== failedRanks.length
+    || failedRanks.some(rank => (
+      !nonNegativeResponseInteger(rank, 4)
+      || Number(rank) < 1
+      || Number(rank) > Number(data.requestedThreadCount)
+    ))
     || !threads
     || threads.length !== Number(data.readThreadCount)
   ) invalidMailApiResponse()
   let totalMessages = 0
+  const ranks = new Set<number>()
   for (const value of threads) {
     const thread = responseRecord(value)
     const messages = Array.isArray(thread?.messages) ? thread.messages : null
@@ -292,22 +333,52 @@ function validateThreadResponse(data: Record<string, unknown>): void {
       !thread
       || !nonNegativeResponseInteger(thread.rank, 4)
       || Number(thread.rank) < 1
-      || !boundedResponseString(thread.mailbox, 320)
+      || ranks.has(Number(thread.rank))
+      || !boundedResponseString(thread.mailbox, 254)
       || !['google', 'microsoft', 'imap'].includes(String(thread.provider))
       || !boundedResponseString(thread.subject, 500)
       || !nonNegativeResponseInteger(thread.providerMessageCount, 100_000)
-      || !nonNegativeResponseInteger(thread.matchedMessageCountInWindow, 48)
-      || !nonNegativeResponseInteger(thread.filteredMessageCount, 48)
-      || !nonNegativeResponseInteger(thread.returnedMessageCount, 48)
+      || !nonNegativeResponseInteger(thread.newerMessageCount, 100_000)
+      || !nonNegativeResponseInteger(thread.matchedMessageCountInWindow, 12)
+      || !nonNegativeResponseInteger(thread.filteredMessageCount, 12)
+      || !nonNegativeResponseInteger(thread.returnedMessageCount, 12)
       || !nonNegativeResponseInteger(thread.omittedMessageCount, 100_000)
+      || !boundedNullableResponseString(thread.nextReference, CRM_AGENT_MAIL_ATTACHMENT_REFERENCE_MAX_LENGTH)
+      || (thread.nextReference !== null && !/^[A-Za-z0-9_-]+$/u.test(String(thread.nextReference)))
       || !messages
       || messages.length !== Number(thread.returnedMessageCount)
       || !boundedResponseString(thread.url, 2_000)
       || !/^\/org\/[a-z0-9-]+\/mail$/u.test(String(thread.url))
+      || Number(thread.providerMessageCount) !== (
+        Number(thread.newerMessageCount)
+        + Number(thread.omittedMessageCount)
+        + Number(thread.matchedMessageCountInWindow)
+        + Number(thread.filteredMessageCount)
+      )
+      || Number(thread.returnedMessageCount) !== Number(thread.matchedMessageCountInWindow)
+      || Number(thread.matchedMessageCountInWindow) + Number(thread.filteredMessageCount) > 12
+      || (Number(thread.omittedMessageCount) === 0 && thread.nextReference !== null)
     ) invalidMailApiResponse()
+    ranks.add(Number(thread.rank))
     totalMessages += messages.length
-    for (const message of messages) validateThreadMessage(message)
+    let previousOrdinal = 0
+    for (const message of messages) {
+      validateThreadMessage(message)
+      const ordinal = Number(responseRecord(message)?.ordinal)
+      if (
+        ordinal <= previousOrdinal
+        || ordinal <= Number(thread.omittedMessageCount)
+        || ordinal > Number(thread.providerMessageCount) - Number(thread.newerMessageCount)
+      ) {
+        invalidMailApiResponse()
+      }
+      previousOrdinal = ordinal
+    }
   }
+  if (
+    [...ranks].some(rank => failedRanks.includes(rank))
+    || ranks.size + failedRanks.length !== Number(data.requestedThreadCount)
+  ) invalidMailApiResponse()
   if (totalMessages > 48) invalidMailApiResponse()
 }
 
@@ -320,7 +391,7 @@ function validateAttachmentResponse(data: Record<string, unknown>): void {
     || !boundedResponseString(data.mimeType, 255)
     || !nonNegativeResponseInteger(data.sizeBytes)
     || !source
-    || !boundedResponseString(source.mailbox, 320)
+    || !boundedResponseString(source.mailbox, 254)
     || !boundedNullableResponseString(source.sender, 500)
     || !boundedResponseString(source.subject, 500)
     || !boundedNullableResponseString(source.sentAt, 64)

@@ -5,6 +5,7 @@ import type {
   MailThreadDetail,
 } from '../../shared/types/mail.ts'
 import type { MailAgentAttachmentReferencePayload } from './mail-agent-reference.ts'
+import { mailMessageIsDraft } from './mail-message-draft-state.ts'
 
 export interface ResolvedMailAgentAttachment {
   message: MailMessageDetail
@@ -28,5 +29,6 @@ export function resolveMailAgentAttachment(
   if (!message || !attachment || attachment.id !== payload.attachmentId) {
     return invalidOrStaleReference()
   }
+  if (mailMessageIsDraft(message)) return invalidOrStaleReference()
   return { message, attachment }
 }

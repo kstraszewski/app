@@ -19,6 +19,15 @@ import type {
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
 import { sanitizeMailHtml } from './mail-html.ts'
 import {
+  mailMessageBlindRecipients,
+  withMailMessageBlindRecipients,
+  withMailThreadBlindParticipants,
+} from './mail-message-blind-recipients.ts'
+import {
+  mailMessageIsDraft,
+  withMailMessageDraftState,
+} from './mail-message-draft-state.ts'
+import {
   normalizeMailEndpoint,
   normalizeMailHostname,
   resolveSecureMailEndpoint,
@@ -108,6 +117,7 @@ export interface ImapMessagePage {
   data: MailThreadSummary[]
   nextOffset: number | null
   resultSizeEstimate: number
+  searchWindowTruncated: boolean
 }
 
 export interface ImapPageCursor {
@@ -616,7 +626,7 @@ export function createImapSmtpAdapter(
       return {
         id: reference,
         subject: detail.subject,
-        messages: [{
+        messages: [withMailMessageDraftState(withMailMessageBlindRecipients({
           id: reference,
           from: detail.from,
           replyTo: detail.replyTo,
@@ -632,7 +642,7 @@ export function createImapSmtpAdapter(
           bodyTruncated: detail.bodyTruncated,
           attachments: detail.attachments,
           security: detail.security,
-        }],
+        }, mailMessageBlindRecipients(detail)), mailMessageIsDraft(detail))],
         omittedMessageCount: 0,
         externalUrl: null,
       }
@@ -855,9 +865,11 @@ export function createImapSmtpAdapter(
         let range: string | number[] | null = null
         let resultSizeEstimate = 0
         let nextOffset: number | null = null
+        let searchWindowTruncated = false
         if (input.query || input.participantEmails?.length || input.flaggedOnly) {
           const uidNext = Math.max(1, Number(client.mailbox && client.mailbox.uidNext) || 1)
           const firstSearchUid = Math.max(1, uidNext - MAX_SEARCH_UID_WINDOW)
+          searchWindowTruncated = firstSearchUid > 1
           const participantCriteria = input.participantEmails?.flatMap(email => [
             { from: email },
             { to: email },
@@ -888,7 +900,7 @@ export function createImapSmtpAdapter(
           nextOffset = offset + fetchedCount < exists ? offset + fetchedCount : null
         }
 
-        if (!range) return { data: [], nextOffset: null, resultSizeEstimate }
+        if (!range) return { data: [], nextOffset: null, resultSizeEstimate, searchWindowTruncated }
         const messages: any[] = []
         const iterable = client.fetch(range, {
           uid: true,
@@ -914,6 +926,7 @@ export function createImapSmtpAdapter(
           )),
           nextOffset,
           resultSizeEstimate,
+          searchWindowTruncated,
         }
       } finally {
         lock.release()
@@ -994,6 +1007,7 @@ export async function fetchImapSmtpThreadPage(
     participantEmails?: string[]
     pageToken?: string
     maxResults?: number
+    excludeDrafts?: boolean
   },
 ): Promise<MailThreadListPayload> {
   const adapter = runtimeAdapter(config)
@@ -1070,7 +1084,7 @@ export async function fetchImapSmtpThreadPage(
           flaggedOnly,
         })
   return {
-    data: page.data,
+    data: input.excludeDrafts ? page.data.filter(summary => !summary.draft) : page.data,
     folders,
     nextPageToken: page.nextOffset === null
       ? null
@@ -1084,6 +1098,7 @@ export async function fetchImapSmtpThreadPage(
         }, config.referenceSecret),
     resultSizeEstimate: page.resultSizeEstimate,
     partialFailureCount: starredFallback ? 1 : 0,
+    searchWindowTruncated: page.searchWindowTruncated,
   }
 }
 
@@ -1138,7 +1153,7 @@ function runtimeAdapter(config: ImapSmtpRuntimeConfig) {
 }
 
 function normalizeProviderFolder(value: MailFolderId): MailFolderId {
-  if (!['INBOX', 'STARRED', 'SENT', 'DRAFT'].includes(String(value))) {
+  if (!['ALL', 'INBOX', 'STARRED', 'SENT', 'DRAFT'].includes(String(value))) {
     throw new ImapSmtpConfigurationError('Folder poczty jest nieprawidłowy.')
   }
   return value
@@ -1179,6 +1194,9 @@ function providerMailbox(
   folder: MailFolderId,
   configuredSentMailbox: string | undefined,
 ): ImapFolderSummary | null {
+  if (folder === 'ALL') {
+    return values.find(value => value.specialUse === '\\all') ?? null
+  }
   if (folder === 'STARRED') {
     return values.find(value => value.specialUse === '\\flagged')
       ?? values.find(value => value.specialUse === '\\all')
@@ -1657,7 +1675,7 @@ function messageSummary(message: any, reference: string, accountEmail: string): 
   const envelope = message.envelope ?? {}
   const flags = normalizedFlags(message.flags)
   const participants = summaryParticipants(envelope, accountEmail)
-  return {
+  return withMailThreadBlindParticipants({
     id: reference,
     latestMessageId: reference,
     messageCount: 1,
@@ -1671,7 +1689,7 @@ function messageSummary(message: any, reference: string, accountEmail: string): 
     important: flags.has('$important') || flags.has('\\important'),
     draft: flags.has('\\draft'),
     hasAttachments: bodyStructureAttachments(message.bodyStructure).length > 0,
-  }
+  }, summaryBlindParticipants(envelope, accountEmail))
 }
 
 function messageDetail(
@@ -1697,7 +1715,7 @@ function messageDetail(
     ...normalizeReferenceValues(parsed.references),
     ...normalizeReferenceValues(headerValues(headers, 'references')),
   ])
-  return {
+  return withMailMessageDraftState(withMailMessageBlindRecipients({
     reference,
     messageId,
     references,
@@ -1721,7 +1739,7 @@ function messageDetail(
       parsed.replyTo,
       trustedAuthenticationResultsHost,
     ),
-  }
+  }, parsedAddresses(parsed.bcc ?? envelope.bcc)), flags.has('\\draft'))
 }
 
 function bodyStructureAttachments(node: any): MailAttachment[] {
@@ -2041,8 +2059,13 @@ function summaryParticipants(envelope: any, accountEmail: string): MailAddress[]
     ...parsedAddresses(envelope.from),
     ...parsedAddresses(envelope.to),
     ...parsedAddresses(envelope.cc),
-    ...parsedAddresses(envelope.bcc),
   ].filter(address => address.email?.toLowerCase() !== account))
+}
+
+function summaryBlindParticipants(envelope: any, accountEmail: string): MailAddress[] {
+  const account = accountEmail.toLowerCase()
+  return uniqueAddresses(parsedAddresses(envelope.bcc)
+    .filter(address => address.email?.toLowerCase() !== account))
 }
 
 function uniqueAddresses(values: MailAddress[]): MailAddress[] {

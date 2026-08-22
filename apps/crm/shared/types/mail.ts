@@ -2,7 +2,7 @@ export type MailProviderId = 'google' | 'microsoft' | 'imap'
 
 export type MailConnectionStatus = 'active' | 'error' | 'revoked'
 
-export type MailFolderId = 'INBOX' | 'STARRED' | 'SENT' | 'DRAFT'
+export type MailFolderId = 'ALL' | 'INBOX' | 'STARRED' | 'SENT' | 'DRAFT'
 
 export interface MailAddress {
   name: string
@@ -143,6 +143,14 @@ export interface MailThreadDetail {
   id: string
   subject: string
   messages: MailMessageDetail[]
+  /** Zero-based absolute position of `messages[0]` in the provider snapshot. */
+  messageWindowStart?: number
+  /** Messages newer than this window in the same provider snapshot. */
+  newerMessageCount?: number
+  /** Exact message count of the provider snapshot used for this window. */
+  providerMessageCount?: number
+  /** Provider-bound continuation for the next older window. */
+  nextPageToken?: string | null
   omittedMessageCount: number
   externalUrl: string | null
 }
@@ -153,6 +161,10 @@ export interface MailThreadListPayload {
   nextPageToken: string | null
   resultSizeEstimate: number
   partialFailureCount: number
+  /** Raw provider messages returned on this page before local thread grouping. */
+  providerMessageCountOnPage?: number
+  /** True when a provider searched only a bounded subset of older messages. */
+  searchWindowTruncated?: boolean
 }
 
 export type MailContextScopeType = 'client' | 'case'

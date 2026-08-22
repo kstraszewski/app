@@ -15,13 +15,19 @@ test('search cursor is bound to criteria, secret, expiry and provider sources', 
     scope: { type: 'case', id: '22222222-2222-4222-8222-222222222222' },
     folder: 'all',
   })
-  const sources = [
-    { connectionId, folder: 'INBOX' as const, pageToken: 'provider-page-2', pageSize: 3 },
-    { connectionId, folder: 'SENT' as const, pageToken: 'provider-sent-page-2', pageSize: 3 },
-  ]
-  const cursor = sealMailAgentSearchCursor(binding, sources, secret, now)
+  const state = {
+    sources: [
+      { connectionId, folder: 'INBOX' as const, pageToken: 'provider-page-2', pageSize: 3, processedMessageCount: 997 },
+      { connectionId, folder: 'SENT' as const, pageToken: 'provider-sent-page-2', pageSize: 3, processedMessageCount: 21 },
+    ],
+    partialFailureCount: 1,
+    omittedLinkedThreadCount: 2,
+    omittedResultCount: 3,
+    limitations: ['imap_search_window' as const, 'microsoft_search_result_limit' as const],
+  }
+  const cursor = sealMailAgentSearchCursor(binding, state, secret, now)
   assert.ok(cursor)
-  assert.deepEqual(unsealMailAgentSearchCursor(cursor, binding, secret, now + 1), sources)
+  assert.deepEqual(unsealMailAgentSearchCursor(cursor, binding, secret, now + 1), state)
   assert.throws(
     () => unsealMailAgentSearchCursor(
       cursor,
@@ -43,19 +49,33 @@ test('search cursor is bound to criteria, secret, expiry and provider sources', 
 
 test('search cursor rejects duplicate sources and omits an oversized continuation', () => {
   const binding = mailAgentSearchBinding({ query: 'test' })
-  assert.throws(() => sealMailAgentSearchCursor(binding, [
-    { connectionId, folder: 'INBOX', pageToken: 'one', pageSize: 2 },
-    { connectionId, folder: 'INBOX', pageToken: 'two', pageSize: 2 },
-  ], secret, now), /nieprawidłowa albo wygasła/u)
+  const emptyCarry = {
+    partialFailureCount: 0,
+    omittedLinkedThreadCount: 0,
+    omittedResultCount: 0,
+    limitations: [],
+  }
+  assert.throws(() => sealMailAgentSearchCursor(binding, {
+    ...emptyCarry,
+    sources: [
+      { connectionId, folder: 'INBOX', pageToken: 'one', pageSize: 2, processedMessageCount: 2 },
+      { connectionId, folder: 'INBOX', pageToken: 'two', pageSize: 2, processedMessageCount: 4 },
+    ],
+  }, secret, now), /nieprawidłowa albo wygasła/u)
 
-  assert.throws(() => sealMailAgentSearchCursor(binding, [
-    { connectionId, folder: 'INBOX', pageToken: 'one', pageSize: 21 },
-  ], secret, now), /nieprawidłowa albo wygasła/u)
+  assert.throws(() => sealMailAgentSearchCursor(binding, {
+    ...emptyCarry,
+    sources: [{ connectionId, folder: 'INBOX', pageToken: 'one', pageSize: 21, processedMessageCount: 0 }],
+  }, secret, now), /nieprawidłowa albo wygasła/u)
 
-  assert.equal(sealMailAgentSearchCursor(binding, Array.from({ length: 5 }, (_, index) => ({
-    connectionId: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`,
-    folder: 'INBOX' as const,
-    pageToken: 'x'.repeat(6_000),
-    pageSize: 1,
-  })), secret, now), null)
+  assert.equal(sealMailAgentSearchCursor(binding, {
+    ...emptyCarry,
+    sources: Array.from({ length: 5 }, (_, index) => ({
+      connectionId: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`,
+      folder: 'INBOX' as const,
+      pageToken: 'x'.repeat(6_000),
+      pageSize: 1,
+      processedMessageCount: index,
+    })),
+  }, secret, now), null)
 })

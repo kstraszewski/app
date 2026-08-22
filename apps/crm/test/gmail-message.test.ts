@@ -4,12 +4,16 @@ import { fetchGmailAttachmentBytesCore } from '../server/utils/mail-gmail-attach
 import {
   gmailMessageDetail,
   gmailMessageSecurity,
+  gmailSearchQueryWithoutDrafts,
   gmailThreadDetail,
   gmailThreadSummary,
   parseMailAddresses,
   type GmailMessageResource,
   type GmailThreadResource,
 } from '../server/utils/gmail-message.ts'
+import { mailAgentMessageMatchesParticipants } from '../server/utils/mail-agent-thread-core.ts'
+import { mailMessageIsDraft } from '../server/utils/mail-message-draft-state.ts'
+import { mailContextMatchedEmails } from '../server/utils/mail-context-core.ts'
 
 function base64url(value: string): string {
   return Buffer.from(value, 'utf8').toString('base64url')
@@ -170,6 +174,73 @@ test('summarizes a Gmail thread without exposing provider-specific payloads', ()
   })
 })
 
+test('agent Gmail summaries drop draft-only threads and summarize mixed threads from correspondence', () => {
+  const sent = message('message-sent', {
+    internalDate: '1774515600000',
+    labelIds: ['SENT'],
+    snippet: 'Wysłana treść',
+  })
+  const draft = message('message-draft', {
+    internalDate: '1774519200000',
+    labelIds: ['DRAFT'],
+    snippet: 'Poufna treść szkicu',
+    payload: {
+      mimeType: 'text/plain',
+      headers: [
+        { name: 'From', value: 'konrad@example.com' },
+        { name: 'To', value: 'draft-recipient@example.com' },
+        { name: 'Subject', value: 'Poufny szkic' },
+      ],
+      body: { data: base64url('Poufna treść szkicu') },
+    },
+  })
+
+  const draftOnly = gmailThreadSummary({ id: 'draft-only', messages: [draft] }, 'konrad@example.com', {
+    excludeDrafts: true,
+  })
+  assert.equal(draftOnly.id, '')
+
+  const mixed = gmailThreadSummary({
+    id: 'mixed-thread',
+    snippet: 'Poufna treść szkicu',
+    messages: [sent, draft],
+  }, 'konrad@example.com', { excludeDrafts: true })
+  assert.equal(mixed.id, 'mixed-thread')
+  assert.equal(mixed.latestMessageId, 'message-sent')
+  assert.equal(mixed.messageCount, 1)
+  assert.equal(mixed.subject, 'Dokumenty do sprawy')
+  assert.equal(mixed.snippet, 'Wysłana treść')
+  assert.equal(mixed.draft, false)
+  assert.doesNotMatch(JSON.stringify(mixed), /Poufny szkic|draft-recipient|Poufna treść szkicu/u)
+})
+
+test('agent Gmail search excludes drafts per message and keeps BCC out of summaries', () => {
+  assert.equal(gmailSearchQueryWithoutDrafts(undefined), '-is:draft')
+  assert.equal(
+    gmailSearchQueryWithoutDrafts('{client@example.com} has:attachment'),
+    '({client@example.com} has:attachment) -is:draft',
+  )
+  const summary = gmailThreadSummary({
+    id: 'blind-copy-thread',
+    messages: [message('blind-copy-message', {
+      labelIds: ['SENT'],
+      payload: {
+        mimeType: 'text/plain',
+        headers: [
+          { name: 'From', value: 'konrad@example.com' },
+          { name: 'To', value: 'visible@example.com' },
+          { name: 'Bcc', value: 'secret-client@example.com' },
+        ],
+      },
+    })],
+  }, 'konrad@example.com', { excludeDrafts: true })
+  assert.deepEqual(summary.participants.map(value => value.email), ['visible@example.com'])
+  assert.deepEqual(mailContextMatchedEmails(summary, ['secret-client@example.com']), [
+    'secret-client@example.com',
+  ])
+  assert.doesNotMatch(JSON.stringify(summary), /secret-client@example\.com/u)
+})
+
 test('prefers plain text and returns attachment metadata', () => {
   const parsed = gmailMessageDetail(message('message-2', {
     payload: {
@@ -178,6 +249,7 @@ test('prefers plain text and returns attachment metadata', () => {
         { name: 'From', value: '"Jan Kowalski" <JAN@EXAMPLE.COM>' },
         { name: 'To', value: 'Konrad <konrad@example.com>, biuro@example.com' },
         { name: 'Cc', value: 'Doradca <doradca@example.com>' },
+        { name: 'Bcc', value: 'Klient <client@example.com>' },
         { name: 'Subject', value: 'Załącznik' },
       ],
       parts: [{
@@ -204,12 +276,25 @@ test('prefers plain text and returns attachment metadata', () => {
     'biuro@example.com',
   ])
   assert.equal(parsed.cc[0]?.label, 'Doradca')
+  assert.equal(
+    mailAgentMessageMatchesParticipants(parsed, ['client@example.com'], 'jan@example.com'),
+    true,
+  )
+  assert.doesNotMatch(JSON.stringify(parsed), /client@example\.com/u)
   assert.deepEqual(parsed.attachments, [{
     id: 'attachment-2',
     filename: 'oferta.pdf',
     mimeType: 'application/pdf',
     size: 2048,
   }])
+})
+
+test('marks a Gmail draft internally without adding a public DTO field', () => {
+  const parsed = gmailMessageDetail(message('message-draft-detail', {
+    labelIds: ['DRAFT'],
+  }))
+  assert.equal(mailMessageIsDraft({ ...parsed }), true)
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(parsed)), 'draft'), false)
 })
 
 test('keeps the plain alternative and returns the fullest sanitized HTML body', () => {
@@ -591,6 +676,53 @@ test('caps long threads and keeps the most recent messages in chronological orde
   assert.equal(detail.messages[0]?.id, 'message-2')
   assert.equal(detail.messages.at(-1)?.id, 'message-21')
   assert.equal(detail.externalUrl, 'https://mail.google.com/thread-long')
+})
+
+test('continues a Gmail thread through stable 12-message windows without gaps', () => {
+  const messages = Array.from({ length: 25 }, (_, index) => message(`message-${index + 1}`, {
+    internalDate: String(1_700_000_000_000 + index),
+  }))
+  const first = gmailThreadDetail(
+    { id: 'thread-windowed', messages },
+    'konrad@example.com',
+    'https://mail.google.com/thread-windowed',
+    { maxMessages: 12 },
+  )
+  assert.deepEqual(first.messages.map(value => value.id), messages.slice(13).map(value => value.id))
+  assert.equal(first.providerMessageCount, 25)
+  assert.equal(first.newerMessageCount, 0)
+  assert.equal(first.omittedMessageCount, 13)
+  assert.equal(first.nextPageToken, 'message-14')
+
+  const second = gmailThreadDetail(
+    { id: 'thread-windowed', messages },
+    'konrad@example.com',
+    'https://mail.google.com/thread-windowed',
+    {
+      maxMessages: 12,
+      beforeMessageId: first.nextPageToken!,
+      newerMessageCount: 12,
+      providerMessageCount: 25,
+    },
+  )
+  assert.deepEqual(second.messages.map(value => value.id), messages.slice(1, 13).map(value => value.id))
+  assert.equal(second.omittedMessageCount, 1)
+  assert.equal(second.nextPageToken, 'message-2')
+
+  const third = gmailThreadDetail(
+    { id: 'thread-windowed', messages },
+    'konrad@example.com',
+    'https://mail.google.com/thread-windowed',
+    {
+      maxMessages: 12,
+      beforeMessageId: second.nextPageToken!,
+      newerMessageCount: 24,
+      providerMessageCount: 25,
+    },
+  )
+  assert.deepEqual(third.messages.map(value => value.id), ['message-1'])
+  assert.equal(third.omittedMessageCount, 0)
+  assert.equal(third.nextPageToken, null)
 })
 
 test('parses quoted names and comma-separated recipients', () => {

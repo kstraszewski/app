@@ -11,6 +11,7 @@ import {
 } from './mail-connections.ts'
 import { imapSmtpRuntimeForConnection } from './mail-imap-runtime.ts'
 import { fetchGmailThread } from './mail-providers.ts'
+import type { MailAgentThreadContinuation } from './mail-agent-thread-reference.ts'
 import {
   connectionReferenceSecret,
   handleMailProviderError,
@@ -22,6 +23,8 @@ export interface FetchMailThreadDetailInput {
   connection: MailConnectionRow
   threadId: string
   observeBankMail?: boolean
+  maxMessages?: number
+  continuation?: MailAgentThreadContinuation | null
 }
 
 function requiredThreadId(value: string): string {
@@ -38,6 +41,9 @@ export async function fetchMailThreadDetailForConnection(
 ): Promise<MailThreadDetail> {
   const threadId = requiredThreadId(input.threadId)
   const { backendData, connection } = input
+  if (connection.provider === 'imap' && input.continuation) {
+    throw createError({ statusCode: 409, statusMessage: 'Kontynuacja wątku IMAP jest nieprawidłowa.' })
+  }
   try {
     const data = connection.provider === 'imap'
       ? await fetchImapThread(event, connection, threadId)
@@ -46,12 +52,20 @@ export async function fetchMailThreadDetailForConnection(
             await activeMailAccessToken(event, backendData, connection),
             connection.account_email,
             threadId,
+            {
+              maxMessages: input.maxMessages,
+              beforeMessageId: input.continuation?.cursor,
+              newerMessageCount: input.continuation?.newerMessageCount,
+              providerMessageCount: input.continuation?.providerMessageCount,
+            },
           )
         : await fetchMicrosoftThread(
             await activeMailAccessToken(event, backendData, connection),
             connection.account_email,
             threadId,
             connectionReferenceSecret(event, connection),
+            input.maxMessages,
+            input.continuation,
           )
     if (connection.status !== 'active') {
       await markMailConnectionStatus(backendData, connection, 'active', null, true)
@@ -119,12 +133,20 @@ async function fetchMicrosoftThread(
   accountEmail: string,
   threadId: string,
   referenceSecret: string,
+  maxMessages?: number,
+  continuation?: MailAgentThreadContinuation | null,
 ) {
   const module = await import('./mail-microsoft.ts')
   return module.fetchMicrosoftMailThread(
     accessToken,
     accountEmail,
     threadId,
-    { referenceSecret },
+    {
+      referenceSecret,
+      maxMessages,
+      cursor: continuation?.cursor,
+      newerMessageCount: continuation?.newerMessageCount,
+      providerMessageCount: continuation?.providerMessageCount,
+    },
   )
 }

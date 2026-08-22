@@ -34,6 +34,11 @@ export interface MailContextThreadLinkRow {
   updated_at: string
 }
 
+export interface MailContextThreadLinkPage {
+  links: MailContextThreadLinkRow[]
+  totalCount: number
+}
+
 export async function resolveMailContextScope(
   session: CrmSession,
   input: MailContextScope,
@@ -119,20 +124,38 @@ export async function loadMailContextThreadLinks(
   connectionId: string,
   scope: MailContextScope,
 ): Promise<MailContextThreadLinkRow[]> {
+  return (await loadMailContextThreadLinkPage(
+    backendData,
+    session,
+    connectionId,
+    scope,
+  )).links
+}
+
+export async function loadMailContextThreadLinkPage(
+  backendData: any,
+  session: Pick<CrmSession, 'organizationId' | 'userId'>,
+  connectionId: string,
+  scope: MailContextScope,
+): Promise<MailContextThreadLinkPage> {
   let query = backendData
     .from('mail_context_thread_links')
-    .select('id, thread_key_hash, thread_reference, link_source, updated_at')
+    .select('id, thread_key_hash, thread_reference, link_source, updated_at', { count: 'exact' })
     .eq('organization_id', session.organizationId)
     .eq('owner_user_id', session.userId)
     .eq('connection_id', connectionId)
   query = scope.type === 'client'
     ? query.eq('client_id', scope.id).is('case_id', null)
     : query.eq('case_id', scope.id).is('client_id', null)
-  const { data, error } = await query
+  const { data, error, count } = await query
     .order('updated_at', { ascending: false })
     .limit(20)
   throwDbError(error)
-  return (data ?? []) as MailContextThreadLinkRow[]
+  const links = (data ?? []) as MailContextThreadLinkRow[]
+  return {
+    links,
+    totalCount: Math.max(links.length, Number(count) || 0),
+  }
 }
 
 export async function upsertMailContextThreadLink(

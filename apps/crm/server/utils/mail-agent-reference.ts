@@ -11,7 +11,10 @@ export const MAIL_AGENT_ATTACHMENT_REFERENCE_MAX_LENGTH
   = CRM_AGENT_MAIL_ATTACHMENT_REFERENCE_MAX_LENGTH
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
-const maximumProviderReferenceLength = 6_000
+// Thread continuations embed a provider cursor plus the exact participant
+// boundary inside the encrypted messageId sentinel. The final envelope remains
+// capped separately at 24 KB.
+const maximumProviderReferenceLength = 10_000
 const referenceVersion = 1
 const connectionSelectorBytes = 16
 const nonceBytes = 12

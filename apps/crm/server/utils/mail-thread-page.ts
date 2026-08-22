@@ -59,6 +59,7 @@ export async function fetchMailThreadPageForConnection(
     pageToken?: string
     maxResults?: number
     observeBankMail?: boolean
+    excludeDrafts?: boolean
   },
 ): Promise<MailThreadListPayload> {
   const { backendData, connection, session } = input
@@ -114,6 +115,7 @@ async function fetchProviderPage(
     participantEmails?: string[]
     pageToken?: string
     maxResults?: number
+    excludeDrafts?: boolean
   },
 ): Promise<MailThreadListPayload> {
   const maxResults = Math.min(20, Math.max(1, Math.trunc(input.maxResults ?? 20)))
@@ -127,6 +129,7 @@ async function fetchProviderPage(
         participantEmails: input.participantEmails,
         pageToken: input.pageToken,
         maxResults,
+        excludeDrafts: input.excludeDrafts,
       },
     )
   }
@@ -140,6 +143,7 @@ async function fetchProviderPage(
         : input.search,
       pageToken: input.pageToken,
       maxResults,
+      excludeDrafts: input.excludeDrafts,
     })
   }
 
@@ -155,6 +159,7 @@ async function fetchProviderPage(
       cursor: input.pageToken,
       maxResults,
       referenceSecret: connectionReferenceSecret(event, connection),
+      excludeDrafts: input.excludeDrafts,
     },
   )
 }

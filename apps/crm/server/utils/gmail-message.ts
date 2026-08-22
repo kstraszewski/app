@@ -9,6 +9,11 @@ import type {
 } from '../../shared/types/mail.ts'
 import { stripUnsafeMailDisplayControls } from '../../shared/utils/mail-security.ts'
 import { sanitizeMailHtml } from './mail-html.ts'
+import {
+  withMailMessageBlindRecipients,
+  withMailThreadBlindParticipants,
+} from './mail-message-blind-recipients.ts'
+import { withMailMessageDraftState } from './mail-message-draft-state.ts'
 
 export interface GmailHeader {
   name?: string
@@ -55,36 +60,68 @@ const MAIL_DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?
 export function gmailThreadSummary(
   thread: GmailThreadResource,
   accountEmail: string,
+  options: { excludeDrafts?: boolean } = {},
 ): MailThreadSummary {
   const messages = sortMessages(thread.messages ?? [])
+    .filter(message => !options.excludeDrafts || !(message.labelIds ?? []).includes('DRAFT'))
   const latest = messages.at(-1)
   const labels = new Set(messages.flatMap(message => message.labelIds ?? []))
   const participants = threadParticipants(messages, accountEmail)
 
-  return {
-    id: String(thread.id ?? ''),
+  return withMailThreadBlindParticipants({
+    id: options.excludeDrafts && !messages.length ? '' : String(thread.id ?? ''),
     latestMessageId: String(latest?.id ?? '') || undefined,
     messageCount: messages.length,
     participants,
     participantsLabel: participantLabel(participants),
     subject: displayHeader(latest, 'subject') || displayHeader(messages[0], 'subject') || '(bez tematu)',
-    snippet: normalizeSnippet(latest?.snippet || thread.snippet || ''),
+    snippet: normalizeSnippet(latest?.snippet || (options.excludeDrafts ? '' : thread.snippet) || ''),
     latestAt: messageDate(latest),
     unread: labels.has('UNREAD'),
     starred: labels.has('STARRED'),
     important: labels.has('IMPORTANT'),
     draft: labels.has('DRAFT'),
     hasAttachments: messages.some(message => partHasAttachment(message.payload)),
-  }
+  }, threadBlindParticipants(messages, accountEmail))
+}
+
+export function gmailSearchQueryWithoutDrafts(value: string | undefined): string {
+  const query = String(value ?? '').trim()
+  return query ? `(${query}) -is:draft` : '-is:draft'
 }
 
 export function gmailThreadDetail(
   thread: GmailThreadResource,
   accountEmail: string,
   externalUrl: string,
+  options: {
+    maxMessages?: number
+    beforeMessageId?: string
+    newerMessageCount?: number
+    providerMessageCount?: number
+  } = {},
 ): MailThreadDetail {
   const allMessages = sortMessages(thread.messages ?? [])
-  const selectedMessages = allMessages.slice(-MAX_THREAD_MESSAGES)
+  const maxMessages = Math.min(
+    MAX_THREAD_MESSAGES,
+    Math.max(1, Math.trunc(options.maxMessages ?? MAX_THREAD_MESSAGES)),
+  )
+  const newerMessageCount = Math.max(0, Math.trunc(options.newerMessageCount ?? 0))
+  const providerMessageCount = Math.max(
+    0,
+    Math.trunc(options.providerMessageCount ?? allMessages.length),
+  )
+  const end = options.beforeMessageId
+    ? allMessages.findIndex(message => String(message.id ?? '') === options.beforeMessageId)
+    : allMessages.length
+  if (
+    end < 0
+    || providerMessageCount > 100_000
+    || newerMessageCount > providerMessageCount
+    || end !== providerMessageCount - newerMessageCount
+  ) throw new TypeError('Gmail thread continuation is stale')
+  const start = Math.max(0, end - maxMessages)
+  const selectedMessages = allMessages.slice(start, end)
   let remainingCharacters = THREAD_BODY_CHARACTER_LIMIT
 
   const messages = selectedMessages.map((message) => {
@@ -127,7 +164,11 @@ export function gmailThreadDetail(
     id: String(thread.id ?? ''),
     subject,
     messages,
-    omittedMessageCount: Math.max(0, allMessages.length - selectedMessages.length),
+    messageWindowStart: start,
+    newerMessageCount,
+    providerMessageCount,
+    nextPageToken: start > 0 ? String(selectedMessages[0]?.id ?? '') || null : null,
+    omittedMessageCount: start,
     externalUrl: externalUrlForAccount(externalUrl, accountEmail),
   }
 }
@@ -150,7 +191,7 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
     ? fullBody.slice(0, MESSAGE_BODY_CHARACTER_LIMIT).trimEnd()
     : fullBody
 
-  return {
+  return withMailMessageDraftState(withMailMessageBlindRecipients({
     id: String(message.id ?? ''),
     from: parseMailAddresses(messageHeader(message, 'from'))[0] ?? null,
     replyTo: parseMailAddresses(messageHeader(message, 'reply-to')),
@@ -166,7 +207,7 @@ export function gmailMessageDetail(message: GmailMessageResource): MailMessageDe
     bodyTruncated,
     attachments: collectAttachments(message.payload),
     security: gmailMessageSecurity(message),
-  }
+  }, parseMailAddresses(messageHeader(message, 'bcc'))), (message.labelIds ?? []).includes('DRAFT'))
 }
 
 export function gmailMessageSecurity(message: GmailMessageResource): MailMessageSecurity {
@@ -333,8 +374,17 @@ function threadParticipants(
     ...parseMailAddresses(messageHeader(message, 'from')),
     ...parseMailAddresses(messageHeader(message, 'to')),
     ...parseMailAddresses(messageHeader(message, 'cc')),
-    ...parseMailAddresses(messageHeader(message, 'bcc')),
   ])).filter(address => address.email !== normalizedAccountEmail)
+}
+
+function threadBlindParticipants(
+  messages: GmailMessageResource[],
+  accountEmail: string,
+): MailAddress[] {
+  const normalizedAccountEmail = accountEmail.trim().toLowerCase()
+  return uniqueAddresses(messages.flatMap(message => (
+    parseMailAddresses(messageHeader(message, 'bcc'))
+  ))).filter(address => address.email !== normalizedAccountEmail)
 }
 
 function uniqueAddresses(addresses: MailAddress[]): MailAddress[] {

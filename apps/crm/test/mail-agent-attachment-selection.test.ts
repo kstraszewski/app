@@ -5,6 +5,7 @@ import {
   resolveMailAgentAttachment,
 } from '../server/utils/mail-agent-attachment-selection.ts'
 import type { MailAgentAttachmentReferencePayload } from '../server/utils/mail-agent-reference.ts'
+import { withMailMessageDraftState } from '../server/utils/mail-message-draft-state.ts'
 
 const detail: MailThreadDetail = {
   id: 'thread-1',
@@ -56,4 +57,15 @@ test('rejects stale or rearranged attachment references', () => {
   assert.throws(() => resolveMailAgentAttachment(detail, payload({ messageId: 'message-2' })), /wygasł albo plik został przeniesiony/u)
   assert.throws(() => resolveMailAgentAttachment(detail, payload({ attachmentIndex: 0 })), /wygasł albo plik został przeniesiony/u)
   assert.throws(() => resolveMailAgentAttachment(detail, payload({ attachmentId: 'attachment-1' })), /wygasł albo plik został przeniesiony/u)
+})
+
+test('rejects a previously issued attachment reference when its message is a draft', () => {
+  const draftDetail: MailThreadDetail = {
+    ...detail,
+    messages: [withMailMessageDraftState({ ...detail.messages[0]! }, true)],
+  }
+  assert.throws(
+    () => resolveMailAgentAttachment(draftDetail, payload()),
+    /wygasł albo plik został przeniesiony/u,
+  )
 })

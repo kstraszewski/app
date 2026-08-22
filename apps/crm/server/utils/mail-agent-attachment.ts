@@ -3,6 +3,7 @@ import type {
   CrmAgentMailAttachmentReadResponse,
   CrmAgentMailAttachmentReadStatus,
 } from '../../shared/types/agent-mail.ts'
+import type { MailThreadDetail } from '../../shared/types/mail.ts'
 import type { CrmSession } from './crm.ts'
 import {
   extractMailAgentAttachmentText,
@@ -17,6 +18,11 @@ import {
   type MailAgentAttachmentReferencePayload,
 } from './mail-agent-reference.ts'
 import {
+  boundedMailAgentCount,
+  boundedMailAgentNullableText,
+  boundedMailAgentText,
+} from './mail-agent-dto.ts'
+import {
   resolveMailAgentAttachment,
   type ResolvedMailAgentAttachment,
 } from './mail-agent-attachment-selection.ts'
@@ -26,7 +32,6 @@ import {
   type MailConnectionRow,
 } from './mail-connections.ts'
 import { imapSmtpRuntimeForConnection } from './mail-imap-runtime.ts'
-import { fetchMailThreadDetailForConnection } from './mail-thread-detail.ts'
 import {
   connectionReferenceSecret,
   handleMailProviderError,
@@ -120,6 +125,64 @@ function extractionStatus(result: MailAgentAttachmentTextResult): CrmAgentMailAt
   return result.status
 }
 
+async function loadExactAttachmentMessage(
+  event: H3Event,
+  backendData: any,
+  connection: MailConnectionRow,
+  payload: MailAgentAttachmentReferencePayload,
+): Promise<MailThreadDetail> {
+  try {
+    if (connection.provider === 'google') {
+      const [{ fetchGmailMessageDetail }, accessToken] = await Promise.all([
+        import('./mail-providers.ts'),
+        activeMailAccessToken(event, backendData, connection),
+      ])
+      const message = await fetchGmailMessageDetail(
+        accessToken,
+        payload.messageId,
+        payload.threadId,
+      )
+      return {
+        id: payload.threadId,
+        subject: message.subject,
+        messages: [message],
+        omittedMessageCount: 0,
+        externalUrl: null,
+      }
+    }
+    if (connection.provider === 'microsoft') {
+      const [{ fetchMicrosoftMailMessageDetail }, accessToken] = await Promise.all([
+        import('./mail-microsoft.ts'),
+        activeMailAccessToken(event, backendData, connection),
+      ])
+      const message = await fetchMicrosoftMailMessageDetail(
+        accessToken,
+        payload.messageId,
+        payload.threadId,
+        { referenceSecret: connectionReferenceSecret(event, connection) },
+      )
+      return {
+        id: payload.threadId,
+        subject: message.subject,
+        messages: [message],
+        omittedMessageCount: 0,
+        externalUrl: null,
+      }
+    }
+    const { fetchImapSmtpThread } = await import('./mail-imap-smtp.ts')
+    return fetchImapSmtpThread(
+      imapSmtpRuntimeForConnection(event, connection),
+      payload.messageId,
+    )
+  }
+  catch (error) {
+    const handled = await handleMailProviderError(backendData, connection, error)
+    const statusCode = providerStatusCode(handled)
+    if (statusCode === 404 || statusCode === 409) return invalidOrStaleReference()
+    throw handled
+  }
+}
+
 function responseForExtraction(input: {
   connection: MailConnectionRow
   resolved: ResolvedMailAgentAttachment
@@ -138,26 +201,28 @@ function responseForExtraction(input: {
   )
   return {
     data: {
-      fileName: input.resolved.attachment.filename,
-      mimeType: input.resolved.attachment.mimeType,
-      sizeBytes: input.sizeBytes,
+      fileName: boundedMailAgentText(input.resolved.attachment.filename, 500),
+      mimeType: boundedMailAgentText(input.resolved.attachment.mimeType, 255),
+      sizeBytes: boundedMailAgentCount(input.sizeBytes),
       source: {
-        mailbox: input.connection.account_email,
-        sender: input.resolved.message.from?.label ?? null,
-        subject: input.resolved.message.subject,
-        sentAt: input.resolved.message.sentAt,
+        mailbox: boundedMailAgentText(input.connection.account_email, 254),
+        sender: boundedMailAgentNullableText(input.resolved.message.from?.label, 500),
+        subject: boundedMailAgentText(input.resolved.message.subject, 500),
+        sentAt: boundedMailAgentNullableText(input.resolved.message.sentAt, 64),
       },
       extraction: {
         status: extractionStatus(input.extraction),
-        kind: input.extraction.kind,
-        pageCount: input.extraction.pageCount ?? null,
+        kind: boundedMailAgentText(input.extraction.kind, 64),
+        pageCount: input.extraction.pageCount === undefined || input.extraction.pageCount === null
+          ? null
+          : boundedMailAgentCount(input.extraction.pageCount, 100_000),
         truncated: input.extraction.truncated,
         reason: input.extraction.reason
-          ? extractionReasonLabels[input.extraction.reason]
+          ? boundedMailAgentText(extractionReasonLabels[input.extraction.reason], 500)
           : null,
         excerpts: excerpts.map(excerpt => ({
-          locator: `znaki ${excerpt.start + 1}-${excerpt.end}`,
-          text: excerpt.text,
+          locator: boundedMailAgentText(`znaki ${excerpt.start + 1}-${excerpt.end}`, 100),
+          text: boundedMailAgentText(excerpt.text, 1_600),
         })),
       },
     },
@@ -209,13 +274,7 @@ export async function readMailAgentAttachment(
     return invalidOrStaleReference()
   }
 
-  const detail = await fetchMailThreadDetailForConnection(event, {
-    backendData,
-    session,
-    connection,
-    threadId: payload.threadId,
-    observeBankMail: false,
-  })
+  const detail = await loadExactAttachmentMessage(event, backendData, connection, payload)
   const resolved = resolveMailAgentAttachment(detail, payload)
 
   if (resolved.attachment.size > MAIL_AGENT_ATTACHMENT_MAX_INPUT_BYTES) {

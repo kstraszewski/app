@@ -23,6 +23,9 @@ import {
   type ImapSmtpConnectionConfig,
   type ImapSmtpRuntimeConfig,
 } from '../server/utils/mail-imap-smtp.ts'
+import { mailAgentMessageMatchesParticipants } from '../server/utils/mail-agent-thread-core.ts'
+import { mailMessageIsDraft } from '../server/utils/mail-message-draft-state.ts'
+import { mailContextMatchedEmails } from '../server/utils/mail-context-core.ts'
 import {
   MailHostSecurityError,
   type ResolvedMailEndpoint,
@@ -639,7 +642,7 @@ test('combines IMAP participant and text filters for contextual search', async (
           status: { messages: 0, unseen: 0 },
         }],
         getMailboxLock: async () => {
-          client.mailbox = { exists: 0, uidValidity: 1n, uidNext: 1 }
+          client.mailbox = { exists: 0, uidValidity: 1n, uidNext: 50_002 }
           return { release: () => {} }
         },
         search: async (query: unknown) => {
@@ -652,7 +655,7 @@ test('combines IMAP participant and text filters for contextual search', async (
     },
   }
 
-  await fetchImapSmtpThreadPage(runtimeConfig(runtime), {
+  const result = await fetchImapSmtpThreadPage(runtimeConfig(runtime), {
     folder: 'INBOX',
     participantEmails: ['client@example.com', 'partner@example.com'],
     query: 'umowa',
@@ -670,8 +673,61 @@ test('combines IMAP participant and text filters for contextual search', async (
       { cc: 'partner@example.com' },
       { bcc: 'partner@example.com' },
     ],
-    uid: '1:*',
+    uid: '2:*',
   }])
+  assert.equal(result.searchWindowTruncated, true)
+})
+
+test('agent IMAP pages exclude draft messages without changing raw result coverage', async () => {
+  const runtime: ImapSmtpAdapterRuntime = {
+    resolveEndpoint: async kind => resolved(kind),
+    createImapClient: () => {
+      const client: any = {
+        mailbox: false,
+        connect: async () => {},
+        logout: async () => {},
+        close: () => {},
+        list: async () => [{
+          path: 'INBOX',
+          name: 'Odebrane',
+          specialUse: '\\Inbox',
+          status: { messages: 2, unseen: 0 },
+        }],
+        getMailboxLock: async () => {
+          client.mailbox = { exists: 2, uidValidity: 1n, uidNext: 3 }
+          return { release: () => {} }
+        },
+        fetch: async function* () {
+          yield {
+            uid: 1,
+            envelope: {
+              subject: 'Wiadomość',
+              messageId: '<real@example.com>',
+              bcc: [{ address: 'secret-client@example.com' }],
+            },
+            flags: new Set(),
+          }
+          yield {
+            uid: 2,
+            envelope: { subject: 'Poufny szkic', messageId: '<draft@example.com>' },
+            flags: new Set(['\\Draft']),
+          }
+        },
+      }
+      return client as ImapClientLike
+    },
+  }
+
+  const result = await fetchImapSmtpThreadPage(runtimeConfig(runtime), {
+    folder: 'INBOX',
+    excludeDrafts: true,
+  })
+  assert.equal(result.resultSizeEstimate, 2)
+  assert.deepEqual(result.data.map(summary => summary.subject), ['Wiadomość'])
+  assert.deepEqual(mailContextMatchedEmails(result.data[0]!, ['secret-client@example.com']), [
+    'secret-client@example.com',
+  ])
+  assert.doesNotMatch(JSON.stringify(result.data), /secret-client@example\.com/u)
 })
 
 test('recognizes conservative Polish and English folder names only when SPECIAL-USE is absent', async () => {
@@ -780,7 +836,7 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
             subject: 'Treść decyzji',
             messageId: '<message-7@bank.example>',
           },
-          flags: new Set(),
+          flags: new Set(['\\Draft']),
           bodyStructure: {
             type: 'multipart/mixed',
             childNodes: [{
@@ -801,6 +857,7 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
         text: `Bezpieczny tekst\n${'x'.repeat(IMAP_MAX_BODY_CHARACTERS + 100)}`,
         html: '<div style="display:none">Preheader&nbsp;&zwnj;</div><h1>Bezpieczny HTML</h1><img src="https://cdn.example.com/oferta.png" alt="Oferta"><script>alert(1)</script>',
         from: { name: 'Bank', address: 'decyzje@bank.example' },
+        bcc: { name: 'Klient', address: 'client@example.com' },
         headers: [{
           key: 'authentication-results',
           value: 'attacker.example; spf=fail; dmarc=fail',
@@ -830,6 +887,14 @@ test('hard-caps MIME source and plaintext while returning inert message detail',
   assert.equal(detail.messages[0]?.hasRemoteImages, true)
   assert.equal(detail.messages[0]?.bodyHtmlTruncated, true)
   assert.equal(detail.messages[0]?.security.authentication, 'pass')
+  assert.equal(mailMessageIsDraft({ ...detail.messages[0]! }), true)
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(detail.messages[0])), 'draft'), false)
+  assert.equal(mailAgentMessageMatchesParticipants(
+    detail.messages[0]!,
+    ['client@example.com'],
+    'decyzje@bank.example',
+  ), true)
+  assert.doesNotMatch(JSON.stringify(detail.messages[0]), /client@example\.com/u)
   assert.equal(detail.messages[0]?.attachments[0]?.filename, 'decyzja.pdf')
   assert.equal(released, 1)
 })

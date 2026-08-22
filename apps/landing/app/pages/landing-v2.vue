@@ -6,6 +6,58 @@ useLandingSeo({
   socialImageAlt: 'OpenExpert — jeden system pracy dla ekspertów',
 })
 
+type LandingTheme = 'dark' | 'light'
+
+const THEME_STORAGE_KEY = 'oe-landing-theme'
+const themePreference = ref<LandingTheme>('dark')
+const explicitTheme = computed<LandingTheme>(() => themePreference.value)
+const resolvedTheme = computed<LandingTheme>(() => themePreference.value)
+const isDark = computed(() => resolvedTheme.value === 'dark')
+const explicitDarkOverride = computed(() => explicitTheme.value === 'dark')
+const brandLogoSrc = computed(() => (
+  isDark.value ? '/assets/logo-dark.svg' : '/assets/logo-light.svg'
+))
+const themeToggleTitle = computed(() => (
+  isDark.value ? 'Włącz jasny motyw' : 'Włącz ciemny motyw'
+))
+
+function toggleTheme() {
+  const nextTheme: LandingTheme = isDark.value ? 'light' : 'dark'
+  themePreference.value = nextTheme
+
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+  } catch {
+    // The toggle still works when storage is unavailable.
+  }
+}
+
+onMounted(() => {
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+    if (storedTheme === 'dark' || storedTheme === 'light') {
+      themePreference.value = storedTheme
+    }
+  } catch {
+    // Keep the default dark theme when storage is unavailable.
+  }
+})
+
+const headerBrandReflectionTarget = ref<HTMLElement | null>(null)
+const headerNavReflectionTarget = ref<HTMLElement | null>(null)
+const heroSecondaryReflectionTarget = ref<HTMLElement | null>(null)
+
+const headerReflectionTargets = computed<HTMLElement[]>(() => [
+  headerBrandReflectionTarget.value,
+  headerNavReflectionTarget.value,
+].filter((target): target is HTMLElement => target !== null))
+
+const heroReflectionTargets = computed<HTMLElement[]>(() => (
+  heroSecondaryReflectionTarget.value
+    ? [heroSecondaryReflectionTarget.value]
+    : []
+))
+
 const workflowSteps = [
   {
     number: '01',
@@ -50,30 +102,60 @@ const capabilities = [
 </script>
 
 <template>
-  <div class="next-landing">
+  <div class="next-landing" :data-theme="explicitTheme">
     <a class="skip-link" href="#main-content">Przejdź do treści</a>
 
     <header class="landing-header">
-      <NuxtLink to="/" class="brand" aria-label="OpenExpert — strona główna">
-        <img src="/assets/logo-light.svg" alt="" width="28" height="28">
-        <span>OpenExpert</span>
-      </NuxtLink>
+      <div ref="headerBrandReflectionTarget" class="metal-reflection-target header-brand-reflection">
+        <NuxtLink to="/" class="brand" aria-label="OpenExpert — strona główna">
+          <img :src="brandLogoSrc" alt="" width="28" height="28">
+          <span>OpenExpert</span>
+        </NuxtLink>
+      </div>
 
-      <nav class="landing-nav" aria-label="Główna nawigacja">
-        <a href="#jak-dziala">Jak działa</a>
-        <a href="#mozliwosci">Możliwości</a>
-        <NuxtLink to="/o-nas">O nas</NuxtLink>
-      </nav>
+      <div ref="headerNavReflectionTarget" class="metal-reflection-target header-nav-reflection">
+        <nav class="landing-nav" aria-label="Główna nawigacja">
+          <a href="#jak-dziala">Jak działa</a>
+          <a href="#mozliwosci">Możliwości</a>
+          <NuxtLink to="/o-nas">O nas</NuxtLink>
+        </nav>
+      </div>
 
-      <NuxtLink to="/waitlist" class="header-cta">
-        <span class="header-cta__wide">Poproś o dostęp</span>
-        <span class="header-cta__short">Dołącz</span>
-        <Icon name="lucide:arrow-right" aria-hidden="true" />
-      </NuxtLink>
+      <div class="header-actions">
+        <button
+          class="theme-toggle"
+          type="button"
+          aria-label="Ciemny motyw"
+          :aria-pressed="isDark"
+          :title="themeToggleTitle"
+          @click="toggleTheme"
+        >
+          <Icon class="theme-toggle__sun" name="lucide:sun" aria-hidden="true" />
+          <Icon class="theme-toggle__moon" name="lucide:moon" aria-hidden="true" />
+        </button>
+
+        <OeMetalAccent
+          class="header-metal-accent"
+          variant="button"
+          preset="chromatic"
+          :theme="resolvedTheme"
+          :strength="0.76"
+          :border-radius="999"
+          :reflection-targets="headerReflectionTargets"
+        >
+          <NuxtLink to="/waitlist" class="header-cta">
+            <span class="header-cta__wide">Poproś o dostęp</span>
+            <span class="header-cta__short">Dołącz</span>
+            <Icon name="lucide:arrow-right" aria-hidden="true" />
+          </NuxtLink>
+        </OeMetalAccent>
+      </div>
     </header>
 
     <main id="main-content" tabindex="-1">
       <section class="hero" aria-labelledby="hero-title">
+        <LandingDitherBackground :dark="explicitDarkOverride" />
+
         <div class="hero__inner">
           <div class="hero__copy">
             <p class="eyebrow"><span /> System pracy dla ekspertów</p>
@@ -88,11 +170,23 @@ const capabilities = [
             </p>
 
             <div class="hero__actions">
-              <NuxtLink to="/waitlist" class="button button--primary">
-                Zacznij z OpenExpert
-                <Icon name="lucide:arrow-right" aria-hidden="true" />
-              </NuxtLink>
-              <a href="#jak-dziala" class="button button--secondary">Zobacz, jak działa</a>
+              <OeMetalAccent
+                class="hero-metal-accent"
+                variant="button"
+                preset="chromatic"
+                :theme="resolvedTheme"
+                :strength="0.82"
+                :border-radius="6"
+                :reflection-targets="heroReflectionTargets"
+              >
+                <NuxtLink to="/waitlist" class="button button--primary">
+                  Zacznij z OpenExpert
+                  <Icon name="lucide:arrow-right" aria-hidden="true" />
+                </NuxtLink>
+              </OeMetalAccent>
+              <span ref="heroSecondaryReflectionTarget" class="metal-reflection-target hero-secondary-reflection">
+                <a href="#jak-dziala" class="button button--secondary">Zobacz, jak działa</a>
+              </span>
             </div>
 
             <ul class="hero__signals" aria-label="Główne możliwości platformy">
@@ -103,7 +197,7 @@ const capabilities = [
           </div>
 
           <div class="hero__visual">
-            <LandingOrbitPhoneHero />
+            <LandingOrbitPhoneHero :dark="explicitDarkOverride" />
           </div>
         </div>
       </section>
@@ -174,16 +268,25 @@ const capabilities = [
         <p class="eyebrow"><span /> OpenExpert</p>
         <h2 id="closing-title">Mniej przełączania.<br><em>Więcej domkniętych spraw.</em></h2>
         <p>Dołącz do programu i zobacz, jak jeden system może uporządkować pracę Twoją i całego zespołu.</p>
-        <NuxtLink to="/waitlist" class="button button--primary">
-          Poproś o dostęp
-          <Icon name="lucide:arrow-right" aria-hidden="true" />
-        </NuxtLink>
+        <OeMetalAccent
+          class="closing-metal-accent"
+          variant="button"
+          preset="chromatic"
+          :theme="resolvedTheme"
+          :strength="0.78"
+          :border-radius="6"
+        >
+          <NuxtLink to="/waitlist" class="button button--primary">
+            Poproś o dostęp
+            <Icon name="lucide:arrow-right" aria-hidden="true" />
+          </NuxtLink>
+        </OeMetalAccent>
       </section>
     </main>
 
     <footer class="landing-footer">
       <NuxtLink to="/" class="brand" aria-label="OpenExpert — strona główna">
-        <img src="/assets/logo-light.svg" alt="" width="26" height="26">
+        <img :src="brandLogoSrc" alt="" width="26" height="26">
         <span>OpenExpert</span>
       </NuxtLink>
       <p>System wykonywania pracy dla ekspertów.</p>
@@ -198,10 +301,75 @@ const capabilities = [
 <style scoped>
 .next-landing {
   --landing-accent: #dfff5c;
+  --ui-border: var(--border-default);
+  --ui-border-accented: var(--border-strong);
+  --ui-text-highlighted: var(--fg-primary);
+  --ui-text-toned: var(--fg-secondary);
+  --ui-warning: #d6a62f;
+  --oe-focus: var(--border-focus);
+  --oe-radius-control: var(--radius-md);
+  --oe-radius-surface: var(--radius-lg);
+  --oe-prism-opacity: 0.38;
+  --oe-prism-gradient: linear-gradient(112deg, #64deff 0%, #7785ff 34%, #c77dff 62%, #ff82b7 80%, #ffc56e 100%);
+  --oe-metal-glow-size: 5px;
+  --oe-metal-glow-opacity: 22%;
+  --oe-metal-reflection-fill-light: 0.22;
+  --oe-metal-reflection-fill-dark: 0.72;
+  --oe-metal-reflection-stroke-light: 0.38;
+  --oe-metal-reflection-stroke-dark: 0.92;
+  --oe-metal-reflection-blur: 4px;
+  --oe-motion-base: var(--transition-base);
+  position: relative;
   min-height: 100vh;
-  overflow: hidden;
+  display: flow-root;
+  overflow-x: clip;
+  isolation: isolate;
+  color-scheme: light dark;
   color: var(--fg-primary);
   background: var(--bg-default);
+  transition:
+    color var(--transition-base),
+    background-color var(--transition-base);
+}
+
+.next-landing[data-theme='light'] {
+  --fg-primary: var(--black);
+  --fg-secondary: var(--gray-600);
+  --fg-tertiary: var(--gray-500);
+  --bg-default: var(--white);
+  --bg-subtle: var(--gray-50);
+  --bg-muted: var(--gray-100);
+  --border-default: var(--gray-200);
+  --border-strong: var(--gray-300);
+  --border-focus: var(--black);
+  color-scheme: light;
+}
+
+.next-landing[data-theme='dark'] {
+  --fg-primary: var(--white);
+  --fg-secondary: var(--gray-400);
+  --fg-tertiary: var(--gray-500);
+  --bg-default: var(--gray-950);
+  --bg-subtle: var(--gray-900);
+  --bg-muted: var(--gray-800);
+  --border-default: var(--gray-800);
+  --border-strong: var(--gray-700);
+  --border-focus: var(--white);
+  color-scheme: dark;
+}
+
+:global(html:has(.next-landing[data-theme='light'])) {
+  background: var(--white);
+}
+
+:global(html:has(.next-landing[data-theme='dark'])) {
+  background: var(--gray-950);
+}
+
+.next-landing main,
+.landing-footer {
+  position: relative;
+  z-index: 1;
 }
 
 .skip-link {
@@ -221,16 +389,23 @@ const capabilities = [
 .skip-link:focus { transform: translateY(0); }
 
 .landing-header {
-  position: relative;
+  position: sticky;
   z-index: 20;
+  top: 18px;
   width: min(100% - 40px, 1480px);
-  min-height: 76px;
-  margin-inline: auto;
+  min-height: 62px;
+  margin: 18px auto -80px;
+  padding: 8px 10px 8px 18px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--space-6);
-  border-bottom: 1px solid var(--border-default);
+  border: 1px solid color-mix(in srgb, var(--fg-primary) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-default) 72%, transparent);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 10%);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 .brand {
@@ -271,7 +446,7 @@ const capabilities = [
   align-items: center;
   gap: 10px;
   border: 1px solid var(--fg-primary);
-  border-radius: var(--radius-md);
+  border-radius: 999px;
   color: var(--bg-default);
   background: var(--fg-primary);
   font-size: var(--text-sm);
@@ -282,12 +457,78 @@ const capabilities = [
 .header-cta svg { width: 16px; height: 16px; }
 .header-cta__short { display: none; }
 
+.header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-toggle {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--fg-primary) 16%, transparent);
+  border-radius: 999px;
+  color: var(--fg-primary);
+  background: color-mix(in srgb, var(--bg-default) 72%, transparent);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  border-color: color-mix(in srgb, var(--fg-primary) 30%, transparent);
+  background: var(--bg-muted);
+  transform: rotate(8deg);
+}
+
+.theme-toggle .iconify {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-toggle__sun { display: none; }
+
+.next-landing[data-theme='dark'] .theme-toggle__sun { display: block; }
+.next-landing[data-theme='dark'] .theme-toggle__moon { display: none; }
+
+.metal-reflection-target {
+  position: relative;
+  isolation: isolate;
+  border-radius: 999px;
+}
+
+.metal-reflection-target > :not([data-metal-fx-reflection]) {
+  position: relative;
+  z-index: 1;
+}
+
+.header-brand-reflection { width: fit-content; }
+.header-nav-reflection { border-radius: 999px; }
+.header-metal-accent { justify-self: end; }
+
+.hero-secondary-reflection {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+}
+
 .hero {
-  min-height: calc(100svh - 76px);
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+  isolation: isolate;
   border-bottom: 1px solid var(--border-default);
 }
 
 .hero__inner {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: inherit;
   display: grid;
@@ -306,7 +547,7 @@ const capabilities = [
   display: flex;
   flex-direction: column;
   justify-content: center;
-  border-right: 1px solid var(--border-default);
+  border-right: 0;
 }
 
 .eyebrow {
@@ -334,7 +575,7 @@ const capabilities = [
   font-size: clamp(58px, 6.4vw, 104px);
   font-weight: var(--weight-medium);
   line-height: 0.86;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.035em;
 }
 
 .hero h1 em {
@@ -425,6 +666,8 @@ const capabilities = [
 }
 
 .value-rail {
+  position: relative;
+  z-index: 2;
   min-height: 82px;
   padding: 18px max(20px, calc((100vw - 1480px) / 2));
   display: flex;
@@ -437,6 +680,7 @@ const capabilities = [
   letter-spacing: var(--tracking-wide);
   text-align: center;
   text-transform: uppercase;
+  background: var(--bg-default);
 }
 
 .value-rail span {
@@ -455,6 +699,7 @@ const capabilities = [
 .workflow,
 .capabilities {
   padding-block: clamp(96px, 12vw, 180px);
+  background: var(--bg-default);
 }
 
 .section-heading { max-width: 820px; }
@@ -655,7 +900,7 @@ const capabilities = [
   line-height: var(--leading-relaxed);
 }
 
-.closing-cta .button { margin-top: 34px; }
+.closing-metal-accent { margin-top: 34px; }
 
 .landing-footer {
   width: min(100% - 40px, 1480px);
@@ -666,6 +911,7 @@ const capabilities = [
   align-items: center;
   gap: 24px;
   border-top: 1px solid var(--border-default);
+  background: var(--bg-default);
 }
 
 .landing-footer > p {
@@ -690,21 +936,19 @@ const capabilities = [
 
 @media (max-width: 900px) {
   .landing-header { grid-template-columns: 1fr auto; }
-  .landing-nav { display: none; }
+  .header-nav-reflection { display: none; }
 
   .hero__inner {
     grid-template-columns: 1fr;
   }
 
   .hero__visual {
-    min-height: 560px;
+    min-height: 520px;
     order: -1;
-    border-bottom: 1px solid var(--border-default);
   }
 
   .hero__copy {
     padding: 72px 20px 84px;
-    border-right: 0;
   }
 
   .hero h1 { max-width: 720px; }
@@ -736,14 +980,22 @@ const capabilities = [
     width: min(100% - 28px, 1480px);
   }
 
-  .landing-header { min-height: 68px; }
+  .landing-header {
+    top: 12px;
+    width: calc(100% - 28px);
+    min-height: 58px;
+    margin: 12px auto -70px;
+    padding: 6px 7px 6px 14px;
+  }
   .brand { font-size: var(--text-sm); }
   .brand img { width: 25px; height: 25px; }
   .header-cta { padding-inline: 13px; }
   .header-cta__wide { display: none; }
   .header-cta__short { display: inline; }
+  .header-actions { gap: 6px; }
+  .theme-toggle { width: 42px; height: 42px; flex-basis: 42px; }
 
-  .hero__visual { min-height: 430px; }
+  .hero__visual { min-height: 400px; }
   .hero__copy { padding: 56px 14px 68px; }
 
   .hero h1 {
@@ -754,7 +1006,11 @@ const capabilities = [
 
   .hero__lead { margin-top: 26px; font-size: var(--text-base); }
   .hero__actions { align-items: stretch; flex-direction: column; }
-  .button { width: 100%; }
+  .hero-metal-accent,
+  .hero-secondary-reflection,
+  .hero-secondary-reflection .button { width: 100%; }
+  .hero-metal-accent :deep(.oe-metal-accent__content),
+  .hero-metal-accent .button { width: 100%; }
   .hero__signals { margin-top: 34px; }
 
   .value-rail {
@@ -797,16 +1053,28 @@ const capabilities = [
   .landing-footer > p { display: none; }
 }
 
+@media (max-width: 380px) {
+  .hero__visual { min-height: 340px; }
+}
+
 @media (prefers-color-scheme: dark) {
-  .brand img { content: url('/assets/logo-dark.svg'); }
+  .next-landing:not([data-theme]) .brand img {
+    content: url('/assets/logo-dark.svg');
+  }
+
+  .next-landing:not([data-theme]) .theme-toggle__sun { display: block; }
+  .next-landing:not([data-theme]) .theme-toggle__moon { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .button,
   .landing-nav a,
-  .landing-footer a { transition: none; }
+  .landing-footer a,
+  .next-landing,
+  .theme-toggle { transition: none; }
 
-  .button:hover { transform: none; }
+  .button:hover,
+  .theme-toggle:hover { transform: none; }
 }
 
 @media print {

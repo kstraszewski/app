@@ -1,40 +1,83 @@
 <script setup lang="ts">
-const phoneDepthLayers = Array.from({ length: 36 }, (_, index) => index + 1)
-const sphereLayers = Array.from({ length: 73 }, (_, index) => {
-  const position = -0.96 + (index / 72) * 1.92
-
-  return {
-    id: index,
-    position,
-    scale: Math.sqrt(1 - position ** 2),
-  }
+const props = withDefaults(defineProps<{
+  dark?: boolean | null
+}>(), {
+  dark: null,
 })
 
-function sphereLayerStyle(position: number, scale: number): Record<string, string> {
-  const sphereRadius = 35
+const PHONE_WIDTH = 280
+const PHONE_HEIGHT = PHONE_WIDTH / 0.49
+const PHONE_RADIUS = 44
+const PHONE_CORNER_SEGMENTS = 12
 
-  return {
-    '--sphere-layer-z': `${(position * sphereRadius).toFixed(2)}px`,
-    '--sphere-layer-scale': scale.toFixed(3),
+interface Point {
+  x: number
+  y: number
+}
+
+const phoneSidePanels: Record<string, string>[] = []
+
+function addPhoneSidePanel(from: Point, to: Point) {
+  const deltaX = to.x - from.x
+  const deltaY = to.y - from.y
+
+  phoneSidePanels.push({
+    '--phone-side-x': `${from.x.toFixed(3)}px`,
+    '--phone-side-y': `${from.y.toFixed(3)}px`,
+    '--phone-side-width': `${(Math.hypot(deltaX, deltaY) + 0.6).toFixed(3)}px`,
+    '--phone-side-angle': `${(Math.atan2(deltaY, deltaX) * 180 / Math.PI).toFixed(3)}deg`,
+  })
+}
+
+function addPhoneCorner(center: Point, startAngle: number) {
+  for (let index = 0; index < PHONE_CORNER_SEGMENTS; index += 1) {
+    const angleFrom = startAngle + (index / PHONE_CORNER_SEGMENTS) * Math.PI / 2
+    const angleTo = startAngle + ((index + 1) / PHONE_CORNER_SEGMENTS) * Math.PI / 2
+
+    addPhoneSidePanel(
+      {
+        x: center.x + Math.cos(angleFrom) * PHONE_RADIUS,
+        y: center.y + Math.sin(angleFrom) * PHONE_RADIUS,
+      },
+      {
+        x: center.x + Math.cos(angleTo) * PHONE_RADIUS,
+        y: center.y + Math.sin(angleTo) * PHONE_RADIUS,
+      },
+    )
   }
 }
+
+addPhoneSidePanel({ x: PHONE_RADIUS, y: 0 }, { x: PHONE_WIDTH - PHONE_RADIUS, y: 0 })
+addPhoneCorner({ x: PHONE_WIDTH - PHONE_RADIUS, y: PHONE_RADIUS }, -Math.PI / 2)
+addPhoneSidePanel({ x: PHONE_WIDTH, y: PHONE_RADIUS }, { x: PHONE_WIDTH, y: PHONE_HEIGHT - PHONE_RADIUS })
+addPhoneCorner({ x: PHONE_WIDTH - PHONE_RADIUS, y: PHONE_HEIGHT - PHONE_RADIUS }, 0)
+addPhoneSidePanel({ x: PHONE_WIDTH - PHONE_RADIUS, y: PHONE_HEIGHT }, { x: PHONE_RADIUS, y: PHONE_HEIGHT })
+addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_HEIGHT - PHONE_RADIUS }, Math.PI / 2)
+addPhoneSidePanel({ x: 0, y: PHONE_HEIGHT - PHONE_RADIUS }, { x: 0, y: PHONE_RADIUS })
+addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
 </script>
 
 <template>
   <div
     class="orbit-phone-hero"
+    :class="{
+      'orbit-phone-hero--dark': props.dark === true,
+      'orbit-phone-hero--light': props.dark === false,
+    }"
     role="img"
     aria-label="Telefon OpenExpert obracający się w przestrzeni 3D, otoczony dwiema kulami poruszającymi się po wspólnej orbicie."
   >
     <div class="orbit-phone-hero__canvas" aria-hidden="true">
       <div class="phone-stage">
         <div class="phone">
-          <div
-            v-for="layer in phoneDepthLayers"
-            :key="layer"
-            class="phone__depth-layer"
-            :style="{ transform: `translateZ(-${layer}px)` }"
-          />
+          <div class="phone__sides">
+            <i
+              v-for="(panelStyle, index) in phoneSidePanels"
+              :key="index"
+              class="phone__side-panel"
+              :style="panelStyle"
+            />
+          </div>
 
           <div class="phone__back">
             <div class="phone__camera">
@@ -91,12 +134,9 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
             <span class="phone__orbit-anchor phone__orbit-anchor--large">
               <i class="phone__orbit-sphere">
                 <span class="phone__orbit-volume">
-                  <b
-                    v-for="layer in sphereLayers"
-                    :key="layer.id"
-                    class="phone__orbit-sphere-layer"
-                    :style="sphereLayerStyle(layer.position, layer.scale)"
-                  />
+                  <span class="phone__orbit-idle-facing">
+                    <b class="phone__orbit-sphere-layer" />
+                  </span>
                 </span>
               </i>
             </span>
@@ -104,12 +144,9 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
             <span class="phone__orbit-anchor phone__orbit-anchor--small">
               <i class="phone__orbit-sphere">
                 <span class="phone__orbit-volume">
-                  <b
-                    v-for="layer in sphereLayers"
-                    :key="layer.id"
-                    class="phone__orbit-sphere-layer"
-                    :style="sphereLayerStyle(layer.position, layer.scale)"
-                  />
+                  <span class="phone__orbit-idle-facing">
+                    <b class="phone__orbit-sphere-layer" />
+                  </span>
                 </span>
               </i>
             </span>
@@ -125,9 +162,9 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   --phone-orbit-delay: -2800ms;
   --phone-orbit-duration: 5600ms;
   --phone-idle-duration: 20000ms;
-  --phone-orbit-radius: 270px;
+  --phone-orbit-radius: 250px;
   --phone-orbit-sphere-size: 70px;
-  --phone-depth-z: -36px;
+  --phone-depth: 36px;
   position: relative;
   width: 100%;
   height: 100%;
@@ -176,18 +213,27 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
     phone-idle var(--phone-idle-duration) linear 2400ms infinite;
 }
 
-.phone__depth-layer,
+.phone__sides,
+.phone__side-panel,
 .phone__back {
   position: absolute;
   pointer-events: none;
   transform-style: preserve-3d;
 }
 
-.phone__depth-layer {
+.phone__sides {
   inset: 0;
-  border: 0;
-  border-radius: 44px;
+}
+
+.phone__side-panel {
+  top: 0;
+  left: 0;
+  width: var(--phone-side-width);
+  height: var(--phone-depth);
   background: #17191b;
+  box-shadow: 0 0 0 0.4px #17191b;
+  transform: translate3d(var(--phone-side-x), var(--phone-side-y), 0) rotateZ(var(--phone-side-angle)) rotateX(-90deg);
+  transform-origin: 0 0;
 }
 
 .phone__back {
@@ -195,8 +241,9 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   border: 1px solid #303437;
   border-radius: 44px;
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   background: #17191b;
-  transform: translateZ(-36px) rotateY(180deg);
+  transform: translateZ(-36.1px) rotateY(180deg);
 }
 
 .phone__orbit {
@@ -245,6 +292,16 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   animation: phone-in-facing 2400ms cubic-bezier(0.08, 0.82, 0.17, 0.9502) both;
 }
 
+.phone__orbit-idle-facing {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform-style: preserve-3d;
+  will-change: transform;
+  animation: phone-idle-facing var(--phone-idle-duration) linear 2400ms infinite;
+}
+
 .phone__orbit-sphere-layer {
   position: absolute;
   inset: 0;
@@ -254,9 +311,14 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   border: 0;
   border-radius: 50%;
   background: #080a0b;
-  backface-visibility: visible;
-  transform: translateZ(var(--sphere-layer-z)) scale(var(--sphere-layer-scale));
-  transform-origin: center;
+  backface-visibility: hidden;
+}
+
+.orbit-phone-hero--dark .phone__orbit-sphere-layer {
+  background: radial-gradient(circle at 32% 28%, #fff 0 24%, #f4f4f2 58%, #d7d8d5 100%);
+  box-shadow:
+    0 10px 30px rgb(255 255 255 / 10%),
+    inset -9px -11px 18px rgb(0 0 0 / 10%);
 }
 
 @keyframes phone-in {
@@ -289,6 +351,11 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   }
 }
 
+@keyframes phone-idle-facing {
+  from { transform: rotate3d(0.707, -0.707, 0.2, 0deg); }
+  to { transform: rotate3d(0.707, -0.707, 0.2, -360deg); }
+}
+
 @keyframes phone-orbit {
   from { transform: translate(-50%, -50%) rotateY(0turn) translateZ(var(--phone-orbit-radius)); }
   to { transform: translate(-50%, -50%) rotateY(1turn) translateZ(var(--phone-orbit-radius)); }
@@ -303,10 +370,10 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   position: absolute;
   top: 28px;
   left: 24px;
-  width: 74px;
-  height: 92px;
+  width: 88px;
+  height: 88px;
   border: 1px solid #5b6064;
-  border-radius: 24px;
+  border-radius: 20px;
   background: #23272a;
   box-shadow: 0 3px 12px rgb(0 0 0 / 35%);
   transform: translateZ(2px);
@@ -353,15 +420,33 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
 .phone__rail {
   position: absolute;
   z-index: 3;
-  left: -4px;
-  width: 3px;
-  height: 64px;
-  border-radius: 2px 0 0 2px;
-  background: #323538;
+  left: 0;
+  width: 11px;
+  height: 58px;
+  border: 0;
+  border-radius: 999px;
+  background: #1d2022;
+  box-shadow: inset 0 0 0 0.35px rgb(255 255 255 / 3%);
+  pointer-events: none;
+  transform: translateZ(-23.5px) rotateY(-90deg);
+  transform-origin: 0 50%;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.phone__rail--top { top: 104px; }
-.phone__rail--bottom { top: 178px; height: 42px; }
+.phone__rail::before {
+  position: absolute;
+  inset: 0.65px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #202325 0%, #292c2e 50%, #202325 100%);
+  box-shadow: inset 0 0 0 0.35px rgb(255 255 255 / 4%);
+  content: '';
+  transform: translateZ(0.16px);
+}
+
+.phone__rail--top { top: 107px; }
+.phone__rail--bottom { top: 180px; height: 38px; }
 
 .phone__screen {
   position: relative;
@@ -547,25 +632,44 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
 }
 
 @media (max-width: 900px) {
-  .orbit-phone-hero { min-height: 560px; }
-  .orbit-phone-hero__canvas { scale: 0.78; }
+  .orbit-phone-hero { min-height: 520px; }
+  .orbit-phone-hero__canvas {
+    top: calc(50% + 28px);
+    scale: 0.62;
+  }
 }
 
 @media (max-width: 640px) {
-  .orbit-phone-hero { min-height: 430px; }
-  .orbit-phone-hero__canvas { scale: 0.61; }
+  .orbit-phone-hero { min-height: 400px; }
+  .orbit-phone-hero__canvas {
+    top: calc(50% + 36px);
+    scale: 0.47;
+  }
 }
 
 @media (max-width: 380px) {
-  .orbit-phone-hero { min-height: 390px; }
-  .orbit-phone-hero__canvas { scale: 0.54; }
+  .orbit-phone-hero { min-height: 340px; }
+  .orbit-phone-hero__canvas {
+    top: calc(50% + 34px);
+    scale: 0.41;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .orbit-phone-hero:not(.orbit-phone-hero--light) .phone__orbit-sphere-layer {
+    background: radial-gradient(circle at 32% 28%, #fff 0 24%, #f4f4f2 58%, #d7d8d5 100%);
+    box-shadow:
+      0 10px 30px rgb(255 255 255 / 10%),
+      inset -9px -11px 18px rgb(0 0 0 / 10%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .phone,
   .phone__orbit-anchor,
   .phone__orbit-sphere,
-  .phone__orbit-volume {
+  .phone__orbit-volume,
+  .phone__orbit-idle-facing {
     animation: none;
     will-change: auto;
   }
@@ -588,12 +692,14 @@ function sphereLayerStyle(position: number, scale: number): Record<string, strin
   .phone__orbit-volume {
     transform: rotateZ(-45deg) rotateY(32deg) rotateX(-18deg) rotate3d(0.707, -0.707, 0.2, 0deg);
   }
+
+  .phone__orbit-idle-facing { transform: none; }
 }
 
 @media (forced-colors: active) {
   .phone,
   .phone__back,
-  .phone__depth-layer,
+  .phone__side-panel,
   .phone__screen,
   .phone__orbit-sphere-layer {
     border: 1px solid CanvasText;

@@ -642,7 +642,7 @@ addPhoneCorner({ x: PHONE_RADIUS, y: PHONE_RADIUS }, Math.PI)
   .orbit-phone-hero__canvas { scale: 0.86; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), (orientation: portrait) and (max-width: 1100px) {
   .orbit-phone-hero { min-height: 520px; }
   .orbit-phone-hero__canvas {
     top: calc(50% + 28px);

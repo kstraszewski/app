@@ -934,7 +934,7 @@ const capabilities = [
   .control-band__inner { grid-template-columns: 64px 1fr 0.8fr; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), (orientation: portrait) and (max-width: 1100px) {
   .landing-header { grid-template-columns: 1fr auto; }
   .header-nav-reflection { display: none; }
 

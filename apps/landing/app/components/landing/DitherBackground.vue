@@ -476,7 +476,7 @@ function updateOrbitUniforms(gl: WebGLRenderingContext, element: HTMLCanvasEleme
   if (orbitSpheres.length < 2 || orbitSpheres.some(sphere => !sphere.isConnected)) {
     const hero = element.closest('.hero')
     orbitSpheres = hero
-      ? Array.from(hero.querySelectorAll<HTMLElement>('.phone__orbit-sphere')).slice(0, 2)
+      ? Array.from(hero.querySelectorAll<HTMLElement>('.phone__orbit-sphere-layer')).slice(0, 2)
       : []
   }
 

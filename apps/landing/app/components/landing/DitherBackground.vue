@@ -262,7 +262,7 @@ const fragmentShaderSource = `
     );
     float alpha = dither * mix(0.085, 0.17, u_dark) * meshOpacity;
 
-    gl_FragColor = vec4(ink, alpha);
+    gl_FragColor = vec4(ink * alpha, alpha);
   }
 `
 
@@ -574,7 +574,7 @@ function initializeRenderer() {
       antialias: false,
       depth: false,
       powerPreference: 'low-power',
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
       preserveDrawingBuffer: true,
       stencil: false,
     })
@@ -678,6 +678,7 @@ onBeforeUnmount(() => {
     :class="{
       'dither-background--dark': props.dark === true,
       'dither-background--light': props.dark === false,
+      'dither-background--fallback': useFallback,
     }"
     aria-hidden="true"
   >
@@ -712,23 +713,23 @@ onBeforeUnmount(() => {
 
 .dither-background__fallback {
   z-index: 0;
-  color: var(--fg-primary);
-  background-image: radial-gradient(circle, currentColor 0 0.7px, transparent 0.85px);
-  background-size: 4px 4px;
-  opacity: 0.055;
-  -webkit-mask-image:
-    radial-gradient(ellipse 72% 60% at 84% 22%, #000 0, transparent 72%),
-    radial-gradient(ellipse 48% 56% at 14% 82%, #000 0, transparent 78%);
-  mask-image:
-    radial-gradient(ellipse 72% 60% at 84% 22%, #000 0, transparent 72%),
-    radial-gradient(ellipse 48% 56% at 14% 82%, #000 0, transparent 78%);
+  visibility: hidden;
+  background: var(--bg-default, #fff);
+  opacity: 0;
 }
 
-.dither-background--dark .dither-background__fallback { opacity: 0.12; }
+.dither-background--fallback .dither-background__fallback {
+  visibility: visible;
+  opacity: 1;
+}
+
+.dither-background--fallback.dither-background--dark .dither-background__fallback {
+  background: #000;
+}
 
 @media (prefers-color-scheme: dark) {
-  .dither-background:not(.dither-background--light) .dither-background__fallback {
-    opacity: 0.12;
+  .dither-background--fallback:not(.dither-background--light) .dither-background__fallback {
+    background: #000;
   }
 }
 
